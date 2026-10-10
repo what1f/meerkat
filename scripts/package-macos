@@ -1,0 +1,124 @@
+#!/bin/zsh
+set -euo pipefail
+
+ROOT_DIR="${0:A:h:h}"
+cd "$ROOT_DIR"
+"$ROOT_DIR/scripts/verify-production-boundary"
+RELEASE_DIR="${LANKIDE_RELEASE_BIN_DIR:-${CARGO_TARGET_DIR:-$ROOT_DIR/target}/release}"
+RELEASE_DIR="${RELEASE_DIR:A}"
+OUTPUT_DIR="${LANKIDE_PACKAGE_OUTPUT_DIR:-$RELEASE_DIR}"
+PROVENANCE="${LANKIDE_RELEASE_PROVENANCE:-$RELEASE_DIR/build-provenance.json}"
+"$ROOT_DIR/scripts/release-provenance" verify --binary-dir "$RELEASE_DIR" --output "$PROVENANCE"
+mkdir -p "$OUTPUT_DIR"
+OUTPUT_DIR="${OUTPUT_DIR:A}"
+APP_DIR="$OUTPUT_DIR/Lankide.app"
+CONTENTS="$APP_DIR/Contents"
+VERSION="$(sed -nE 's/^version = "([^"]+)"/\1/p' "$ROOT_DIR/apps/desktop/Cargo.toml" | head -n 1)"
+ARCHITECTURE="$(uname -m)"
+ARCHIVE="$OUTPUT_DIR/Lankide-$VERSION-macos-$ARCHITECTURE.zip"
+SIGNING_IDENTITY="${LANKIDE_CODESIGN_IDENTITY:--}"
+APP_ONLY=0
+
+if [[ "${1:-}" == "--app-only" ]]; then
+  APP_ONLY=1
+elif (( $# != 0 )); then
+  print -u2 "usage: ./scripts/package-macos [--app-only]"
+  exit 2
+fi
+
+[[ "$(uname -s)" == Darwin ]] || { print -u2 'macOS is required'; exit 2; }
+if (( APP_ONLY == 0 )); then
+  command -v uv >/dev/null || { print -u2 'Install uv to build the DMG'; exit 2; }
+fi
+
+for binary in lankide-desktop lankide-runtime-daemon lankide-computer-daemon lankide; do
+  [[ -x "$RELEASE_DIR/$binary" ]] || {
+    print -u2 "release binary is missing: $RELEASE_DIR/$binary"
+    exit 4
+  }
+  lipo "$RELEASE_DIR/$binary" -verify_arch "$ARCHITECTURE"
+done
+
+case "$APP_DIR" in
+  "$ROOT_DIR"/target/*/Lankide.app) ;;
+  *) print -u2 "unsafe App output path: $APP_DIR"; exit 2 ;;
+esac
+rm -rf "$APP_DIR"
+mkdir -p \
+  "$CONTENTS/MacOS" \
+  "$CONTENTS/Library/LaunchAgents" \
+  "$CONTENTS/Library/LaunchServices" \
+  "$CONTENTS/Resources/bin"
+
+cp "$RELEASE_DIR/lankide-desktop" "$CONTENTS/MacOS/Lankide"
+cp "$RELEASE_DIR/lankide-runtime-daemon" "$CONTENTS/Library/LaunchServices/lankide-runtime-daemon"
+cp "$RELEASE_DIR/lankide-computer-daemon" "$CONTENTS/Library/LaunchServices/lankide-computer-daemon"
+cp "$RELEASE_DIR/lankide" "$CONTENTS/Resources/bin/lankide"
+cp "$ROOT_DIR/apps/desktop/macos/com.lankide.runtime.plist" "$CONTENTS/Library/LaunchAgents/com.lankide.runtime.plist"
+cp "$ROOT_DIR/apps/desktop/macos/com.lankide.computer.plist" "$CONTENTS/Library/LaunchAgents/com.lankide.computer.plist"
+cp "$ROOT_DIR/apps/desktop/Info.plist" "$CONTENTS/Info.plist"
+cp "$ROOT_DIR/LICENSE" "$ROOT_DIR/THIRD_PARTY_LICENSES.md" "$CONTENTS/Resources/"
+cp -R "$ROOT_DIR/licenses" "$CONTENTS/Resources/licenses"
+if [[ "$SIGNING_IDENTITY" == "-" ]]; then
+  touch "$CONTENTS/Resources/AdHocBackgroundServices"
+fi
+plutil -lint \
+  "$CONTENTS/Library/LaunchAgents/com.lankide.runtime.plist" \
+  "$CONTENTS/Library/LaunchAgents/com.lankide.computer.plist" >/dev/null
+plutil -replace CFBundleShortVersionString -string "$VERSION" "$CONTENTS/Info.plist"
+plutil -replace CFBundleVersion -string "$VERSION" "$CONTENTS/Info.plist"
+
+ICON_TEMP="$(mktemp -d "$OUTPUT_DIR/Lankide-icon.XXXXXX")"
+ICONSET="$ICON_TEMP/Lankide.iconset"
+mkdir "$ICONSET"
+cleanup() { rm -rf "$ICON_TEMP"; }
+trap cleanup EXIT INT TERM
+SOURCE_ICON="$ROOT_DIR/apps/desktop/assets/logo.png"
+for specification in \
+  '16 icon_16x16.png' '32 icon_16x16@2x.png' \
+  '32 icon_32x32.png' '64 icon_32x32@2x.png' \
+  '128 icon_128x128.png' '256 icon_128x128@2x.png' \
+  '256 icon_256x256.png' '512 icon_256x256@2x.png' \
+  '512 icon_512x512.png' '1024 icon_512x512@2x.png'; do
+  size="${specification%% *}"
+  name="${specification#* }"
+  sips -s format png -z "$size" "$size" "$SOURCE_ICON" --out "$ICONSET/$name" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "$CONTENTS/Resources/AppIcon.icns"
+
+chmod 755 \
+  "$CONTENTS/MacOS/Lankide" \
+  "$CONTENTS/Library/LaunchServices/lankide-runtime-daemon" \
+  "$CONTENTS/Library/LaunchServices/lankide-computer-daemon" \
+  "$CONTENTS/Resources/bin/lankide"
+xattr -cr "$APP_DIR"
+"$ROOT_DIR/scripts/package-provenance" stage --binary-dir "$RELEASE_DIR" \
+  --build-provenance "$PROVENANCE" --bundle "$APP_DIR" --output "$ICON_TEMP/stage.json"
+for helper in \
+  "$CONTENTS/Library/LaunchServices/lankide-runtime-daemon" \
+  "$CONTENTS/Library/LaunchServices/lankide-computer-daemon" \
+  "$CONTENTS/Resources/bin/lankide" \
+  "$CONTENTS/MacOS/Lankide"; do
+  codesign --force --sign "$SIGNING_IDENTITY" "$helper"
+done
+codesign --force --sign "$SIGNING_IDENTITY" "$APP_DIR"
+codesign --verify --deep --strict "$APP_DIR"
+
+print "App ready: $APP_DIR"
+if (( APP_ONLY == 0 )); then
+  rm -f "$ARCHIVE"
+  ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$ARCHIVE"
+  unzip -tq "$ARCHIVE"
+  shasum -a 256 "$ARCHIVE"
+  print "Package ready: $ARCHIVE"
+fi
+ARCHIVE_ARGS=()
+if (( APP_ONLY == 0 )); then ARCHIVE_ARGS=(--archive "$ARCHIVE"); fi
+"$ROOT_DIR/scripts/package-provenance" record --binary-dir "$RELEASE_DIR" \
+  --build-provenance "$PROVENANCE" --bundle "$APP_DIR" "${ARCHIVE_ARGS[@]}" \
+  --stage "$ICON_TEMP/stage.json" --output "$OUTPUT_DIR/package-provenance.json"
+if (( APP_ONLY == 0 )); then
+  "$ROOT_DIR/scripts/package-macos-dmg" "$APP_DIR" "$OUTPUT_DIR/Lankide-$VERSION-macos-$ARCHITECTURE.dmg"
+  (cd "$OUTPUT_DIR" && shasum -a 256 "${ARCHIVE:t}" "Lankide-$VERSION-macos-$ARCHITECTURE.dmg" \
+    > "Lankide-$VERSION-macos-$ARCHITECTURE.sha256")
+fi

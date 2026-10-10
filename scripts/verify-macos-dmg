@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+if [[ $# != 2 ]]; then
+  printf 'usage: ./scripts/verify-macos-dmg <output.dmg> <package-provenance.json>\n' >&2
+  exit 2
+fi
+hdiutil verify "$1"
+mount_root="$(mktemp -d "${TMPDIR:-/tmp}/lankide-dmg.XXXXXX")"
+mounted=0
+cleanup() {
+  if [[ "$mounted" == 1 ]]; then hdiutil detach "$mount_root" >/dev/null; fi
+  rmdir "$mount_root"
+}
+trap cleanup EXIT
+hdiutil attach -readonly -nobrowse -mountpoint "$mount_root" "$1" >/dev/null
+mounted=1
+codesign --verify --deep --strict "$mount_root/Lankide.app"
+uv run --no-project --with 'dmgbuild==1.6.7' python - "$mount_root" "$2" "$ROOT_DIR" <<'PY'
+import json
+from pathlib import Path
+import runpy
+import sys
+from ds_store import DSStore
+
+mount, receipt, root = map(Path, sys.argv[1:])
+snapshot = runpy.run_path(str(root / "scripts/package-provenance"))["bundle_snapshot"]
+if snapshot(mount / "Lankide.app") != json.loads(receipt.read_text())["bundle_files"]:
+    raise SystemExit("DMG differs from the verified signed bundle")
+if not (mount / "Applications").is_symlink() or (mount / "Applications").readlink() != Path("/Applications"):
+    raise SystemExit("DMG is missing the Applications shortcut")
+settings = runpy.run_path(str(root / "scripts/dmg-settings.py"), init_globals={"defines": {"app": "", "background": ""}})
+if not (mount / ".background.tiff").is_file():
+    raise SystemExit("DMG installer background is missing")
+with DSStore.open(str(mount / ".DS_Store"), "r") as store:
+    for name, expected in settings["icon_locations"].items():
+        if (mount / name).exists() and tuple(store[name]["Iloc"]) != expected:
+            raise SystemExit(f"Unexpected installer icon position: {name}")
+print("DMG bundle, Applications shortcut and installer layout verified")
+PY

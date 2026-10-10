@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Verify and run the extracted distributable, not a neighbouring build."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import runpy
+import shutil
+import signal
+import subprocess
+import tempfile
+import time
+import tomllib
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def group_members(group):
+    rows = subprocess.check_output(["ps", "-eo", "pid=,pgid="], text=True)
+    return [int(pid) for pid, pgid in (row.split() for row in rows.splitlines()) if int(pgid) == group]
+
+
+def main():
+    target = Path(os.environ.get("CARGO_TARGET_DIR", str(ROOT / "target")))
+    binaries = Path(os.environ.get("LANKIDE_RELEASE_BIN_DIR", str(target / "release"))).resolve()
+    output = Path(os.environ.get("LANKIDE_PACKAGE_OUTPUT_DIR", str(binaries))).resolve()
+    provenance = Path(os.environ.get("LANKIDE_RELEASE_PROVENANCE", str(binaries / "build-provenance.json")))
+    version = tomllib.loads((ROOT / "apps/desktop/Cargo.toml").read_text())["package"]["version"]
+    archive = output / f"Lankide-{version}-macos-{os.uname().machine}.zip"
+    bundle = output / "Lankide.app"
+    receipt = output / "package-provenance.json"
+    subprocess.run([str(ROOT / "scripts/package-provenance"), "verify", "--binary-dir", str(binaries),
+        "--build-provenance", str(provenance), "--bundle", str(bundle), "--archive", str(archive), "--output", str(receipt)], check=True)
+    dmg = archive.with_suffix(".dmg")
+    checksums = archive.with_suffix(".sha256")
+    expected_checksums = "".join(
+        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n" for path in (archive, dmg)
+    )
+    if checksums.read_text() != expected_checksums:
+        raise ValueError("distribution checksums are missing or changed")
+    subprocess.run([str(ROOT / "scripts/verify-macos-dmg"), str(dmg), str(receipt)], check=True)
+    run_id = f"package-{time.time_ns()}-{os.getpid()}"
+    artifacts = ROOT / "target/e2e-artifacts/package" / run_id
+    artifacts.mkdir(parents=True, mode=0o700)
+    result = {"status": "failed", "classification": "release-local-extracted-package", "archive": str(archive),
+        "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+        "dmg": str(dmg), "dmg_sha256": hashlib.sha256(dmg.read_bytes()).hexdigest(), "cleanup": "pending"}
+    process = None
+    try:
+        with tempfile.TemporaryDirectory(prefix="lk-package-", dir="/tmp") as directory:
+            root = Path(directory)
+            subprocess.run(["ditto", "-x", "-k", str(archive), str(root)], check=True)
+            extracted = root / bundle.name
+            snapshot = runpy.run_path(str(ROOT / "scripts/package-provenance"))["bundle_snapshot"]
+            if snapshot(extracted) != json.loads(receipt.read_text())["bundle_files"]:
+                raise ValueError("extracted package differs from its signed receipt")
+            subprocess.run(["codesign", "--verify", "--deep", "--strict", str(extracted)], check=True)
+            home = root / "home"
+            bootstrap_result = artifacts / "bootstrap.json"
+            env = {**os.environ, "LANKIDE_HOME": str(home)}
+            # An explicit socket tells Desktop to connect to an existing
+            # Runtime rather than start the helpers under test.
+            env.pop("LANKIDE_RUNTIME_SOCKET", None)
+            with (artifacts / "desktop.log").open("w") as log:
+                process = subprocess.Popen([str(extracted / "Contents/MacOS/Lankide"), "--local-bootstrap-smoke", "--result", str(bootstrap_result)],
+                    env=env,
+                    stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+                try:
+                    code = process.wait(timeout=45)
+                    result["exit_status"] = code
+                    deadline = time.monotonic() + 2
+                    while group_members(process.pid) and time.monotonic() < deadline:
+                        time.sleep(0.05)
+                    if group_members(process.pid):
+                        raise ValueError("extracted Desktop left owned child processes alive")
+                    if code != 0:
+                        raise ValueError("extracted Desktop bootstrap failed")
+                    observed = json.loads(bootstrap_result.read_text())
+                    if observed.get("status") != "passed" or not all(observed.get(key) is True for key in ("runtime_ready", "computer_connected", "management")):
+                        raise ValueError("extracted Desktop did not pass all startup checks")
+                    if any((home / "run" / name).exists() for name in ("runtime.sock", "runtime.lock", "computer.lock")):
+                        raise ValueError("extracted Desktop left service endpoints behind")
+                    result.update(bootstrap=observed, signature="passed", archive_content="passed", cleanup="passed")
+                finally:
+                    if group_members(process.pid):
+                        os.killpg(process.pid, signal.SIGTERM)
+                        deadline = time.monotonic() + 3
+                        while group_members(process.pid) and time.monotonic() < deadline:
+                            time.sleep(0.05)
+                        if group_members(process.pid):
+                            os.killpg(process.pid, signal.SIGKILL)
+                        process.wait()
+                    if (home / "logs").exists():
+                        shutil.copytree(home / "logs", artifacts / "services")
+        # Recheck after the process run so a concurrent archive replacement is
+        # not reported as the artifact that was actually executed.
+        if hashlib.sha256(archive.read_bytes()).hexdigest() != result["archive_sha256"]:
+            raise ValueError("archive changed during package verification")
+        if hashlib.sha256(dmg.read_bytes()).hexdigest() != result["dmg_sha256"]:
+            raise ValueError("DMG changed during package verification")
+        result["status"] = "passed"
+    except Exception as error:
+        result["error"] = str(error)
+        raise
+    finally:
+        (artifacts / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+        print(f"Package verification: {result['status']}; artifact={artifacts / 'result.json'}")
+
+
+if __name__ == "__main__":
+    main()
