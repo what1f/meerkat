@@ -18,3 +18,6 @@ __pycache__/
 *.dmg
 .idea/
 .vscode/
+
+# Generated image previews
+output/
