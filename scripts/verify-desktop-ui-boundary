@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT_DIR="${0:A:h:h}"
 BUSINESS_UI="$ROOT_DIR/apps/desktop/src/ui"
 
+if ! command -v rg >/dev/null; then
+  print -u2 "[desktop-ui-boundary] ripgrep (rg) is required"
+  exit 1
+fi
+
 # Product code may use gpui-component state and business-specific overlays,
 # but ordinary visual controls must be constructed by desktop-ui.
 forbidden='\b(Button|Checkbox|Input|Textarea|Select|Dialog)::(new|default)'

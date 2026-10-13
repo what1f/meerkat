@@ -17,6 +17,8 @@ jobs:
           toolchain: 1.96.0
           components: rustfmt
       - uses: taiki-e/install-action@just
+      - name: Install ripgrep
+        run: brew install ripgrep
       - name: Check
         run: just check
       - name: Test
