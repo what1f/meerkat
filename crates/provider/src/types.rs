@@ -1,6 +1,7 @@
 use crate::{ProviderError, ProviderFuture};
-use lankide_core::ResourceRef;
-use lankide_core::{AgentId, AttentionLevel, ChannelAbility, ChannelId, MessageId, ProviderId};
+use lankide_core::{
+    AgentId, AttentionLevel, ChannelAbility, ChannelId, MessageId, ProviderId, ResourceRef,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeSet, fmt, sync::Arc};

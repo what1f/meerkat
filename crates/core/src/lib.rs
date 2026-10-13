@@ -24,10 +24,11 @@ pub use identity::{
 };
 pub use markdown_mention::{markdown_mention, markdown_mentions};
 pub use message::{MessageAuthorType, ReactionAction};
-pub use resource::{PROVIDER_CAPABILITY_TASK_SYSTEM, ResourceRef};
+pub use resource::ResourceRef;
 pub use team::TeamRole;
 
 pub const CRATE_NAME: &str = "lankide-core";
+pub const PROVIDER_CAPABILITY_TASK_SYSTEM: &str = "task_system";
 
 /// Canonical Tool names are portable across every supported Harness.
 pub fn is_canonical_tool_name(name: &str) -> bool {

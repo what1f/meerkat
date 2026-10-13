@@ -820,11 +820,12 @@ impl ProviderStorage for WorkspaceServices {
                     operation: "read_runtime_resource",
                     retryable: false,
                 })?;
-            if stored.resource != resource.clone().into() {
+            let stored_resource = lankide_core::ResourceRef::from(stored.resource);
+            if stored_resource != *resource {
                 return Err(ProviderError::InvalidInput { field: "resource" });
             }
             Ok(ProviderResource {
-                resource: stored.resource.into(),
+                resource: stored_resource,
                 bytes: stored.bytes,
             })
         })

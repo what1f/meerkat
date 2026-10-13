@@ -12,9 +12,8 @@ use crate::events::{
 use crate::http::{ReqwestTransport, Transport};
 use crate::mention::{MentionTarget, extract_agent_ids, render_card_markdown};
 use crate::normalize::{NormalizationConfig, NormalizedEvent, SenderKind};
-use lankide_core::ResourceRef;
 use lankide_core::{
-    AgentId, AttentionLevel, ChannelAbility, ChannelId, ProviderId, markdown_mention,
+    AgentId, AttentionLevel, ChannelAbility, ChannelId, ProviderId, ResourceRef, markdown_mention,
 };
 use lankide_provider::{
     AgentContext, AgentRuntimeContext, AutoReactionContext, ChannelDefaultAttention,

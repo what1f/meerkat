@@ -1,6 +1,5 @@
 use crate::{InterfaceDefinition, ProviderError, ProviderEvent, ProviderFuture, SecretValue};
-use lankide_core::ResourceRef;
-use lankide_core::{AgentId, ChannelId, MessageId, PersonId, ProviderId, WorkspaceId};
+use lankide_core::{AgentId, ChannelId, MessageId, PersonId, ProviderId, ResourceRef, WorkspaceId};
 use serde_json::Value;
 use std::{
     fmt,

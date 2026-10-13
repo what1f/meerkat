@@ -302,14 +302,13 @@ impl RuntimeApplication {
                 ));
             }
             attachments.push(MessageAttachment {
-                resource: ResourceRef {
+                resource: lankide_core::ResourceRef {
                     resource_id: stored.resource_id.get(),
                     file_name: stored.file_name,
                     media_type: stored.media_type,
                     size_bytes: stored.size_bytes,
                     sha256: stored.sha256,
-                }
-                .into(),
+                },
                 caption: None,
             });
         }
