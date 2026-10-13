@@ -6,27 +6,22 @@
 //! Storage, transports, Providers, Harnesses, and UI code are deliberately not
 //! dependencies of this crate.
 
-mod collaboration;
+mod attention;
+mod channel;
 mod error;
 mod identity;
 mod markdown_mention;
-mod unread;
+mod message;
 
-pub use collaboration::{
-    Agent, AgentChatCursor, Attachment, AttentionLevel, AttentionSetting, Channel, ChannelAbility,
-    Chat, Mention, Message, MessageAuthor, MessageAuthorType, MessageStatus, MessageTimeline,
-    Reply, ScheduleInterval, Workspace, WorkspaceStatus,
-};
+pub use attention::{AttentionLevel, ScheduleInterval};
+pub use channel::ChannelAbility;
 pub use error::DomainError;
 pub use identity::{
-    AgentId, ChannelId, ChatId, ExecutionId, MessageId, PersonId, ProviderId, ResourceId,
-    SnapshotId, UnixMillis, WorkspaceId,
+    AgentId, ChannelId, ExecutionId, MessageId, PersonId, ProviderId, ResourceId, UnixMillis,
+    WorkspaceId,
 };
-pub use markdown_mention::{MarkdownMention, markdown_mention, markdown_mentions};
-pub use unread::{
-    ExecutionInput, TriggerReason, UnreadChatInput, UnreadChatSnapshot, UnreadSnapshot,
-    UnreadSnapshotInput,
-};
+pub use markdown_mention::{markdown_mention, markdown_mentions};
+pub use message::MessageAuthorType;
 
 pub const CRATE_NAME: &str = "lankide-core";
 

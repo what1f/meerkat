@@ -19,7 +19,7 @@ serde_json.workspace = true
 
 [package.metadata.lankide.e2e]
 command = "cargo test -p lankide-core --test core_e2e"
-scenario = "Build two isolated workspaces, provider-defined channels, ordered messages with mention/reply/attachment, attention settings, a fixed unread snapshot, and execution input; reject invalid IDs, cross-workspace references, unsupported attention, invalid schedule periods, and cursor regression."
+scenario = "Validate canonical Tool names, Markdown mentions, attention levels, schedule boundaries, and identifier validation through public constructors and deserialization."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

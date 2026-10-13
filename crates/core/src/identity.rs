@@ -1,7 +1,6 @@
 use crate::DomainError;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt;
-use std::str::FromStr;
 
 fn validate_identifier(kind: &'static str, value: &str) -> Result<(), DomainError> {
     let valid = !value.is_empty()
@@ -204,7 +203,6 @@ macro_rules! positive_id {
 
 positive_id!(MessageId, "message_id");
 positive_id!(ResourceId, "resource_id");
-positive_id!(SnapshotId, "snapshot_id");
 positive_id!(ExecutionId, "execution_id");
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -246,108 +244,5 @@ impl<'de> Deserialize<'de> for UnixMillis {
     {
         let value = i64::deserialize(deserializer)?;
         Self::new(value).map_err(serde::de::Error::custom)
-    }
-}
-
-/// Semantic Chat ID exposed to Agents and tools.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(into = "String")]
-pub struct ChatId {
-    provider_id: ProviderId,
-    channel_id: ChannelId,
-    table_id: i64,
-    value: String,
-}
-
-impl ChatId {
-    pub fn new(
-        provider_id: ProviderId,
-        channel_id: ChannelId,
-        table_id: i64,
-    ) -> Result<Self, DomainError> {
-        if table_id <= 0 {
-            return Err(DomainError::InvalidPositiveId {
-                kind: "chat_table_id",
-                value: table_id,
-            });
-        }
-        let value = format!("{provider_id}:{channel_id}:{table_id}");
-        Ok(Self {
-            provider_id,
-            channel_id,
-            table_id,
-            value,
-        })
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.value
-    }
-
-    pub fn provider_id(&self) -> &ProviderId {
-        &self.provider_id
-    }
-
-    pub fn channel_id(&self) -> &ChannelId {
-        &self.channel_id
-    }
-
-    pub const fn table_id(&self) -> i64 {
-        self.table_id
-    }
-}
-
-impl AsRef<str> for ChatId {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl fmt::Display for ChatId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-impl From<ChatId> for String {
-    fn from(value: ChatId) -> Self {
-        value.value
-    }
-}
-
-impl FromStr for ChatId {
-    type Err = DomainError;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let mut parts = value.split(':');
-        let (Some(provider), Some(channel), Some(table), None) =
-            (parts.next(), parts.next(), parts.next(), parts.next())
-        else {
-            return Err(DomainError::InvalidIdentifier {
-                kind: "chat_id",
-                value: value.to_owned(),
-            });
-        };
-        let table_id = table
-            .parse::<i64>()
-            .map_err(|_| DomainError::InvalidIdentifier {
-                kind: "chat_id",
-                value: value.to_owned(),
-            })?;
-        Self::new(
-            ProviderId::new(provider)?,
-            ChannelId::new(channel)?,
-            table_id,
-        )
-    }
-}
-
-impl<'de> Deserialize<'de> for ChatId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        value.parse().map_err(serde::de::Error::custom)
     }
 }

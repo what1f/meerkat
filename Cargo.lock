@@ -3701,7 +3701,6 @@ name = "lankide-harness"
 version = "0.1.0"
 dependencies = [
  "lankide-core",
- "lankide-protocol",
  "serde",
  "serde_json",
  "tokio",
