@@ -12,17 +12,16 @@ use crate::events::{
 use crate::http::{ReqwestTransport, Transport};
 use crate::mention::{MentionTarget, extract_agent_ids, render_card_markdown};
 use crate::normalize::{NormalizationConfig, NormalizedEvent, SenderKind};
+use lankide_core::ResourceRef;
 use lankide_core::{
     AgentId, AttentionLevel, ChannelAbility, ChannelId, ProviderId, markdown_mention,
 };
-use lankide_protocol::ResourceRef;
 use lankide_provider::{
     AgentContext, AgentRuntimeContext, AutoReactionContext, ChannelDefaultAttention,
     ChannelDefinition, EventSender, EventSenderType, InitContext, MessageAttachment, MessageEvent,
     PROVIDER_CAPABILITY_TASK_SYSTEM, Provider, ProviderError, ProviderEvent, ProviderEventKind,
-    ProviderFuture, ProviderInfo, ProviderStorage, ReactionAction as ProviderReactionAction,
-    ReactionEvent, RecallMessageContext, ResourceUpload, SendMessageContext, SendMessageResult,
-    ToolDefinition,
+    ProviderFuture, ProviderInfo, ProviderStorage, ReactionEvent, RecallMessageContext,
+    ResourceUpload, SendMessageContext, SendMessageResult, ToolDefinition,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -1150,10 +1149,7 @@ fn normalized_event_to_provider(
             )?;
             let provider_data = serde_json::to_value(&reaction)
                 .map_err(|error| crate::events::SinkError(error.to_string()))?;
-            let action = match reaction.action {
-                crate::normalize::ReactionAction::Add => ProviderReactionAction::Add,
-                crate::normalize::ReactionAction::Remove => ProviderReactionAction::Remove,
-            };
+            let action = reaction.action;
             let provider_chat_id = reaction.chat_id.unwrap_or_default();
             Ok(ProviderEvent {
                 channel_id: channel("group_chat"),

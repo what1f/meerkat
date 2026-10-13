@@ -12,6 +12,8 @@ mod error;
 mod identity;
 mod markdown_mention;
 mod message;
+mod resource;
+mod team;
 
 pub use attention::{AttentionLevel, ScheduleInterval};
 pub use channel::ChannelAbility;
@@ -21,7 +23,9 @@ pub use identity::{
     WorkspaceId,
 };
 pub use markdown_mention::{markdown_mention, markdown_mentions};
-pub use message::MessageAuthorType;
+pub use message::{MessageAuthorType, ReactionAction};
+pub use resource::{PROVIDER_CAPABILITY_TASK_SYSTEM, ResourceRef};
+pub use team::TeamRole;
 
 pub const CRATE_NAME: &str = "lankide-core";
 

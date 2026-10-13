@@ -4,8 +4,8 @@
 //! public mention/normalization/polling boundaries and then calls the shared
 //! fail-closed prerequisite before the real Manager/Agent Bot flow.
 
+use lankide_core::ResourceRef;
 use lankide_core::{AgentId, ChannelId, MessageId, PersonId, WorkspaceId};
-use lankide_protocol::ResourceRef;
 use lankide_provider::{
     AgentOnboardingContext, AgentRuntimeSpec, AgentSpec, AutoReactionSpec, EditMessageSpec,
     HostServices, LogLevel, MessageAttachment, OperationProgress, OperationUpdate, ProviderFuture,

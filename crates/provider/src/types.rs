@@ -1,6 +1,6 @@
 use crate::{ProviderError, ProviderFuture};
+use lankide_core::ResourceRef;
 use lankide_core::{AgentId, AttentionLevel, ChannelAbility, ChannelId, MessageId, ProviderId};
-use lankide_protocol::ResourceRef;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeSet, fmt, sync::Arc};
@@ -161,11 +161,7 @@ pub struct MessageEvent {
     pub mentioned_agent_ids: Vec<AgentId>,
     pub attachments: Vec<ResourceRef>,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ReactionAction {
-    Add,
-    Remove,
-}
+pub use lankide_core::ReactionAction;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReactionEvent {
     pub target_provider_message_id: String,

@@ -16,8 +16,8 @@ use lankide_provider::{
     ChannelDefinition, EditMessageContext, EventSender, EventSenderType, InitContext,
     InterfaceDefinition, InvocationHandler, JsonSchema, MessageAttachment, MessageEvent, Provider,
     ProviderError, ProviderEvent, ProviderEventKind, ProviderFuture, ProviderInfo, ProviderStorage,
-    ReactionAction as ProviderReactionAction, ReactionEvent, RecallMessageContext, ResourceUpload,
-    SendMessageContext, SendMessageResult, ToolDefinition, WorkspaceContext,
+    ReactionEvent, RecallMessageContext, ResourceUpload, SendMessageContext, SendMessageResult,
+    ToolDefinition, WorkspaceContext,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -1107,10 +1107,7 @@ fn normalized_event_to_provider(
                 &reaction.sender.sender_id,
                 &reaction.sender.display_name,
             )?;
-            let action = match reaction.action {
-                crate::normalize::ReactionAction::Add => ProviderReactionAction::Add,
-                crate::normalize::ReactionAction::Remove => ProviderReactionAction::Remove,
-            };
+            let action = reaction.action;
             Ok(ProviderEvent {
                 channel_id: channel(&reaction.channel_id),
                 provider_chat_id: reaction.chat_id,

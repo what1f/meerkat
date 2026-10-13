@@ -6,30 +6,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum TeamRole {
-    External,
-    Member,
-    Lead,
-}
-impl TeamRole {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::External => "external",
-            Self::Member => "member",
-            Self::Lead => "lead",
-        }
-    }
-    fn parse(value: &str) -> Result<Self> {
-        match value {
-            "external" => Ok(Self::External),
-            "member" => Ok(Self::Member),
-            "lead" => Ok(Self::Lead),
-            _ => Err(StorageError::Invalid(format!("team role {value}"))),
-        }
-    }
-}
+pub use lankide_core::TeamRole;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct PersonRecord {
@@ -61,13 +38,15 @@ fn map_person(row: &rusqlite::Row<'_>) -> rusqlite::Result<PersonRecord> {
     Ok(PersonRecord {
         workspace_id: wid(row.get(0)?)?,
         person_id: person_id(row.get(1)?)?,
-        team_role: TeamRole::parse(&role).map_err(|error| {
-            rusqlite::Error::FromSqlConversionFailure(
-                2,
-                rusqlite::types::Type::Text,
-                Box::new(error),
-            )
-        })?,
+        team_role: TeamRole::parse(&role)
+            .ok_or_else(|| StorageError::Invalid(format!("team role {role}")))
+            .map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    2,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?,
         provider_instance_id: pid(row.get(3)?)?,
         external_id: row.get(4)?,
         provider_identity_state: serde_json::from_str(&provider_state).map_err(|error| {
@@ -188,13 +167,15 @@ impl Storage {
                 Ok(HumanTeamMemberView {
                     person_id: person_id(row.get(0)?)?,
                     name: row.get(2)?,
-                    team_role: TeamRole::parse(&role).map_err(|error| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            1,
-                            rusqlite::types::Type::Text,
-                            Box::new(error),
-                        )
-                    })?,
+                    team_role: TeamRole::parse(&role)
+                        .ok_or_else(|| StorageError::Invalid(format!("team role {role}")))
+                        .map_err(|error| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                1,
+                                rusqlite::types::Type::Text,
+                                Box::new(error),
+                            )
+                        })?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?)

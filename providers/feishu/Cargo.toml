@@ -10,7 +10,6 @@ publish.workspace = true
 [dependencies]
 lankide-core = { path = "../../crates/core" }
 lankide-provider = { path = "../../crates/provider" }
-lankide-protocol = { path = "../../crates/protocol" }
 serde.workspace = true
 serde_json.workspace = true
 reqwest.workspace = true
@@ -26,7 +25,6 @@ url = "2.5.8"
 
 [dev-dependencies]
 lankide-testkit = { path = "../../crates/testkit" }
-lankide-protocol = { path = "../../crates/protocol" }
 tempfile.workspace = true
 
 [package.metadata.lankide.e2e]

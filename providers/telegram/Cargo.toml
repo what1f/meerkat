@@ -17,7 +17,6 @@ tokio.workspace = true
 
 [dev-dependencies]
 lankide-testkit = { path = "../../crates/testkit" }
-lankide-protocol = { path = "../../crates/protocol" }
 rusqlite.workspace = true
 
 [package.metadata.lankide.e2e]

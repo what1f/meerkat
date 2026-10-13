@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MessageAuthorType {
     Human,
@@ -15,4 +17,10 @@ impl MessageAuthorType {
             Self::System => "system",
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq)]
+pub enum ReactionAction {
+    Add,
+    Remove,
 }

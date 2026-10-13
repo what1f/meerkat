@@ -3768,7 +3768,6 @@ name = "lankide-provider"
 version = "0.1.0"
 dependencies = [
  "lankide-core",
- "lankide-protocol",
  "serde",
  "serde_json",
  "tokio",
@@ -3782,7 +3781,6 @@ dependencies = [
  "flate2",
  "futures-util",
  "lankide-core",
- "lankide-protocol",
  "lankide-provider",
  "lankide-testkit",
  "prost",
@@ -3802,7 +3800,6 @@ name = "lankide-provider-telegram"
 version = "0.1.0"
 dependencies = [
  "lankide-core",
- "lankide-protocol",
  "lankide-provider",
  "lankide-testkit",
  "reqwest",

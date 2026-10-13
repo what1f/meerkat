@@ -1,6 +1,6 @@
 use crate::{InterfaceDefinition, ProviderError, ProviderEvent, ProviderFuture, SecretValue};
+use lankide_core::ResourceRef;
 use lankide_core::{AgentId, ChannelId, MessageId, PersonId, ProviderId, WorkspaceId};
-use lankide_protocol::ResourceRef;
 use serde_json::Value;
 use std::{
     fmt,
@@ -151,12 +151,7 @@ pub trait ProviderStorage: Send + Sync {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TeamRole {
-    External,
-    Member,
-    Lead,
-}
+pub use lankide_core::TeamRole;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProviderPersonIdentity {

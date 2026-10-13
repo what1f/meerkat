@@ -9,8 +9,8 @@
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use flate2::read::GzDecoder;
+use lankide_core::ResourceRef;
 use lankide_core::{AgentId, ChannelId, MessageId, PersonId, WorkspaceId};
-use lankide_protocol::ResourceRef;
 use lankide_provider::{
     AgentRuntimeSpec, AgentSpec, AutoReactionSpec, ChannelDefaultAttention, HostServices, LogLevel,
     MessageAttachment, OperationProgress, OperationUpdate, Provider, ProviderAgentFile,

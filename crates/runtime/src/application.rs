@@ -5,9 +5,8 @@ use lankide_provider::{
     OperationProgress, OperationUpdate, ProviderAgentFile, ProviderFuture as SdkFuture,
     ProviderLogger, ProviderMessage, ProviderPersonIdentity, ProviderResource, ProviderStorage,
     ResourceSaver, ResourceUpload, SecretReader, SecretValue as ProviderSecret,
-    TeamRole as ProviderTeamRole,
 };
-use lankide_storage::{AgentRecord, AttentionRecord, PersonRecord, TeamRole as StorageTeamRole};
+use lankide_storage::{AgentRecord, AttentionRecord, PersonRecord};
 use std::{
     collections::BTreeMap,
     sync::{
@@ -804,7 +803,10 @@ impl ProviderStorage for WorkspaceServices {
             })
         })
     }
-    fn resource<'a>(&'a self, resource: &'a ResourceRef) -> SdkFuture<'a, ProviderResource> {
+    fn resource<'a>(
+        &'a self,
+        resource: &'a lankide_core::ResourceRef,
+    ) -> SdkFuture<'a, ProviderResource> {
         Box::pin(async move {
             let resource_id =
                 ResourceId::new(resource.resource_id).map_err(|_| ProviderError::InvalidInput {
@@ -818,11 +820,11 @@ impl ProviderStorage for WorkspaceServices {
                     operation: "read_runtime_resource",
                     retryable: false,
                 })?;
-            if stored.resource != *resource {
+            if stored.resource != resource.clone().into() {
                 return Err(ProviderError::InvalidInput { field: "resource" });
             }
             Ok(ProviderResource {
-                resource: stored.resource,
+                resource: stored.resource.into(),
                 bytes: stored.bytes,
             })
         })
@@ -911,7 +913,7 @@ impl ProviderStorage for WorkspaceServices {
                 .map_err(provider_storage_error)?
                 .ok_or(ProviderError::NotFound { entity: "resource" })?;
             Ok(ProviderAgentFile {
-                resource,
+                resource: resource.into(),
                 path: metadata.storage_ref,
             })
         })
@@ -922,11 +924,7 @@ fn person_identity(record: PersonRecord) -> ProviderPersonIdentity {
     ProviderPersonIdentity {
         person_id: record.person_id,
         external_id: record.external_id,
-        team_role: match record.team_role {
-            StorageTeamRole::External => ProviderTeamRole::External,
-            StorageTeamRole::Member => ProviderTeamRole::Member,
-            StorageTeamRole::Lead => ProviderTeamRole::Lead,
-        },
+        team_role: record.team_role,
         provider_state: record.provider_identity_state,
         state_revision: record.provider_state_revision,
     }
@@ -951,11 +949,12 @@ impl OperationProgress for WorkspaceServices {
     }
 }
 impl ResourceSaver for WorkspaceServices {
-    fn save<'a>(&'a self, upload: ResourceUpload) -> SdkFuture<'a, ResourceRef> {
+    fn save<'a>(&'a self, upload: ResourceUpload) -> SdkFuture<'a, lankide_core::ResourceRef> {
         Box::pin(async move {
             self.resources
                 .save(&self.workspace_id, upload)
                 .await
+                .map(Into::into)
                 .map_err(|_| ProviderError::External {
                     operation: "save_resource",
                     retryable: true,

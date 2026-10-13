@@ -112,12 +112,7 @@ pub struct IngestResult {
     pub new_inbox_items: Vec<(AgentId, i64)>,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum ReactionAction {
-    Add,
-    Remove,
-}
+pub use lankide_core::ReactionAction;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]

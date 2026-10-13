@@ -1,7 +1,7 @@
+use lankide_core::ResourceRef;
 use lankide_core::{
     AgentId, AttentionLevel, ChannelAbility, ChannelId, MessageId, ProviderId, WorkspaceId,
 };
-use lankide_protocol::ResourceRef;
 use lankide_provider::*;
 use serde_json::{Value, json};
 use std::{

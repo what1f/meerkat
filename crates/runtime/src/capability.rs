@@ -308,7 +308,8 @@ impl RuntimeApplication {
                     media_type: stored.media_type,
                     size_bytes: stored.size_bytes,
                     sha256: stored.sha256,
-                },
+                }
+                .into(),
                 caption: None,
             });
         }

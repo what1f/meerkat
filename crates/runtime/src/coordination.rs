@@ -198,10 +198,7 @@ impl Runtime {
                     sender_id: reaction.sender.id,
                     sender_name: reaction.sender.name,
                     reaction: reaction.reaction,
-                    action: match reaction.action {
-                        ReactionAction::Add => lankide_storage::ReactionAction::Add,
-                        ReactionAction::Remove => lankide_storage::ReactionAction::Remove,
-                    },
+                    action: reaction.action,
                     origin: if own_auto_reaction {
                         ReactionOrigin::AutoReaction
                     } else {
@@ -382,7 +379,7 @@ fn sender_kind(value: EventSenderType) -> MessageAuthorType {
     }
 }
 
-fn resource_view(value: &lankide_protocol::ResourceRef) -> Result<ResourceView, RuntimeError> {
+fn resource_view(value: &lankide_core::ResourceRef) -> Result<ResourceView, RuntimeError> {
     Ok(ResourceView {
         resource_id: ResourceId::new(value.resource_id)
             .map_err(|error| RuntimeError::InvalidCore(error.to_string()))?,

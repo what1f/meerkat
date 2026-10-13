@@ -84,11 +84,7 @@ pub struct NormalizedReaction {
     pub raw: Vec<u8>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub enum ReactionAction {
-    Add,
-    Remove,
-}
+pub use lankide_core::ReactionAction;
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 pub struct NormalizedChatUpdate {

@@ -3867,12 +3867,9 @@ impl ProviderLogger for Services {
     fn log(&self, _: LogLevel, _: &str) {}
 }
 impl ResourceSaver for Services {
-    fn save<'a>(
-        &'a self,
-        value: ResourceUpload,
-    ) -> ProviderFuture<'a, lankide_protocol::ResourceRef> {
+    fn save<'a>(&'a self, value: ResourceUpload) -> ProviderFuture<'a, lankide_core::ResourceRef> {
         Box::pin(async move {
-            Ok(lankide_protocol::ResourceRef {
+            Ok(lankide_core::ResourceRef {
                 resource_id: 1,
                 file_name: value.file_name,
                 media_type: value.media_type,
