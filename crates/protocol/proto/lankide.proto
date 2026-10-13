@@ -506,23 +506,16 @@ enum OnboardingStatus {
   ONBOARDING_STATUS_ERROR = 4;
 }
 
-message OnboardingField {
-  string name = 1;
-  string label = 2;
-  string kind = 3;
-  bool required = 4;
-  string value = 5;
-  string help = 6;
-}
-
 message ProviderOnboardingState {
   WorkspaceRef workspace = 1;
   string provider_id = 2;
   string step = 3;
   OnboardingStatus status = 4;
-  string title = 5;
-  string instruction = 6;
-  repeated OnboardingField fields = 7;
+  reserved 5, 6, 7;
+  reserved "title", "instruction", "fields";
+  string payload_json = 10;
+  string verification_uri = 11;
+  uint32 poll_interval_seconds = 12;
   string error_code = 8;
   string error_message = 9;
 }
@@ -540,9 +533,11 @@ message AgentOnboardingState {
   string provider_id = 2;
   string step = 3;
   OnboardingStatus status = 4;
-  string title = 5;
-  string instruction = 6;
-  repeated OnboardingField fields = 7;
+  reserved 5, 6, 7;
+  reserved "title", "instruction", "fields";
+  string payload_json = 10;
+  string verification_uri = 11;
+  uint32 poll_interval_seconds = 12;
   string error_code = 8;
   string error_message = 9;
 }

@@ -381,11 +381,12 @@ where
     ) -> Result<Response<ProviderOnboardingState>, Status> {
         validate_request_id(&request.get_ref().request_id)?;
         validate_workspace_ref(request.get_ref().workspace.as_ref())?;
-        Ok(Response::new(
-            self.peer
-                .get_provider_onboarding(request.into_inner())
-                .await?,
-        ))
+        let state = self
+            .peer
+            .get_provider_onboarding(request.into_inner())
+            .await?;
+        validate_json(&state.payload_json, "payload_json")?;
+        Ok(Response::new(state))
     }
 
     async fn advance_provider_onboarding(
@@ -397,11 +398,12 @@ where
         validate_workspace_ref(input.workspace.as_ref())?;
         require_text(&input.action, "onboarding_action")?;
         validate_json(&input.field_values_json, "field_values_json")?;
-        Ok(Response::new(
-            self.peer
-                .advance_provider_onboarding(request.into_inner())
-                .await?,
-        ))
+        let state = self
+            .peer
+            .advance_provider_onboarding(request.into_inner())
+            .await?;
+        validate_json(&state.payload_json, "payload_json")?;
+        Ok(Response::new(state))
     }
 
     async fn get_agent_onboarding(
@@ -410,9 +412,9 @@ where
     ) -> Result<Response<AgentOnboardingState>, Status> {
         validate_request_id(&request.get_ref().request_id)?;
         validate_agent_ref(request.get_ref().agent.as_ref())?;
-        Ok(Response::new(
-            self.peer.get_agent_onboarding(request.into_inner()).await?,
-        ))
+        let state = self.peer.get_agent_onboarding(request.into_inner()).await?;
+        validate_json(&state.payload_json, "payload_json")?;
+        Ok(Response::new(state))
     }
 
     async fn advance_agent_onboarding(
@@ -424,11 +426,12 @@ where
         validate_agent_ref(input.agent.as_ref())?;
         require_text(&input.action, "onboarding_action")?;
         validate_json(&input.field_values_json, "field_values_json")?;
-        Ok(Response::new(
-            self.peer
-                .advance_agent_onboarding(request.into_inner())
-                .await?,
-        ))
+        let state = self
+            .peer
+            .advance_agent_onboarding(request.into_inner())
+            .await?;
+        validate_json(&state.payload_json, "payload_json")?;
+        Ok(Response::new(state))
     }
 
     async fn get_provider_catalog(

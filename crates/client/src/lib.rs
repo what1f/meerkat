@@ -221,8 +221,8 @@ pub struct ProviderOnboardingState {
     pub provider_id: String,
     pub step: String,
     pub status: OnboardingStatus,
-    pub title: String,
-    pub instruction: String,
+    pub verification_uri: Option<String>,
+    pub poll_interval_seconds: Option<u32>,
     pub payload: Value,
     pub error: Option<ClientError>,
 }
@@ -233,8 +233,8 @@ pub struct AgentOnboardingState {
     pub provider_id: String,
     pub step: String,
     pub status: OnboardingStatus,
-    pub title: String,
-    pub instruction: String,
+    pub verification_uri: Option<String>,
+    pub poll_interval_seconds: Option<u32>,
     pub payload: Value,
     pub error: Option<ClientError>,
 }
@@ -704,17 +704,8 @@ fn from_onboarding(
             ));
         }
     };
-    let payload = if v.fields.len() == 1 && v.fields[0].name == "opaque" {
-        serde_json::from_str(&v.fields[0].value)
-            .map_err(|e| ClientError::Protocol(format!("invalid onboarding payload: {e}")))?
-    } else {
-        Value::Object(
-            v.fields
-                .into_iter()
-                .map(|field| (field.name, Value::String(field.value)))
-                .collect(),
-        )
-    };
+    let payload = serde_json::from_str(&v.payload_json)
+        .map_err(|error| ClientError::Protocol(format!("invalid onboarding payload: {error}")))?;
     let error = (!v.error_message.is_empty())
         .then(|| ClientError::Provider(format!("{}: {}", v.error_code, v.error_message)));
     Ok(ProviderOnboardingState {
@@ -722,8 +713,8 @@ fn from_onboarding(
         provider_id: v.provider_id,
         step: v.step,
         status,
-        title: v.title,
-        instruction: v.instruction,
+        verification_uri: (!v.verification_uri.is_empty()).then_some(v.verification_uri),
+        poll_interval_seconds: (v.poll_interval_seconds != 0).then_some(v.poll_interval_seconds),
         payload,
         error,
     })
@@ -748,17 +739,8 @@ fn from_agent_onboarding(
             ));
         }
     };
-    let payload = if v.fields.len() == 1 && v.fields[0].name == "opaque" {
-        serde_json::from_str(&v.fields[0].value)
-            .map_err(|error| ClientError::Protocol(error.to_string()))?
-    } else {
-        Value::Object(
-            v.fields
-                .into_iter()
-                .map(|field| (field.name, Value::String(field.value)))
-                .collect(),
-        )
-    };
+    let payload = serde_json::from_str(&v.payload_json)
+        .map_err(|error| ClientError::Protocol(error.to_string()))?;
     let error = (!v.error_message.is_empty())
         .then(|| ClientError::Provider(format!("{}: {}", v.error_code, v.error_message)));
     Ok(AgentOnboardingState {
@@ -767,8 +749,8 @@ fn from_agent_onboarding(
         provider_id: v.provider_id,
         step: v.step,
         status,
-        title: v.title,
-        instruction: v.instruction,
+        verification_uri: (!v.verification_uri.is_empty()).then_some(v.verification_uri),
+        poll_interval_seconds: (v.poll_interval_seconds != 0).then_some(v.poll_interval_seconds),
         payload,
         error,
     })

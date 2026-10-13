@@ -540,11 +540,6 @@ impl LankideApp {
             agent.cli_path = cli_path;
             agent.environment_variables = environment_variables;
             agent.provider_handle = provider_handle;
-            set_provider_handle(
-                &mut agent.provider_agent_config,
-                &workspace.provider.id,
-                &agent.provider_handle,
-            );
             let pending_avatar = self.pending_agent_avatar.clone();
             let workspace_id = agent.workspace_id.clone();
             let retry_agent_id = editing_id.clone();
@@ -607,7 +602,7 @@ impl LankideApp {
                         }
                         Err(error) => {
                             if let Some(state) = onboarding.filter(|state| {
-                                state.step == "permissions"
+                                state.step == "authorization_update"
                                     && state.status != OnboardingStatus::Ready
                             }) {
                                 this.record_agent_onboarding_state(&state);
@@ -637,7 +632,7 @@ impl LankideApp {
             let mut provider_agent_config = json!({
                 "mode": if self.agent_mode_new { "new" } else { "existing" },
             });
-            set_provider_handle(&mut provider_agent_config, provider_id, &provider_handle);
+            provider_agent_config["provider_handle"] = json!(provider_handle);
             let provider_agent_secrets = if self.agent_mode_new {
                 json!({})
             } else if provider_id == "telegram" {

@@ -435,7 +435,6 @@ impl LankideApp {
         let save_app = app.clone();
         let any_busy = self.busy.is_some();
         let save_busy = self.busy == Some(BusyOperation::SaveWorkspace);
-        let is_feishu = workspace.provider.id == "feishu";
         let task_system_supported = self
             .provider_supports_capability(&workspace.provider.id, PROVIDER_CAPABILITY_TASK_SYSTEM);
         let has_agents = !self.agents.is_empty();
@@ -485,10 +484,10 @@ impl LankideApp {
                                             .items_center()
                                             .gap(px(10.))
                                             .child(workspace_provider_choice(
-                                                "feishu", language.text("飞书", "Feishu"), is_feishu, true, theme,
+                                                "feishu", language.text("飞书", "Feishu"), workspace.provider.id == "feishu", true, theme,
                                             ))
                                             .child(workspace_provider_choice(
-                                                "telegram", "Telegram", !is_feishu, true, theme,
+                                                "telegram", "Telegram", workspace.provider.id == "telegram", true, theme,
                                             )),
                                     )
                                     .child(

@@ -17,19 +17,30 @@ fn external(operation: &'static str) -> ProviderError {
     }
 }
 
-fn onboarding(
-    step: &str,
-    status: ProviderOnboardingStatus,
-    title: &str,
-    instruction: &str,
-    payload: Value,
-) -> ProviderOnboarding {
+fn onboarding(step: &str, status: ProviderOnboardingStatus, payload: Value) -> ProviderOnboarding {
     ProviderOnboarding {
         step: step.into(),
         status,
-        title: title.into(),
-        instruction: instruction.into(),
-        fields: Vec::new(),
+        verification_uri: payload
+            .get("verification_uri")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned),
+        poll_interval_seconds: (matches!(
+            status,
+            ProviderOnboardingStatus::ActionRequired | ProviderOnboardingStatus::Verifying
+        ) && (payload
+            .get("device_code")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty())
+            || payload.get("phase").and_then(Value::as_str) == Some("permissions")))
+        .then(|| {
+            payload
+                .get("interval_seconds")
+                .and_then(Value::as_u64)
+                .unwrap_or(5)
+                .clamp(1, 30) as u32
+        }),
         opaque_payload: payload,
         error_code: None,
         error_message: None,
@@ -72,16 +83,12 @@ pub(crate) async fn agent_onboarding_with_transport(
             return Ok(onboarding(
                 "permissions",
                 ProviderOnboardingStatus::ActionRequired,
-                "授权飞书能力",
-                "使用飞书扫码确认 Agent 所需能力。",
                 saved_payload,
             ));
         }
         return Ok(onboarding(
             "create_app",
             ProviderOnboardingStatus::ActionRequired,
-            "创建飞书应用",
-            "继续后，在飞书中确认创建应用。",
             json!({}),
         ));
     }
@@ -97,8 +104,6 @@ pub(crate) async fn agent_onboarding_with_transport(
         return Ok(onboarding(
             "create_app",
             ProviderOnboardingStatus::ActionRequired,
-            "在飞书中确认",
-            "打开下方链接或扫码完成应用创建。",
             json!({
                 "device_code": registration.device_code,
                 "verification_uri": registration.verification_uri,
@@ -121,15 +126,9 @@ pub(crate) async fn agent_onboarding_with_transport(
     .map_err(|_| external("feishu_registration_poll"))?
     .map_err(|_| external("feishu_registration_poll"))?;
     match result {
-        RegistrationPoll::Pending { slow_down } => Ok(onboarding(
+        RegistrationPoll::Pending { .. } => Ok(onboarding(
             "create_app",
             ProviderOnboardingStatus::Verifying,
-            "等待飞书确认",
-            if slow_down {
-                "飞书仍在处理中，请稍后再检查。"
-            } else {
-                "完成确认后，点击检查状态。"
-            },
             payload,
         )),
         RegistrationPoll::Complete(credential) => {
@@ -157,32 +156,18 @@ pub(crate) async fn agent_onboarding_with_transport(
             Ok(onboarding(
                 "permissions",
                 ProviderOnboardingStatus::ActionRequired,
-                "授权飞书能力",
-                "使用飞书扫码确认 Agent 所需能力。",
                 permissions_payload,
             ))
         }
         RegistrationPoll::Denied => Ok(ProviderOnboarding {
             error_code: Some("access_denied".into()),
             error_message: Some("飞书未确认创建应用。".into()),
-            ..onboarding(
-                "create_app",
-                ProviderOnboardingStatus::Error,
-                "未完成创建",
-                "可以返回后重新发起。",
-                payload,
-            )
+            ..onboarding("create_app", ProviderOnboardingStatus::Error, payload)
         }),
         RegistrationPoll::Expired => Ok(ProviderOnboarding {
             error_code: Some("expired".into()),
             error_message: Some("本次确认已过期。".into()),
-            ..onboarding(
-                "create_app",
-                ProviderOnboardingStatus::Error,
-                "确认已过期",
-                "请重新发起创建。",
-                json!({}),
-            )
+            ..onboarding("create_app", ProviderOnboardingStatus::Error, json!({}))
         }),
     }
 }
@@ -273,7 +258,7 @@ async fn poll_permissions(
                 .storage()
                 .put(&pending_state_key(&context), b"{}".to_vec())
                 .await?;
-            let mut value = onboarding("ready", ProviderOnboardingStatus::Ready, "", "", json!({}));
+            let mut value = onboarding("ready", ProviderOnboardingStatus::Ready, json!({}));
             value.agent_config_updates = json!({
                 "mode": "existing",
                 "app_id": app_id,
@@ -288,8 +273,6 @@ async fn poll_permissions(
         Ok(None) | Err(_) => Ok(onboarding(
             "permissions",
             ProviderOnboardingStatus::Verifying,
-            "等待飞书确认",
-            "扫码确认后会自动继续。",
             payload,
         )),
     }
@@ -366,10 +349,8 @@ async fn existing_agent_onboarding(
     }
     match action.as_str() {
         "get" => Ok(onboarding(
-            "permissions",
+            "authorization_update",
             ProviderOnboardingStatus::ActionRequired,
-            "更新飞书权限",
-            "更新后即可继续使用完整功能。",
             state,
         )),
         "start" => {
@@ -401,35 +382,27 @@ async fn existing_agent_onboarding(
                 state["verification_uri"] = Value::String(link);
                 state["manual_confirmation"] = Value::Bool(true);
                 return Ok(onboarding(
-                    "permissions",
+                    "authorization_update",
                     ProviderOnboardingStatus::ActionRequired,
-                    "在飞书中确认权限更新",
-                    "打开下方链接完成确认。",
                     state,
                 ));
             }
             let mut state = state;
             state["submitted"] = Value::Bool(true);
             Ok(onboarding(
-                "permissions",
+                "authorization_update",
                 ProviderOnboardingStatus::Verifying,
-                "正在更新飞书权限",
-                "完成后将自动继续。",
                 state,
             ))
         }
         "poll" if submitted => Ok(onboarding(
-            "permissions",
+            "authorization_update",
             ProviderOnboardingStatus::Verifying,
-            "正在更新飞书权限",
-            "完成后将自动继续。",
             state,
         )),
         "poll" => Ok(onboarding(
-            "permissions",
+            "authorization_update",
             ProviderOnboardingStatus::ActionRequired,
-            "更新飞书权限",
-            "更新后即可继续使用完整功能。",
             state,
         )),
         _ => Err(ProviderError::InvalidInput { field: "action" }),

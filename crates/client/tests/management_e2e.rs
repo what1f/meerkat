@@ -430,9 +430,9 @@ impl wire::RuntimePeer for Peer {
             provider_id,
             step: "credentials".into(),
             status: wire::OnboardingStatus::ActionRequired as i32,
-            title: "Connect".into(),
-            instruction: "Continue in the provider flow".into(),
-            fields: vec![],
+            verification_uri: "https://example.invalid/verify".into(),
+            poll_interval_seconds: 5,
+            payload_json: "{}".into(),
             error_code: String::new(),
             error_message: String::new(),
         })
@@ -456,16 +456,9 @@ impl wire::RuntimePeer for Peer {
             provider_id,
             step: r.action,
             status: wire::OnboardingStatus::Ready as i32,
-            title: "Ready".into(),
-            instruction: String::new(),
-            fields: vec![wire::OnboardingField {
-                name: "opaque".into(),
-                label: String::new(),
-                kind: "opaque".into(),
-                required: false,
-                value: r.field_values_json,
-                help: String::new(),
-            }],
+            verification_uri: String::new(),
+            poll_interval_seconds: 0,
+            payload_json: r.field_values_json,
             error_code: String::new(),
             error_message: String::new(),
         })
@@ -489,9 +482,9 @@ impl wire::RuntimePeer for Peer {
             provider_id,
             step: "create_bot".into(),
             status: wire::OnboardingStatus::ActionRequired as i32,
-            title: "Connect Agent".into(),
-            instruction: "Continue in the provider flow".into(),
-            fields: vec![],
+            verification_uri: "https://example.invalid/verify".into(),
+            poll_interval_seconds: 5,
+            payload_json: "{}".into(),
             error_code: String::new(),
             error_message: String::new(),
         })
@@ -515,16 +508,9 @@ impl wire::RuntimePeer for Peer {
             provider_id,
             step: request.action,
             status: wire::OnboardingStatus::Ready as i32,
-            title: "Ready".into(),
-            instruction: String::new(),
-            fields: vec![wire::OnboardingField {
-                name: "opaque".into(),
-                label: String::new(),
-                kind: "opaque".into(),
-                required: false,
-                value: request.field_values_json,
-                help: String::new(),
-            }],
+            verification_uri: String::new(),
+            poll_interval_seconds: 0,
+            payload_json: request.field_values_json,
             error_code: String::new(),
             error_message: String::new(),
         })
@@ -775,7 +761,9 @@ async fn common_contract<C: ManagementClient>(client: &C, prefix: &str) -> Resul
             "onboarding did not advance",
         )?;
         need(
-            ready.payload == json!({"credential_ref":"opaque"}),
+            ready.payload == json!({"credential_ref":"opaque"})
+                && ready.verification_uri.is_none()
+                && ready.poll_interval_seconds.is_none(),
             "opaque onboarding payload changed",
         )?;
     }
@@ -845,7 +833,9 @@ async fn common_contract<C: ManagementClient>(client: &C, prefix: &str) -> Resul
         .map_err(|error| error.to_string())?;
     need(
         agent_ready.status == lankide_client::OnboardingStatus::Ready
-            && agent_ready.payload == json!({"bot_ref":"opaque"}),
+            && agent_ready.payload == json!({"bot_ref":"opaque"})
+            && agent_ready.verification_uri.is_none()
+            && agent_ready.poll_interval_seconds.is_none(),
         "Agent onboarding did not advance",
     )?;
     a.bio = "Edited".into();
@@ -1015,6 +1005,15 @@ async fn runtime_scenario() -> Result<(), String> {
     .await
     .map_err(|_| "same client did not reconnect after Runtime startup".to_owned())?;
     common_contract(&client, "runtime").await?;
+    let onboarding = client
+        .get_provider_onboarding("runtime_feishu")
+        .await
+        .map_err(|error| error.to_string())?;
+    need(
+        onboarding.verification_uri.as_deref() == Some("https://example.invalid/verify")
+            && onboarding.poll_interval_seconds == Some(5),
+        "explicit onboarding fields changed",
+    )?;
     {
         let mut data = fixture.peer.data.lock().await;
         let workspace = data.workspaces.get_mut("runtime_feishu").unwrap();

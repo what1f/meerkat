@@ -479,8 +479,8 @@ impl ManagementClient for MockManagementClient {
             provider_id: ws.provider.id,
             step: "credentials".into(),
             status: OnboardingStatus::ActionRequired,
-            title: "Connect".into(),
-            instruction: String::new(),
+            verification_uri: None,
+            poll_interval_seconds: None,
             payload: json!({}),
             error: None,
         })
@@ -523,8 +523,8 @@ impl ManagementClient for MockManagementClient {
             provider_id: workspace.provider.id,
             step: "create_bot".into(),
             status: OnboardingStatus::ActionRequired,
-            title: "连接 Agent".into(),
-            instruction: String::new(),
+            verification_uri: None,
+            poll_interval_seconds: None,
             payload: json!({}),
             error: None,
         })
@@ -552,6 +552,8 @@ impl ManagementClient for MockManagementClient {
         let mut state = self.get_agent_onboarding(w, a).await?;
         state.step = action.into();
         state.status = OnboardingStatus::Ready;
+        state.verification_uri = None;
+        state.poll_interval_seconds = None;
         state.payload = payload;
         self.data
             .lock()

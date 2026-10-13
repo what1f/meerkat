@@ -475,7 +475,7 @@ impl LankideApp {
                 && self
                     .onboarding_steps
                     .get(&(agent.workspace_id.clone(), agent.id.clone()))
-                    .is_some_and(|step| step == "permissions")
+                    .is_some_and(|step| step == "authorization_update")
         });
         let preview_id = preview_agent
             .map(|agent| agent.id.clone())
@@ -1131,7 +1131,7 @@ impl LankideApp {
         let theme = self.theme();
         let (onboarding_title, onboarding_instruction) =
             localized_agent_onboarding_copy(&state, language);
-        let auto_polling = onboarding_session_key(&state.payload).is_some()
+        let auto_polling = state.poll_interval_seconds.is_some()
             && !matches!(
                 state.status,
                 OnboardingStatus::Ready | OnboardingStatus::Error
@@ -1151,18 +1151,9 @@ impl LankideApp {
                     .as_ref()
                     .map(|error| friendly_error(error, language))
             });
-        let verification_uri = state
-            .payload
-            .get("verification_uri")
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_owned);
-        let is_new_feishu_permissions = state.provider_id == "feishu"
-            && state.step == "permissions"
-            && state
-                .payload
-                .get("flow")
-                .and_then(serde_json::Value::as_str)
-                != Some("authorization_update");
+        let verification_uri = state.verification_uri.clone();
+        let is_new_feishu_permissions =
+            state.provider_id == "feishu" && state.step == "permissions";
         let steps = if state.provider_id == "telegram" {
             vec![
                 "Manager Bot",
@@ -1181,7 +1172,7 @@ impl LankideApp {
         };
         let active_step = if state.provider_id == "telegram" {
             2
-        } else if state.step == "permissions" {
+        } else if matches!(state.step.as_str(), "permissions" | "authorization_update") {
             2
         } else if state.status == OnboardingStatus::Ready {
             3

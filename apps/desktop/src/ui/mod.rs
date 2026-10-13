@@ -46,7 +46,7 @@ use agent_actions::{new_environment_row, selected_harness_id};
 use components::*;
 use errors::friendly_error;
 pub(super) use onboarding::localized_agent_onboarding_copy;
-use onboarding::{onboarding_session_key, set_provider_handle, telegram_bot_username};
+use onboarding::telegram_bot_username;
 use reaction_picker::ReactionPicker;
 
 const MAX_AGENT_AVATAR_BYTES: usize = 3 * 1024 * 1024;

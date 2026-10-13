@@ -815,7 +815,9 @@ async fn existing_agent_onboarding_repairs_missing_published_permissions() {
         )
         .await
         .expect("inspect existing Agent permissions");
-    assert_eq!(current.step, "permissions");
+    assert_eq!(current.step, "authorization_update");
+    assert_eq!(current.verification_uri, None);
+    assert_eq!(current.poll_interval_seconds, Some(5));
     assert_eq!(current.status, ProviderOnboardingStatus::ActionRequired);
     assert_eq!(transport.config_updates.load(Ordering::SeqCst), 0);
     assert_eq!(transport.publishes.load(Ordering::SeqCst), 0);
@@ -830,7 +832,8 @@ async fn existing_agent_onboarding_repairs_missing_published_permissions() {
         )
         .await
         .expect("update existing Agent permissions");
-    assert_eq!(updating.step, "permissions");
+    assert_eq!(updating.step, "authorization_update");
+    assert_eq!(updating.poll_interval_seconds, Some(5));
     assert_eq!(updating.status, ProviderOnboardingStatus::Verifying);
     assert_eq!(transport.config_updates.load(Ordering::SeqCst), 1);
     assert_eq!(transport.publishes.load(Ordering::SeqCst), 1);
@@ -878,7 +881,12 @@ async fn existing_agent_onboarding_falls_back_to_owner_confirmation() {
         )
         .await
         .expect("fall back to owner confirmation");
-    assert_eq!(confirmation.step, "permissions");
+    assert_eq!(confirmation.step, "authorization_update");
+    assert_eq!(confirmation.poll_interval_seconds, Some(5));
+    assert_eq!(
+        confirmation.verification_uri.as_deref(),
+        confirmation.opaque_payload["verification_uri"].as_str()
+    );
     assert_eq!(
         confirmation.status,
         ProviderOnboardingStatus::ActionRequired
@@ -902,7 +910,11 @@ async fn existing_agent_onboarding_falls_back_to_owner_confirmation() {
         .await
         .expect("keep owner confirmation available while waiting");
     assert_eq!(waiting.status, ProviderOnboardingStatus::ActionRequired);
-    assert!(waiting.opaque_payload["verification_uri"].is_string());
+    assert_eq!(
+        waiting.verification_uri.as_deref(),
+        waiting.opaque_payload["verification_uri"].as_str()
+    );
+    assert_eq!(waiting.poll_interval_seconds, Some(5));
 
     transport.authorized.store(true, Ordering::SeqCst);
     let ready = host

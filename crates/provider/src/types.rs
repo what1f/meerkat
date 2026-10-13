@@ -19,9 +19,8 @@ pub struct ProviderInfo {
 pub struct ProviderOnboarding {
     pub step: String,
     pub status: ProviderOnboardingStatus,
-    pub title: String,
-    pub instruction: String,
-    pub fields: Vec<ProviderOnboardingField>,
+    pub verification_uri: Option<String>,
+    pub poll_interval_seconds: Option<u32>,
     pub opaque_payload: Value,
     pub error_code: Option<String>,
     pub error_message: Option<String>,
@@ -35,9 +34,8 @@ impl ProviderOnboarding {
         Self {
             step: "configuration".into(),
             status: ProviderOnboardingStatus::Ready,
-            title: String::new(),
-            instruction: String::new(),
-            fields: Vec::new(),
+            verification_uri: None,
+            poll_interval_seconds: None,
             opaque_payload,
             error_code: None,
             error_message: None,
@@ -52,16 +50,6 @@ pub enum ProviderOnboardingStatus {
     Verifying,
     Ready,
     Error,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProviderOnboardingField {
-    pub name: String,
-    pub label: String,
-    pub kind: String,
-    pub required: bool,
-    pub value: String,
-    pub help: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -151,7 +151,12 @@ fn exercise_telegram_contract() -> Result<(), String> {
 
 #[tokio::test]
 async fn telegram_pending_agent_onboarding_resumes_after_reopen() {
-    let services = live_services(String::new(), Arc::new(LiveLogger::default()));
+    let storage = Arc::new(MemoryStorage::default());
+    let services = services_with_storage(
+        BTreeMap::new(),
+        Arc::new(LiveLogger::default()),
+        storage.clone(),
+    );
     let workspace_id = WorkspaceId::new("telegram_resume").expect("workspace id");
     let agent_id = AgentId::new("pending_agent").expect("agent id");
     let context = AgentOnboardingContext::new(
@@ -167,6 +172,11 @@ async fn telegram_pending_agent_onboarding_resumes_after_reopen() {
         .expect("initial onboarding");
     assert_eq!(first.status, ProviderOnboardingStatus::ActionRequired);
 
+    assert_eq!(first.verification_uri, None);
+    assert_eq!(first.poll_interval_seconds, None);
+    let payload = json!({"bot_username":"pending_agent_bot", "verification_uri":"https://t.me/example", "interval_seconds":60});
+    storage.put_agent_state(&agent_id, json!({"onboarding": {"step":"create_bot", "status":"action_required", "payload":payload}})).await.expect("save pending onboarding");
+
     let reopened = AgentOnboardingContext::new(
         workspace_id,
         json!({}),
@@ -178,7 +188,14 @@ async fn telegram_pending_agent_onboarding_resumes_after_reopen() {
     let restored = lankide_provider_telegram::agent_onboarding(reopened, "get".into(), json!({}))
         .await
         .expect("restored onboarding");
-    assert_eq!(restored, first);
+    assert_eq!(restored.step, first.step);
+    assert_eq!(restored.status, first.status);
+    assert_eq!(restored.opaque_payload, payload);
+    assert_eq!(
+        restored.verification_uri.as_deref(),
+        Some("https://t.me/example")
+    );
+    assert_eq!(restored.poll_interval_seconds, Some(30));
 }
 
 #[tokio::test]

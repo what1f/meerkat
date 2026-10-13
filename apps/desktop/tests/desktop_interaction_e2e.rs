@@ -72,8 +72,8 @@ async fn run_workspace_agent_and_onboarding_dialog_workflows(cx: &mut TestAppCon
         provider_id: "feishu".into(),
         step: "create_app".into(),
         status: lankide_client::OnboardingStatus::ActionRequired,
-        title: "创建飞书应用".into(),
-        instruction: "打开下方链接或扫码完成应用创建。".into(),
+        verification_uri: Some("https://open.feishu.cn/example".into()),
+        poll_interval_seconds: None,
         payload: serde_json::json!({"verification_uri":"https://open.feishu.cn/example"}),
         error: None,
     };
@@ -91,10 +91,8 @@ async fn run_workspace_agent_and_onboarding_dialog_workflows(cx: &mut TestAppCon
     assert_eq!(action, "start");
     assert_eq!(payload, serde_json::json!({}));
     let mut polling_state = raw_provider_state.clone();
-    polling_state.payload = serde_json::json!({
-        "device_code": "opaque-device-code",
-        "verification_uri": "https://open.feishu.cn/example"
-    });
+    polling_state.poll_interval_seconds = Some(5);
+    polling_state.payload = serde_json::json!({"opaque": "provider-owned"});
     assert_eq!(
         localized_agent_onboarding_copy(&polling_state, DesktopLanguage::SimplifiedChinese),
         ("等待确认".into(), "打开下方链接完成设置".into())
@@ -104,6 +102,7 @@ async fn run_workspace_agent_and_onboarding_dialog_workflows(cx: &mut TestAppCon
     assert_eq!(payload, polling_state.payload);
     let mut permissions_state = raw_provider_state.clone();
     permissions_state.step = "permissions".into();
+    permissions_state.poll_interval_seconds = Some(5);
     permissions_state.payload = serde_json::json!({
         "phase": "permissions",
         "app_id": "cli_permissions",
@@ -126,6 +125,8 @@ async fn run_workspace_agent_and_onboarding_dialog_workflows(cx: &mut TestAppCon
     let (action, payload) = next_agent_onboarding_request(&permissions_state);
     assert_eq!(action, "poll");
     assert_eq!(payload, permissions_state.payload);
+    permissions_state.step = "authorization_update".into();
+    permissions_state.verification_uri = None;
     permissions_state.payload = serde_json::json!({
         "phase": "permissions",
         "flow": "authorization_update",
@@ -136,8 +137,7 @@ async fn run_workspace_agent_and_onboarding_dialog_workflows(cx: &mut TestAppCon
         localized_agent_onboarding_copy(&permissions_state, DesktopLanguage::SimplifiedChinese),
         ("更新飞书权限".into(), "更新后即可继续使用完整功能。".into())
     );
-    permissions_state.payload["verification_uri"] =
-        serde_json::json!("https://open.feishu.cn/page/launcher");
+    permissions_state.verification_uri = Some("https://open.feishu.cn/page/launcher".into());
     assert_eq!(
         localized_agent_onboarding_copy(&permissions_state, DesktopLanguage::SimplifiedChinese),
         (
@@ -260,10 +260,10 @@ async fn run_workspace_agent_and_onboarding_dialog_workflows(cx: &mut TestAppCon
                 workspace_id: "ui_e2e".into(),
                 agent_id: "builder".into(),
                 provider_id: "feishu".into(),
-                step: "permissions".into(),
+                step: "authorization_update".into(),
                 status: lankide_client::OnboardingStatus::ActionRequired,
-                title: "Update permissions".into(),
-                instruction: String::new(),
+                verification_uri: None,
+                poll_interval_seconds: Some(5),
                 payload: serde_json::json!({
                     "phase":"permissions",
                     "flow":"authorization_update",
@@ -450,8 +450,8 @@ async fn run_workspace_agent_and_onboarding_dialog_workflows(cx: &mut TestAppCon
                 provider_id: "feishu".into(),
                 step: "create_app".into(),
                 status: lankide_client::OnboardingStatus::ActionRequired,
-                title: "Confirm setup".into(),
-                instruction: String::new(),
+                verification_uri: Some("https://open.feishu.cn/example".into()),
+                poll_interval_seconds: Some(5),
                 payload: serde_json::json!({
                     "device_code": "pending-device",
                     "verification_uri": "https://open.feishu.cn/example",

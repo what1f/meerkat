@@ -54,7 +54,7 @@ use lankide_provider::{
     ProviderHostInstance, ProviderInfo, ReactionAction, RecallMessageSpec, SendMessageResult,
     SendMessageSpec, ToolDefinition,
 };
-pub use lankide_provider::{ProviderOnboarding, ProviderOnboardingField, ProviderOnboardingStatus};
+pub use lankide_provider::{ProviderOnboarding, ProviderOnboardingStatus};
 use lankide_storage::{
     AttemptAuthorization, AttemptCapability, DatabaseConfig, DispatchReason, ExecutionAuthSpec,
     GuardedSendResult, InboxDispatch, IncomingReaction, IngestEvent, IngestResult, MessageInput,

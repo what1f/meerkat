@@ -282,6 +282,27 @@ impl RuntimePeer for TestPeer {
         Ok(Box::pin(iter(chunks)))
     }
 
+    async fn advance_agent_onboarding(
+        &self,
+        request: AdvanceAgentOnboardingRequest,
+    ) -> Result<AgentOnboardingState, Status> {
+        Ok(AgentOnboardingState {
+            agent: request.agent,
+            provider_id: "feishu".into(),
+            step: "create_app".into(),
+            status: OnboardingStatus::ActionRequired as i32,
+            payload_json: if request.action == "invalid" {
+                "invalid".into()
+            } else {
+                request.field_values_json
+            },
+            verification_uri: "https://example.invalid/verify".into(),
+            poll_interval_seconds: 5,
+            error_code: String::new(),
+            error_message: String::new(),
+        })
+    }
+
     async fn list_workspaces(
         &self,
         request: ListWorkspacesRequest,
@@ -806,6 +827,38 @@ async fn exchange_management_and_cli(path: &std::path::Path) {
     let mut client = connect_uds(path, CLIENT_LIMIT)
         .await
         .expect("management client");
+    let onboarding_request = AdvanceAgentOnboardingRequest {
+        request_id: "onboarding_1".into(),
+        agent: Some(AgentRef {
+            workspace_id: "managed_team".into(),
+            agent_id: "builder".into(),
+        }),
+        action: "start".into(),
+        field_values_json: r#"{"opaque":"provider-owned"}"#.into(),
+    };
+    let onboarding = client
+        .advance_agent_onboarding(onboarding_request.clone())
+        .await
+        .expect("advance onboarding")
+        .into_inner();
+    assert_eq!(
+        onboarding.payload_json,
+        onboarding_request.field_values_json
+    );
+    assert_eq!(
+        onboarding.verification_uri,
+        "https://example.invalid/verify"
+    );
+    assert_eq!(onboarding.poll_interval_seconds, 5);
+    let invalid = client
+        .advance_agent_onboarding(AdvanceAgentOnboardingRequest {
+            action: "invalid".into(),
+            ..onboarding_request
+        })
+        .await
+        .expect_err("reject invalid onboarding payload");
+    assert_eq!(invalid.code(), Code::InvalidArgument);
+
     let mut changes = client
         .subscribe_management_events(ManagementSubscription {
             request_id: "subscribe_1".into(),

@@ -21,19 +21,29 @@ fn external(operation: &'static str) -> ProviderError {
     }
 }
 
-fn onboarding(
-    step: &str,
-    status: ProviderOnboardingStatus,
-    title: &str,
-    instruction: &str,
-    payload: Value,
-) -> ProviderOnboarding {
+fn onboarding(step: &str, status: ProviderOnboardingStatus, payload: Value) -> ProviderOnboarding {
     ProviderOnboarding {
         step: step.into(),
         status,
-        title: title.into(),
-        instruction: instruction.into(),
-        fields: Vec::new(),
+        verification_uri: payload
+            .get("verification_uri")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned),
+        poll_interval_seconds: (matches!(
+            status,
+            ProviderOnboardingStatus::ActionRequired | ProviderOnboardingStatus::Verifying
+        ) && payload
+            .get("bot_username")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty()))
+        .then(|| {
+            payload
+                .get("interval_seconds")
+                .and_then(Value::as_u64)
+                .unwrap_or(5)
+                .clamp(1, 30) as u32
+        }),
         opaque_payload: payload,
         error_code: None,
         error_message: None,
@@ -59,8 +69,6 @@ async fn save(
                 ProviderOnboardingStatus::Ready => "ready",
                 ProviderOnboardingStatus::Error => "error",
             },
-            "title": value.title,
-            "instruction": value.instruction,
             "payload": value.opaque_payload,
             "error_code": value.error_code,
             "error_message": value.error_message,
@@ -86,6 +94,7 @@ async fn load(
         Some("error") => ProviderOnboardingStatus::Error,
         _ => return Ok(None),
     };
+    let payload = value.get("payload").cloned().unwrap_or_else(|| json!({}));
     Ok(Some(ProviderOnboarding {
         step: value
             .get("step")
@@ -93,18 +102,6 @@ async fn load(
             .unwrap_or("create_bot")
             .into(),
         status,
-        title: value
-            .get("title")
-            .and_then(Value::as_str)
-            .unwrap_or("创建 Telegram Bot")
-            .into(),
-        instruction: value
-            .get("instruction")
-            .and_then(Value::as_str)
-            .unwrap_or("继续完成 Telegram Bot 创建。")
-            .into(),
-        fields: Vec::new(),
-        opaque_payload: value.get("payload").cloned().unwrap_or_else(|| json!({})),
         error_code: value
             .get("error_code")
             .and_then(Value::as_str)
@@ -113,7 +110,7 @@ async fn load(
             .get("error_message")
             .and_then(Value::as_str)
             .map(str::to_owned),
-        agent_config_updates: Value::Object(Default::default()),
+        ..onboarding("create_bot", status, payload)
     }))
 }
 
@@ -137,8 +134,6 @@ pub async fn agent_onboarding(
         let value = onboarding(
             "create_bot",
             ProviderOnboardingStatus::ActionRequired,
-            "创建 Telegram Bot",
-            "继续后，在 Telegram 中确认创建 Bot。",
             json!({}),
         );
         save(&context, &value).await?;
@@ -185,8 +180,6 @@ pub async fn agent_onboarding(
         let value = onboarding(
             "create_bot",
             ProviderOnboardingStatus::ActionRequired,
-            "在 Telegram 中确认",
-            "打开下方链接完成 Bot 创建，然后返回检查状态。",
             json!({
                 "verification_uri": registration.verification_uri(),
                 "offset": 0,
@@ -300,13 +293,7 @@ pub async fn agent_onboarding(
             .storage()
             .put_agent_state(&context.agent_id, provider_state)
             .await?;
-        let mut value = onboarding(
-            "ready",
-            ProviderOnboardingStatus::Ready,
-            "Agent 已启用",
-            "Telegram Bot 已创建并连接。",
-            json!({}),
-        );
+        let mut value = onboarding("ready", ProviderOnboardingStatus::Ready, json!({}));
         value.agent_config_updates = json!({
             "mode": "existing",
             "bot_username": credential.username,
@@ -320,8 +307,6 @@ pub async fn agent_onboarding(
         let value = onboarding(
             "create_bot",
             ProviderOnboardingStatus::Verifying,
-            "等待 Telegram 确认",
-            "完成创建后，点击检查状态。",
             next_payload,
         );
         save(&context, &value).await?;

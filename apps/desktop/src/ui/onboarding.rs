@@ -58,7 +58,7 @@ impl LankideApp {
         let repaired_permissions = self
             .onboarding_steps
             .get(&key)
-            .is_some_and(|step| step == "permissions");
+            .is_some_and(|step| step == "authorization_update");
         self.onboarding_retries.remove(&key);
         self.onboarding_steps.remove(&key);
 
@@ -145,11 +145,7 @@ impl LankideApp {
             let current = client.get_agent_onboarding(&workspace_id, &agent_id).await;
             let result = match current {
                 Ok(state)
-                    if state
-                        .payload
-                        .get("verification_uri")
-                        .and_then(serde_json::Value::as_str)
-                        .is_none()
+                    if state.verification_uri.as_deref().is_none()
                         && state.status != OnboardingStatus::Ready =>
                 {
                     client
@@ -183,7 +179,7 @@ impl LankideApp {
         state: AgentOnboardingState,
         cx: &mut Context<Self>,
     ) {
-        let Some(session_key) = onboarding_session_key(&state.payload) else {
+        let Some(interval) = state.poll_interval_seconds else {
             return;
         };
         if matches!(
@@ -192,12 +188,9 @@ impl LankideApp {
         ) {
             return;
         }
-        let interval = state
-            .payload
-            .get("interval_seconds")
-            .and_then(Value::as_u64)
-            .unwrap_or(5)
-            .clamp(1, 30);
+        let interval = u64::from(interval);
+        let step = state.step.clone();
+        let verification_uri = state.verification_uri.clone();
         let workspace_id = state.workspace_id.clone();
         let agent_id = state.agent_id.clone();
         let payload = state.payload.clone();
@@ -218,8 +211,8 @@ impl LankideApp {
                             Some(Modal::AgentOnboarding(current))
                                 if current.workspace_id == workspace_id
                                     && current.agent_id == agent_id
-                                    && onboarding_session_key(&current.payload).as_deref()
-                                        == Some(session_key.as_str())
+                                    && current.step == step
+                                    && current.verification_uri == verification_uri
                         )
                 })
                 .unwrap_or(false);
@@ -262,48 +255,12 @@ impl LankideApp {
 }
 
 pub(crate) fn next_agent_onboarding_request(state: &AgentOnboardingState) -> (&'static str, Value) {
-    let can_poll = onboarding_session_key(&state.payload).is_some();
+    let can_poll = state.poll_interval_seconds.is_some();
     if can_poll {
         ("poll", state.payload.clone())
     } else {
         ("start", json!({}))
     }
-}
-
-pub(super) fn onboarding_session_key(payload: &Value) -> Option<String> {
-    payload
-        .get("device_code")
-        .and_then(Value::as_str)
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| format!("registration:{value}"))
-        .or_else(|| {
-            (payload.get("phase").and_then(Value::as_str) == Some("permissions"))
-                .then(|| payload.get("app_id").and_then(Value::as_str))
-                .flatten()
-                .filter(|value| !value.trim().is_empty())
-                .map(|value| format!("permissions:{value}"))
-        })
-        .or_else(|| {
-            payload
-                .get("bot_username")
-                .and_then(Value::as_str)
-                .filter(|value| !value.trim().is_empty())
-                .map(|value| format!("telegram:{value}"))
-        })
-}
-
-pub(super) fn set_provider_handle(config: &mut Value, provider_id: &str, handle: &str) {
-    let Value::Object(values) = config else {
-        *config = json!({});
-        return set_provider_handle(config, provider_id, handle);
-    };
-    values.insert("provider_handle".into(), Value::String(handle.into()));
-    let provider_key = match provider_id {
-        "telegram" => "bot_username",
-        "feishu" => "app_id",
-        _ => return,
-    };
-    values.insert(provider_key.into(), Value::String(handle.into()));
 }
 
 pub(super) fn telegram_bot_username(workspace_id: &str, agent_id: &str) -> String {
@@ -339,7 +296,7 @@ pub(crate) fn localized_agent_onboarding_copy(
     language: DesktopLanguage,
 ) -> (String, String) {
     let is_permission_update =
-        state.payload.get("flow").and_then(Value::as_str) == Some("authorization_update");
+        state.provider_id == "feishu" && state.step == "authorization_update";
     if is_permission_update {
         return match state.status {
             OnboardingStatus::Ready => (
@@ -356,25 +313,17 @@ pub(crate) fn localized_agent_onboarding_copy(
                     .into(),
                 language.text("请稍后重试。", "Try again shortly.").into(),
             ),
-            OnboardingStatus::ActionRequired
-                if state
-                    .payload
-                    .get("verification_uri")
-                    .and_then(Value::as_str)
-                    .is_some() =>
-            {
-                (
-                    language
-                        .text("在飞书中确认权限更新", "Confirm the update in Feishu")
-                        .into(),
-                    language
-                        .text(
-                            "打开下方链接完成确认。",
-                            "Open the link below to confirm the update.",
-                        )
-                        .into(),
-                )
-            }
+            OnboardingStatus::ActionRequired if state.verification_uri.as_deref().is_some() => (
+                language
+                    .text("在飞书中确认权限更新", "Confirm the update in Feishu")
+                    .into(),
+                language
+                    .text(
+                        "打开下方链接完成确认。",
+                        "Open the link below to confirm the update.",
+                    )
+                    .into(),
+            ),
             OnboardingStatus::ActionRequired => (
                 language
                     .text("更新飞书权限", "Update Feishu permissions")
@@ -396,7 +345,7 @@ pub(crate) fn localized_agent_onboarding_copy(
             ),
         };
     }
-    let is_waiting_for_confirmation = onboarding_session_key(&state.payload).is_some()
+    let is_waiting_for_confirmation = state.poll_interval_seconds.is_some()
         && !matches!(
             state.status,
             OnboardingStatus::Ready | OnboardingStatus::Error
@@ -443,11 +392,7 @@ pub(crate) fn localized_agent_onboarding_copy(
                 .to_owned(),
         );
     }
-    let has_link = state
-        .payload
-        .get("verification_uri")
-        .and_then(Value::as_str)
-        .is_some();
+    let has_link = state.verification_uri.as_deref().is_some();
     let (title_zh, title_en, instruction_zh, instruction_en) = match state.status {
         OnboardingStatus::Ready => (
             "Agent 已启用",

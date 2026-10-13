@@ -2102,7 +2102,9 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .map_err(err)?
         .into_inner();
     ensure(
-        onboarding.status == lankide_protocol::OnboardingStatus::Ready as i32,
+        onboarding.status == lankide_protocol::OnboardingStatus::Ready as i32
+            && onboarding.verification_uri.is_empty()
+            && onboarding.poll_interval_seconds == 0,
         "agent onboarding",
     )?;
     let onboarding_payload = json!({
@@ -2123,12 +2125,10 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .map_err(err)?
         .into_inner();
     ensure(
-        advanced_onboarding.fields.len() == 1
-            && advanced_onboarding.fields[0].name == "opaque"
-            && serde_json::from_str::<Value>(&advanced_onboarding.fields[0].value)
-                .ok()
-                .as_ref()
-                == Some(&onboarding_payload),
+        serde_json::from_str::<Value>(&advanced_onboarding.payload_json)
+            .ok()
+            .as_ref()
+            == Some(&onboarding_payload),
         "agent onboarding opaque payload did not survive Runtime protocol conversion",
     )?;
 

@@ -564,7 +564,6 @@ fn agent_onboarding_dto(
     agent_id: &AgentId,
     state: ProviderOnboarding,
 ) -> AgentOnboardingState {
-    let fields = onboarding_fields(state.fields, state.opaque_payload);
     AgentOnboardingState {
         agent: Some(AgentRef {
             workspace_id: workspace.id.to_string(),
@@ -573,9 +572,9 @@ fn agent_onboarding_dto(
         provider_id: workspace.provider_id.to_string(),
         step: state.step,
         status: onboarding_status(state.status) as i32,
-        title: state.title,
-        instruction: state.instruction,
-        fields,
+        payload_json: state.opaque_payload.to_string(),
+        verification_uri: state.verification_uri.unwrap_or_default(),
+        poll_interval_seconds: state.poll_interval_seconds.unwrap_or_default(),
         error_code: state.error_code.unwrap_or_default(),
         error_message: state.error_message.unwrap_or_default(),
     }
@@ -825,7 +824,6 @@ fn onboarding_dto(
     workspace: &WorkspaceRecord,
     state: ProviderOnboarding,
 ) -> ProviderOnboardingState {
-    let fields = onboarding_fields(state.fields, state.opaque_payload);
     ProviderOnboardingState {
         workspace: Some(WorkspaceRef {
             workspace_id: workspace.id.to_string(),
@@ -833,9 +831,9 @@ fn onboarding_dto(
         provider_id: workspace.provider_id.to_string(),
         step: state.step,
         status: onboarding_status(state.status) as i32,
-        title: state.title,
-        instruction: state.instruction,
-        fields,
+        payload_json: state.opaque_payload.to_string(),
+        verification_uri: state.verification_uri.unwrap_or_default(),
+        poll_interval_seconds: state.poll_interval_seconds.unwrap_or_default(),
         error_code: state.error_code.unwrap_or_default(),
         error_message: state.error_message.unwrap_or_default(),
     }
@@ -848,33 +846,6 @@ fn onboarding_status(status: ProviderOnboardingStatus) -> OnboardingStatus {
         ProviderOnboardingStatus::Ready => OnboardingStatus::Ready,
         ProviderOnboardingStatus::Error => OnboardingStatus::Error,
     }
-}
-
-fn onboarding_fields(
-    fields: Vec<ProviderOnboardingField>,
-    opaque_payload: serde_json::Value,
-) -> Vec<lankide_protocol::OnboardingField> {
-    if fields.is_empty() {
-        return vec![lankide_protocol::OnboardingField {
-            name: "opaque".into(),
-            label: String::new(),
-            kind: "opaque".into(),
-            required: false,
-            value: opaque_payload.to_string(),
-            help: String::new(),
-        }];
-    }
-    fields
-        .into_iter()
-        .map(|field| lankide_protocol::OnboardingField {
-            name: field.name,
-            label: field.label,
-            kind: field.kind,
-            required: field.required,
-            value: field.value,
-            help: field.help,
-        })
-        .collect()
 }
 
 fn workspace_id(value: Option<WorkspaceRef>) -> Result<WorkspaceId, RuntimeError> {
