@@ -14,9 +14,10 @@ use gpui_component::Root;
 use lankide_client::ManagementClient;
 use management_fixture::MockManagementClient;
 use std::{sync::Arc, time::Duration};
+use ui::onboarding::next_agent_onboarding_request;
 use ui::{
     InitialUiState, LankideApp, LankideFrame, UiMessage, localized_agent_onboarding_copy,
-    next_agent_onboarding_request, observe_dialog_root,
+    observe_dialog_root,
 };
 
 fn draw(cx: &mut VisualTestContext) {
