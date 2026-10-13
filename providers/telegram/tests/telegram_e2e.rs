@@ -171,11 +171,20 @@ async fn telegram_pending_agent_onboarding_resumes_after_reopen() {
         .await
         .expect("initial onboarding");
     assert_eq!(first.status, ProviderOnboardingStatus::ActionRequired);
-
     assert_eq!(first.verification_uri, None);
     assert_eq!(first.poll_interval_seconds, None);
-    let payload = json!({"bot_username":"pending_agent_bot", "verification_uri":"https://t.me/example", "interval_seconds":60});
-    storage.put_agent_state(&agent_id, json!({"onboarding": {"step":"create_bot", "status":"action_required", "payload":payload}})).await.expect("save pending onboarding");
+    let payload = json!({
+        "bot_username": "pending_agent_bot",
+        "verification_uri": "https://t.me/example",
+        "interval_seconds": 60,
+    });
+    storage
+        .put_agent_state(
+            &agent_id,
+            json!({"onboarding": {"step": "create_bot", "status": "action_required", "payload": payload}}),
+        )
+        .await
+        .expect("save pending onboarding");
 
     let reopened = AgentOnboardingContext::new(
         workspace_id,
@@ -793,19 +802,6 @@ impl OperationProgress for NoopProgress {
     fn report<'a>(&'a self, _update: OperationUpdate) -> ProviderFuture<'a, ()> {
         Box::pin(async { Ok(()) })
     }
-}
-
-fn live_services(token: String, logger: Arc<LiveLogger>) -> HostServices {
-    let mut values = BTreeMap::new();
-    values.insert("bot_token".to_owned(), token);
-    services_with_secrets(values, logger)
-}
-
-fn services_with_secrets(
-    values: BTreeMap<String, String>,
-    logger: Arc<LiveLogger>,
-) -> HostServices {
-    services_with_storage(values, logger, Arc::new(MemoryStorage::default()))
 }
 
 fn services_with_storage(
