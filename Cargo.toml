@@ -1,0 +1,65 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/protocol",
+    "crates/provider",
+    "crates/harness",
+    "crates/storage",
+    "crates/runtime",
+    "crates/computer",
+    "crates/daemon-runtime",
+    "crates/client",
+    "crates/desktop-ui",
+    "crates/testkit",
+    "providers/feishu",
+    "providers/telegram",
+    "harnesses/pi",
+    "harnesses/codex",
+    "harnesses/claude-code",
+    "apps/runtime-daemon",
+    "apps/computer-daemon",
+    "apps/desktop",
+    "apps/ui-preview",
+    "apps/lankide-cli",
+]
+
+[profile.release]
+strip = "symbols"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.96"
+publish = false
+
+[workspace.dependencies]
+futures-util = { version = "0.3.34", default-features = false, features = ["sink", "std"] }
+gpui = { git = "https://github.com/zed-industries/zed" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "wayland", "x11", "runtime_shaders"] }
+gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "c27f5d5c8f70d534978c2f0739ad9e10d4e41eb4" }
+gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "c27f5d5c8f70d534978c2f0739ad9e10d4e41eb4" }
+gpui-base = { git = "https://github.com/longbridge/gpui-component", rev = "c27f5d5c8f70d534978c2f0739ad9e10d4e41eb4" }
+hyper-util = { version = "0.1.20", features = ["tokio"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+prost = "0.14.4"
+protoc-bin-vendored = "3.2.0"
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
+rusqlite = { version = "0.38.0", features = ["bundled"] }
+sha2 = "0.11.0"
+tempfile = "3.27.0"
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "net", "sync", "time"] }
+tokio-stream = { version = "0.1.19", features = ["net"] }
+tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+tonic = { version = "0.14.6", features = ["transport"] }
+tonic-prost = "0.14.6"
+tonic-prost-build = "0.14.6"
+tower = { version = "0.5.2", features = ["util"] }
+uuid = { version = "1.18.1", features = ["v4"] }
+
+# GPUI only needs a no-op instrumentation attribute in Lankide builds. The
+# local MIT shim keeps the GPL-licensed Zed tracing stack out of the product.
+[patch."https://github.com/zed-industries/zed"]
+ztracing = { path = "crates/ztracing-shim" }

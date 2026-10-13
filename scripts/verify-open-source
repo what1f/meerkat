@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Verify the repository can be published without private data or GPL tracing crates."""
+
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+REQUIRED = (
+    "LICENSE",
+    "README.md",
+    "README.zh-CN.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "CODE_OF_CONDUCT.md",
+    "THIRD_PARTY_LICENSES.md",
+    "licenses/Apache-2.0.txt",
+    ".env.example",
+)
+FORBIDDEN_PATHS = (
+    ".env",
+    "project.tar.gz",
+    "legacy",
+)
+TEXT_SUFFIXES = {
+    "",
+    ".json",
+    ".md",
+    ".py",
+    ".rs",
+    ".sh",
+    ".toml",
+    ".tsv",
+    ".txt",
+    ".yml",
+    ".yaml",
+}
+PRIVATE_PATTERNS = (
+    re.compile(r"/" r"Users/(?!\$|USERNAME\b|example\b|your-name\b)[^/\s\"']+"),
+    re.compile(r"\b(?:oc|ou)_[0-9a-f]{20,}\b"),
+    re.compile(r"\bteam-[0-9a-f]{32,}\b"),
+)
+MISSING_LICENSE_ALLOWLIST = {"gpui_shared_string", "gpui_util"}
+COPYLEFT_LICENSES = ("GPL", "AGPL", "SSPL")
+
+
+def repository_files():
+    for path in ROOT.rglob("*"):
+        if not path.is_file() or any(part in {".git", "target"} for part in path.parts):
+            continue
+        yield path
+
+
+def requires_copyleft(license_id: str) -> bool:
+    """Return true when every SPDX OR choice contains a blocked license."""
+    choices = license_id.upper().replace("(", "").replace(")", "").split(" OR ")
+    return all(any(blocked in choice for blocked in COPYLEFT_LICENSES) for choice in choices)
+
+
+def main() -> int:
+    errors = []
+    for relative in REQUIRED:
+        if not (ROOT / relative).is_file():
+            errors.append(f"missing required public file: {relative}")
+    for relative in FORBIDDEN_PATHS:
+        if (ROOT / relative).exists():
+            errors.append(f"private or non-redistributable path present: {relative}")
+
+    for path in ROOT.rglob("*"):
+        if any(part in {".git", "target"} for part in path.parts):
+            continue
+        if path.is_symlink():
+            target = os.readlink(path)
+            if os.path.isabs(target) or not path.resolve().exists():
+                errors.append(f"non-portable symlink: {path.relative_to(ROOT)} -> {target}")
+
+    for path in repository_files():
+        if path.suffix.lower() not in TEXT_SUFFIXES:
+            continue
+        try:
+            content = path.read_text()
+        except UnicodeDecodeError:
+            continue
+        for pattern in PRIVATE_PATTERNS:
+            if pattern.search(content):
+                errors.append(f"private identifier in {path.relative_to(ROOT)}")
+
+    try:
+        result = subprocess.run(
+            ["cargo", "metadata", "--locked", "--format-version", "1"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        metadata = json.loads(result.stdout)
+    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
+        errors.append(f"cargo metadata failed: {error}")
+        metadata = {"packages": [], "workspace_members": []}
+
+    packages = metadata["packages"]
+    for package in packages:
+        license_id = package.get("license")
+        if license_id and requires_copyleft(license_id):
+            errors.append(f"copyleft dependency remains: {package['name']} ({license_id})")
+        if not license_id and package["name"] not in MISSING_LICENSE_ALLOWLIST:
+            errors.append(f"dependency has no license metadata: {package['name']}")
+
+    ztracing = [package for package in packages if package["name"] == "ztracing"]
+    if len(ztracing) != 1 or ztracing[0].get("source") is not None:
+        errors.append("ztracing must resolve only to the local compatibility shim")
+    for name in ("zlog", "ztracing_macro"):
+        if any(package["name"] == name for package in packages):
+            errors.append(f"GPL tracing package remains in the dependency graph: {name}")
+
+    workspace_members = set(metadata["workspace_members"])
+    for package in packages:
+        if package["id"] in workspace_members and package.get("publish") != []:
+            errors.append(f"workspace package is publishable by default: {package['name']}")
+
+    if errors:
+        print("[open-source] FAIL", file=sys.stderr)
+        print("\n".join(sorted(set(errors))), file=sys.stderr)
+        return 1
+    print(f"[open-source] PASS ({len(packages)} resolved packages; public files, paths, symlinks, licenses)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

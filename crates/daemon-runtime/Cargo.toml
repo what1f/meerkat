@@ -1,0 +1,19 @@
+[package]
+name = "lankide-daemon-runtime"
+version.workspace = true
+edition.workspace = true
+description = "Shared private-directory and single-instance lifecycle for Lankide daemons"
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[package.metadata.lankide.e2e]
+command = "cargo test -p lankide-daemon-runtime --test daemon_runtime_e2e"
+scenario = "Create private daemon directories, reject a concurrent owner, recover a proven-dead lock, reject unsafe lock entries, and release only the lock owned by the current guard."
+prerequisites = "Unix process and filesystem semantics"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"

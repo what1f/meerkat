@@ -1,0 +1,330 @@
+use crate::{Credentials, PollRequest, ReqwestTransport, TelegramClient};
+use lankide_provider::{
+    AgentOnboardingContext, ProviderError, ProviderOnboarding, ProviderOnboardingStatus,
+    SecretValue,
+};
+use serde_json::{Value, json};
+use std::time::Duration;
+
+fn is_stale_managed_bot_candidate(error: &crate::ClientError) -> bool {
+    match error {
+        crate::ClientError::InvalidInput(_) => true,
+        crate::ClientError::Api { code, .. } => matches!(*code, 400 | 403),
+        _ => false,
+    }
+}
+
+fn external(operation: &'static str) -> ProviderError {
+    ProviderError::External {
+        operation,
+        retryable: true,
+    }
+}
+
+fn onboarding(
+    step: &str,
+    status: ProviderOnboardingStatus,
+    title: &str,
+    instruction: &str,
+    payload: Value,
+) -> ProviderOnboarding {
+    ProviderOnboarding {
+        step: step.into(),
+        status,
+        title: title.into(),
+        instruction: instruction.into(),
+        fields: Vec::new(),
+        opaque_payload: payload,
+        error_code: None,
+        error_message: None,
+        agent_config_updates: Value::Object(Default::default()),
+    }
+}
+
+async fn save(
+    context: &AgentOnboardingContext,
+    value: &ProviderOnboarding,
+) -> Result<(), ProviderError> {
+    let mut state = context.storage().agent_state(&context.agent_id).await?;
+    let object = state.as_object_mut().ok_or(ProviderError::InvalidInput {
+        field: "agent_provider_state",
+    })?;
+    object.insert(
+        "onboarding".into(),
+        json!({
+            "step": value.step,
+            "status": match value.status {
+                ProviderOnboardingStatus::ActionRequired => "action_required",
+                ProviderOnboardingStatus::Verifying => "verifying",
+                ProviderOnboardingStatus::Ready => "ready",
+                ProviderOnboardingStatus::Error => "error",
+            },
+            "title": value.title,
+            "instruction": value.instruction,
+            "payload": value.opaque_payload,
+            "error_code": value.error_code,
+            "error_message": value.error_message,
+        }),
+    );
+    context
+        .storage()
+        .put_agent_state(&context.agent_id, state)
+        .await
+}
+
+async fn load(
+    context: &AgentOnboardingContext,
+) -> Result<Option<ProviderOnboarding>, ProviderError> {
+    let state = context.storage().agent_state(&context.agent_id).await?;
+    let Some(value) = state.get("onboarding") else {
+        return Ok(None);
+    };
+    let status = match value.get("status").and_then(Value::as_str) {
+        Some("action_required") => ProviderOnboardingStatus::ActionRequired,
+        Some("verifying") => ProviderOnboardingStatus::Verifying,
+        Some("ready") => ProviderOnboardingStatus::Ready,
+        Some("error") => ProviderOnboardingStatus::Error,
+        _ => return Ok(None),
+    };
+    Ok(Some(ProviderOnboarding {
+        step: value
+            .get("step")
+            .and_then(Value::as_str)
+            .unwrap_or("create_bot")
+            .into(),
+        status,
+        title: value
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or("创建 Telegram Bot")
+            .into(),
+        instruction: value
+            .get("instruction")
+            .and_then(Value::as_str)
+            .unwrap_or("继续完成 Telegram Bot 创建。")
+            .into(),
+        fields: Vec::new(),
+        opaque_payload: value.get("payload").cloned().unwrap_or_else(|| json!({})),
+        error_code: value
+            .get("error_code")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        error_message: value
+            .get("error_message")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        agent_config_updates: Value::Object(Default::default()),
+    }))
+}
+
+pub async fn agent_onboarding(
+    context: AgentOnboardingContext,
+    action: String,
+    supplied_payload: Value,
+) -> Result<ProviderOnboarding, ProviderError> {
+    if context
+        .provider_agent_config
+        .get("mode")
+        .and_then(Value::as_str)
+        != Some("new")
+    {
+        return Ok(ProviderOnboarding::ready(supplied_payload));
+    }
+    if action == "get" {
+        if let Some(value) = load(&context).await? {
+            return Ok(value);
+        }
+        let value = onboarding(
+            "create_bot",
+            ProviderOnboardingStatus::ActionRequired,
+            "创建 Telegram Bot",
+            "继续后，在 Telegram 中确认创建 Bot。",
+            json!({}),
+        );
+        save(&context, &value).await?;
+        return Ok(value);
+    }
+
+    let manager_token = context
+        .workspace_secrets()
+        .read("manager_bot_token")
+        .await?
+        .expose_secret()
+        .to_owned();
+    let manager_account_id = manager_token
+        .split_once(':')
+        .map(|(id, _)| id.to_owned())
+        .ok_or(ProviderError::InvalidInput {
+            field: "manager_bot_token",
+        })?;
+    let username = context
+        .provider_agent_config
+        .get("bot_username")
+        .or_else(|| context.provider_agent_config.get("provider_handle"))
+        .and_then(Value::as_str)
+        .ok_or(ProviderError::InvalidInput {
+            field: "bot_username",
+        })?
+        .to_owned();
+
+    if action == "start" {
+        let token = manager_token.clone();
+        let username_for_start = username.clone();
+        let display_name = context.name.clone();
+        let registration = tokio::task::spawn_blocking(move || {
+            let client = TelegramClient::new(
+                ReqwestTransport::new(),
+                Credentials::new(manager_account_id, token),
+            )?;
+            let manager = client.verify_credentials()?;
+            client.managed_bot_registration(&manager, &username_for_start, &display_name)
+        })
+        .await
+        .map_err(|_| external("telegram_registration_start"))?
+        .map_err(|_| external("telegram_registration_start"))?;
+        let value = onboarding(
+            "create_bot",
+            ProviderOnboardingStatus::ActionRequired,
+            "在 Telegram 中确认",
+            "打开下方链接完成 Bot 创建，然后返回检查状态。",
+            json!({
+                "verification_uri": registration.verification_uri(),
+                "offset": 0,
+                // Keep the normalized identifier used to build the link.  Polls
+                // must continue watching the Bot selected at the start of this
+                // onboarding session, even if the Agent profile changes later.
+                "bot_username": registration.username,
+            }),
+        );
+        save(&context, &value).await?;
+        return Ok(value);
+    }
+
+    let payload = if supplied_payload
+        .as_object()
+        .is_some_and(|object| object.is_empty())
+    {
+        load(&context)
+            .await?
+            .map(|value| value.opaque_payload)
+            .unwrap_or_else(|| json!({}))
+    } else {
+        supplied_payload
+    };
+    let username = payload
+        .get("bot_username")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_owned)
+        .unwrap_or(username);
+    let manager_username = context
+        .storage()
+        .workspace_state()
+        .await?
+        .get("manager_bot_username")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_owned);
+    let offset = payload.get("offset").and_then(Value::as_i64).unwrap_or(0);
+    let token = manager_token;
+    let manager_username_for_poll = manager_username;
+    let username_for_poll = username.clone();
+    let display_name = context.name.clone();
+    let poll = tokio::task::spawn_blocking(move || {
+        let client = TelegramClient::new(
+            ReqwestTransport::with_timeout(Duration::from_secs(10)),
+            Credentials::new(manager_account_id, token),
+        )?;
+        let registration = if let Some(manager_username) = manager_username_for_poll {
+            client.managed_bot_registration_for_manager(
+                &manager_username,
+                &username_for_poll,
+                &display_name,
+            )?
+        } else {
+            let manager = client.verify_credentials()?;
+            client.managed_bot_registration(&manager, &username_for_poll, &display_name)?
+        };
+        let mut request = PollRequest::managed_bot();
+        request.offset = offset;
+        request.timeout_seconds = 1;
+        let updates = client.get_updates(&request)?;
+        let next_offset = updates
+            .iter()
+            .map(|update| update.update_id + 1)
+            .max()
+            .unwrap_or(offset);
+        let mut credential = None;
+        for update in &updates {
+            let Some(managed) = update.managed_bot.as_ref() else {
+                continue;
+            };
+            if !registration.matches(&managed.bot) {
+                continue;
+            }
+            match client.managed_bot_credential(update) {
+                Ok(value) => {
+                    credential = Some(value);
+                    break;
+                }
+                // The Manager Bot may still have older events for the same
+                // username after a Bot was removed.  Those events cannot
+                // yield a credential; continue with the rest of this batch.
+                Err(error) if is_stale_managed_bot_candidate(&error) => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Ok::<_, crate::ClientError>((credential, next_offset))
+    })
+    .await
+    .map_err(|_| external("telegram_registration_poll"))?
+    .map_err(|_| external("telegram_registration_poll"))?;
+
+    if let Some(credential) = poll.0 {
+        context
+            .write_agent_secret("bot_token", SecretValue::new(credential.token()))
+            .await?;
+        let mut provider_state = context.storage().agent_state(&context.agent_id).await?;
+        let object = provider_state
+            .as_object_mut()
+            .ok_or(ProviderError::InvalidInput {
+                field: "agent_provider_state",
+            })?;
+        object.insert("account_id".into(), json!(credential.account_id.clone()));
+        object.insert("bot_username".into(), json!(credential.username.clone()));
+        object.insert(
+            "creator_user_id".into(),
+            json!(credential.creator_user_id.clone()),
+        );
+        context
+            .storage()
+            .put_agent_state(&context.agent_id, provider_state)
+            .await?;
+        let mut value = onboarding(
+            "ready",
+            ProviderOnboardingStatus::Ready,
+            "Agent 已启用",
+            "Telegram Bot 已创建并连接。",
+            json!({}),
+        );
+        value.agent_config_updates = json!({
+            "mode": "existing",
+            "bot_username": credential.username,
+            "provider_handle": credential.username,
+        });
+        save(&context, &value).await?;
+        Ok(value)
+    } else {
+        let mut next_payload = payload;
+        next_payload["offset"] = json!(poll.1);
+        let value = onboarding(
+            "create_bot",
+            ProviderOnboardingStatus::Verifying,
+            "等待 Telegram 确认",
+            "完成创建后，点击检查状态。",
+            next_payload,
+        );
+        save(&context, &value).await?;
+        Ok(value)
+    }
+}

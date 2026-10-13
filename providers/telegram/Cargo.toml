@@ -1,0 +1,29 @@
+[package]
+name = "lankide-provider-telegram"
+version.workspace = true
+edition.workspace = true
+description = "Telegram Provider adapter for Lankide"
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lankide-core = { path = "../../crates/core" }
+lankide-provider = { path = "../../crates/provider" }
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+lankide-testkit = { path = "../../crates/testkit" }
+lankide-protocol = { path = "../../crates/protocol" }
+rusqlite.workspace = true
+
+[package.metadata.lankide.e2e]
+command = "LANKIDE_E2E_LIVE=1 cargo test -p lankide-provider-telegram --test telegram_e2e -- --ignored --nocapture"
+scenario = "Run one complete Telegram Provider scenario covering public mention, normalization, and acknowledgement contracts together with real Manager/Agent verification, update reads, send, reply, attachment, reaction, and recall in an isolated test chat."
+prerequisites = "Existing Manager and Agent Bots; explicitly configured isolated test chat; exclusive access to the test account"
+classification = "live"
+unattended = "yes after live opt-in and preflight"
+status = "implemented"

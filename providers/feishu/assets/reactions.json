@@ -1,0 +1,1676 @@
+[
+  {
+    "emoji_type": "2021",
+    "asset": "2021.png",
+    "name": "2021年",
+    "description": ""
+  },
+  {
+    "emoji_type": "2022",
+    "asset": "2022.png",
+    "name": "2022年",
+    "description": "橙黄色 2022 数字"
+  },
+  {
+    "emoji_type": "2023",
+    "asset": "2023.png",
+    "name": "2023",
+    "description": ""
+  },
+  {
+    "emoji_type": "2024",
+    "asset": "2024.png",
+    "name": "2024",
+    "description": ""
+  },
+  {
+    "emoji_type": "2025",
+    "asset": "2025.png",
+    "name": "2025",
+    "description": ""
+  },
+  {
+    "emoji_type": "2026",
+    "asset": "2026.png",
+    "name": "2026",
+    "description": ""
+  },
+  {
+    "emoji_type": "18X",
+    "asset": "18X.png",
+    "name": "18禁",
+    "description": "带斜杠的 18X 圆牌"
+  },
+  {
+    "emoji_type": "ANGRY",
+    "asset": "ANGRY.png",
+    "name": "发怒",
+    "description": "红色发怒、眉间有红色怒纹的圆脸"
+  },
+  {
+    "emoji_type": "APPLAUSE",
+    "asset": "APPLAUSE.png",
+    "name": "鼓掌",
+    "description": ""
+  },
+  {
+    "emoji_type": "BEAR",
+    "asset": "BEAR.png",
+    "name": "啊？",
+    "description": "橙色熊脸"
+  },
+  {
+    "emoji_type": "BEER",
+    "asset": "BEER.png",
+    "name": "啤酒",
+    "description": "一杯啤酒"
+  },
+  {
+    "emoji_type": "BIGKISS",
+    "asset": "BIGKISS.png",
+    "name": "如花",
+    "description": ""
+  },
+  {
+    "emoji_type": "BLUBBER",
+    "asset": "BLUBBER.png",
+    "name": "快哭了",
+    "description": "双眼含泪、嘴角下垂的黄色圆脸"
+  },
+  {
+    "emoji_type": "XBLUSH",
+    "asset": "XBLUSH.png",
+    "name": "脸红",
+    "description": "双手托脸、眼睛睁大的红脸"
+  },
+  {
+    "emoji_type": "BOMB",
+    "asset": "BOMB.png",
+    "name": "炸弹",
+    "description": "黑色炸弹，右侧有黄色火花"
+  },
+  {
+    "emoji_type": "CAKE",
+    "asset": "CAKE.png",
+    "name": "蛋糕",
+    "description": "带三根蜡烛的蛋糕"
+  },
+  {
+    "emoji_type": "CHUCKLE",
+    "asset": "CHUCKLE.png",
+    "name": "偷笑",
+    "description": "闭眼捂嘴偷笑的黄色圆脸"
+  },
+  {
+    "emoji_type": "CLAP",
+    "asset": "CLAP.png",
+    "name": "欢呼",
+    "description": "张嘴打哈欠、双手向上挥的黄色圆脸"
+  },
+  {
+    "emoji_type": "CLEAVER",
+    "asset": "CLEAVER.png",
+    "name": "刀",
+    "description": "一把菜刀"
+  },
+  {
+    "emoji_type": "SHOWOFF",
+    "asset": "SHOWOFF.png",
+    "name": "酷",
+    "description": "戴墨镜、露齿笑并带闪光的黄色圆脸"
+  },
+  {
+    "emoji_type": "CRAZY",
+    "asset": "CRAZY.png",
+    "name": "抓狂",
+    "description": "张嘴大叫、双手捂脸的黄色圆脸"
+  },
+  {
+    "emoji_type": "CRY",
+    "asset": "CRY.png",
+    "name": "泣不成声",
+    "description": "捂嘴流泪，泣不成声"
+  },
+  {
+    "emoji_type": "CUCUMBER",
+    "asset": "CUCUMBER.png",
+    "name": "胡瓜",
+    "description": "一块黄瓜和两片黄瓜"
+  },
+  {
+    "emoji_type": "DIZZY",
+    "asset": "DIZZY.png",
+    "name": "晕",
+    "description": "双眼为螺旋线的黄色圆脸"
+  },
+  {
+    "emoji_type": "DROWSY",
+    "asset": "DROWSY.png",
+    "name": "困",
+    "description": "半睁眼、嘴巴微张的黄色圆脸"
+  },
+  {
+    "emoji_type": "DULL",
+    "asset": "DULL.png",
+    "name": "呆无辜",
+    "description": "棕色猫脸，表情平淡"
+  },
+  {
+    "emoji_type": "EATING",
+    "asset": "EATING.png",
+    "name": "吃瓜群众",
+    "description": ""
+  },
+  {
+    "emoji_type": "EMBARRASSED",
+    "asset": "EMBARRASSED.png",
+    "name": "尬笑",
+    "description": "咧嘴紧张笑、额头冒汗的黄色圆脸"
+  },
+  {
+    "emoji_type": "ERROR",
+    "asset": "ERROR.png",
+    "name": "黑线",
+    "description": "无语，黑线"
+  },
+  {
+    "emoji_type": "EYESCLOSED",
+    "asset": "EYESCLOSED.png",
+    "name": "不看",
+    "description": "双手遮住眼睛的猴子"
+  },
+  {
+    "emoji_type": "FACEPALM",
+    "asset": "FACEPALM.png",
+    "name": "捂脸",
+    "description": ""
+  },
+  {
+    "emoji_type": "FINGERHEART",
+    "asset": "FINGERHEART.png",
+    "name": "比心",
+    "description": "拇指和食指比心"
+  },
+  {
+    "emoji_type": "FISTBUMP",
+    "asset": "FISTBUMP.png",
+    "name": "碰拳",
+    "description": ""
+  },
+  {
+    "emoji_type": "GIFT",
+    "asset": "GIFT.png",
+    "name": "礼物",
+    "description": "红黄相间的礼物盒"
+  },
+  {
+    "emoji_type": "GLANCE",
+    "asset": "GLANCE.png",
+    "name": "看",
+    "description": "灰黑色猫脸，眼睛向一侧瞥，和经典的狗头差不多"
+  },
+  {
+    "emoji_type": "BLUSH",
+    "asset": "BLUSH.png",
+    "name": "呲牙",
+    "description": "黄色圆脸，呲牙笑"
+  },
+  {
+    "emoji_type": "HAMMER",
+    "asset": "HAMMER.png",
+    "name": "敲打",
+    "description": "头顶被橙色锤子敲中的黄色圆脸"
+  },
+  {
+    "emoji_type": "HEADSET",
+    "asset": "HEADSET.png",
+    "name": "听歌",
+    "description": "戴黑色耳机的黄色圆脸"
+  },
+  {
+    "emoji_type": "HEART",
+    "asset": "HEART.png",
+    "name": "爱心",
+    "description": "红色爱心"
+  },
+  {
+    "emoji_type": "HEARTBROKEN",
+    "asset": "HEARTBROKEN.png",
+    "name": "心碎",
+    "description": "裂开的红色爱心"
+  },
+  {
+    "emoji_type": "HIGHFIVE",
+    "asset": "HIGHFIVE.png",
+    "name": "击掌",
+    "description": "两只手击掌，周围有蓝色拍击线"
+  },
+  {
+    "emoji_type": "HUG",
+    "asset": "HUG.png",
+    "name": "求抱抱",
+    "description": "双臂张开、伸手求抱的黄色圆脸"
+  },
+  {
+    "emoji_type": "HUSKY",
+    "asset": "HUSKY.png",
+    "name": "翻白眼",
+    "description": "抬眼翻白眼的黄色圆脸"
+  },
+  {
+    "emoji_type": "INNOCENTSMILE",
+    "asset": "INNOCENTSMILE.png",
+    "name": "无辜笑",
+    "description": "戴眼镜、露出大门牙的黄色圆脸"
+  },
+  {
+    "emoji_type": "JOYFUL",
+    "asset": "JOYFUL.png",
+    "name": "笑",
+    "description": "闭眼弯眉微笑的黄色圆脸"
+  },
+  {
+    "emoji_type": "KISS",
+    "asset": "KISS.png",
+    "name": "亲亲",
+    "description": "闭眼嘟嘴的黄色圆脸"
+  },
+  {
+    "emoji_type": "LAUGH",
+    "asset": "LAUGH.png",
+    "name": "大笑",
+    "description": "黄色圆脸，张嘴大笑"
+  },
+  {
+    "emoji_type": "LIPS",
+    "asset": "LIPS.png",
+    "name": "嘴唇",
+    "description": "一对红色嘴唇"
+  },
+  {
+    "emoji_type": "LOL",
+    "asset": "LOL.png",
+    "name": "笑哭",
+    "description": ""
+  },
+  {
+    "emoji_type": "LOOKDOWN",
+    "asset": "LOOKDOWN.png",
+    "name": "鄙视",
+    "description": "低头捂脸、眉头下垂的黄色圆脸"
+  },
+  {
+    "emoji_type": "LOVE",
+    "asset": "LOVE.png",
+    "name": "送心",
+    "description": "双手捧着红色爱心的圆脸"
+  },
+  {
+    "emoji_type": "BLACKFACE",
+    "asset": "BLACKFACE.png",
+    "name": "新月脸",
+    "description": ""
+  },
+  {
+    "emoji_type": "NOSEPICK",
+    "asset": "NOSEPICK.png",
+    "name": "抠鼻",
+    "description": "手指抠鼻的黄色圆脸"
+  },
+  {
+    "emoji_type": "OBSESSED",
+    "asset": "OBSESSED.png",
+    "name": "心心脸",
+    "description": "戴心形眼镜、伸舌大笑的黄色圆脸"
+  },
+  {
+    "emoji_type": "OK",
+    "asset": "OK.png",
+    "name": "OK",
+    "description": "橙红色 OK"
+  },
+  {
+    "emoji_type": "PARTY",
+    "asset": "PARTY.png",
+    "name": "撒花",
+    "description": "彩色派对礼炮"
+  },
+  {
+    "emoji_type": "PETRIFIED",
+    "asset": "PETRIFIED.png",
+    "name": "石化",
+    "description": "灰色石化圆脸，头顶有闪电"
+  },
+  {
+    "emoji_type": "POOP",
+    "asset": "POOP.png",
+    "name": "便便",
+    "description": "带绿色苍蝇的便便"
+  },
+  {
+    "emoji_type": "PRAISE",
+    "asset": "PRAISE.png",
+    "name": "强",
+    "description": "竖起拇指的黄色圆脸"
+  },
+  {
+    "emoji_type": "PROUD",
+    "asset": "PROUD.png",
+    "name": "得意",
+    "description": "戴黑色墨镜的笑脸"
+  },
+  {
+    "emoji_type": "PUKE",
+    "asset": "PUKE.png",
+    "name": "吐",
+    "description": "向前呕吐蓝色液体的黄色圆脸"
+  },
+  {
+    "emoji_type": "RAINBOWPUKE",
+    "asset": "RAINBOWPUKE.png",
+    "name": "彩虹",
+    "description": "彩虹从嘴里喷出"
+  },
+  {
+    "emoji_type": "ROSE",
+    "asset": "ROSE.png",
+    "name": "玫瑰",
+    "description": "一朵红玫瑰"
+  },
+  {
+    "emoji_type": "SALUTE",
+    "asset": "SALUTE.png",
+    "name": "抱拳",
+    "description": "两只手相互敬礼"
+  },
+  {
+    "emoji_type": "SCOWL",
+    "asset": "SCOWL.png",
+    "name": "惊呆",
+    "description": ""
+  },
+  {
+    "emoji_type": "SHAKE",
+    "asset": "SHAKE.png",
+    "name": "握手",
+    "description": "两只手握手"
+  },
+  {
+    "emoji_type": "SHHH",
+    "asset": "SHHH.png",
+    "name": "嘘",
+    "description": "手指放在嘴边的黄色圆脸"
+  },
+  {
+    "emoji_type": "SHOCKED",
+    "asset": "SHOCKED.png",
+    "name": "震惊",
+    "description": "瞪眼张嘴、门牙突出的黄色圆脸"
+  },
+  {
+    "emoji_type": "SHY",
+    "asset": "SHY.png",
+    "name": "害羞",
+    "description": "闭眼低头、脸颊泛红的黄色圆脸"
+  },
+  {
+    "emoji_type": "SICK",
+    "asset": "SICK.png",
+    "name": "戴口罩",
+    "description": "戴白色口罩、眼神疲惫的黄色圆脸"
+  },
+  {
+    "emoji_type": "SILENT",
+    "asset": "SILENT.png",
+    "name": "闭嘴",
+    "description": "嘴部有白色交叉封条的黄色圆脸"
+  },
+  {
+    "emoji_type": "SKULL",
+    "asset": "SKULL.png",
+    "name": "骷髅",
+    "description": "白色骷髅头"
+  },
+  {
+    "emoji_type": "SLAP",
+    "asset": "SLAP.png",
+    "name": "打脸",
+    "description": "拖鞋打脸"
+  },
+  {
+    "emoji_type": "SLEEP",
+    "asset": "SLEEP.png",
+    "name": "鼾睡",
+    "description": "闭眼打瞌睡、嘴边有蓝色泡泡的黄色圆脸"
+  },
+  {
+    "emoji_type": "SLIGHT",
+    "asset": "SLIGHT.png",
+    "name": "白眼",
+    "description": "棕色猫脸，眼睛睁大，和经典的狗头差不多"
+  },
+  {
+    "emoji_type": "SMART",
+    "asset": "SMART.png",
+    "name": "机智",
+    "description": "手指指向别人的黄色圆脸，用于称赞别人机智"
+  },
+  {
+    "emoji_type": "SMILE",
+    "asset": "SMILE.png",
+    "name": "微笑",
+    "description": "黄色圆脸，睁眼微笑"
+  },
+  {
+    "emoji_type": "SMIRK",
+    "asset": "SMIRK.png",
+    "name": "坏笑",
+    "description": "滑稽。眯眼挑眉的得意笑脸"
+  },
+  {
+    "emoji_type": "SMOOCH",
+    "asset": "SMOOCH.png",
+    "name": "飞吻",
+    "description": "嘟嘴亲吻并贴着红色嘴唇印的黄色圆脸"
+  },
+  {
+    "emoji_type": "SMUG",
+    "asset": "SMUG.png",
+    "name": "撇嘴",
+    "description": "斜眼撇嘴的黄色圆脸"
+  },
+  {
+    "emoji_type": "SOB",
+    "asset": "SOB.png",
+    "name": "流泪",
+    "description": ""
+  },
+  {
+    "emoji_type": "SPEECHLESS",
+    "asset": "SPEECHLESS.png",
+    "name": "无语",
+    "description": "挑眉捂嘴、额头冒汗的黄色圆脸"
+  },
+  {
+    "emoji_type": "SPITBLOOD",
+    "asset": "SPITBLOOD.png",
+    "name": "吐血",
+    "description": ""
+  },
+  {
+    "emoji_type": "STRIVE",
+    "asset": "STRIVE.png",
+    "name": "奋斗",
+    "description": "戴红色头巾、握拳的黄色圆脸"
+  },
+  {
+    "emoji_type": "SWEAT",
+    "asset": "SWEAT.png",
+    "name": "汗",
+    "description": "皱眉冒蓝色汗滴的黄色圆脸"
+  },
+  {
+    "emoji_type": "TEARS",
+    "asset": "TEARS.png",
+    "name": "泪奔",
+    "description": "微笑圆脸，双眼下方有蓝色泪痕"
+  },
+  {
+    "emoji_type": "TEASE",
+    "asset": "TEASE.png",
+    "name": "做鬼脸",
+    "description": "眨眼吐舌、手指脸颊的黄色圆脸"
+  },
+  {
+    "emoji_type": "TERROR",
+    "asset": "TERROR.png",
+    "name": "惊恐",
+    "description": "双手捂脸、张嘴尖叫的黄色圆脸"
+  },
+  {
+    "emoji_type": "THANKS",
+    "asset": "THANKS.png",
+    "name": "双手合十",
+    "description": ""
+  },
+  {
+    "emoji_type": "THINKING",
+    "asset": "THINKING.png",
+    "name": "思考",
+    "description": "手托下巴、抬眼思考的黄色圆脸"
+  },
+  {
+    "emoji_type": "THUMBSUP",
+    "asset": "THUMBSUP.png",
+    "name": "赞",
+    "description": "点赞"
+  },
+  {
+    "emoji_type": "TOASTED",
+    "asset": "TOASTED.png",
+    "name": "衰",
+    "description": ""
+  },
+  {
+    "emoji_type": "TONGUE",
+    "asset": "TONGUE.png",
+    "name": "吐舌",
+    "description": "吐舌头的狗头"
+  },
+  {
+    "emoji_type": "UPPERLEFT",
+    "asset": "UPPERLEFT.png",
+    "name": "点击",
+    "description": "一只手指向左上方"
+  },
+  {
+    "emoji_type": "WAIL",
+    "asset": "WAIL.png",
+    "name": "大哭",
+    "description": "张嘴嚎哭、泪水喷出的黄色圆脸"
+  },
+  {
+    "emoji_type": "WAVE",
+    "asset": "WAVE.png",
+    "name": "再见",
+    "description": "黄色圆脸向一侧挥手"
+  },
+  {
+    "emoji_type": "WHAT",
+    "asset": "WHAT.png",
+    "name": "什么？",
+    "description": "睁大眼睛、嘴边有红色问号的黄色圆脸"
+  },
+  {
+    "emoji_type": "WHIMPER",
+    "asset": "WHIMPER.png",
+    "name": "可怜",
+    "description": "眼含泪水、双手托脸的黄色圆脸"
+  },
+  {
+    "emoji_type": "WINK",
+    "asset": "WINK.png",
+    "name": "调皮",
+    "description": "吐舌眨眼的黄色圆脸"
+  },
+  {
+    "emoji_type": "WITTY",
+    "asset": "WITTY.png",
+    "name": "灵光一闪",
+    "description": ""
+  },
+  {
+    "emoji_type": "WOW",
+    "asset": "WOW.png",
+    "name": "惊喜",
+    "description": "双眼闪星、张嘴惊喜的黄色圆脸"
+  },
+  {
+    "emoji_type": "WRONGED",
+    "asset": "WRONGED.png",
+    "name": "委屈",
+    "description": "眉毛下垂、双手捂嘴的黄色圆脸"
+  },
+  {
+    "emoji_type": "YAWN",
+    "asset": "YAWN.png",
+    "name": "哈欠",
+    "description": "张嘴打哈欠、手背挡在嘴前的黄色圆脸"
+  },
+  {
+    "emoji_type": "YEAH",
+    "asset": "YEAH.png",
+    "name": "耶",
+    "description": "戴墨镜、双手比耶的黄色圆脸"
+  },
+  {
+    "emoji_type": "DONE",
+    "asset": "DONE.png",
+    "name": "完成",
+    "description": "眯眼笑脸，下方有绿色 DONE 字样"
+  },
+  {
+    "emoji_type": "LUCK",
+    "asset": "LUCK.png",
+    "name": "福",
+    "description": "红色菱形福字牌"
+  },
+  {
+    "emoji_type": "REDPACKET",
+    "asset": "REDPACKET.png",
+    "name": "红包",
+    "description": "红色红包袋，中央有金色圆章"
+  },
+  {
+    "emoji_type": "FIRECRACKER",
+    "asset": "FIRECRACKER.png",
+    "name": "爆竹",
+    "description": "红色鞭炮束"
+  },
+  {
+    "emoji_type": "CALF",
+    "asset": "CALF.png",
+    "name": "小牛",
+    "description": "粉色小牛脸，头顶有小角"
+  },
+  {
+    "emoji_type": "BULL",
+    "asset": "BULL.png",
+    "name": "公牛",
+    "description": "棕色公牛头"
+  },
+  {
+    "emoji_type": "CANDIEDHAWS",
+    "asset": "CANDIEDHAWS.png",
+    "name": "冰糖葫芦",
+    "description": "一串红色糖葫芦"
+  },
+  {
+    "emoji_type": "FIREWORKS",
+    "asset": "FIREWORKS.png",
+    "name": "烟花",
+    "description": "红橙色烟花"
+  },
+  {
+    "emoji_type": "ENOUGH",
+    "asset": "ENOUGH.png",
+    "name": "我想静静",
+    "description": "张嘴大笑并伸手遮挡的黄色圆脸"
+  },
+  {
+    "emoji_type": "COMFORT",
+    "asset": "COMFORT.png",
+    "name": "摸头",
+    "description": "闭眼微笑、双手抱住自己的黄色圆脸"
+  },
+  {
+    "emoji_type": "DROOL",
+    "asset": "DROOL.png",
+    "name": "爱慕",
+    "description": "双眼变成爱心、嘴边流口水的黄色圆脸"
+  },
+  {
+    "emoji_type": "TRICK",
+    "asset": "TRICK.png",
+    "name": "嬉笑",
+    "description": "露齿咧嘴、眼神狡黠的黄色圆脸，可表达类似「你懂的」"
+  },
+  {
+    "emoji_type": "DULLSTARE",
+    "asset": "DULLSTARE.png",
+    "name": "凝视",
+    "description": ""
+  },
+  {
+    "emoji_type": "MUSCLE",
+    "asset": "MUSCLE.png",
+    "name": "加油",
+    "description": "弯曲手臂，露出肌肉"
+  },
+  {
+    "emoji_type": "HAUGHTY",
+    "asset": "HAUGHTY.png",
+    "name": "烦躁",
+    "description": "眯眼撇嘴的傲慢黄色圆脸"
+  },
+  {
+    "emoji_type": "DONNOTGO",
+    "asset": "DONNOTGO.png",
+    "name": "紫薇别走",
+    "description": ""
+  },
+  {
+    "emoji_type": "FROWN",
+    "asset": "FROWN.png",
+    "name": "皱眉",
+    "description": "眉头紧皱的黄色圆脸"
+  },
+  {
+    "emoji_type": "JIAYI",
+    "asset": "JIAYI.png",
+    "name": "+1",
+    "description": "红色的 +1 字样"
+  },
+  {
+    "emoji_type": "ATTENTION",
+    "asset": "ATTENTION.png",
+    "name": "来看我",
+    "description": ""
+  },
+  {
+    "emoji_type": "WELLDONE",
+    "asset": "WELLDONE.png",
+    "name": "V5",
+    "description": ""
+  },
+  {
+    "emoji_type": "FOLLOWME",
+    "asset": "FOLLOWME.png",
+    "name": "互粉",
+    "description": ""
+  },
+  {
+    "emoji_type": "DETERGENT",
+    "asset": "DETERGENT.png",
+    "name": "去污粉",
+    "description": ""
+  },
+  {
+    "emoji_type": "AWESOME",
+    "asset": "AWESOME.png",
+    "name": "666",
+    "description": ""
+  },
+  {
+    "emoji_type": "GOODJOB",
+    "asset": "GOODJOB.png",
+    "name": "给力",
+    "description": ""
+  },
+  {
+    "emoji_type": "EatingFood",
+    "asset": "EatingFood.png",
+    "name": "吃饭",
+    "description": "双手拿碗、低头吃面的黄色圆脸"
+  },
+  {
+    "emoji_type": "Typing",
+    "asset": "Typing.png",
+    "name": "敲键盘",
+    "description": "趴在键盘前打字的黄色圆脸"
+  },
+  {
+    "emoji_type": "Lemon",
+    "asset": "Lemon.png",
+    "name": "柠檬",
+    "description": "头顶一片柠檬叶的黄色圆脸"
+  },
+  {
+    "emoji_type": "LGTM",
+    "asset": "LGTM.png",
+    "name": "我看行",
+    "description": "黑色墨镜上写着 LGTM 的黄色圆脸"
+  },
+  {
+    "emoji_type": "ThanksHoldingBoard",
+    "asset": "ThanksHoldingBoard.png",
+    "name": "谢谢",
+    "description": ""
+  },
+  {
+    "emoji_type": "ThumbsDown",
+    "asset": "ThumbsDown.png",
+    "name": "踩",
+    "description": "一只竖起大拇指向下的手"
+  },
+  {
+    "emoji_type": "Drumstick",
+    "asset": "Drumstick.png",
+    "name": "鸡腿",
+    "description": "一只鸡腿"
+  },
+  {
+    "emoji_type": "Pepper",
+    "asset": "Pepper.png",
+    "name": "辣椒",
+    "description": "一根红色辣椒"
+  },
+  {
+    "emoji_type": "BubbleTea",
+    "asset": "BubbleTea.png",
+    "name": "奶茶",
+    "description": "一杯带吸管的珍珠奶茶"
+  },
+  {
+    "emoji_type": "Coffee",
+    "asset": "Coffee.png",
+    "name": "咖啡",
+    "description": "一杯咖啡"
+  },
+  {
+    "emoji_type": "Yes",
+    "asset": "Yes.png",
+    "name": "Yes",
+    "description": "绿色 YES 字样"
+  },
+  {
+    "emoji_type": "No",
+    "asset": "No.png",
+    "name": "No",
+    "description": "红色 NO 字样"
+  },
+  {
+    "emoji_type": "OKR",
+    "asset": "OKR.png",
+    "name": "OKR",
+    "description": "蓝色 OKR 字样"
+  },
+  {
+    "emoji_type": "CheckMark",
+    "asset": "CheckMark.png",
+    "name": "勾号",
+    "description": "绿色对勾"
+  },
+  {
+    "emoji_type": "CrossMark",
+    "asset": "CrossMark.png",
+    "name": "叉号",
+    "description": "红色叉号"
+  },
+  {
+    "emoji_type": "MinusOne",
+    "asset": "MinusOne.png",
+    "name": "-1",
+    "description": "蓝色 −1 字样"
+  },
+  {
+    "emoji_type": "Hundred",
+    "asset": "Hundred.png",
+    "name": "100分",
+    "description": "红色 100 字样"
+  },
+  {
+    "emoji_type": "Pin",
+    "asset": "Pin.png",
+    "name": "图钉",
+    "description": "蓝色图钉"
+  },
+  {
+    "emoji_type": "Alarm",
+    "asset": "Alarm.png",
+    "name": "闹钟",
+    "description": "红色闹钟"
+  },
+  {
+    "emoji_type": "Loudspeaker",
+    "asset": "Loudspeaker.png",
+    "name": "喇叭",
+    "description": "蓝色扩音器"
+  },
+  {
+    "emoji_type": "Trophy",
+    "asset": "Trophy.png",
+    "name": "奖杯",
+    "description": "金色奖杯"
+  },
+  {
+    "emoji_type": "Fire",
+    "asset": "Fire.png",
+    "name": "火",
+    "description": "橙红色火焰"
+  },
+  {
+    "emoji_type": "Music",
+    "asset": "Music.png",
+    "name": "音乐",
+    "description": "两枚黑色音乐音符"
+  },
+  {
+    "emoji_type": "Soccer",
+    "asset": "Soccer.png",
+    "name": "足球",
+    "description": "黑白足球"
+  },
+  {
+    "emoji_type": "Basketball",
+    "asset": "Basketball.png",
+    "name": "篮球",
+    "description": "橙色篮球"
+  },
+  {
+    "emoji_type": "GeneralDoNotDisturb",
+    "asset": "GeneralDoNotDisturb.png",
+    "name": "请勿打扰",
+    "description": "灰色带斜杠的铃铛"
+  },
+  {
+    "emoji_type": "GeneralInMeetingBusy",
+    "asset": "GeneralInMeetingBusy.png",
+    "name": "日程",
+    "description": "蓝色日历"
+  },
+  {
+    "emoji_type": "GeneralBusinessTrip",
+    "asset": "GeneralBusinessTrip.png",
+    "name": "出差",
+    "description": "棕色行李箱"
+  },
+  {
+    "emoji_type": "GeneralWorkFromHome",
+    "asset": "GeneralWorkFromHome.png",
+    "name": "在家办公",
+    "description": "带绿植的房屋"
+  },
+  {
+    "emoji_type": "StatusEnjoyLife",
+    "asset": "StatusEnjoyLife.png",
+    "name": "美好生活",
+    "description": "沙滩伞、躺椅和太阳"
+  },
+  {
+    "emoji_type": "GeneralTravellingCar",
+    "asset": "GeneralTravellingCar.png",
+    "name": "出行",
+    "description": "红色小轿车"
+  },
+  {
+    "emoji_type": "StatusBus",
+    "asset": "StatusBus.png",
+    "name": "公交车",
+    "description": "黄色公交车"
+  },
+  {
+    "emoji_type": "StatusInFlight",
+    "asset": "StatusInFlight.png",
+    "name": "飞行中",
+    "description": "蓝白色飞机和云朵"
+  },
+  {
+    "emoji_type": "GeneralSun",
+    "asset": "GeneralSun.png",
+    "name": "辛勤营业",
+    "description": "黄色笑脸太阳"
+  },
+  {
+    "emoji_type": "GeneralMoonRest",
+    "asset": "GeneralMoonRest.png",
+    "name": "天色已晚",
+    "description": "蓝色月亮和星星"
+  },
+  {
+    "emoji_type": "StatusReading",
+    "asset": "StatusReading.png",
+    "name": "精神补给",
+    "description": "打开的蓝色书本"
+  },
+  {
+    "emoji_type": "Status_PrivateMessage",
+    "asset": "Status_PrivateMessage.png",
+    "name": "思考中",
+    "description": "蓝色三点聊天气泡"
+  },
+  {
+    "emoji_type": "StatusFlashOfInspiration",
+    "asset": "StatusFlashOfInspiration.png",
+    "name": "灵光一现",
+    "description": "黄色灯泡"
+  },
+  {
+    "emoji_type": "MediumLightThumbsup",
+    "asset": "MediumLightThumbsup.png",
+    "name": "赞（中等浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "LightThumbsup",
+    "asset": "LightThumbsup.png",
+    "name": "赞（浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumThumbsup",
+    "asset": "MediumThumbsup.png",
+    "name": "赞（中等色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumDarkThumbsup",
+    "asset": "MediumDarkThumbsup.png",
+    "name": "赞（中等深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "DarkThumbsup",
+    "asset": "DarkThumbsup.png",
+    "name": "赞（深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumLightThanks",
+    "asset": "MediumLightThanks.png",
+    "name": "双手合十（中等浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "LightThanks",
+    "asset": "LightThanks.png",
+    "name": "双手合十（浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumThanks",
+    "asset": "MediumThanks.png",
+    "name": "双手合十（中等色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumDarkThanks",
+    "asset": "MediumDarkThanks.png",
+    "name": "双手合十（中等深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "DarkThanks",
+    "asset": "DarkThanks.png",
+    "name": "双手合十（深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumLightFightOn",
+    "asset": "MediumLightFightOn.png",
+    "name": "加油（中等浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "LightFightOn",
+    "asset": "LightFightOn.png",
+    "name": "加油（浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumFightOn",
+    "asset": "MediumFightOn.png",
+    "name": "加油（中等色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumDarkFightOn",
+    "asset": "MediumDarkFightOn.png",
+    "name": "加油（中等深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "DarkFightOn",
+    "asset": "DarkFightOn.png",
+    "name": "加油（深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumLightFingerHeart",
+    "asset": "MediumLightFingerHeart.png",
+    "name": "比心（中等浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "LightFingerHeart",
+    "asset": "LightFingerHeart.png",
+    "name": "比心（浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumFingerHeart",
+    "asset": "MediumFingerHeart.png",
+    "name": "比心（中等色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumDarkFingerHeart",
+    "asset": "MediumDarkFingerHeart.png",
+    "name": "比心（中等深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "DarkFingerHeart",
+    "asset": "DarkFingerHeart.png",
+    "name": "比心（深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumLightApplaud",
+    "asset": "MediumLightApplaud.png",
+    "name": "鼓掌（中等浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "LightApplaud",
+    "asset": "LightApplaud.png",
+    "name": "鼓掌（浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumApplaud",
+    "asset": "MediumApplaud.png",
+    "name": "鼓掌（中等色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumDarkApplaud",
+    "asset": "MediumDarkApplaud.png",
+    "name": "鼓掌（中等深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "DarkApplaud",
+    "asset": "DarkApplaud.png",
+    "name": "鼓掌（深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumLightFistBump",
+    "asset": "MediumLightFistBump.png",
+    "name": "碰拳（中等浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "LightFistBump",
+    "asset": "LightFistBump.png",
+    "name": "碰拳（浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumFistBump",
+    "asset": "MediumFistBump.png",
+    "name": "碰拳（中等色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumDarkFistBump",
+    "asset": "MediumDarkFistBump.png",
+    "name": "碰拳（中等深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "DarkFistBump",
+    "asset": "DarkFistBump.png",
+    "name": "碰拳（深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumLightHighFive",
+    "asset": "MediumLightHighFive.png",
+    "name": "击掌（中等浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "LightHighFive",
+    "asset": "LightHighFive.png",
+    "name": "击掌（浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumHighFive",
+    "asset": "MediumHighFive.png",
+    "name": "击掌（中等色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumDarkHighFive",
+    "asset": "MediumDarkHighFive.png",
+    "name": "击掌（中等深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "DarkHighFive",
+    "asset": "DarkHighFive.png",
+    "name": "击掌（深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumLightClick",
+    "asset": "MediumLightClick.png",
+    "name": "点击（中等浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "LightClick",
+    "asset": "LightClick.png",
+    "name": "点击（浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumClick",
+    "asset": "MediumClick.png",
+    "name": "点击（中等色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumDarkClick",
+    "asset": "MediumDarkClick.png",
+    "name": "点击（中等深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "DarkClick",
+    "asset": "DarkClick.png",
+    "name": "点击（深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumLightThumbsDown",
+    "asset": "MediumLightThumbsDown.png",
+    "name": "踩（中等浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "LightThumbsDown",
+    "asset": "LightThumbsDown.png",
+    "name": "踩（浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumThumbsDown",
+    "asset": "MediumThumbsDown.png",
+    "name": "踩（中等色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumDarkThumbsDown",
+    "asset": "MediumDarkThumbsDown.png",
+    "name": "踩（中等深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "DarkThumbsDown",
+    "asset": "DarkThumbsDown.png",
+    "name": "踩（深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumLightSalute",
+    "asset": "MediumLightSalute.png",
+    "name": "抱拳（中等浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "LightSalute",
+    "asset": "LightSalute.png",
+    "name": "抱拳（浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumSalute",
+    "asset": "MediumSalute.png",
+    "name": "抱拳（中等色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumDarkSalute",
+    "asset": "MediumDarkSalute.png",
+    "name": "抱拳（中等深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "DarkSalute",
+    "asset": "DarkSalute.png",
+    "name": "抱拳（深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumLightShake",
+    "asset": "MediumLightShake.png",
+    "name": "握手（中等浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "LightShake",
+    "asset": "LightShake.png",
+    "name": "握手（浅色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumShake",
+    "asset": "MediumShake.png",
+    "name": "握手（中等色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumDarkShake",
+    "asset": "MediumDarkShake.png",
+    "name": "握手（中等深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "DarkShake",
+    "asset": "DarkShake.png",
+    "name": "握手（深色）",
+    "description": ""
+  },
+  {
+    "emoji_type": "GeneralVacation",
+    "asset": "GeneralVacation.png",
+    "name": "休假",
+    "description": ""
+  },
+  {
+    "emoji_type": "RoarForYou",
+    "asset": "RoarForYou.png",
+    "name": "萌虎打Call",
+    "description": "戴彩色头带、举起双拳的猫脸"
+  },
+  {
+    "emoji_type": "StickyRiceBalls",
+    "asset": "StickyRiceBalls.png",
+    "name": "元宵",
+    "description": "红白碗里的汤圆"
+  },
+  {
+    "emoji_type": "MeMeMe",
+    "asset": "MeMeMe.png",
+    "name": "举手",
+    "description": "挥手举臂的黄色圆脸"
+  },
+  {
+    "emoji_type": "YouAreTheBest",
+    "asset": "YouAreTheBest.png",
+    "name": "送你小红花",
+    "description": "一只手托着红色小花"
+  },
+  {
+    "emoji_type": "MediumlightYouAreTheBest",
+    "asset": "MediumlightYouAreTheBest.png",
+    "name": "送你小红花",
+    "description": ""
+  },
+  {
+    "emoji_type": "LightYouAreTheBest",
+    "asset": "LightYouAreTheBest.png",
+    "name": "送你小红花",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumYouAreTheBest",
+    "asset": "MediumYouAreTheBest.png",
+    "name": "送你小红花",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumdarkYouAreTheBest",
+    "asset": "MediumdarkYouAreTheBest.png",
+    "name": "送你小红花",
+    "description": ""
+  },
+  {
+    "emoji_type": "DarkYouAreTheBest",
+    "asset": "DarkYouAreTheBest.png",
+    "name": "送你小红花",
+    "description": ""
+  },
+  {
+    "emoji_type": "XmasTree",
+    "asset": "XmasTree.png",
+    "name": "圣诞树",
+    "description": "装饰彩灯的圣诞树"
+  },
+  {
+    "emoji_type": "Snowman",
+    "asset": "Snowman.png",
+    "name": "雪人",
+    "description": "戴黑帽、张开手臂的雪人"
+  },
+  {
+    "emoji_type": "XmasHat",
+    "asset": "XmasHat.png",
+    "name": "圣诞帽",
+    "description": "红白圣诞帽"
+  },
+  {
+    "emoji_type": "OnIt",
+    "asset": "OnIt.png",
+    "name": "在做了",
+    "description": "蓝色条带遮住嘴部、眼睛打转的圆脸"
+  },
+  {
+    "emoji_type": "OneSecond",
+    "asset": "OneSecond.png",
+    "name": "稍等",
+    "description": "一只手在键盘上，另一只手举起示意稍等"
+  },
+  {
+    "emoji_type": "Sigh",
+    "asset": "Sigh.png",
+    "name": "叹气",
+    "description": "闭眼叹气、嘴边有白色气流的黄色圆脸"
+  },
+  {
+    "emoji_type": "Partying",
+    "asset": "Partying.png",
+    "name": "派对",
+    "description": "戴派对帽、吹彩带的黄色圆脸"
+  },
+  {
+    "emoji_type": "GoGoGo",
+    "asset": "GoGoGo.png",
+    "name": "冲！",
+    "description": "张嘴大笑、身体向前冲的黄色圆脸"
+  },
+  {
+    "emoji_type": "TV",
+    "asset": "TV.png",
+    "name": "电视",
+    "description": "复古电视机"
+  },
+  {
+    "emoji_type": "Movie",
+    "asset": "Movie.png",
+    "name": "电影",
+    "description": "黑色电影场记板"
+  },
+  {
+    "emoji_type": "Pumpkin",
+    "asset": "Pumpkin.png",
+    "name": "南瓜灯",
+    "description": "橙色南瓜灯"
+  },
+  {
+    "emoji_type": "Mooncake",
+    "asset": "Mooncake.png",
+    "name": "月饼",
+    "description": "金色月饼"
+  },
+  {
+    "emoji_type": "MoonRabbit",
+    "asset": "MoonRabbit.png",
+    "name": "玉兔",
+    "description": "粉色玉兔和月亮"
+  },
+  {
+    "emoji_type": "VRHeadset",
+    "asset": "VRHeadset.png",
+    "name": "VR",
+    "description": "戴蓝灰色 VR 头显的黄色圆脸"
+  },
+  {
+    "emoji_type": "JubilantRabbit",
+    "asset": "JubilantRabbit.png",
+    "name": "欢兔喝彩",
+    "description": "粉色兔子，周围有彩色星星和彩带"
+  },
+  {
+    "emoji_type": "HappyDragon",
+    "asset": "HappyDragon.png",
+    "name": "龙光焕发",
+    "description": "彩色舞龙或龙头图案"
+  },
+  {
+    "emoji_type": "FullMoonFace",
+    "asset": "FullMoonFace.png",
+    "name": "满月脸",
+    "description": "带人脸的黄色满月"
+  },
+  {
+    "emoji_type": "ColdSweat",
+    "asset": "ColdSweat.png",
+    "name": "冷汗",
+    "description": "蓝黄色冒冷汗的圆脸"
+  },
+  {
+    "emoji_type": "Delighted",
+    "asset": "Delighted.png",
+    "name": "愉快",
+    "description": "弯眼微笑的黄色圆脸"
+  },
+  {
+    "emoji_type": "BeamingFace",
+    "asset": "BeamingFace.png",
+    "name": "笑容满面",
+    "description": "露齿大笑的黄色圆脸"
+  },
+  {
+    "emoji_type": "ThanksFace",
+    "asset": "ThanksFace.png",
+    "name": "感谢",
+    "description": "双手捧脸、眼睛弯曲的黄色圆脸"
+  },
+  {
+    "emoji_type": "SaluteFace",
+    "asset": "SaluteFace.png",
+    "name": "致敬",
+    "description": "微笑并敬礼的黄色圆脸"
+  },
+  {
+    "emoji_type": "Shrug",
+    "asset": "Shrug.png",
+    "name": "耸肩摊手",
+    "description": "耸肩摊手的黄色圆脸"
+  },
+  {
+    "emoji_type": "ClownFace",
+    "asset": "ClownFace.png",
+    "name": "小丑脸",
+    "description": ""
+  },
+  {
+    "emoji_type": "WavingHand",
+    "asset": "WavingHand.png",
+    "name": "挥手",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumlightWavingHand",
+    "asset": "MediumlightWavingHand.png",
+    "name": "挥手",
+    "description": ""
+  },
+  {
+    "emoji_type": "LightWavingHand",
+    "asset": "LightWavingHand.png",
+    "name": "挥手",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumWavingHand",
+    "asset": "MediumWavingHand.png",
+    "name": "挥手",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumdarkWavingHand",
+    "asset": "MediumdarkWavingHand.png",
+    "name": "挥手",
+    "description": ""
+  },
+  {
+    "emoji_type": "DarkWavingHand",
+    "asset": "DarkWavingHand.png",
+    "name": "挥手",
+    "description": ""
+  },
+  {
+    "emoji_type": "SiSiASYouWish",
+    "asset": "SiSiASYouWish.png",
+    "name": "巳巳如意",
+    "description": ""
+  },
+  {
+    "emoji_type": "BeAtTheForefront",
+    "asset": "BeAtTheForefront.png",
+    "name": "一马当先",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumlightOKHand",
+    "asset": "MediumlightOKHand.png",
+    "name": "OK手势",
+    "description": ""
+  },
+  {
+    "emoji_type": "LightOKHand",
+    "asset": "LightOKHand.png",
+    "name": "OK手势",
+    "description": ""
+  },
+  {
+    "emoji_type": "OKHand",
+    "asset": "OKHand.png",
+    "name": "OK手势",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumOKHand",
+    "asset": "MediumOKHand.png",
+    "name": "OK手势",
+    "description": ""
+  },
+  {
+    "emoji_type": "MediumdarkOKHand",
+    "asset": "MediumdarkOKHand.png",
+    "name": "OK手势",
+    "description": ""
+  },
+  {
+    "emoji_type": "DarkOKHand",
+    "asset": "DarkOKHand.png",
+    "name": "OK手势",
+    "description": ""
+  },
+  {
+    "emoji_type": "PursueUltimate",
+    "asset": "PursueUltimate.png",
+    "name": "追求极致",
+    "description": ""
+  },
+  {
+    "emoji_type": "CustomerSuccess",
+    "asset": "CustomerSuccess.png",
+    "name": "成就客户",
+    "description": ""
+  },
+  {
+    "emoji_type": "Responsible",
+    "asset": "Responsible.png",
+    "name": "有担当可信赖",
+    "description": ""
+  },
+  {
+    "emoji_type": "Ambitious",
+    "asset": "Ambitious.png",
+    "name": "谋远大有耐心",
+    "description": ""
+  },
+  {
+    "emoji_type": "Get",
+    "asset": "Get.png",
+    "name": "了解",
+    "description": "黄色圆脸。下方有橙色 GET 字样"
+  },
+  {
+    "emoji_type": "MONEY",
+    "asset": "MONEY.png",
+    "name": "财迷",
+    "description": "戴美元符号眼镜、伸舌的黄色圆脸"
+  },
+  {
+    "emoji_type": "AWESOMEN",
+    "asset": "AWESOMEN.png",
+    "name": "牛",
+    "description": "橙黄色 Cool 字样"
+  },
+  {
+    "emoji_type": "FORTUNE",
+    "asset": "FORTUNE.png",
+    "name": "发",
+    "description": "白色福字卡片"
+  },
+  {
+    "emoji_type": "BETRAYED",
+    "asset": "BETRAYED.png",
+    "name": "背叛",
+    "description": "戴绿色帽子、眉头紧皱的黄色圆脸"
+  },
+  {
+    "emoji_type": "AINailedIt",
+    "asset": "AINailedIt.png",
+    "name": "AI答对了",
+    "description": ""
+  }
+]

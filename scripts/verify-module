@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+
+set -u
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+MANIFEST="$ROOT_DIR/tests/e2e-modules.tsv"
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  ./scripts/verify-module --list
+  ./scripts/verify-module <module-id>
+  ./scripts/verify-module --run <module-id>
+  ./scripts/verify-module --all
+  ./scripts/verify-module --all --run
+
+The default mode only prints a module contract. --run executes an implemented
+contract; pending contracts return status 3 and are never treated as green.
+EOF
+}
+
+print_contract() {
+  local module_id="$1"
+  local package="$2"
+  local kind="$3"
+  local classification="$4"
+  local command="$5"
+  local scenario="$6"
+  local prerequisites="$7"
+  local unattended="$8"
+  local status="$9"
+
+  printf 'module: %s\n' "$module_id"
+  printf 'package: %s\n' "$package"
+  printf 'kind: %s\n' "$kind"
+  printf 'classification: %s\n' "$classification"
+  printf 'command: %s\n' "$command"
+  printf 'business_scenario: %s\n' "$scenario"
+  printf 'prerequisites: %s\n' "$prerequisites"
+  printf 'unattended: %s\n' "$unattended"
+  printf 'status: %s\n' "$status"
+}
+
+list_contracts() {
+  printf '%-22s %-10s %-10s %-12s %s\n' "MODULE" "KIND" "TYPE" "STATUS" "COMMAND"
+  while IFS=$'\t' read -r module_id package kind classification command scenario prerequisites unattended status; do
+    [[ -z "${module_id:-}" || "${module_id:0:1}" == "#" ]] && continue
+    printf '%-22s %-10s %-10s %-12s %s\n' "$module_id" "$kind" "$classification" "$status" "$command"
+  done < "$MANIFEST"
+}
+
+find_contract() {
+  local wanted="$1"
+  while IFS=$'\t' read -r module_id package kind classification command scenario prerequisites unattended status; do
+    [[ -z "${module_id:-}" || "${module_id:0:1}" == "#" ]] && continue
+    if [[ "$module_id" == "$wanted" ]]; then
+      print_contract "$module_id" "$package" "$kind" "$classification" "$command" "$scenario" "$prerequisites" "$unattended" "$status"
+      return 0
+    fi
+  done < "$MANIFEST"
+  printf 'unknown module: %s\n' "$wanted" >&2
+  return 2
+}
+
+run_contract() {
+  local wanted="$1"
+  local found=1
+  local module_id package kind classification command scenario prerequisites unattended status
+
+  while IFS=$'\t' read -r module_id package kind classification command scenario prerequisites unattended status; do
+    [[ -z "${module_id:-}" || "${module_id:0:1}" == "#" ]] && continue
+    [[ "$module_id" == "$wanted" ]] || continue
+    found=0
+    print_contract "$module_id" "$package" "$kind" "$classification" "$command" "$scenario" "$prerequisites" "$unattended" "$status"
+    if [[ "$status" != "implemented" ]]; then
+      printf 'PENDING: %s has no completed real-business E2E contract.\n' "$module_id" >&2
+      return 3
+    fi
+    if [[ "$classification" == "live" ]]; then
+      printf 'LIVE: prerequisites must be checked by the contract before any external side effect.\n'
+    fi
+    # A module command must also work independently of verify-all.
+    export LANKIDE_E2E_RUN_ID="${LANKIDE_E2E_RUN_ID:-e2e-$(date -u +%m%d%H%M%S)-$$}"
+    if [[ ${#LANKIDE_E2E_RUN_ID} -gt 30 || ! "$LANKIDE_E2E_RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+      printf 'invalid LANKIDE_E2E_RUN_ID; expected 1-30 safe characters\n' >&2
+      return 2
+    fi
+    printf 'running: %s\n' "$command"
+    (cd "$ROOT_DIR" && bash -lc "$command")
+    return $?
+  done < "$MANIFEST"
+
+  if (( found != 0 )); then
+    printf 'unknown module: %s\n' "$wanted" >&2
+    return 2
+  fi
+}
+
+if [[ ! -f "$MANIFEST" ]]; then
+  printf 'missing E2E manifest: %s\n' "$MANIFEST" >&2
+  exit 2
+fi
+
+case "${1:-}" in
+  --list)
+    (( $# == 1 )) || { usage; exit 2; }
+    list_contracts
+    ;;
+  --run)
+    (( $# == 2 )) || { usage; exit 2; }
+    run_contract "$2"
+    ;;
+  --all)
+    if (( $# == 1 )); then
+      list_contracts
+      exit 0
+    fi
+    if [[ $# == 2 && "$2" == "--run" ]]; then
+      result=0
+      while IFS=$'\t' read -r module_id package kind classification command scenario prerequisites unattended status; do
+        [[ -z "${module_id:-}" || "${module_id:0:1}" == "#" ]] && continue
+        run_contract "$module_id" || result=$?
+        printf '\n'
+      done < "$MANIFEST"
+      exit "$result"
+    fi
+    usage
+    exit 2
+    ;;
+  "")
+    usage
+    exit 2
+    ;;
+  *)
+    (( $# == 1 )) || { usage; exit 2; }
+    find_contract "$1"
+    ;;
+esac

@@ -1,0 +1,342 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+LOCK_ROOT="${LANKIDE_E2E_LOCK_ROOT:-${TMPDIR:-/tmp}/lankide-e2e-locks}"
+HELD_LOCKS=()
+FULL_ARTIFACT_DIR=""
+FULL_INDEX=""
+
+usage() {
+  printf '%s\n' 'usage: ./scripts/verify-all --list | --gate hermetic|live-provider|live-harness|live-composition|desktop-visual|full-release [--resume]' >&2
+}
+
+ensure_run_id() {
+  LANKIDE_E2E_RUN_ID="${LANKIDE_E2E_RUN_ID:-fr-$(date -u +%Y%m%d-%H%M%S)-$$}"
+  if [[ ${#LANKIDE_E2E_RUN_ID} -gt 30 || ! "$LANKIDE_E2E_RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+    printf '[verify-all] invalid run_id; use 1-30 safe characters\n' >&2
+    return 2
+  fi
+  LANKIDE_VISUAL_RUN_ID="$LANKIDE_E2E_RUN_ID"
+  export LANKIDE_E2E_RUN_ID LANKIDE_VISUAL_RUN_ID
+  printf '[verify-all] run_id=%s\n' "$LANKIDE_E2E_RUN_ID"
+}
+
+lock_pid() { sed -n 's/^pid=//p' "$1/owner" 2>/dev/null | head -n 1; }
+acquire_lock() {
+  local name="$1" dir="$LOCK_ROOT/$1.lock" pid=""
+  mkdir -p "$LOCK_ROOT" || return 1
+  if ! mkdir "$dir" 2>/dev/null; then
+    pid="$(lock_pid "$dir")"
+    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+      printf '[verify-all] resource busy: %s (pid=%s)\n' "$name" "$pid" >&2
+      return 6
+    fi
+    if [[ ! "$pid" =~ ^[0-9]+$ ]] \
+      && ! find "$dir" -maxdepth 0 -mmin +1 -print -quit 2>/dev/null | grep -q .; then
+      # A creator can be between atomic mkdir and writing owner. Treat a fresh
+      # ownerless lock as busy instead of racing it.
+      printf '[verify-all] resource busy: %s (owner registration in progress)\n' "$name" >&2
+      return 6
+    fi
+    rm -f "$dir/owner"
+    rmdir "$dir" 2>/dev/null || { printf '[verify-all] cannot reclaim lock: %s\n' "$name" >&2; return 6; }
+    mkdir "$dir" 2>/dev/null || return 6
+  fi
+  printf 'pid=%s\nrun_id=%s\n' "$$" "$LANKIDE_E2E_RUN_ID" > "$dir/owner"
+  HELD_LOCKS+=("$dir")
+}
+
+acquire_gate_locks() {
+  case "$1" in
+    live-provider) acquire_lock provider ;;
+    live-harness) acquire_lock harness ;;
+    live-composition) acquire_lock provider && acquire_lock harness ;;
+    desktop-visual) acquire_lock desktop && acquire_lock display ;;
+    full-release)
+      acquire_lock full-release && acquire_lock provider && acquire_lock harness \
+        && acquire_lock desktop && acquire_lock display
+      ;;
+  esac
+}
+
+release_locks() {
+  local i dir failed=0
+  for ((i=${#HELD_LOCKS[@]}-1; i>=0; i--)); do
+    dir="${HELD_LOCKS[$i]}"
+    if [[ "$(lock_pid "$dir")" == "$$" ]]; then
+      rm -f "$dir/owner"
+      rmdir "$dir" 2>/dev/null || failed=1
+    else
+      failed=1
+    fi
+  done
+  return "$failed"
+}
+
+finalize_full() {
+  local code="$1" cleanup_status="$2"
+  [[ -n "$FULL_INDEX" ]] || return 0
+  python3 - "$FULL_INDEX" "$FULL_ARTIFACT_DIR/result.json" "$code" "$cleanup_status" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+from pathlib import Path
+i=json.loads(Path(sys.argv[1]).read_text()); code=int(sys.argv[3]); cleanup=sys.argv[4]
+r={"run_id":i["run_id"],"gate":"full-release","classification":"release-live",
+   "started_at":i["started_at"],"finished_at":datetime.now(timezone.utc).isoformat(),
+   "status":"passed" if code == 0 and cleanup == "passed" else "failed","exit_status":code,
+   "cleanup":cleanup,"index":str(Path(sys.argv[1]).resolve()),"steps":i["steps"]}
+Path(sys.argv[2]).write_text(json.dumps(r,indent=2)+"\n")
+PY
+  printf '[verify-all] full-release result=%s\n' "$FULL_ARTIFACT_DIR/result.json"
+}
+
+on_exit() {
+  local code=$? cleanup_status=passed
+  trap - EXIT
+  release_locks || cleanup_status=failed
+  if [[ "$cleanup_status" == failed && "$code" == 0 ]]; then code=1; fi
+  finalize_full "$code" "$cleanup_status"
+  exit "$code"
+}
+trap on_exit EXIT
+
+run_step() { local label="$1"; shift; printf '[verify-all] %s\n' "$label"; (cd "$ROOT_DIR" && "$@"); }
+run_module() { "$SCRIPT_DIR/verify-module" --run "$1"; }
+require_live() {
+  [[ "${LANKIDE_E2E_LIVE:-}" == 1 ]] || {
+    printf '[verify-all] PREREQUISITE_MISSING: set LANKIDE_E2E_LIVE=1\n' >&2; return 4;
+  }
+}
+run_prerequisite() {
+  run_step "prerequisite probe ($1)" cargo run -p lankide-testkit --example prerequisites -- --gate "$1" --no-live
+}
+
+run_workspace_checks() {
+  run_step 'cargo metadata' cargo metadata --no-deps --format-version 1 >/dev/null || return $?
+  run_step 'E2E contract synchronization' "$SCRIPT_DIR/verify-e2e-contracts" || return $?
+  run_step 'production data boundary' "$SCRIPT_DIR/verify-production-boundary" || return $?
+  run_step 'desktop UI boundary' "$SCRIPT_DIR/verify-desktop-ui-boundary" || return $?
+  run_step 'cargo fmt --all --check' cargo fmt --all --check || return $?
+  run_step 'cargo check --workspace --all-targets' cargo check --workspace --all-targets
+}
+run_hermetic() {
+  local module_id package kind classification command scenario prerequisites unattended status
+  run_workspace_checks || return $?
+  run_prerequisite hermetic || return $?
+  while IFS=$'\t' read -r module_id package kind classification command scenario prerequisites unattended status; do
+    [[ -z "${module_id:-}" || "${module_id:0:1}" == "#" || "$classification" != hermetic ]] && continue
+    run_module "$module_id" || return $?
+  done < "$ROOT_DIR/tests/e2e-modules.tsv"
+  run_step 'Provider local fault and contract regressions' cargo test -p lankide-provider-feishu --test feishu_e2e -p lankide-provider-telegram --test telegram_e2e || return $?
+  run_step 'Desktop bootstrap production binaries' cargo build -p lankide-desktop -p lankide-runtime-daemon -p lankide-computer-daemon -p lankide-cli || return $?
+  run_step 'Desktop real process startup and cleanup' python3 "$ROOT_DIR/apps/desktop/tests/bootstrap_e2e.py" \
+    --binary-dir "${CARGO_TARGET_DIR:-$ROOT_DIR/target}/debug" \
+    --artifact-dir "$ROOT_DIR/target/e2e-artifacts/desktop-bootstrap/$LANKIDE_E2E_RUN_ID" || return $?
+  run_step 'verification entrypoint regressions' python3 "$ROOT_DIR/tests/verification_e2e.py"
+}
+run_live_provider() {
+  require_live || return $?
+  # The live module itself probes immediately before its first side effect.
+  run_module provider-feishu || return $?
+  run_module provider-telegram
+}
+run_live_harness() {
+  require_live || return $?
+  # Each module probes its exact CLI/model/auth once.
+  run_module harness-pi || return $?
+  run_module harness-codex || return $?
+  run_module harness-claude-code
+}
+run_desktop_visual() { run_module desktop; }
+run_live_composition() { require_live && "$SCRIPT_DIR/verify-live-composition"; }
+
+require_release_desktop_contract() {
+  local command status
+  status="$(awk -F $'\t' '$1 == "desktop" {print $9}' "$ROOT_DIR/tests/e2e-modules.tsv")"
+  if [[ "$status" != implemented ]]; then
+    printf '[verify-all] PENDING: current Desktop acceptance contract is incomplete\n' >&2
+    return 3
+  fi
+  command="$(awk -F $'\t' '$1 == "desktop" {print $5}' "$ROOT_DIR/tests/e2e-modules.tsv")"
+  if [[ -z "$command" || "$command" == *"cargo run"* ]]; then
+    printf '[verify-all] PENDING: Desktop visual contract does not consume LANKIDE_VISUAL_BINARY from the isolated release target\n' >&2
+    return 3
+  fi
+}
+
+prepare_full() {
+  local parent="$ROOT_DIR/target/e2e-artifacts/full-release"
+  mkdir -p "$parent" || return 1
+  FULL_ARTIFACT_DIR="$parent/$LANKIDE_E2E_RUN_ID"
+  mkdir "$FULL_ARTIFACT_DIR" 2>/dev/null || {
+    printf '[verify-all] duplicate run_id reservation: %s\n' "$LANKIDE_E2E_RUN_ID" >&2; return 5;
+  }
+  FULL_INDEX="$FULL_ARTIFACT_DIR/index.json"
+  python3 - "$FULL_INDEX" "$LANKIDE_E2E_RUN_ID" <<'PY'
+import json,sys
+from datetime import datetime,timezone
+from pathlib import Path
+Path(sys.argv[1]).write_text(json.dumps({"run_id":sys.argv[2],"gate":"full-release","started_at":datetime.now(timezone.utc).isoformat(),"steps":[]},indent=2)+"\n")
+PY
+}
+
+prepare_full_resume() {
+  local parent="$ROOT_DIR/target/e2e-artifacts/full-release"
+  FULL_ARTIFACT_DIR="$parent/$LANKIDE_E2E_RUN_ID"
+  FULL_INDEX="$FULL_ARTIFACT_DIR/index.json"
+  [[ -f "$FULL_INDEX" && -f "$FULL_ARTIFACT_DIR/result.json" ]] || {
+    printf '[verify-all] resume target does not exist: %s\n' "$FULL_ARTIFACT_DIR" >&2
+    return 5
+  }
+  python3 - "$FULL_INDEX" "$FULL_ARTIFACT_DIR/result.json" <<'PY'
+import json, sys
+from pathlib import Path
+
+index = json.loads(Path(sys.argv[1]).read_text())
+result = json.loads(Path(sys.argv[2]).read_text())
+required = ["release-build", "hermetic", "live-provider", "live-harness", "live-composition"]
+steps = index.get("steps", [])
+for wanted in required:
+    matches = [step for step in steps if step.get("id") == wanted]
+    if len(matches) != 1 or matches[0].get("status") != "passed" or matches[0].get("cleanup") != "passed":
+        raise SystemExit(f"cannot resume: {wanted} lacks one clean passed result")
+failed_visual = [step for step in steps if step.get("id") == "desktop-visual" and step.get("status") == "failed"]
+passed_retry = [step for step in steps if step.get("id", "").startswith("desktop-visual-retry-") and step.get("status") == "passed"]
+if not failed_visual:
+    raise SystemExit("cannot resume: the original Desktop visual step did not fail")
+if passed_retry or result.get("status") == "passed":
+    raise SystemExit("cannot resume: this full-release run is already recovered")
+PY
+}
+
+require_release_sources_unchanged() {
+  "$SCRIPT_DIR/release-provenance" verify --binary-dir "$1" --output "$FULL_ARTIFACT_DIR/provenance.json"
+}
+
+package_verified_release() {
+  require_release_sources_unchanged "$LANKIDE_RELEASE_BIN_DIR" || return $?
+  export LANKIDE_RELEASE_PROVENANCE="$FULL_ARTIFACT_DIR/provenance.json"
+  export LANKIDE_PACKAGE_OUTPUT_DIR="$FULL_ARTIFACT_DIR/package"
+  "$SCRIPT_DIR/package-macos" || return $?
+  "$SCRIPT_DIR/verify-package" || return $?
+  require_release_sources_unchanged "$LANKIDE_RELEASE_BIN_DIR"
+}
+
+require_disk() {
+  local required="${LANKIDE_FULL_RELEASE_REQUIRED_BYTES:-12884901888}" available_kib available
+  [[ "$required" =~ ^[0-9]+$ ]] || return 2
+  available_kib="$(df -Pk "$ROOT_DIR" | awk 'NR==2 {print $4}')"
+  available=$((available_kib * 1024))
+  printf '[verify-all] release disk required_bytes=%s available_bytes=%s\n' "$required" "$available"
+  (( available >= required )) || {
+    printf '[verify-all] PREREQUISITE_MISSING: insufficient disk; required=%s available=%s; nothing was deleted\n' "$required" "$available" >&2; return 4;
+  }
+}
+
+record_step() {
+  local id="$1" command="$2" log status; shift 2
+  log="$FULL_ARTIFACT_DIR/$id.log"
+  printf '[verify-all] full-release step=%s command=%s\n' "$id" "$command"
+  (cd "$ROOT_DIR" && "$@") 2>&1 | tee "$log"
+  status="${PIPESTATUS[0]}"
+  python3 - "$FULL_INDEX" "$id" "$command" "$status" "$log" <<'PY'
+import json,re,sys
+from datetime import datetime,timezone
+from pathlib import Path
+p,step,cmd,raw,log=sys.argv[1:]; status=int(raw); text=Path(log).read_text(errors="replace")
+paths=[]
+for value in re.findall(r"(?:artifact|result)(?:s)?(?:\s+path)?[=:]\s*([^\s]+)",text,re.I):
+    value=value.rstrip(".,;)")
+    if value not in paths: paths.append(value)
+i=json.loads(Path(p).read_text()); i["steps"].append({"id":step,"command":cmd,
+  "status":"passed" if status==0 else "failed","exit_status":status,
+  "cleanup":"passed" if status==0 else "failed_or_incomplete",
+  "cleanup_basis":"subgate exit contract","artifact_paths":paths,
+  "log":str(Path(log).resolve()),"finished_at":datetime.now(timezone.utc).isoformat()})
+Path(p).write_text(json.dumps(i,indent=2)+"\n")
+PY
+  return "$status"
+}
+
+run_full_release() {
+  require_live || return $?
+  prepare_full || return $?
+  record_step disk-preflight 'full-release disk prerequisite' require_disk || return $?
+  # Fail before the build and paid live calls while Desktop still points at a
+  # debug cargo run instead of the isolated release binary.
+  record_step desktop-release-contract 'Desktop must consume isolated release binary' \
+    require_release_desktop_contract || return $?
+  CARGO_TARGET_DIR="$ROOT_DIR/target/full-release-builds/$LANKIDE_E2E_RUN_ID"
+  mkdir -p "$ROOT_DIR/target/full-release-builds" || return 1
+  mkdir "$CARGO_TARGET_DIR" 2>/dev/null || { printf '[verify-all] isolated release target exists\n' >&2; return 5; }
+  export CARGO_TARGET_DIR
+  LANKIDE_RELEASE_BIN_DIR="$CARGO_TARGET_DIR/release"
+  LANKIDE_VISUAL_BUILD=0
+  LANKIDE_VISUAL_BINARY="$LANKIDE_RELEASE_BIN_DIR/lankide-desktop"
+  LANKIDE_RELEASE_REQUIRED=1
+  export LANKIDE_RELEASE_BIN_DIR LANKIDE_VISUAL_BUILD LANKIDE_VISUAL_BINARY LANKIDE_RELEASE_REQUIRED
+
+  "$SCRIPT_DIR/release-provenance" snapshot --output "$FULL_ARTIFACT_DIR/source-before-build.json" || return $?
+  record_step release-build 'cargo build --workspace --all-targets --release --locked' \
+    cargo build --workspace --all-targets --release --locked || return $?
+  "$SCRIPT_DIR/release-provenance" record --binary-dir "$LANKIDE_RELEASE_BIN_DIR" \
+    --source-snapshot "$FULL_ARTIFACT_DIR/source-before-build.json" --output "$FULL_ARTIFACT_DIR/provenance.json" || return $?
+  record_step hermetic 'hermetic' run_hermetic || return $?
+  record_step live-provider 'live-provider' run_live_provider || return $?
+  record_step live-harness 'live-harness' run_live_harness || return $?
+  record_step live-composition 'live-composition (exact product binaries)' run_live_composition || return $?
+  record_step desktop-visual 'desktop-visual (release binary required)' run_desktop_visual || return $?
+  require_release_sources_unchanged "$LANKIDE_RELEASE_BIN_DIR" || return $?
+  record_step release-smoke 'full-release-smoke'  "$SCRIPT_DIR/full-release-smoke" \
+    --release-bin-dir "$LANKIDE_RELEASE_BIN_DIR" --artifact-dir "$FULL_ARTIFACT_DIR/release-smoke" --run-id "$LANKIDE_E2E_RUN_ID" || return $?
+  record_step release-package 'package and execute the exact accepted release archive' package_verified_release
+}
+
+run_full_release_resume() {
+  local retry_count retry_id
+  prepare_full_resume || return $?
+  LANKIDE_RELEASE_BIN_DIR="$ROOT_DIR/target/full-release-builds/$LANKIDE_E2E_RUN_ID/release"
+  require_release_sources_unchanged "$LANKIDE_RELEASE_BIN_DIR" || return $?
+  retry_count="$(python3 - "$FULL_INDEX" <<'PY'
+import json, sys
+from pathlib import Path
+steps=json.loads(Path(sys.argv[1]).read_text()).get("steps", [])
+print(1 + sum(step.get("id", "").startswith("desktop-visual-retry-") for step in steps))
+PY
+)"
+  retry_id="${LANKIDE_E2E_RUN_ID}-r${retry_count}"
+  if [[ ${#retry_id} -gt 30 ]]; then retry_id="fr-retry-$(date -u +%H%M%S)-$$"; fi
+  LANKIDE_VISUAL_RUN_ID="$retry_id"
+  LANKIDE_VISUAL_BUILD=0
+  LANKIDE_VISUAL_BINARY="$LANKIDE_RELEASE_BIN_DIR/lankide-desktop"
+  LANKIDE_RELEASE_REQUIRED=1
+  export LANKIDE_RELEASE_BIN_DIR LANKIDE_VISUAL_RUN_ID LANKIDE_VISUAL_BUILD LANKIDE_VISUAL_BINARY LANKIDE_RELEASE_REQUIRED
+
+  record_step "desktop-visual-retry-$retry_count" 'desktop-visual retry (same isolated release binary)' \
+    run_desktop_visual || return $?
+  require_release_sources_unchanged "$LANKIDE_RELEASE_BIN_DIR" || return $?
+  record_step "release-smoke-retry-$retry_count" 'full-release-smoke retry (same isolated release binaries)' \
+    "$SCRIPT_DIR/full-release-smoke" --release-bin-dir "$LANKIDE_RELEASE_BIN_DIR" \
+    --artifact-dir "$FULL_ARTIFACT_DIR/release-smoke-retry-$retry_count" --run-id "$retry_id" || return $?
+  record_step "release-package-retry-$retry_count" 'package and execute the exact accepted release archive' package_verified_release
+}
+
+if [[ "${1:-}" == --list ]]; then (( $# == 1 )) || { usage; exit 2; }; exec "$SCRIPT_DIR/verify-module" --list; fi
+[[ "${1:-}" == --gate && ( $# == 2 || ( $# == 3 && "${3:-}" == --resume ) ) ]] || { usage; exit 2; }
+gate="$2"
+printf '[verify-all] gate=%s\n' "$gate"
+ensure_run_id || exit $?
+acquire_gate_locks "$gate" || exit $?
+case "$gate" in
+  hermetic) run_hermetic ;;
+  live-provider) run_live_provider ;;
+  live-harness) run_live_harness ;;
+  live-composition) run_live_composition ;;
+  desktop-visual) run_desktop_visual ;;
+  full-release)
+    if [[ "${3:-}" == --resume ]]; then run_full_release_resume; else run_full_release; fi
+    ;;
+  *) printf '[verify-all] unknown gate: %s\n' "$gate" >&2; usage; exit 2 ;;
+esac

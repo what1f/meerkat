@@ -1,0 +1,44 @@
+[package]
+name = "lankide-desktop"
+version = "0.1.0"
+edition = "2024"
+description = "Lankide GPUI management client"
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
+desktop-ui = { path = "../../crates/desktop-ui" }
+lankide-client = { path = "../../crates/client" }
+gpui.workspace = true
+gpui_platform.workspace = true
+gpui-component.workspace = true
+gpui-component-assets.workspace = true
+anyhow = "1"
+serde_json.workspace = true
+tokio.workspace = true
+tonic.workspace = true
+qrcode = { version = "0.14.1", default-features = false }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-foundation = "0.3.2"
+objc2-service-management = { version = "0.3.2", default-features = false, features = ["std", "SMAppService", "objc2", "objc2-foundation"] }
+
+[dev-dependencies]
+tokio-stream.workspace = true
+gpui = { workspace = true, features = ["test-support"] }
+gpui_platform = { workspace = true, features = ["test-support"] }
+
+[[bin]]
+name = "lankide-desktop"
+path = "src/main.rs"
+
+[package.metadata.lankide.e2e]
+command = "./apps/desktop/visual-e2e.sh"
+scenario = "Review the actual production window across the complete Workspace, Agent, onboarding, resource-image, light and dark scenario set; verify exact source/binary/baseline evidence and owned process cleanup."
+prerequisites = "macOS window session; authorized live Provider accounts; four product binaries; completed human or Computer Use review via LANKIDE_VISUAL_REVIEW"
+classification = "visual-semantic"
+unattended = "no; requires actual-window review"
+status = "implemented"

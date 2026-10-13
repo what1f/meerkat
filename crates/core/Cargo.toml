@@ -1,0 +1,26 @@
+[package]
+name = "lankide-core"
+version.workspace = true
+edition.workspace = true
+description = "Pure domain identifiers and state types for Lankide"
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+name = "lankide_core"
+path = "src/lib.rs"
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[package.metadata.lankide.e2e]
+command = "cargo test -p lankide-core --test core_e2e"
+scenario = "Build two isolated workspaces, provider-defined channels, ordered messages with mention/reply/attachment, attention settings, a fixed unread snapshot, and execution input; reject invalid IDs, cross-workspace references, unsupported attention, invalid schedule periods, and cursor regression."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"

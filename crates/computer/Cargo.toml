@@ -1,0 +1,46 @@
+[package]
+name = "lankide-computer"
+version.workspace = true
+edition.workspace = true
+description = "Computer daemon execution boundary for Lankide"
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lankide-core = { path = "../core" }
+lankide-protocol = { path = "../protocol" }
+lankide-harness = { path = "../harness" }
+prost.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tonic.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[package.metadata.lankide.e2e]
+command = "cargo test -p lankide-computer --features test-support --test computer_e2e"
+scenario = "Run a real UDS Computer peer through parallel assignments, session recovery, steer, resource and Tool routing, expand real message content files locally with failure short-circuiting, replay, cancellation, and forced process cleanup."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"
+
+[[bin]]
+name = "computer-harness-peer"
+path = "tests/fixtures/harness_peer.rs"
+test = false
+bench = false
+required-features = ["test-support"]
+
+[features]
+test-support = []
+
+[[test]]
+name = "computer_e2e"
+path = "tests/computer_e2e.rs"
+required-features = ["test-support"]

@@ -1,0 +1,28 @@
+[package]
+name = "lankide-testkit"
+version.workspace = true
+edition.workspace = true
+description = "Business-scenario fixtures for module E2E suites"
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+rusqlite.workspace = true
+lankide-core = { path = "../core" }
+lankide-protocol = { path = "../protocol" }
+lankide-provider = { path = "../provider" }
+lankide-harness = { path = "../harness" }
+lankide-storage = { path = "../storage" }
+lankide-runtime = { path = "../runtime" }
+lankide-computer = { path = "../computer" }
+serde.workspace = true
+serde_json.workspace = true
+
+[package.metadata.lankide.e2e]
+command = "cargo test -p lankide-testkit --test testkit_e2e && cargo run -p lankide-testkit --example prerequisites -- --gate hermetic --no-live"
+scenario = "Run the public prerequisite probe without live dependencies, including a stopped WAL database, and verify durable scenario evidence rejects incomplete cleanup, cleanup failures, duplicate runs, and result write failures."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"

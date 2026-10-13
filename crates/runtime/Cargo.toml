@@ -1,0 +1,33 @@
+[package]
+name = "lankide-runtime"
+version.workspace = true
+edition.workspace = true
+description = "Lankide Runtime orchestration boundary"
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
+lankide-core = { path = "../core" }
+lankide-protocol = { path = "../protocol" }
+lankide-provider = { path = "../provider" }
+lankide-storage = { path = "../storage" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tonic.workspace = true
+
+[dev-dependencies]
+rusqlite.workspace = true
+tempfile.workspace = true
+
+[package.metadata.lankide.e2e]
+command = "cargo test -p lankide-runtime --test runtime_e2e"
+scenario = "Ingest Provider events across Workspaces, freeze multi-Chat snapshots, queue messages received during active work for the next Agent run, release scheduling after failed and cancelled executions, preserve Agent profile updates and roll back failed lifecycle changes, hard-delete Agents over management RPC with durable Computer cleanup, deliver idempotent Tool and message outcomes, recover durable ingress after a failed commit, drain active work across pause, and advance cursors only after accepted delivery."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"

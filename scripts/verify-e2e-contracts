@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+
+"""Fail when the machine-readable E2E manifest and Cargo metadata diverge."""
+
+from __future__ import annotations
+
+import csv
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+MANIFEST = ROOT / "tests" / "e2e-modules.tsv"
+FIELDS = (
+    "command",
+    "scenario",
+    "prerequisites",
+    "classification",
+    "unattended",
+    "status",
+)
+
+
+def fail(message: str) -> None:
+    print(f"[e2e-contracts] {message}", file=sys.stderr)
+
+
+def main() -> int:
+    with MANIFEST.open(newline="", encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream, delimiter="\t"))
+
+    metadata = json.loads(
+        subprocess.check_output(
+            ["cargo", "metadata", "--no-deps", "--format-version", "1"],
+            cwd=ROOT,
+            text=True,
+        )
+    )
+    packages = {package["name"]: package for package in metadata["packages"]}
+
+    errors = 0
+    module_ids: set[str] = set()
+    package_names: set[str] = set()
+    for row in rows:
+        module_id = row["# module_id"]
+        package_name = row["package"]
+        if module_id in module_ids:
+            fail(f"duplicate module id: {module_id}")
+            errors += 1
+        if package_name in package_names:
+            fail(f"duplicate package row: {package_name}")
+            errors += 1
+        module_ids.add(module_id)
+        package_names.add(package_name)
+
+        package = packages.get(package_name)
+        if package is None:
+            fail(f"{module_id}: Cargo package not found: {package_name}")
+            errors += 1
+            continue
+        contract = (
+            (package.get("metadata") or {})
+            .get("lankide", {})
+            .get("e2e")
+        )
+        if not isinstance(contract, dict):
+            fail(f"{module_id}: missing package.metadata.lankide.e2e")
+            errors += 1
+            continue
+        for field in FIELDS:
+            manifest_value = row[field]
+            metadata_value = contract.get(field)
+            if metadata_value != manifest_value:
+                fail(
+                    f"{module_id}.{field} differs: manifest={manifest_value!r} "
+                    f"metadata={metadata_value!r}"
+                )
+                errors += 1
+
+    unlisted = sorted(
+        package_name
+        for package_name, package in packages.items()
+        if (package.get("metadata") or {}).get("lankide", {}).get("e2e")
+        and package_name not in package_names
+    )
+    for package_name in unlisted:
+        fail(f"Cargo package has an E2E contract but no manifest row: {package_name}")
+        errors += 1
+
+    for name, package in packages.items():
+        if name in package_names:
+            continue
+        metadata = (package.get("metadata") or {}).get("lankide", {})
+        exemption = metadata.get("e2e-exemption")
+        if name == "desktop-ui-preview" and isinstance(exemption, str) and exemption.strip():
+            continue
+        if name not in unlisted:
+            fail(f"workspace package lacks an E2E contract: {name}")
+            errors += 1
+
+    if errors:
+        fail(f"FAIL ({errors} contract mismatch(es))")
+        return 1
+    print(f"[e2e-contracts] PASS ({len(rows)} module contracts synchronized)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,26 @@
+[package]
+name = "lankide-storage"
+version.workspace = true
+edition.workspace = true
+description = "Runtime persistence contracts for Lankide"
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lankide-core = { path = "../core" }
+serde.workspace = true
+serde_json.workspace = true
+rusqlite.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[package.metadata.lankide.e2e]
+command = "cargo test -p lankide-storage --test storage_e2e"
+scenario = "Run one real SQLite WAL business lifecycle for Workspaces, Agents, people, messages, Inbox and executions; hard-delete Agents while keeping deferred file cleanup durable, allow deleted IDs to be created again, keep secret and ingress writes atomic, enforce immutable send and Tool call identities with terminal success or failure, commit replies without consuming later Inbox, and recover startup state."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"

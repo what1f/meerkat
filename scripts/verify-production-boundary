@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+"""Reject known test-data leaks and test-only dependencies in production packages."""
+
+import re
+import hashlib
+import json
+import sys
+import tomllib
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+# These executables/libraries are never shipped or linked by product code.
+TEST_ONLY = {"lankide-testkit", "desktop-ui-preview"}
+MARKERS = re.compile(
+    r"\b(?:Mock|Fake|Fixture)[A-Z]\w*|\b(?:scripted_harness|run_scripted|QueueEventSource|AtomicFailure|InjectedFailure|ProcessHarnessFactory|ProcessHarnessSpec)\b"
+    r"|--(?:scripted-harness|scripted-composition|visual-e2e|e2e)\b"
+    r"|avatar-(?:clark|bruce|evan|rocky|alice|bob|emma|olivia|james)\.png|workspace-cover\.(?:png|jpg)"
+    r"|/" r"Users/|lankide-scripted-cli|deepseek-v4-flash|gpt-5\.6-luna"
+    r"|继续启用|Continue setup|(?:飞书|Feishu)[：:]\s*(?:继续|Continue)"
+    r"|model-directory|模型列表未能加载|Could not load models"
+)
+
+
+def verify_reaction_assets(errors):
+    catalog_path = ROOT / "providers/feishu/assets/reactions.json"
+    assets_dir = ROOT / "apps/desktop/assets/reactions"
+    embedded_path = ROOT / "apps/desktop/src/assets.rs"
+    if not (ROOT / "providers/feishu/Cargo.toml").exists() and not (
+        ROOT / "apps/desktop/Cargo.toml"
+    ).exists():
+        return
+    for required in (catalog_path, embedded_path):
+        if not required.is_file():
+            errors.append(f"{required.relative_to(ROOT)}: required production asset definition is missing")
+            return
+    embedded_source = embedded_path.read_text()
+    catalog = json.loads(catalog_path.read_text())
+    expected_count = 279
+
+    if len(catalog) != expected_count:
+        errors.append(
+            f"{catalog_path.relative_to(ROOT)}: expected {expected_count} Feishu reactions, got {len(catalog)}"
+        )
+
+    keys = [entry["emoji_type"] for entry in catalog]
+    files = [entry["asset"] for entry in catalog]
+    if len(set(keys)) != len(keys):
+        errors.append(f"{catalog_path.relative_to(ROOT)}: duplicate emoji_type")
+    if len(set(files)) != len(files):
+        errors.append(f"{catalog_path.relative_to(ROOT)}: duplicate reaction asset")
+
+    declared = set(
+        re.findall(
+            r'"reactions/[^"]+\.png"\s*=>\s*"\.\./assets/reactions/([^"]+\.png)"',
+            embedded_source,
+        )
+    )
+    actual = {path.name for path in assets_dir.glob("*.png")}
+    expected = set(files)
+    for label, found in (("embedded declarations", declared), ("asset directory", actual)):
+        missing = sorted(expected - found)
+        extra = sorted(found - expected)
+        if missing or extra:
+            errors.append(
+                f"reactions {label}: missing={missing or 'none'} extra={extra or 'none'}"
+            )
+
+    for filename in sorted(expected & actual):
+        data = (assets_dir / filename).read_bytes()
+        if len(data) < 26 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+            errors.append(f"apps/desktop/assets/reactions/{filename}: invalid PNG")
+        elif data[25] not in (4, 6):
+            errors.append(
+                f"apps/desktop/assets/reactions/{filename}: PNG has no alpha channel"
+            )
+
+
+def main():
+    errors = []
+    count = 0
+    fixture_assets = ROOT / "apps/desktop/tests/assets"
+    known_test_images = {hashlib.sha256(path.read_bytes()).hexdigest() for path in fixture_assets.glob("*") if path.is_file()}
+    for group in ("apps", "crates", "providers", "harnesses"):
+        for manifest in sorted((ROOT / group).glob("*/Cargo.toml")):
+            package = tomllib.loads(manifest.read_text())
+            name = package["package"]["name"]
+            if name in TEST_ONLY:
+                continue
+            count += 1
+            for binary in package.get("bin", []):
+                if binary.get("path", "").startswith("tests/") and "test-support" not in binary.get("required-features", []):
+                    errors.append(f"{manifest.relative_to(ROOT)}: test binary is enabled in production builds")
+            if "test-support" in package.get("features", {}).get("default", []):
+                errors.append(f"{manifest.relative_to(ROOT)}: test-support must not be a default feature")
+            tables = [package, *package.get("target", {}).values()]
+            for table in tables:
+                for kind in ("dependencies", "build-dependencies"):
+                    for alias, spec in table.get(kind, {}).items():
+                        dependency = spec.get("package", alias) if isinstance(spec, dict) else alias
+                        if dependency in TEST_ONLY:
+                            errors.append(f"{manifest.relative_to(ROOT)}: {kind} links {dependency}")
+            for asset in sorted((manifest.parent / "assets").rglob("*")):
+                if asset.is_file() and (MARKERS.search(asset.name) or hashlib.sha256(asset.read_bytes()).hexdigest() in known_test_images):
+                    errors.append(f"{asset.relative_to(ROOT)}: test image must not ship as a product asset")
+            for source in sorted((manifest.parent / "src").rglob("*.rs")):
+                if source.stem in {"e2e", "tests", "scripted_harness"}:
+                    errors.append(f"{source.relative_to(ROOT)}: move test code out of production src")
+                content = source.read_text()
+                # Covers direct include_* paths and local embedding macros alike.
+                if re.search(r'"[^"\n]*(?:/tests/|/fixtures/|/demo/)[^"\n]*"', content):
+                    errors.append(f"{source.relative_to(ROOT)}: production source references isolated test data")
+                for line, text in enumerate(content.splitlines(), 1):
+                    if MARKERS.search(text):
+                        errors.append(f"{source.relative_to(ROOT)}:{line}: {text.strip()}")
+    verify_reaction_assets(errors)
+    if errors:
+        print("[production-boundary] FAIL: test-only code/data in production", file=sys.stderr)
+        print("\n".join(errors), file=sys.stderr)
+        return 1
+    print(f"[production-boundary] PASS ({count} production packages; source markers and dependency boundaries)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

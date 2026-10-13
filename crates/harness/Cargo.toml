@@ -1,0 +1,39 @@
+[package]
+name = "lankide-harness"
+version.workspace = true
+edition.workspace = true
+description = "Harness contracts for Pi, Codex, and Claude Code"
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lankide-core = { path = "../core" }
+lankide-protocol = { path = "../protocol" }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["process", "io-util"] }
+tokio-stream.workspace = true
+
+[package.metadata.lankide.e2e]
+command = "cargo test -p lankide-harness --features test-support --test harness_e2e"
+scenario = "Start, resume, execute, steer, inject an idempotent Tool Result, cancel, and close one Agent execution through a real child-process Harness contract."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"
+
+[[bin]]
+name = "harness-peer"
+path = "tests/fixtures/harness_peer.rs"
+test = false
+bench = false
+required-features = ["test-support"]
+
+[features]
+test-support = []
+
+[[test]]
+name = "harness_e2e"
+path = "tests/harness_e2e.rs"
+required-features = ["test-support"]

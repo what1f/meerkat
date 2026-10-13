@@ -1,0 +1,26 @@
+[package]
+name = "lankide-harness-pi"
+version.workspace = true
+edition.workspace = true
+description = "Pi Harness adapter for Lankide"
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lankide-harness = { path = "../../crates/harness" }
+serde_json.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+
+[dev-dependencies]
+serde.workspace = true
+lankide-testkit = { path = "../../crates/testkit" }
+
+[package.metadata.lankide.e2e]
+command = "LANKIDE_E2E_LIVE=1 cargo test -p lankide-harness-pi --test pi_e2e -- --ignored --nocapture"
+scenario = "Start and resume a Pi Native Session, execute a native shell command, exchange an injected Tool Result, steer, cancel, and verify process cleanup."
+prerequisites = "Pi CLI; deepseek-v4-flash; harness-live prerequisite probe"
+classification = "live"
+unattended = "yes after live opt-in and preflight"
+status = "implemented"

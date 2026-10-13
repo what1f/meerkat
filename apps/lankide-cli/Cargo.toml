@@ -1,0 +1,31 @@
+[package]
+name = "lankide-cli"
+version.workspace = true
+edition.workspace = true
+description = "Lankide Agent-run-scoped capability CLI"
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lankide-protocol = { path = "../../crates/protocol" }
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tonic.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[[bin]]
+name = "lankide"
+path = "src/main.rs"
+
+[package.metadata.lankide.e2e]
+command = "cargo run -p lankide-cli --example e2e"
+scenario = "Use execution-scoped credentials over a real Runtime UDS to list and invoke capabilities, send content-file text with reply and force, upload an attachment, read content, and download a resource."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"
