@@ -42,6 +42,17 @@ impl Storage {
     pub fn failure_history(&self, id: i64) -> Result<FailureHistory> {
         Ok(self.conn()?.query_row("SELECT coalesce((SELECT max(i.failure_count) FROM agent_inbox_items i JOIN execution_delivery_items d USING(inbox_item_id) JOIN execution_deliveries ed USING(delivery_id) WHERE ed.execution_id=e.execution_id),0),a.failure_fingerprint,a.failure_streak FROM executions e JOIN agents a USING(workspace_id,agent_id) WHERE execution_id=?1", [id], |r| Ok(FailureHistory {batch_failures:r.get(0)?,fingerprint:r.get(1)?,streak:r.get(2)?}))?)
     }
+    /// Requeue an ownership conflict without changing Harness failure counters.
+    pub fn retry_execution_conflict(&self, id: i64, retry_at: i64) -> Result<()> {
+        let mut c = self.conn()?;
+        let t = c.transaction()?;
+        if t.execute("UPDATE executions SET retry_policy_applied=1 WHERE execution_id=?1 AND state='failed' AND retry_policy_applied=0", [id])? == 0 {
+            return Ok(());
+        }
+        t.execute("UPDATE agent_inbox_items SET retry_batch_id=coalesce(retry_batch_id,?1),available_at=?2,state='pending',claimed_execution_id=NULL WHERE inbox_item_id IN (SELECT inbox_item_id FROM execution_delivery_items JOIN execution_deliveries USING(delivery_id) WHERE execution_id=?1) AND state!='consumed'", params![id,retry_at])?;
+        t.commit()?;
+        Ok(())
+    }
     /// Persists a Runtime policy decision and its notice in one transaction.
     pub fn apply_failure_policy(
         &self,

@@ -332,6 +332,7 @@ pub(super) async fn replay_assignment_pending(inner: &Inner, key: &str) {
 }
 
 pub(super) async fn active_attempts(inner: &Inner) -> Vec<ActiveAttempt> {
+    let starting = inner.starting.lock().await;
     let active = inner.active.lock().await;
     let mut attempts = active
         .iter()
@@ -352,6 +353,27 @@ pub(super) async fn active_attempts(inner: &Inner) -> Vec<ActiveAttempt> {
         })
         .collect::<BTreeMap<_, _>>();
     drop(active);
+    // Preparing a native session is also live work. Do not report a false
+    // absence between acceptance and insertion into the active run map.
+    for value in starting.values() {
+        let Some((id, attempt)) = value.assignment_key.split_once(':') else {
+            continue;
+        };
+        let (Ok(execution_id), Ok(attempt)) = (id.parse(), attempt.parse()) else {
+            continue;
+        };
+        attempts
+            .entry((execution_id, attempt))
+            .or_insert_with(|| ActiveAttempt {
+                execution: Some(ExecutionRef {
+                    execution_id,
+                    attempt,
+                }),
+                last_event_sequence: 0,
+                harness_process_state: "starting".into(),
+            });
+    }
+    drop(starting);
 
     // A terminal Harness event remains an active Runtime attempt until Runtime
     // acknowledges the commit. Include that durable outbox in heartbeats so a

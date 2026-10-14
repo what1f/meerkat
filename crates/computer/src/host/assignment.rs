@@ -154,6 +154,9 @@ pub(super) async fn handle_assignment(inner: Arc<Inner>, assign: AssignExecution
                     ComputerError::InvalidAssignment(code) if code == "assignment_cancelled" => {
                         FailureCategory::Cancelled
                     }
+                    ComputerError::InvalidAssignment(code) if code == "agent_busy" => {
+                        FailureCategory::Conflict
+                    }
                     ComputerError::Io(_)
                     | ComputerError::Transport(_)
                     | ComputerError::Rpc(_)
@@ -164,7 +167,10 @@ pub(super) async fn handle_assignment(inner: Arc<Inner>, assign: AssignExecution
                 super::failure::attempt_failure(&HarnessFailure {
                     code: error_code(&error).into(),
                     category,
-                    retryable: category == FailureCategory::Transient,
+                    retryable: matches!(
+                        category,
+                        FailureCategory::Transient | FailureCategory::Conflict
+                    ),
                     detail: error.to_string(),
                 })
             }

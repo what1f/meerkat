@@ -4,6 +4,7 @@ use lankide_protocol::{
     RuntimeFrameStream, computer_frame, runtime_frame,
 };
 use lankide_storage::{ExecutionEventDisposition, RecordExecutionEvent, SteerDelivery, Storage};
+use std::collections::BTreeSet;
 use std::sync::{
     Mutex as StdMutex, RwLock as StdRwLock, Weak,
     atomic::{AtomicI64, AtomicU64, Ordering},
@@ -33,6 +34,8 @@ struct ComputerConnection {
     instance_id: String,
     sender: mpsc::Sender<Result<RuntimeFrame, Status>>,
     harnesses: Vec<HarnessInfo>,
+    reconciled: bool,
+    active_agents: BTreeSet<(String, String)>,
 }
 
 struct PendingExecution {
@@ -104,6 +107,26 @@ impl ComputerBroker {
             .connections
             .read()
             .map(|values| values.contains_key(computer_id))
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn can_dispatch(
+        &self,
+        computer_id: &str,
+        workspace: &WorkspaceId,
+        agent: &AgentId,
+    ) -> bool {
+        self.inner
+            .connections
+            .read()
+            .map(|connections| {
+                connections.get(computer_id).is_some_and(|connection| {
+                    connection.reconciled
+                        && !connection
+                            .active_agents
+                            .contains(&(workspace.to_string(), agent.to_string()))
+                })
+            })
             .unwrap_or(false)
     }
 
@@ -230,6 +253,8 @@ impl ComputerBroker {
             instance_id: hello.instance_id.clone(),
             sender: sender.clone(),
             harnesses: hello.harnesses,
+            reconciled: false,
+            active_agents: BTreeSet::new(),
         };
         if let Some(previous) = self
             .inner
@@ -316,27 +341,18 @@ impl ComputerBroker {
         if !removed {
             return Ok(());
         }
-        let mut pending = self
+        // A link loss is not an attempt loss. Keep the completion waiter and
+        // its acceptance/output state until a terminal event or reconciliation.
+        let pending = self
             .inner
             .pending
             .lock()
             .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
-        let execution_ids = pending
-            .iter()
-            .filter_map(|(execution_id, value)| {
-                (value.computer_id == computer_id).then_some(*execution_id)
-            })
-            .collect::<Vec<_>>();
-        for execution_id in execution_ids {
-            let Some(pending) = pending.remove(&execution_id) else {
-                continue;
-            };
-            let _ = pending.completion.send(Err(ComputerError {
-                code: "computer_disconnected".into(),
-            }));
-            let _ = self
-                .storage()?
-                .mark_execution_recovering(execution_id, now_millis());
+        for (execution_id, value) in pending.iter() {
+            if value.computer_id == computer_id && value.instance_id == instance_id {
+                self.storage()?
+                    .mark_execution_recovering(*execution_id, now_millis())?;
+            }
         }
         Ok(())
     }
@@ -401,6 +417,21 @@ impl ComputerBroker {
                         now_millis(),
                     )?;
                 } else {
+                    if result
+                        .failure
+                        .as_ref()
+                        .is_some_and(|failure| failure.category == "conflict")
+                    {
+                        if let Some(connection) = self
+                            .inner
+                            .connections
+                            .write()
+                            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?
+                            .get_mut(computer_id)
+                        {
+                            connection.reconciled = false;
+                        }
+                    }
                     self.storage()?.reject_execution_attempt_with_failure(
                         execution_id,
                         i64::from(execution.attempt),
@@ -476,6 +507,26 @@ impl ComputerBroker {
                         occurred_at: event.occurred_at,
                         now: event.occurred_at,
                     })?;
+                // A lost attempt cannot commit late output, but its Computer
+                // still needs a terminal receipt to discard the durable outbox.
+                let abandoned_terminal = receipt.disposition
+                    == ExecutionEventDisposition::StaleAttempt
+                    && matches!(
+                        kind,
+                        ExecutionEventKind::Completed
+                            | ExecutionEventKind::Failed
+                            | ExecutionEventKind::Cancelled
+                    )
+                    && owner.as_ref().is_some_and(|owner| {
+                        owner.computer_id == computer_id
+                            && matches!(
+                                owner.state,
+                                lankide_storage::ExecutionAttemptState::Lost
+                                    | lankide_storage::ExecutionAttemptState::Rejected
+                                    | lankide_storage::ExecutionAttemptState::Failed
+                                    | lankide_storage::ExecutionAttemptState::Cancelled
+                            )
+                    });
                 let mut completion = None;
                 let max_saved_sequence = receipt.max_saved_sequence;
                 {
@@ -535,7 +586,7 @@ impl ComputerBroker {
                     },
                 )
                 .await?;
-                if receipt.disposition.terminal() {
+                if receipt.disposition.terminal() || abandoned_terminal {
                     self.send_to(
                         computer_id,
                         instance_id,
@@ -633,6 +684,54 @@ impl ComputerBroker {
                     now.saturating_add(self.inner.attempt_lease_millis.load(Ordering::Relaxed)),
                 )?;
                 self.release_lost_attempts(&reconciled.lost, "execution_attempt_lost")?;
+                // Include reported runs even if their Runtime lease already expired.
+                // The Computer must release the Agent before another dispatch.
+                let storage = self.storage()?;
+                let mut active_agents = BTreeSet::new();
+                for (id, attempt) in &active {
+                    if let Some(context) = storage.execution_auth_context(*id, *attempt)? {
+                        active_agents.insert((
+                            context.workspace_id.to_string(),
+                            context.agent_id.to_string(),
+                        ));
+                        if matches!(
+                            context.state,
+                            lankide_storage::ExecutionState::Failed
+                                | lankide_storage::ExecutionState::Cancelled
+                        ) {
+                            // Expiry can occur while offline, when cancellation
+                            // cannot reach the Computer. Close the orphan on return.
+                            self.send_to(
+                                computer_id,
+                                instance_id,
+                                RuntimeFrame {
+                                    frame: Some(runtime_frame::Frame::CancelExecution(
+                                        lankide_protocol::CancelExecution {
+                                            execution: Some(ExecutionRef {
+                                                execution_id: *id,
+                                                attempt: *attempt as u32,
+                                            }),
+                                            reason: "Execution is no longer active".into(),
+                                            force_close: true,
+                                        },
+                                    )),
+                                },
+                            )
+                            .await?;
+                        }
+                    }
+                }
+                if let Some(connection) = self
+                    .inner
+                    .connections
+                    .write()
+                    .map_err(|_| RuntimeError::RuntimeLockPoisoned)?
+                    .get_mut(computer_id)
+                    .filter(|connection| connection.instance_id == instance_id)
+                {
+                    connection.active_agents = active_agents;
+                    connection.reconciled = true;
+                }
             }
             computer_frame::Frame::ResourceTransferResult(_) => {}
             computer_frame::Frame::DeleteAgentFilesResult(result) => {
@@ -881,6 +980,7 @@ impl ComputerBroker {
             .read()
             .map_err(|_| RuntimeError::RuntimeLockPoisoned)?
             .iter()
+            .filter(|(_, connection)| connection.reconciled)
             .map(|(computer_id, connection)| ComputerInventory {
                 computer_id: computer_id.clone(),
                 instance_id: connection.instance_id.clone(),
@@ -1047,15 +1147,17 @@ impl ComputerExecutor for BrokerComputerExecutor {
                 .await
                 .is_err()
             {
+                // The transport cannot prove whether the Computer received the
+                // assignment. Let the offered attempt's lease/reconciliation decide.
                 self.broker
-                    .inner
-                    .pending
-                    .lock()
-                    .ok()
-                    .and_then(|mut pending| pending.remove(&execution_id));
-                return Err(ComputerError {
-                    code: "computer_disconnected".into(),
-                });
+                    .storage()
+                    .map_err(|error| ComputerError {
+                        code: error.to_string(),
+                    })?
+                    .mark_execution_recovering(execution_id, now_millis())
+                    .map_err(|error| ComputerError {
+                        code: error.to_string(),
+                    })?;
             }
             receiver.await.unwrap_or_else(|_| {
                 Err(ComputerError {

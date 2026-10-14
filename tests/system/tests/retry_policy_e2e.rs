@@ -338,3 +338,39 @@ async fn messages_during_backoff_keep_their_own_batch() -> Result<()> {
     assert_eq!(executions[2].trigger_messages, ["queued"]);
     rig.close().await
 }
+
+// The native Harness boundary supplies the structured category. The real
+// Computer busy rejection is covered by computer_e2e's parallel-run scenario.
+#[tokio::test]
+async fn ownership_conflicts_do_not_spend_the_failure_budget_or_send_notices() -> Result<()> {
+    let rig = SystemRig::start(config()).await?;
+    let team = rig.workspace("team").await?;
+    let agent = team
+        .agent("bruce")
+        .harness(sequence(&[
+            "ownership conflict",
+            "ownership conflict",
+            "ownership conflict",
+            "ownership conflict",
+            "ownership conflict",
+            "ownership conflict",
+            "transient unavailable",
+        ]))
+        .create()
+        .await?;
+    team.direct_message(&agent, "alice", "hello").await?;
+    rig.settle().await?;
+    let runs = agent.executions().await?;
+    assert_eq!(runs.len(), 8);
+    assert!(agent.view().await?.pause_reason.is_none());
+    for run in &runs[..6] {
+        let details = rig.execution_details(run.id).await?;
+        assert_eq!(
+            details.attempts[0].failure.as_ref().unwrap().category,
+            "conflict"
+        );
+    }
+    assert_eq!(runs[7].state, "succeeded");
+    assert_eq!(team.dm_transcript(&agent, "alice"), ["hello", "done"]);
+    rig.close().await
+}

@@ -607,10 +607,11 @@ async fn computer_e2e() {
             "",
         ))
         .await;
-        assert_eq!(
-            wait_assignment(&mut incoming_rx, 4, false).await.error_code,
-            "agent_busy"
-        );
+        let busy = wait_assignment(&mut incoming_rx, 4, false).await;
+        assert_eq!(busy.error_code, "agent_busy");
+        let failure = busy.failure.expect("structured ownership conflict");
+        assert_eq!(failure.category, "conflict");
+        assert!(failure.retryable);
         peer.send(runtime_assign(
             5,
             "agent_b",

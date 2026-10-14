@@ -512,7 +512,11 @@ impl RuntimeApplication {
                 }
             };
             for agent in agents {
-                let connected = self.inner.broker.is_connected(&agent.computer_id);
+                let connected = self.inner.broker.can_dispatch(
+                    &agent.computer_id,
+                    &workspace_id,
+                    &agent.agent_id,
+                );
                 let task_key = format!("{}:{}", workspace_id, agent.agent_id);
                 let should_start = self
                     .inner
