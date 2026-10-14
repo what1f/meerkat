@@ -208,12 +208,11 @@ async fn persist_manager_bot(
             field: "manager_bot_token",
         })?
         .to_owned();
-    let client =
-        TelegramClient::new(transport, Credentials::new(account_id, token)).map_err(|_| {
-            ProviderError::InvalidInput {
-                field: "manager_bot_token",
-            }
-        })?;
+    let client = TelegramClient::new(transport, Credentials::new(account_id, token))
+        .map_err(|_| ProviderError::InvalidInput {
+            field: "manager_bot_token",
+        })?
+        .with_domain(api_endpoint(&context.new_provider_config)?);
     let manager = tokio::task::spawn_blocking(move || client.verify_credentials())
         .await
         .map_err(|_| ProviderError::External {
@@ -644,10 +643,12 @@ impl Provider for TelegramProvider {
                 .filter(|id| !id.trim().is_empty())
                 .ok_or(ProviderError::InvalidInput { field: "bot_token" })?
                 .to_owned();
+            let endpoint = api_endpoint(&context.workspace_config)?;
             let credentials = Credentials::new(account_id, token);
             let client = Arc::new(
                 SharedClient::new(self.transport.clone(), credentials.clone())
-                    .map_err(|_| ProviderError::InvalidInput { field: "bot_token" })?,
+                    .map_err(|_| ProviderError::InvalidInput { field: "bot_token" })?
+                    .with_domain(endpoint.clone()),
             );
             let verify_client = client.clone();
             let bot = tokio::task::spawn_blocking(move || verify_client.verify_credentials())
@@ -759,7 +760,8 @@ impl Provider for TelegramProvider {
                 .and_then(|value| value.parse::<i64>().ok())
                 .unwrap_or_default();
             let poll_client = SharedClient::new(self.transport.clone(), credentials)
-                .map_err(|_| ProviderError::InvalidInput { field: "bot_token" })?;
+                .map_err(|_| ProviderError::InvalidInput { field: "bot_token" })?
+                .with_domain(endpoint);
             let mut request = PollRequest::default();
             request.offset = offset;
             if let Some(timeout) =
@@ -1277,4 +1279,26 @@ fn poll_error_kind(error: &crate::polling::PollError) -> &'static str {
         crate::polling::PollError::OffsetRegression { .. } => "offset regression",
         crate::polling::PollError::BatchOffsetMismatch { .. } => "batch offset mismatch",
     }
+}
+
+/// Base URL of a public or locally hosted Telegram Bot API server.
+pub(crate) fn api_endpoint(config: &Value) -> Result<String, ProviderError> {
+    let Some(value) = config_text(config, "api_endpoint") else {
+        return Ok(crate::client::TELEGRAM_API_BASE_URL.to_owned());
+    };
+    let url = reqwest::Url::parse(&value).map_err(|_| ProviderError::InvalidInput {
+        field: "api_endpoint",
+    })?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(ProviderError::InvalidInput {
+            field: "api_endpoint",
+        });
+    }
+    Ok(value.trim_end_matches('/').to_owned())
 }

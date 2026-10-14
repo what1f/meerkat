@@ -573,17 +573,7 @@ impl Provider for FeishuProvider {
                     field: "app_secret",
                 });
             }
-            let domain = match config_text(config, "domain")
-                .or_else(|| config_text(&context.workspace_config, "domain"))
-                .as_deref()
-            {
-                Some("lark") => Domain::Lark,
-                Some("feishu") | None => Domain::Feishu,
-                Some(value) if value.starts_with("http://") || value.starts_with("https://") => {
-                    Domain::Custom(value.to_owned())
-                }
-                Some(_) => return Err(ProviderError::InvalidInput { field: "domain" }),
-            };
+            let domain = configured_domain(config, &context.workspace_config)?;
             let credentials = Credentials::app(app_id.clone(), app_secret);
             let client = Arc::new(
                 SharedClient::new(self.transport.clone(), credentials.clone())
@@ -1519,4 +1509,39 @@ fn is_unknown_send_error(error: &crate::http::ClientError) -> bool {
             | crate::http::ClientError::MissingField { .. }
             | crate::http::ClientError::HttpStatus { status: 500.., .. }
     )
+}
+
+/// Select the public service or a private deployment, including its WS gateway.
+pub(crate) fn configured_domain(
+    config: &Value,
+    workspace: &Value,
+) -> Result<Domain, ProviderError> {
+    if let Some(value) = config_text(workspace, "api_endpoint") {
+        let url = reqwest::Url::parse(&value).map_err(|_| ProviderError::InvalidInput {
+            field: "api_endpoint",
+        })?;
+        if !matches!(url.scheme(), "http" | "https")
+            || url.host_str().is_none()
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return Err(ProviderError::InvalidInput {
+                field: "api_endpoint",
+            });
+        }
+        return Ok(Domain::Custom(value.trim_end_matches('/').to_owned()));
+    }
+    match config_text(config, "domain")
+        .or_else(|| config_text(workspace, "domain"))
+        .as_deref()
+    {
+        Some("lark") => Ok(Domain::Lark),
+        Some("feishu") | None => Ok(Domain::Feishu),
+        Some(value) if value.starts_with("http://") || value.starts_with("https://") => {
+            Ok(Domain::Custom(value.to_owned()))
+        }
+        Some(_) => return Err(ProviderError::InvalidInput { field: "domain" }),
+    }
 }

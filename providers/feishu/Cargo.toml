@@ -24,6 +24,8 @@ flate2 = "1.1.9"
 url = "2.5.8"
 
 [dev-dependencies]
+lankide-storage = { path = "../../crates/storage" }
+lankide-runtime = { path = "../../crates/runtime" }
 lankide-testkit = { path = "../../crates/testkit" }
 tempfile.workspace = true
 
@@ -33,4 +35,12 @@ scenario = "Run one complete Feishu Provider scenario covering public mention, n
 prerequisites = "Existing secure Feishu fixture; Lankide E2E Chat and Tasklist; feishu-live prerequisite probe"
 classification = "live"
 unattended = "yes after live opt-in and preflight"
+status = "implemented"
+
+[package.metadata.lankide.e2e-additional.provider-feishu-hermetic]
+command = "cargo test -p lankide-provider-feishu --test mock_server_e2e"
+scenario = "Separate S2.2 group-mention and S2.3 attachment-reply scenarios: Run the real Feishu Provider lifecycle against a loopback IM server; deliver a group mention of bot B, download an attachment, reply with its exact bytes in the same chat and parent, react, recall, and shut down. S2.1 is deferred."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
 status = "implemented"

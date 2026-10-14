@@ -162,6 +162,7 @@ pub async fn agent_onboarding(
         })?
         .to_owned();
 
+    let endpoint = crate::adapter::api_endpoint(&context.workspace_config)?;
     if action == "start" {
         let token = manager_token.clone();
         let username_for_start = username.clone();
@@ -170,7 +171,8 @@ pub async fn agent_onboarding(
             let client = TelegramClient::new(
                 ReqwestTransport::new(),
                 Credentials::new(manager_account_id, token),
-            )?;
+            )?
+            .with_domain(endpoint);
             let manager = client.verify_credentials()?;
             client.managed_bot_registration(&manager, &username_for_start, &display_name)
         })
@@ -227,7 +229,8 @@ pub async fn agent_onboarding(
         let client = TelegramClient::new(
             ReqwestTransport::with_timeout(Duration::from_secs(10)),
             Credentials::new(manager_account_id, token),
-        )?;
+        )?
+        .with_domain(endpoint);
         let registration = if let Some(manager_username) = manager_username_for_poll {
             client.managed_bot_registration_for_manager(
                 &manager_username,

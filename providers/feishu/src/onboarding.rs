@@ -195,11 +195,12 @@ async fn poll_permissions(
         .await?
         .expose_secret()
         .to_owned();
+    let domain = configured_domain(&context)?;
     let inspected_app_id = app_id.clone();
     let inspected_creator_open_id = creator_open_id.clone();
     let result = tokio::task::spawn_blocking(move || {
         let client = FeishuClient::new(transport, Credentials::app(inspected_app_id, app_secret))?
-            .with_domain(Domain::Feishu);
+            .with_domain(domain);
         let capabilities = client.published_capabilities(Auth::Tenant)?;
         if !contains_standard_capabilities(&capabilities.tenant_scopes, &capabilities.events) {
             return Ok::<_, crate::ClientError>(None);
@@ -419,15 +420,5 @@ fn config_text(config: &Value, key: &str) -> Option<String> {
 }
 
 fn configured_domain(context: &AgentOnboardingContext) -> Result<Domain, ProviderError> {
-    match config_text(&context.provider_agent_config, "domain")
-        .or_else(|| config_text(&context.workspace_config, "domain"))
-        .as_deref()
-    {
-        Some("lark") => Ok(Domain::Lark),
-        Some("feishu") | None => Ok(Domain::Feishu),
-        Some(value) if value.starts_with("http://") || value.starts_with("https://") => {
-            Ok(Domain::Custom(value.to_owned()))
-        }
-        Some(_) => Err(ProviderError::InvalidInput { field: "domain" }),
-    }
+    crate::adapter::configured_domain(&context.provider_agent_config, &context.workspace_config)
 }

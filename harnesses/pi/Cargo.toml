@@ -26,7 +26,7 @@ classification = "live"
 unattended = "yes after live opt-in and preflight"
 status = "implemented"
 
-[package.metadata.lankide.e2e-hermetic]
+[package.metadata.lankide.e2e-additional.harness-pi-hermetic]
 command = "cargo test -p lankide-harness-pi --test output_record_e2e"
 scenario = "Stream ten thousand Pi deltas through a configured native CLI, retain final events without streaming deltas, and rotate bounded output records."
 prerequisites = "Python 3"

@@ -43,35 +43,33 @@ def main() -> int:
     errors = 0
     module_ids: set[str] = set()
     package_names: set[str] = set()
-    package_classes: set[tuple[str, str]] = set()
+    primary_packages: set[str] = set()
+    additional_contracts: set[tuple[str, str]] = set()
     for row in rows:
         module_id = row["# module_id"]
         package_name = row["package"]
         if module_id in module_ids:
             fail(f"duplicate module id: {module_id}")
             errors += 1
-        package_class = (package_name, row["classification"])
-        if package_class in package_classes:
-            fail(f"duplicate package row: {package_name}")
-            errors += 1
         module_ids.add(module_id)
         package_names.add(package_name)
-        package_classes.add(package_class)
 
         package = packages.get(package_name)
         if package is None:
             fail(f"{module_id}: Cargo package not found: {package_name}")
             errors += 1
             continue
-        metadata_key = "e2e"
-        package_contracts = (package.get("metadata") or {}).get("lankide", {})
-        if row["classification"] == "hermetic" and package_contracts.get("e2e-hermetic"):
-            metadata_key = "e2e-hermetic"
-        contract = (
-            (package.get("metadata") or {})
-            .get("lankide", {})
-            .get(metadata_key)
-        )
+        contracts = (package.get("metadata") or {}).get("lankide", {})
+        additional = contracts.get("e2e-additional", {})
+        if module_id in additional:
+            contract = additional[module_id]
+            additional_contracts.add((package_name, module_id))
+        else:
+            contract = contracts.get("e2e")
+            if package_name in primary_packages:
+                fail(f"duplicate primary package row: {package_name}")
+                errors += 1
+            primary_packages.add(package_name)
         if not isinstance(contract, dict):
             fail(f"{module_id}: missing package.metadata.lankide.e2e")
             errors += 1
@@ -87,16 +85,17 @@ def main() -> int:
                 errors += 1
 
     for package_name, package in packages.items():
-        additional = (package.get("metadata") or {}).get("lankide", {}).get("e2e-hermetic")
-        if additional and (package_name, "hermetic") not in package_classes:
-            fail(f"Cargo package has a hermetic E2E contract but no manifest row: {package_name}")
-            errors += 1
+        additional = (package.get("metadata") or {}).get("lankide", {}).get("e2e-additional", {})
+        for module_id in additional:
+            if (package_name, module_id) not in additional_contracts:
+                fail(f"{module_id}: additional E2E contract has no manifest row")
+                errors += 1
 
     unlisted = sorted(
         package_name
         for package_name, package in packages.items()
         if (package.get("metadata") or {}).get("lankide", {}).get("e2e")
-        and package_name not in package_names
+        and package_name not in primary_packages
     )
     for package_name in unlisted:
         fail(f"Cargo package has an E2E contract but no manifest row: {package_name}")
