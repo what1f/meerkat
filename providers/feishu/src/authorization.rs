@@ -69,10 +69,7 @@ pub fn authorization_url(domain: &Domain, app_id: &str) -> Result<String, String
     if app_id.is_empty() {
         return Err("missing App ID".into());
     }
-    let host = match domain {
-        Domain::Feishu | Domain::Custom(_) => "https://open.feishu.cn",
-        Domain::Lark => "https://open.larksuite.com",
-    };
+    let host = domain.base_url();
     let raw = serde_json::to_vec(&Addons {
         scopes: Scopes {
             tenant: &STANDARD_BOT_TENANT_SCOPES,

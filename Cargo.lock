@@ -3782,6 +3782,8 @@ dependencies = [
  "futures-util",
  "lankide-core",
  "lankide-provider",
+ "lankide-runtime",
+ "lankide-storage",
  "lankide-testkit",
  "prost",
  "reqwest",
@@ -3801,11 +3803,14 @@ version = "0.1.0"
 dependencies = [
  "lankide-core",
  "lankide-provider",
+ "lankide-runtime",
+ "lankide-storage",
  "lankide-testkit",
  "reqwest",
  "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
