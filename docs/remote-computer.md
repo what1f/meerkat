@@ -1,0 +1,240 @@
+# Remote Computer design
+
+Status: draft for review.
+
+This document describes how Lankide moves from "Runtime and Computer share one
+machine" to "many Computers register with one Runtime that may run in the
+cloud". It replaces the gRPC transport with WebSocket and HTTP and fixes the
+reliability gaps found while reviewing the current implementation.
+
+## Goals
+
+- A Computer starts on its own, pairs once, and reconnects to a Runtime over
+  the network.
+- An Agent can only be placed on a registered Computer.
+- Every path from an Agent back to the Runtime goes through its Computer.
+- Executions cannot hang forever, errors keep their cause, and retries are
+  bounded.
+- The local single-machine setup keeps working with the same protocol.
+
+## Non-goals for this version
+
+- Agent files (memory, skills, work files, native Harness sessions) stay on the
+  Computer that owns the Agent. The Runtime does not back them up or sync them.
+  Moving an Agent between Computers is a later, explicit migration feature.
+- Multiple Runtime instances behind a load balancer.
+- A Lankide web UI. The management API is designed so one can be added later:
+  it uses only JSON over HTTP and WS, never depends on local file paths, and
+  its authentication can grow from the local owner credential to a login
+  session. The Runtime would serve the web UI from the same origin. The API
+  stays internal to Lankide clients and is not a public interface.
+
+## Topology
+
+```text
+Desktop ──HTTP JSON + WS events──▶ Runtime ◀──WS (outbound from Computer)── Computer
+                                     │                                          │
+                                  storage                       local proxy socket
+                                  resources                                     │
+                                  IM Providers                     lankide-cli / MCP / extension
+                                                                                │
+                                                                         Harness process
+```
+
+The Computer always dials the Runtime. The Runtime never connects to a
+Computer, so Computers behind NAT or a firewall work without extra setup.
+
+## Entry points
+
+The Runtime exposes three separate entry points. Each has its own
+authentication, and none can call another's operations.
+
+| Entry point | Caller | Transport | Credential |
+|---|---|---|---|
+| Management | Desktop | HTTP JSON requests, one WS for events | Local owner credential |
+| Computer | computer-daemon | One long-lived WS per Computer | Device credential from pairing |
+| Resources | Computer | HTTP upload and download | Execution token |
+
+Agent capabilities (send message, read content, invoke capability, upload and
+download) are not a public entry point. They travel as frames on the Computer
+WS, so they inherit the Computer's authentication and the Runtime checks the
+execution token inside each frame.
+
+## Computer wire protocol
+
+Frames are JSON objects with a `type` field, sent as WS text frames. The frame
+set keeps the current semantics of `ComputerFrame` and `RuntimeFrame`:
+
+- Computer to Runtime: `hello`, `heartbeat`, `assignment_result`,
+  `execution_event`, `delivery_result`, `tool_call`, `capability_request`,
+  `inventory_changed`, `delete_agent_files_result`.
+- Runtime to Computer: `hello`, `assign_execution`, `deliver_steer`,
+  `cancel_execution`, `tool_result`, `capability_response`,
+  `execution_event_ack`, `execution_committed`, `shutdown`,
+  `delete_agent_files`.
+
+Every frame carries `protocol_version`. Unknown frame types are rejected with a
+typed error, not ignored.
+
+Delivery rules:
+
+- Execution events carry a per-attempt `sequence`. The Runtime sends
+  `execution_event_ack` only after the events are committed to storage.
+- The Computer keeps unacknowledged events and terminal outcomes in a durable
+  outbox. Writes use temp file, `fsync`, rename, and `fsync` of the directory.
+- After reconnecting, the Computer replays its outbox from the last
+  acknowledged sequence. The Runtime ignores sequences it already stored.
+- Both sides send heartbeats. A side that receives nothing for three heartbeat
+  intervals closes the socket.
+- Reconnect uses exponential backoff with jitter. The backoff resets only after
+  the connection has stayed healthy for one minute.
+
+## Registration and identity
+
+1. The Desktop asks the Runtime for a pairing code. Codes are single-use and
+   expire after ten minutes.
+2. The Computer runs `lankide-computer-daemon pair <runtime-url> <code>`. On
+   first start it generates a random `computer_id` and stores it with the device
+   credential in its home directory, readable only by its owner.
+3. The Runtime stores the Computer in a `computers` table: `computer_id`,
+   display name, credential hash, `paired_at`, `revoked_at`, `last_seen_at`,
+   reported OS, version, and Harness inventory.
+4. `hello` authenticates with the device credential. A revoked or unknown
+   credential closes the socket with a terminal reason, and the Computer stops
+   reconnecting.
+
+"Registered" and "online" are separate. A registered Computer stays in the
+catalog while offline. Online status comes from the live connection and
+`last_seen_at`.
+
+`CreateAgent` and `UpdateAgent` accept only a registered, non-revoked
+`computer_id` whose inventory includes the chosen Harness. Messages for an Agent
+whose Computer is offline stay queued until it reconnects.
+
+The local setup uses the same flow. On first launch the Desktop pairs its own
+Computer automatically, so the user never sees a code.
+
+## Agent capability path
+
+Today the Computer passes the Runtime socket path to the Agent and
+`lankide-cli` dials the Runtime directly. That path cannot reach a remote
+Runtime and bypasses the Computer.
+
+New path:
+
+1. For each attempt, the Computer opens a private local socket inside the
+   Agent's run directory and passes its path to the Harness.
+2. `lankide-cli`, the Claude MCP bridge, and the Pi extension call that socket.
+3. The Computer forwards each call as a `capability_request` frame and returns
+   the matching `capability_response`.
+
+The execution token is bound to execution, attempt, Computer, and the Agent's
+placement generation. The Runtime rejects calls and late results from an older
+generation, so revoking a Computer or moving an Agent invalidates every token
+already issued.
+
+## Resources
+
+Upload and download move from gRPC streams to HTTP. Downloads support `Range`
+for resume. The Computer verifies size and SHA-256 before an atomic rename into
+the Agent home, as it does today.
+
+## Agent files
+
+- The Runtime owns Agent configuration: persona, role, team rules, tools, and
+  Harness settings. Each assignment carries the configuration revision.
+- The Computer owns the Agent home: memory, skills, work files, and native
+  Harness sessions. The Runtime only asks the Computer to delete them.
+- The Agent home path is a Computer detail. It never appears in Runtime
+  storage or in protocol fields that the Runtime interprets.
+
+## Execution liveness
+
+Connection liveness and execution progress are tracked separately.
+
+- The Computer renews an attempt's lease only while the Harness makes progress:
+  any Harness event, tool start, or tool finish counts.
+- Idle timeout: no progress for a configurable period, default 10 minutes,
+  cancels the attempt.
+- Total budget: a configurable maximum duration per attempt.
+- Tool commands that the Computer runs itself have their own deadline.
+- Cancellation sends the Harness cancel, waits a short grace period, then kills
+  the process tree. The attempt then ends and the Agent can take its next
+  message.
+
+## Errors and retries
+
+An attempt failure crosses the Computer-to-Runtime boundary as a structured
+error:
+
+```json
+{
+  "code": "harness_spawn_failed",
+  "category": "configuration",
+  "retryable": false,
+  "fingerprint": "sha256 of code and normalized detail",
+  "detail": "original error text, kept for diagnostics"
+}
+```
+
+Categories: `configuration`, `authentication`, `rate_limit`, `transient`,
+`agent`, `cancelled`, `timeout`.
+
+The Runtime applies one policy per category:
+
+- `configuration` and `authentication`: no automatic retry. The Agent is paused
+  until its configuration changes.
+- `rate_limit` and `transient`: exponential backoff, at most five attempts per
+  inbox batch.
+- The same fingerprint failing three times in a row pauses the Agent,
+  whatever the category.
+- When retries stop, the inbox batch is marked failed and the chat gets one
+  short, localized notice. Repeated notices for the same Agent, chat, and
+  fingerprint are suppressed for fifteen minutes. The notice never contains
+  `detail`, paths, Harness names, or exit codes.
+
+`detail` is stored with the attempt and shown in the Desktop.
+
+## Observability
+
+- Runtime and Computer log through `tracing` to rotating files under their
+  homes. Each execution span carries `execution_id`, `attempt`, `agent_id`, and
+  `computer_id`.
+- The raw Harness output record is stored per attempt, records events but not
+  streaming deltas, rotates by size, and is deleted after a retention period.
+  Its path is reported in the attempt's diagnostics.
+
+## Fixes that do not depend on the transport
+
+These ship first because they cause the problems seen today:
+
+1. Direct messages dispatch only to the Agent whose IM identity received the
+   message. Provider events must carry the receiving account, and chats are
+   keyed by it.
+2. One launcher owns the Runtime on a machine, a second instance exits cleanly
+   without touching the database, and shutdown releases storage only after
+   every holder is gone.
+3. Execution liveness, structured errors, and the retry policy above.
+4. Harness native environment defaults: skills, context files, and project
+   settings are enabled; permission modes follow one shared policy declared in
+   the Harness contract.
+
+## Harness integration
+
+This version adds no new Harness. The Harness contract must stay open to new
+adapters, including a future generic ACP adapter: adapters declare their
+capabilities (for example whether a running turn accepts steering), and the
+Runtime and Computer act on those declarations instead of on Harness IDs.
+
+## Phases
+
+| Phase | Scope | Main crates |
+|---|---|---|
+| 1 | Transport-independent fixes above | runtime, storage, computer, harnesses, providers |
+| 2 | JSON frame types and WS transport for the Computer entry point; HTTP resources | protocol, runtime, computer, computer-daemon |
+| 3 | Pairing, `computers` table, device credentials, placement generation, Agent placement validation | runtime, storage, computer-daemon, desktop |
+| 4 | Computer local proxy; `lankide-cli`, MCP bridge, and Pi extension use it | computer, lankide-cli, harnesses |
+| 5 | Management HTTP API and event WS; remove tonic and prost | client, runtime-daemon, desktop |
+
+Each phase keeps `just check` and `just test` green and updates the module E2E
+contracts in `tests/e2e-modules.tsv`.
