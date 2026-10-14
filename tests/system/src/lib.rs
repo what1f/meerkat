@@ -2,6 +2,7 @@
 
 //! Test-only business scenarios through the real Runtime and Computer daemons.
 
+pub mod net_proxy;
 mod provider;
 mod resources;
 mod script;
@@ -47,6 +48,11 @@ pub struct RigConfig {
     pub timeout: Duration,
     pub computer_ws_only: bool,
     pub execution_token_lifetime: Duration,
+    pub attempt_lease: Duration,
+    pub network_proxy: bool,
+    pub computer_process: Option<PathBuf>,
+    pub link: lankide_protocol::link::LinkSettings,
+    pub reconnect: lankide_computer::ReconnectPolicy,
     pub execution_liveness: lankide_computer::ExecutionLiveness,
     pub harness_capabilities: Vec<String>,
     pub retry: lankide_runtime::RetryConfig,
@@ -64,6 +70,11 @@ impl Default for RigConfig {
             timeout: Duration::from_secs(15),
             computer_ws_only: false,
             execution_token_lifetime: Duration::from_secs(3600),
+            attempt_lease: Duration::from_secs(15),
+            network_proxy: false,
+            computer_process: None,
+            link: Default::default(),
+            reconnect: Default::default(),
             execution_liveness: Default::default(),
             harness_capabilities: ["system_prompt", "streaming", "resume", "cancel", "tools"]
                 .map(str::to_owned)
@@ -124,6 +135,8 @@ impl Drop for ComputerThread {
 pub struct SystemRig {
     // Homes stay alive until both daemons release their tasks.
     computer: Option<ComputerThread>,
+    child_computer: Option<std::process::Child>,
+    pub proxy: Option<net_proxy::NetProxy>,
     runtime: Option<JoinHandle<std::result::Result<(), lankide_runtime_daemon::AppError>>>,
     shutdown: Option<oneshot::Sender<()>>,
     home: TempDir,
@@ -150,7 +163,7 @@ impl SystemRig {
         std::fs::write(
             home.path().join("runtime.json"),
             serde_json::to_vec(
-                &json!({"execution_token_lifetime_ms": config.execution_token_lifetime.as_millis()}),
+                &json!({"execution_token_lifetime_ms": config.execution_token_lifetime.as_millis(), "attempt_lease_ms": config.attempt_lease.as_millis(), "computer_link": config.link}),
             )?,
         )?;
         let im = Arc::new(ImState::default());
@@ -170,6 +183,8 @@ impl SystemRig {
         });
         let mut rig = Self {
             computer: None,
+            child_computer: None,
+            proxy: None,
             runtime: Some(runtime),
             shutdown: Some(shutdown),
             client: RuntimeManagementClient::connect_lazy(&paths.socket),
@@ -191,6 +206,11 @@ impl SystemRig {
         })
         .await
         .map_err(|_| "Runtime management startup timed out")??;
+        if rig.config.network_proxy {
+            let (url, _) = rig.computer_endpoint()?;
+            rig.proxy =
+                Some(net_proxy::NetProxy::start(url.trim_start_matches("ws://").parse()?).await?);
+        }
         rig.start_computer()?;
         rig.wait_for_computer().await?;
         Ok(rig)
@@ -212,7 +232,9 @@ impl SystemRig {
     fn start_computer(&mut self) -> Result<()> {
         std::fs::write(
             self.computer_home.path().join("computer.json"),
-            serde_json::to_vec(&json!({"execution_liveness": self.config.execution_liveness}))?,
+            serde_json::to_vec(
+                &json!({"execution_liveness": self.config.execution_liveness, "reconnect": self.config.reconnect}),
+            )?,
         )?;
         let mut config = DaemonConfig::for_home(self.computer_home.path())?;
         config.paths.prepare()?;
@@ -232,8 +254,21 @@ impl SystemRig {
         if !self.config.computer_ws_only {
             config.paths.runtime_socket = self.paths.socket.clone();
         }
-        config.runtime_url = Some(url);
+        config.runtime_url = Some(self.proxy.as_ref().map_or(url, net_proxy::NetProxy::url));
         config.link_secret_file = Some(secret_path);
+        if let Some(binary) = &self.config.computer_process {
+            self.child_computer = Some(
+                std::process::Command::new(binary)
+                    .arg(self.computer_home.path())
+                    .arg(config.runtime_url.as_ref().expect("URL"))
+                    .arg(config.link_secret_file.as_ref().expect("secret"))
+                    .arg(&self.paths.socket)
+                    .arg(&self.config.harness_executable)
+                    .arg(serde_json::to_string(&self.config.harness_capabilities)?)
+                    .spawn()?,
+            );
+            return Ok(());
+        }
         self.computer = Some(ComputerThread::start(
             config,
             self.config.harness_executable.clone(),
@@ -259,6 +294,31 @@ impl SystemRig {
         })
         .await
         .map_err(|_| "Computer startup timed out")?
+    }
+    pub fn kill_computer_process(&mut self) -> Result<()> {
+        if let Some(mut child) = self.child_computer.take() {
+            child.kill()?;
+            child.wait()?;
+        }
+        Ok(())
+    }
+    pub fn restart_computer_process(&mut self) -> Result<()> {
+        self.start_computer()
+    }
+    pub fn computer_state(&self) -> Result<serde_json::Value> {
+        Ok(serde_json::from_slice(&std::fs::read(
+            self.computer_home
+                .path()
+                .join("workspaces/.computer/state.json"),
+        )?)?)
+    }
+    pub async fn computer_online(&self) -> Result<bool> {
+        Ok(self
+            .client
+            .get_computer_catalog(None)
+            .await?
+            .iter()
+            .any(|c| c.id == "local" && c.available))
     }
     pub fn computer_endpoint(&self) -> Result<(String, String)> {
         Ok(lankide_protocol::link::discover(&self.paths.socket)?)
@@ -419,6 +479,7 @@ impl SystemRig {
         }
     }
     pub async fn close(mut self) -> Result<()> {
+        self.kill_computer_process()?;
         if let Some(mut computer) = self.computer.take() {
             computer.stop()?;
         }
@@ -440,6 +501,7 @@ impl SystemRig {
 }
 impl Drop for SystemRig {
     fn drop(&mut self) {
+        let _ = self.kill_computer_process();
         self.computer.take();
         if let Some(shutdown) = self.shutdown.take() {
             let _ = shutdown.send(());
@@ -986,4 +1048,35 @@ fn factories(im: Arc<ImState>) -> Result<ProviderFactoryRegistry> {
         },
     )?;
     Ok(factories)
+}
+
+/// Test-only process composition with the same scripted native Harness.
+pub async fn run_scripted_computer(
+    home: PathBuf,
+    url: String,
+    secret: PathBuf,
+    socket: PathBuf,
+    executable: PathBuf,
+    capabilities: Vec<String>,
+) -> Result<()> {
+    let mut config = DaemonConfig::for_home(&home)?;
+    config.runtime_url = Some(url);
+    config.link_secret_file = Some(secret);
+    config.paths.runtime_socket = socket;
+    let registration = RegisteredHarness::new(
+        ScriptedHarness::new(home.join("harness-pids.tsv")),
+        HarnessConfig {
+            harness_id: "pi".into(),
+            model: ModelRef::new("scripted", "scripted"),
+            thinking_level: "low".into(),
+            cli_path: executable,
+            environment: BTreeMap::from([(
+                "LANKIDE_SYSTEM_CAPABILITIES".into(),
+                serde_json::to_string(&capabilities)?,
+            )]),
+            config_fingerprint: "system-rig".into(),
+        },
+    );
+    lankide_computer_daemon::run_with_harnesses(config, vec![registration]).await?;
+    Ok(())
 }

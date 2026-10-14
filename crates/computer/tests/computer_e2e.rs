@@ -353,6 +353,7 @@ async fn computer_e2e() {
             initial: Duration::from_millis(20),
             maximum: Duration::from_millis(100),
             multiplier: 2,
+            ..Default::default()
         },
     })
     .with_capability_cli(&capability_cli)

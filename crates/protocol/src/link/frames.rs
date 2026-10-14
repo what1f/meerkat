@@ -1057,6 +1057,7 @@ pub struct RuntimeFrame {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum RuntimePayload {
+    Heartbeat,
     Hello(RuntimeHello),
     AssignExecution(AssignExecution),
     DeliverSteer(DeliverSteer),
@@ -1114,6 +1115,7 @@ impl From<RuntimeFrame> for crate::wire::RuntimeFrame {
     fn from(value: RuntimeFrame) -> Self {
         Self {
             frame: Some(match value.frame {
+                RuntimePayload::Heartbeat => return Self { frame: None },
                 RuntimePayload::Hello(value) => {
                     crate::wire::runtime_frame::Frame::Hello(value.into())
                 }

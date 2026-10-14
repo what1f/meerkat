@@ -6,7 +6,7 @@ use lankide_protocol::{
 use lankide_storage::{ExecutionEventDisposition, RecordExecutionEvent, SteerDelivery, Storage};
 use std::sync::{
     Mutex as StdMutex, RwLock as StdRwLock, Weak,
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicI64, AtomicU64, Ordering},
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
@@ -19,6 +19,7 @@ pub struct ComputerBroker {
 
 struct BrokerInner {
     storage: Weak<Storage>,
+    attempt_lease_millis: AtomicI64,
     connections: StdRwLock<BTreeMap<String, ComputerConnection>>,
     next_connection_id: AtomicU64,
     link_rejections: StdRwLock<BTreeMap<String, lankide_protocol::link::CloseReason>>,
@@ -47,12 +48,11 @@ struct PendingExecution {
 }
 
 impl ComputerBroker {
-    const ATTEMPT_LEASE_MILLIS: i64 = 15_000;
-
     pub fn new(storage: Arc<Storage>) -> Self {
         Self {
             inner: Arc::new(BrokerInner {
                 storage: Arc::downgrade(&storage),
+                attempt_lease_millis: AtomicI64::new(15_000),
                 connections: StdRwLock::new(BTreeMap::new()),
                 next_connection_id: AtomicU64::new(0),
                 link_rejections: StdRwLock::new(BTreeMap::new()),
@@ -60,6 +60,19 @@ impl ComputerBroker {
                 pending_agent_deletions: StdMutex::new(BTreeMap::new()),
             }),
         }
+    }
+
+    /// Configure how long an attempt can remain unreported by its Computer.
+    /// The production default is fifteen seconds.
+    pub fn set_attempt_lease(&self, duration: std::time::Duration) -> Result<(), RuntimeError> {
+        let millis = i64::try_from(duration.as_millis())
+            .ok()
+            .filter(|value| *value > 0)
+            .ok_or_else(|| RuntimeError::Application("invalid attempt lease duration".into()))?;
+        self.inner
+            .attempt_lease_millis
+            .store(millis, Ordering::Relaxed);
+        Ok(())
     }
 
     pub fn reject_link(
@@ -218,7 +231,9 @@ impl ComputerBroker {
                     lankide_protocol::RuntimeHello {
                         protocol_version: lankide_protocol::PROTOCOL_VERSION,
                         runtime_instance_id: format!("runtime-{}", std::process::id()),
-                        heartbeat_interval_ms: 5_000,
+                        heartbeat_interval_ms: lankide_protocol::link::LinkSettings::default()
+                            .heartbeat_interval
+                            .as_millis() as u64,
                         max_message_bytes: lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES as u64,
                     },
                 )),
@@ -386,13 +401,24 @@ impl ComputerBroker {
                     .ok_or_else(|| RuntimeError::Application("event missing execution".into()))?;
                 let kind = ExecutionEventKind::try_from(event.kind)
                     .unwrap_or(ExecutionEventKind::Unspecified);
+                // A restarted daemon keeps the durable per-attempt outbox but has
+                // a new process identity. Authenticate its Computer ownership,
+                // then let storage enforce the attempt/sequence commit boundary.
+                let owner = self
+                    .storage()?
+                    .execution_attempt(execution.execution_id, i64::from(execution.attempt))?;
+                let event_instance = owner
+                    .as_ref()
+                    .filter(|owner| owner.computer_id == computer_id)
+                    .map(|owner| owner.computer_instance_id.as_str())
+                    .unwrap_or(instance_id);
                 let receipt = self
                     .storage()?
                     .record_execution_event(RecordExecutionEvent {
                         execution_id: execution.execution_id,
                         attempt: i64::from(execution.attempt),
                         computer_id: computer_id.to_owned(),
-                        computer_instance_id: instance_id.to_owned(),
+                        computer_instance_id: event_instance.to_owned(),
                         sequence: event.sequence,
                         kind: execution_event_kind_name(kind).to_owned(),
                         payload: event.payload.clone(),
@@ -429,6 +455,22 @@ impl ComputerBroker {
                         completion = pending.remove(&execution.execution_id);
                     }
                 }
+                if let Some(value) = completion {
+                    let outcome = match kind {
+                        ExecutionEventKind::Completed => ComputerOutcome::Succeeded {
+                            output: value.output,
+                            reply: None,
+                        },
+                        ExecutionEventKind::Cancelled => ComputerOutcome::Cancelled,
+                        _ => ComputerOutcome::Failed {
+                            code: "computer_execution_failed".into(),
+                        },
+                    };
+                    let _ = value.completion.send(Ok(ComputerCompletion {
+                        delivery_accepted: value.assignment_accepted && value.delivery_accepted,
+                        outcome,
+                    }));
+                }
                 self.send_to(
                     computer_id,
                     instance_id,
@@ -456,22 +498,6 @@ impl ComputerBroker {
                         },
                     )
                     .await?;
-                }
-                if let Some(value) = completion {
-                    let outcome = match kind {
-                        ExecutionEventKind::Completed => ComputerOutcome::Succeeded {
-                            output: value.output,
-                            reply: None,
-                        },
-                        ExecutionEventKind::Cancelled => ComputerOutcome::Cancelled,
-                        _ => ComputerOutcome::Failed {
-                            code: "computer_execution_failed".into(),
-                        },
-                    };
-                    let _ = value.completion.send(Ok(ComputerCompletion {
-                        delivery_accepted: value.assignment_accepted && value.delivery_accepted,
-                        outcome,
-                    }));
                 }
             }
             computer_frame::Frame::DeliveryResult(result) => {
@@ -545,15 +571,17 @@ impl ComputerBroker {
                             .map(|execution| (execution.execution_id, i64::from(execution.attempt)))
                     })
                     .collect::<Vec<_>>();
+                // Use Runtime receipt time for leases, independent of Computer clock skew.
+                let now = now_millis();
+                self.expire_leases(now)?;
                 let reconciled = self.storage()?.reconcile_computer_heartbeat(
                     computer_id,
                     instance_id,
                     &active,
-                    heartbeat.sent_at,
-                    heartbeat.sent_at.saturating_add(Self::ATTEMPT_LEASE_MILLIS),
+                    now,
+                    now.saturating_add(self.inner.attempt_lease_millis.load(Ordering::Relaxed)),
                 )?;
                 self.release_lost_attempts(&reconciled.lost, "execution_attempt_lost")?;
-                self.expire_leases(heartbeat.sent_at)?;
             }
             computer_frame::Frame::ResourceTransferResult(_) => {}
             computer_frame::Frame::DeleteAgentFilesResult(result) => {
@@ -919,7 +947,12 @@ impl ComputerExecutor for BrokerComputerExecutor {
                     i64::from(execution.attempt),
                     &self.computer_id,
                     &connection.instance_id,
-                    offered_at.saturating_add(ComputerBroker::ATTEMPT_LEASE_MILLIS),
+                    offered_at.saturating_add(
+                        self.broker
+                            .inner
+                            .attempt_lease_millis
+                            .load(Ordering::Relaxed),
+                    ),
                     offered_at,
                 )
                 .map_err(|error| ComputerError {

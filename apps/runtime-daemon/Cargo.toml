@@ -35,7 +35,7 @@ path = "src/main.rs"
 
 [package.metadata.lankide.e2e]
 command = "cargo run -p lankide-runtime-daemon --example runtime-daemon-e2e -- --e2e"
-scenario = "Boot one Runtime over a private local UDS, exercise management including Agent deletion and acknowledged Computer file cleanup and authenticated JSON/WS Computer composition; S3.1 shuts down with a live Computer and running Provider, exits 0 without still_shared and reopens the database; S3.2 exits a duplicate 0 without opening SQLite while the owner serves; S3.3 recovers stale ownership after SIGKILL. Load optional retry-policy.json duration configuration from the private Runtime home. Serve HTTP resources and WS links on one listener, with configurable execution token lifetime."
+scenario = "Boot one Runtime over a private local UDS, exercise management including Agent deletion and acknowledged Computer file cleanup and authenticated JSON/WS Computer composition; S3.1 shuts down with a live Computer and running Provider, exits 0 without still_shared and reopens the database; S3.2 exits a duplicate 0 without opening SQLite while the owner serves; S3.3 recovers stale ownership after SIGKILL. Load optional retry-policy.json duration configuration from the private Runtime home. Serve HTTP resources and WS links on one listener, with configurable execution token lifetime. Read Computer heartbeat interval and handshake timeout from runtime.json with production defaults."
 prerequisites = "None for hermetic boot check"
 classification = "hermetic"
 unattended = "yes"

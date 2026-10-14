@@ -123,3 +123,40 @@ A Runtime restart in these scenarios opens the same database and reconnects
 management. The graceful shutdown frame also ends the Computer daemon, so the
 rig restarts that peer with its existing private home, as a service supervisor
 would. Assertions check saved attempt times and deduplicated chat notices.
+
+## Network delivery (Task 10)
+
+```sh
+cargo test -p lankide-system-e2e --test network_delivery_e2e
+```
+
+Scenario prefixes `s10_1_` through `s10_4_` select each acceptance scenario.
+S10.4 keeps one held execution alive through ten short reconnects and verifies
+its single successful completion. `offline_past_attempt_lease_fails_the_run`
+uses a two-second lease to verify that prolonged absence still fails the run.
+`silent_tcp_and_ws_peers_release_runtime_connections` also verifies upgrade and
+hello deadlines against silent peers. All waits use observed state and a hard
+limit. The network scenarios use `RigConfig::network_proxy`; the reusable
+`net_proxy::NetProxy` exposes `pause`, `pause_replies`, `cut`, `restore`,
+`attempts` (connection timestamps), `address` (for HTTP or WS callers), and
+`active_connections`. A cut closes
+existing connections and rejects new ones until restore. A pause stalls bytes
+without closing connections. `pause_replies` stalls only Runtime-to-Computer
+traffic, so S10.3 can hold acknowledgements after terminal commit.
+
+S10.3 selects the test-only `system-computer` child binary via
+`RigConfig::computer_process`. It runs the real daemon with the scripted native
+Harness, sends SIGKILL with `Child::kill`, reaps the process, and restarts with
+the same private home. It verifies the persisted terminal event before the kill
+and the empty outbox after restart. Production does not inspect test state.
+
+The Runtime reads `runtime.json` with a `computer_link` object containing
+`heartbeat_interval` (default 5 seconds) and `handshake_timeout` (10 seconds).
+Its top-level `attempt_lease_ms` defaults to 15000; `RigConfig::attempt_lease`
+sets this duration for scenarios. Computers report active attempts immediately
+after each handshake, then at each heartbeat interval.
+The Computer reads `computer.json` with a `reconnect` object containing
+`initial` (50 milliseconds), `maximum` (5 seconds), `multiplier` (2),
+`healthy_duration` (60 seconds), and `handshake_timeout` (10 seconds).
+Durations use Serde's `{ "secs": 5, "nanos": 0 }` representation. Absent fields
+keep these production defaults. Each reconnect delay has 75%-125% jitter.

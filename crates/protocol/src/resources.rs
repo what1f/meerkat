@@ -5,7 +5,7 @@ use crate::{
 use bytes::Bytes;
 use http_body_util::Full;
 use hyper::{Request, Response, StatusCode, body::Incoming, service::service_fn};
-use hyper_util::rt::TokioIo;
+use hyper_util::rt::{TokioIo, TokioTimer};
 use std::{convert::Infallible, future::Future};
 use tokio::net::TcpListener;
 use tokio_stream::StreamExt;
@@ -25,6 +25,47 @@ where
     P: RuntimePeer + ComputerPeer + Clone,
     F: Future<Output = ()> + Send,
 {
+    serve_inner(
+        listener,
+        secret,
+        peer,
+        config,
+        crate::link::LinkSettings::default(),
+        false,
+        shutdown,
+    )
+    .await
+}
+
+/// Serve HTTP resources and authenticated links with configured delivery deadlines.
+pub async fn serve_with_settings<P, F>(
+    listener: TcpListener,
+    secret: String,
+    peer: P,
+    config: TransportConfig,
+    settings: crate::link::LinkSettings,
+    shutdown: F,
+) -> Result<(), crate::link::LinkError>
+where
+    P: RuntimePeer + ComputerPeer + Clone,
+    F: Future<Output = ()> + Send,
+{
+    serve_inner(listener, secret, peer, config, settings, true, shutdown).await
+}
+
+async fn serve_inner<P, F>(
+    listener: TcpListener,
+    secret: String,
+    peer: P,
+    config: TransportConfig,
+    settings: crate::link::LinkSettings,
+    override_heartbeat: bool,
+    shutdown: F,
+) -> Result<(), crate::link::LinkError>
+where
+    P: RuntimePeer + ComputerPeer + Clone,
+    F: Future<Output = ()> + Send,
+{
     let mut tasks = tokio::task::JoinSet::new();
     tokio::pin!(shutdown);
     loop {
@@ -35,6 +76,7 @@ where
                 let (socket, _) = accepted?;
                 let peer = peer.clone();
                 let secret = secret.clone();
+                let settings = settings.clone();
                 tasks.spawn(async move {
                     let (upgrades, mut upgraded) = tokio::sync::mpsc::channel(1);
                     let ws_peer = peer.clone();
@@ -65,12 +107,14 @@ where
                         }
                     });
                     let connection = hyper::server::conn::http1::Builder::new()
+                        .timer(TokioTimer::new())
+                        .header_read_timeout(settings.handshake_timeout)
                         .max_buf_size(32 * 1024)
                         .serve_connection(TokioIo::new(socket), service).with_upgrades();
                     if connection.await.is_ok()
                         && let Ok(upgrade) = upgraded.try_recv()
                         && let Ok(socket) = upgrade.await {
-                        crate::link::serve_upgraded(TokioIo::new(socket), ws_peer, config).await;
+                        crate::link::serve_upgraded(TokioIo::new(socket), ws_peer, config, settings, override_heartbeat).await;
                     }
                 });
             }

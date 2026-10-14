@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -67,12 +67,14 @@ impl PersistedState {
         })?;
         fs::create_dir_all(parent)?;
         let temporary = path.with_extension("json.tmp");
-        fs::write(
-            &temporary,
-            serde_json::to_vec(self)
+        let mut file = fs::File::create(&temporary)?;
+        file.write_all(
+            &serde_json::to_vec(self)
                 .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?,
         )?;
-        fs::rename(temporary, path)
+        file.sync_all()?;
+        fs::rename(temporary, path)?;
+        fs::File::open(parent)?.sync_all()
     }
 }
 
