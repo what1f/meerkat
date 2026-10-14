@@ -28,7 +28,7 @@ fn configure(c: &Connection) -> Result<()> {
 
 fn migrate(c: &mut Connection) -> Result<()> {
     let v: i64 = c.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    if v > 16 {
+    if v > 17 {
         return Err(StorageError::Invalid(format!("unsupported schema {v}")));
     }
     if v == 0 {
@@ -143,8 +143,59 @@ fn migrate(c: &mut Connection) -> Result<()> {
         transaction.pragma_update(None, "user_version", 16)?;
         transaction.commit()?;
     }
+    let current: i64 = c.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if current == 16 {
+        // Rebuild only the chat identity table. IDs and all referencing rows stay intact.
+        c.pragma_update(None, "foreign_keys", false)?;
+        let result = (|| -> Result<()> {
+            let transaction = c.transaction()?;
+            transaction.execute_batch(MIGRATION_V17)?;
+            transaction.pragma_update(None, "user_version", 17)?;
+            transaction.commit()?;
+            Ok(())
+        })();
+        c.pragma_update(None, "foreign_keys", true)?;
+        result?;
+    }
     Ok(())
 }
+const MIGRATION_V17: &str = r#"
+CREATE TABLE chats_v17(chat_id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id TEXT NOT NULL,channel_id TEXT NOT NULL,provider_chat_id TEXT NOT NULL,receiving_agent_id TEXT NOT NULL DEFAULT '',name TEXT,first_message_id INTEGER,last_message_id INTEGER,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,FOREIGN KEY(workspace_id,channel_id)REFERENCES channels(workspace_id,channel_id),UNIQUE(workspace_id,channel_id,provider_chat_id,receiving_agent_id));
+INSERT INTO chats_v17(chat_id,workspace_id,channel_id,provider_chat_id,name,first_message_id,last_message_id,created_at,updated_at)
+SELECT chat_id,workspace_id,channel_id,provider_chat_id,name,first_message_id,last_message_id,created_at,updated_at FROM chats;
+-- The stored channels schema has no attention policy; private_chat identifies DMs.
+-- Only the receiving bot can successfully send to a DM. Failed sends and inbox
+-- dispatches may include every Agent because of the old routing bug.
+UPDATE chats_v17 SET receiving_agent_id=(
+    SELECT min(m.sender_id) FROM messages m
+    JOIN message_send_attempts a USING(message_id)
+    WHERE m.chat_id=chats_v17.chat_id AND m.sender_kind='agent'
+      AND m.direction='outbound' AND a.state='sent'
+) WHERE channel_id='private_chat' AND (
+    SELECT count(DISTINCT m.sender_id) FROM messages m
+    JOIN message_send_attempts a USING(message_id)
+    WHERE m.chat_id=chats_v17.chat_id AND m.sender_kind='agent'
+      AND m.direction='outbound' AND a.state='sent'
+)=1;
+-- Inbox ownership is evidence only when no Agent successfully sent.
+UPDATE chats_v17 SET receiving_agent_id=(
+    SELECT min(agent_id) FROM agent_inbox_items WHERE chat_id=chats_v17.chat_id
+) WHERE channel_id='private_chat' AND receiving_agent_id='' AND NOT EXISTS (
+    SELECT 1 FROM messages m JOIN message_send_attempts a USING(message_id)
+    WHERE m.chat_id=chats_v17.chat_id AND m.sender_kind='agent'
+      AND m.direction='outbound' AND a.state='sent'
+) AND (
+    SELECT count(DISTINCT agent_id) FROM agent_inbox_items WHERE chat_id=chats_v17.chat_id
+)=1;
+-- Archive ambiguous histories and stop queued work for every non-receiving Agent.
+UPDATE agent_inbox_items SET state='consumed'
+WHERE state='pending' AND EXISTS (
+    SELECT 1 FROM chats_v17 c WHERE c.chat_id=agent_inbox_items.chat_id
+      AND c.channel_id='private_chat' AND c.receiving_agent_id<>agent_inbox_items.agent_id
+);
+DROP TABLE chats;
+ALTER TABLE chats_v17 RENAME TO chats;
+"#;
 const SCHEMA: &str = r#"
 CREATE TABLE workspaces(workspace_id TEXT PRIMARY KEY,name TEXT NOT NULL,provider_id TEXT NOT NULL,provider_config_json TEXT NOT NULL,desired_state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,rules TEXT NOT NULL DEFAULT '',cover_resource_id INTEGER,setup_status TEXT NOT NULL DEFAULT 'pending',setup_error_code TEXT,provider_state_json TEXT NOT NULL DEFAULT '{}');
 CREATE TABLE workspace_provider_secrets(workspace_id TEXT PRIMARY KEY REFERENCES workspaces(workspace_id) ON DELETE RESTRICT,secret_json TEXT NOT NULL,updated_at INTEGER NOT NULL);

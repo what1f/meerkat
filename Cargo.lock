@@ -3881,6 +3881,7 @@ dependencies = [
  "lankide-computer-daemon",
  "lankide-core",
  "lankide-harness",
+ "lankide-protocol",
  "lankide-provider",
  "lankide-runtime",
  "lankide-runtime-daemon",

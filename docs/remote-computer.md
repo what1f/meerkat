@@ -22,6 +22,12 @@ reliability gaps found while reviewing the current implementation.
 - Agent files (memory, skills, work files, native Harness sessions) stay on the
   Computer that owns the Agent. The Runtime does not back them up or sync them.
   Moving an Agent between Computers is a later, explicit migration feature.
+- Mounting Agent or Workspace files into a Harness through FUSE. Agents on a
+  Computer read local files: chat content arrives in the assignment snapshot,
+  attachments are downloaded into the Agent home, and further content is
+  fetched through the Computer's capability path. A FUSE view is only needed
+  for Agents in diskless cloud sandboxes or for files shared across Computers,
+  and would be added as another Computer-side file provider.
 - Multiple Runtime instances behind a load balancer.
 - A Lankide web UI. The management API is designed so one can be added later:
   it uses only JSON over HTTP and WS, never depends on local file paths, and

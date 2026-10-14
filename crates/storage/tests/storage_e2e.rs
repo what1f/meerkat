@@ -114,7 +114,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     let config = DatabaseConfig::new(&db_path);
 
     let storage = Storage::open(config.clone()).map_err(|error| error.to_string())?;
-    assert_eq!(storage.schema_version().unwrap(), 16);
+    assert_eq!(storage.schema_version().unwrap(), 17);
     assert_eq!(storage.sqlite_settings().unwrap().journal_mode, "wal");
     assert!(storage.sqlite_settings().unwrap().foreign_keys);
 
@@ -938,6 +938,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     );
 
     let reaction = IncomingReaction {
+        receiving_agent_id: None,
         workspace_id: workspace_a.clone(),
         provider_id: provider.clone(),
         channel_id: channel_id.clone(),
@@ -976,6 +977,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     let inbox_before_auto = storage.inbox_items(&workspace_a, &agent_id).unwrap().len();
     let auto = storage
         .record_reaction(IncomingReaction {
+            receiving_agent_id: None,
             workspace_id: workspace_a.clone(),
             provider_id: provider.clone(),
             channel_id: channel_id.clone(),
@@ -1750,7 +1752,7 @@ fn verify_v14_hard_delete_migration(root: &Path) -> Result<(), String> {
 
     let migrated =
         Storage::open(DatabaseConfig::new(&database)).map_err(|error| error.to_string())?;
-    assert_eq!(migrated.schema_version().unwrap(), 16);
+    assert_eq!(migrated.schema_version().unwrap(), 17);
     assert!(migrated.agent_record(&workspace_id, &agent_id).is_err());
     assert_eq!(
         migrated.pending_agent_file_deletions("local").unwrap(),
@@ -1866,6 +1868,7 @@ fn event(
     dispatch: Vec<InboxDispatch>,
 ) -> IngestEvent {
     IngestEvent {
+        receiving_agent_id: None,
         workspace_id: workspace_id.clone(),
         provider_id: provider_id.clone(),
         channel_id: channel_id.clone(),
@@ -1913,4 +1916,394 @@ fn write_result(
     });
     let encoded = serde_json::to_vec_pretty(&payload).expect("encode result artifact");
     fs::write(directory.join("result.json"), encoded).expect("write result artifact");
+}
+
+#[test]
+fn legacy_direct_chat_keeps_its_history_and_ids_after_receiver_migration() {
+    let home = tempfile::tempdir().unwrap();
+    let database = home.path().join("legacy.sqlite3");
+    let workspace = WorkspaceId::new("team").unwrap();
+    let provider = ProviderId::new("telegram").unwrap();
+    let channel = ChannelId::new("private_chat").unwrap();
+    let bruce = AgentId::new("bruce").unwrap();
+    let clark = AgentId::new("clark").unwrap();
+    let diana = AgentId::new("diana").unwrap();
+    let storage = Storage::open(DatabaseConfig::new(&database)).unwrap();
+    storage
+        .create_workspace(WorkspaceSpec {
+            id: workspace.clone(),
+            name: "Team".into(),
+            provider_id: provider.clone(),
+            provider_config: json!({}),
+            provider_secret: json!({}),
+            active: true,
+            now: 1,
+        })
+        .unwrap();
+    for agent in [&bruce, &clark, &diana] {
+        storage
+            .commit_agent_record(
+                agent_record(&workspace, agent, agent.as_str(), 2),
+                &json!({}),
+            )
+            .unwrap();
+    }
+    let dispatch = |agent: &AgentId| InboxDispatch {
+        agent_id: agent.clone(),
+        available_at: 3,
+        trigger_reason: DispatchReason::DirectMessage,
+    };
+    let legacy = storage
+        .ingest_event(event(
+            &workspace,
+            &provider,
+            &channel,
+            "alice",
+            "1",
+            "Bruce history",
+            3,
+            vec![dispatch(&bruce)],
+        ))
+        .unwrap();
+    let ambiguous = storage
+        .ingest_event(event(
+            &workspace,
+            &provider,
+            &channel,
+            "bob",
+            "1",
+            "Ambiguous history",
+            3,
+            vec![dispatch(&bruce), dispatch(&clark)],
+        ))
+        .unwrap();
+    let contaminated = storage
+        .ingest_event(event(
+            &workspace,
+            &provider,
+            &channel,
+            "feishu-p2p",
+            "1",
+            "Shared DM history",
+            3,
+            vec![dispatch(&bruce), dispatch(&clark), dispatch(&diana)],
+        ))
+        .unwrap();
+    storage.close().unwrap();
+    // A v15 database is the persistent outer boundary. Recreate its actual chat schema.
+    let fixture = rusqlite::Connection::open(&database).unwrap();
+    fixture.execute_batch("PRAGMA foreign_keys=OFF;
+        CREATE TABLE chats_v15(chat_id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id TEXT NOT NULL,channel_id TEXT NOT NULL,provider_chat_id TEXT NOT NULL,name TEXT,first_message_id INTEGER,last_message_id INTEGER,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,FOREIGN KEY(workspace_id,channel_id)REFERENCES channels(workspace_id,channel_id),UNIQUE(workspace_id,channel_id,provider_chat_id));
+        INSERT INTO chats_v15 SELECT chat_id,workspace_id,channel_id,provider_chat_id,name,first_message_id,last_message_id,created_at,updated_at FROM chats;
+        DROP TABLE chats; ALTER TABLE chats_v15 RENAME TO chats;
+        ALTER TABLE execution_attempts DROP COLUMN failure_json;
+        PRAGMA user_version=15;").unwrap();
+    // Production shape: all three Agents dispatched and tried to reply; only
+    // Bruce's bot could send (5 sent, 8 failed, 13 failed).
+    for (agent, count, state) in [
+        (&bruce, 5, "sent"),
+        (&clark, 8, "failed"),
+        (&diana, 13, "failed"),
+    ] {
+        for attempt in 0..count {
+            fixture.execute(
+                "INSERT INTO messages(chat_id,direction,sender_kind,sender_id,content_markdown,send_status,occurred_at,created_at,updated_at) VALUES(?1,'outbound','agent',?2,'Reply',?3,3,3,3)",
+                rusqlite::params![contaminated.chat_id, agent.as_str(), state],
+            ).unwrap();
+            fixture.execute(
+                "INSERT INTO message_send_attempts(message_id,request_key,state,started_at,finished_at) VALUES(?1,?2,?3,3,3)",
+                rusqlite::params![fixture.last_insert_rowid(), format!("legacy-{}-{attempt}", agent.as_str()), state],
+            ).unwrap();
+        }
+    }
+    drop(fixture);
+    verify_migration_sample(database.as_os_str());
+    let storage = Storage::open(DatabaseConfig::new(&database)).unwrap();
+    assert_eq!(storage.schema_version().unwrap(), 17);
+    assert!(storage.sqlite_settings().unwrap().foreign_keys);
+    for agent in [&clark, &diana] {
+        assert!(
+            storage
+                .create_execution(&workspace, agent, "queued DM", 4)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    let mut incoming = event(
+        &workspace,
+        &provider,
+        &channel,
+        "alice",
+        "2",
+        "Bruce followup",
+        4,
+        vec![dispatch(&bruce)],
+    );
+    incoming.receiving_agent_id = Some(bruce.clone());
+    assert_eq!(
+        storage.ingest_event(incoming.clone()).unwrap().chat_id,
+        legacy.chat_id
+    );
+    incoming.receiving_agent_id = Some(clark.clone());
+    incoming.message.content = "Clark conversation".into();
+    incoming.dispatch = vec![dispatch(&clark)];
+    let separate = storage.ingest_event(incoming).unwrap();
+    assert_ne!(separate.chat_id, legacy.chat_id);
+    assert_eq!(
+        storage
+            .find_message_for_receiver(&workspace, &channel, "alice", "2", Some(&clark))
+            .unwrap(),
+        Some(separate.message_id)
+    );
+    assert_ne!(
+        storage
+            .find_message_for_receiver(&workspace, &channel, "alice", "2", Some(&bruce))
+            .unwrap(),
+        Some(separate.message_id)
+    );
+    assert!(
+        storage
+            .inbox_items(&workspace, &bruce)
+            .unwrap()
+            .iter()
+            .filter(|item| item.chat_id == ambiguous.chat_id)
+            .all(|item| item.state == InboxState::Consumed)
+    );
+    let mut new_bob = event(
+        &workspace,
+        &provider,
+        &channel,
+        "bob",
+        "2",
+        "Only Bruce",
+        4,
+        vec![dispatch(&bruce)],
+    );
+    new_bob.receiving_agent_id = Some(bruce.clone());
+    assert_ne!(
+        storage.ingest_event(new_bob).unwrap().chat_id,
+        ambiguous.chat_id
+    );
+    let mut followup = event(
+        &workspace,
+        &provider,
+        &channel,
+        "feishu-p2p",
+        "2",
+        "Bruce followup",
+        4,
+        vec![dispatch(&bruce)],
+    );
+    followup.receiving_agent_id = Some(bruce.clone());
+    assert_eq!(
+        storage.ingest_event(followup.clone()).unwrap().chat_id,
+        contaminated.chat_id
+    );
+    for agent in [&clark, &diana] {
+        let items = storage.inbox_items(&workspace, agent).unwrap();
+        let wrong_items: Vec<_> = items
+            .iter()
+            .filter(|item| item.chat_id == contaminated.chat_id)
+            .collect();
+        assert_eq!(wrong_items.len(), 1);
+        assert!(
+            wrong_items
+                .iter()
+                .all(|item| item.state == InboxState::Consumed)
+        );
+        followup.receiving_agent_id = Some(agent.clone());
+        followup.dispatch = vec![dispatch(agent)];
+        assert_ne!(
+            storage.ingest_event(followup.clone()).unwrap().chat_id,
+            contaminated.chat_id
+        );
+    }
+    assert!(
+        storage
+            .inbox_items(&workspace, &bruce)
+            .unwrap()
+            .iter()
+            .filter(|item| item.chat_id == contaminated.chat_id)
+            .all(|item| item.state == InboxState::Pending)
+    );
+    let resumed = storage
+        .create_execution(&workspace, &bruce, "queued DM", 4)
+        .unwrap()
+        .unwrap();
+    assert!(resumed.snapshot.chats.iter().any(|chat| {
+        chat.chat.chat_id == contaminated.chat_id
+            && chat
+                .trigger_messages
+                .iter()
+                .any(|message| message.message_id == contaminated.message_id)
+    }));
+    storage.cancel_execution(resumed.execution_id, 4).unwrap();
+    assert_eq!(storage.message_count(&workspace).unwrap(), 35);
+    storage.close().unwrap();
+    let verified = rusqlite::Connection::open(database).unwrap();
+    assert_eq!(
+        verified
+            .query_row(
+                "SELECT content_markdown FROM messages WHERE message_id=?1",
+                [contaminated.message_id],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+        "Shared DM history"
+    );
+    assert_eq!(
+        verified
+            .query_row(
+                "SELECT content_markdown FROM messages WHERE message_id=?1",
+                [legacy.message_id],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+        "Bruce history"
+    );
+    assert_eq!(
+        verified
+            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap(),
+        0
+    );
+    verify_optional_migration_sample();
+}
+
+// Exercise Storage::open against a consistent copy, never the supplied database.
+fn verify_optional_migration_sample() {
+    let Some(sample) = std::env::var_os("LANKIDE_MIGRATION_SAMPLE") else {
+        return;
+    };
+    verify_migration_sample(&sample);
+}
+
+fn verify_migration_sample(sample: &std::ffi::OsStr) {
+    let home = tempfile::tempdir().unwrap();
+    let database = home.path().join("sample.sqlite3");
+    let source =
+        rusqlite::Connection::open_with_flags(sample, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+    source
+        .execute("VACUUM INTO ?1", [database.to_str().unwrap()])
+        .unwrap();
+    drop(source);
+    let before = rusqlite::Connection::open(&database).unwrap();
+    assert_eq!(
+        before
+            .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        15,
+        "migration sample must use the legacy v15 schema"
+    );
+    let messages = |connection: &rusqlite::Connection| {
+        let mut query = connection
+            .prepare("SELECT * FROM messages ORDER BY message_id")
+            .unwrap();
+        let columns = query.column_count();
+        query
+            .query_map([], |row| {
+                (0..columns)
+                    .map(|column| row.get::<_, rusqlite::types::Value>(column))
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap()
+    };
+    let history = messages(&before);
+    let chats = before
+        .prepare("SELECT chat_id,channel_id FROM chats ORDER BY chat_id")
+        .unwrap()
+        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    let mut expected = Vec::new();
+    for (chat_id, channel) in &chats {
+        let mut owner = String::new();
+        if channel == "private_chat" {
+            let senders = before.prepare("SELECT DISTINCT m.sender_id FROM message_send_attempts a JOIN messages m USING(message_id) WHERE m.chat_id=?1 AND m.sender_kind='agent' AND m.direction='outbound' AND a.state='sent' AND m.sender_id IS NOT NULL").unwrap()
+                .query_map([chat_id], |r| r.get::<_, String>(0)).unwrap().collect::<rusqlite::Result<Vec<_>>>().unwrap();
+            if senders.len() == 1 {
+                owner = senders[0].clone();
+            } else if senders.is_empty() {
+                let inbox_agents = before
+                    .prepare("SELECT DISTINCT agent_id FROM agent_inbox_items WHERE chat_id=?1")
+                    .unwrap()
+                    .query_map([chat_id], |r| r.get::<_, String>(0))
+                    .unwrap()
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .unwrap();
+                if inbox_agents.len() == 1 {
+                    owner = inbox_agents[0].clone();
+                }
+            }
+        }
+        expected.push((*chat_id, owner));
+    }
+    let inbox = before.prepare("SELECT inbox_item_id,chat_id,agent_id,state FROM agent_inbox_items ORDER BY inbox_item_id").unwrap()
+        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?))).unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>().unwrap();
+    drop(before);
+    let storage = Storage::open(DatabaseConfig::new(&database)).unwrap();
+    assert_eq!(storage.schema_version().unwrap(), 17);
+    storage.close().unwrap();
+    let after = rusqlite::Connection::open(database).unwrap();
+    assert_eq!(
+        history,
+        messages(&after),
+        "migration must preserve every history row"
+    );
+    assert_eq!(
+        after
+            .query_row("SELECT count(*) FROM chats", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        chats.len() as i64
+    );
+    for (chat_id, owner) in &expected {
+        assert_eq!(
+            &after
+                .query_row(
+                    "SELECT receiving_agent_id FROM chats WHERE chat_id=?1",
+                    [chat_id],
+                    |r| r.get::<_, String>(0)
+                )
+                .unwrap(),
+            owner
+        );
+    }
+    for (id, chat_id, agent, state) in inbox {
+        let direct = chats
+            .iter()
+            .any(|(id, channel)| *id == chat_id && channel == "private_chat");
+        let owner = &expected.iter().find(|(id, _)| *id == chat_id).unwrap().1;
+        let expected_state = if direct && state == "pending" && agent != *owner {
+            "consumed"
+        } else {
+            &state
+        };
+        assert_eq!(
+            after
+                .query_row(
+                    "SELECT state FROM agent_inbox_items WHERE inbox_item_id=?1",
+                    [id],
+                    |r| r.get::<_, String>(0)
+                )
+                .unwrap(),
+            expected_state
+        );
+    }
+    assert_eq!(
+        after
+            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| r
+                .get::<_, i64>(
+                0
+            ))
+            .unwrap(),
+        0
+    );
 }

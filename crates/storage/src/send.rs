@@ -391,7 +391,7 @@ impl Storage {
             }
             return Ok(x);
         }
-        let ch:i64=t.query_row("SELECT chat_id FROM chats WHERE workspace_id=?1 AND channel_id=?2 AND provider_chat_id=?3",params![r.workspace_id.as_str(),r.channel_id.as_str(),r.provider_chat_id],|x|x.get(0))?;
+        let ch:i64=t.query_row("SELECT chat_id FROM chats WHERE workspace_id=?1 AND channel_id=?2 AND provider_chat_id=?3 AND (receiving_agent_id='' OR receiving_agent_id=?4) ORDER BY receiving_agent_id DESC LIMIT 1",params![r.workspace_id.as_str(),r.channel_id.as_str(),r.provider_chat_id,r.sender_agent_id.as_str()],|x|x.get(0))?;
         if let Some(execution_id) = execution_id {
             let matches_workspace: i64 = t.query_row(
                 "SELECT count(*) FROM executions WHERE execution_id=?1 AND workspace_id=?2",

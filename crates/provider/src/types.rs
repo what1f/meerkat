@@ -108,6 +108,8 @@ pub struct EventSender {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProviderEvent {
+    /// Agent whose IM account received this event. Required for direct chats.
+    pub receiving_agent_id: Option<AgentId>,
     pub channel_id: ChannelId,
     pub provider_chat_id: String,
     pub sender: EventSender,

@@ -1114,6 +1114,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
     runtime
         .storage()
         .ingest_event(IngestEvent {
+            receiving_agent_id: None,
             workspace_id: workspace_id.clone(),
             provider_id,
             channel_id: channel_id.clone(),
@@ -1500,6 +1501,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "说明🙂".repeat(120)
     );
     let initial_event = IngestEvent {
+        receiving_agent_id: None,
         workspace_id: workspace_id.clone(),
         provider_id: provider_id.clone(),
         channel_id: channel_id.clone(),
@@ -3270,6 +3272,7 @@ fn message(
     sender_id: &str,
 ) -> ProviderEvent {
     ProviderEvent {
+        receiving_agent_id: None,
         channel_id: channel.clone(),
         provider_chat_id: chat.into(),
         sender: EventSender {
@@ -3299,6 +3302,7 @@ fn reaction(channel: &ChannelId, chat: &str, target: &str, event_id: &str) -> Pr
         name: "Reactor".into(),
     };
     ProviderEvent {
+        receiving_agent_id: None,
         channel_id: channel.clone(),
         provider_chat_id: chat.into(),
         sender: sender.clone(),
