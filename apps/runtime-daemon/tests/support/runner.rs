@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod daemon_e2e;
+mod shutdown_scenarios;
 use daemon_e2e::run_e2e;
 use lankide_runtime_daemon::{RuntimePaths, run_daemon, wait_for_shutdown};
 
@@ -8,7 +9,17 @@ use lankide_runtime_daemon::{RuntimePaths, run_daemon, wait_for_shutdown};
 async fn main() {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
     if arguments.iter().any(|argument| argument == "--e2e") {
-        match tokio::time::timeout(std::time::Duration::from_secs(40), run_e2e()).await {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(40),
+            run_e2e(
+                arguments
+                    .windows(2)
+                    .find(|pair| pair[0] == "--scenario")
+                    .map(|pair| pair[1].as_str()),
+            ),
+        )
+        .await
+        {
             Ok(Ok(artifact)) => {
                 println!("runtime-daemon E2E passed; result={}", artifact.display());
                 return;

@@ -1,15 +1,34 @@
 use super::*;
 
 impl Runtime {
-    pub(crate) fn close(self) -> Result<(), RuntimeError> {
+    pub(crate) async fn close(
+        self,
+        shutdown_timeout: std::time::Duration,
+    ) -> Result<(), RuntimeError> {
         let providers = self
             .providers
             .into_inner()
             .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
         drop(providers);
-        Arc::try_unwrap(self.storage)
-            .map_err(|_| RuntimeError::StorageStillShared)?
-            .close()?;
+        // Provider shutdown signals background receivers, including native
+        // blocking tasks. Their contexts can outlive the host's shutdown call.
+        // ProviderHost exposes cancellation, but no join for those receivers.
+        // Close SQLite only after those contexts have released HostServices.
+        let deadline = tokio::time::Instant::now() + shutdown_timeout;
+        let mut storage = self.storage;
+        loop {
+            match Arc::try_unwrap(storage) {
+                Ok(storage) => {
+                    storage.close()?;
+                    break;
+                }
+                Err(shared) => storage = shared,
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(RuntimeError::StorageStillShared);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
         Ok(())
     }
 
@@ -210,6 +229,15 @@ impl Runtime {
     }
 
     pub async fn shutdown(&self) -> Result<(), RuntimeError> {
+        let mut tasks = {
+            let mut tasks = self
+                .background_tasks
+                .lock()
+                .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
+            std::mem::take(&mut *tasks)
+        };
+        tasks.abort_all();
+        while tasks.join_next().await.is_some() {}
         let providers = self.provider_entries()?;
         for (workspace_id, provider) in providers {
             provider.active.store(false, Ordering::Release);
@@ -248,30 +276,41 @@ impl Runtime {
                 actual: actual_provider_id,
             });
         }
-        host.init().await.map_err(|source| RuntimeError::Provider {
-            workspace_id: workspace_id.clone(),
-            source,
-        })?;
-        for agent in self.storage.list_agent_records(workspace_id)? {
-            host.create_agent(
-                agent.agent_id.clone(),
-                management::provider_agent_spec(&agent),
-            )
-            .await
-            .map_err(|source| RuntimeError::Provider {
+        // Retain the host before the first await. If startup is cancelled,
+        // shutdown must still signal any receiver already started by init.
+        *current = Some(host.clone());
+        let started = async {
+            host.init().await.map_err(|source| RuntimeError::Provider {
                 workspace_id: workspace_id.clone(),
                 source,
             })?;
+            for agent in self.storage.list_agent_records(workspace_id)? {
+                host.create_agent(
+                    agent.agent_id.clone(),
+                    management::provider_agent_spec(&agent),
+                )
+                .await
+                .map_err(|source| RuntimeError::Provider {
+                    workspace_id: workspace_id.clone(),
+                    source,
+                })?;
+            }
+            let channels = host
+                .channels()
+                .await
+                .map_err(|source| RuntimeError::Provider {
+                    workspace_id: workspace_id.clone(),
+                    source,
+                })?;
+            *provider.channels.write().await = channels;
+            Ok::<_, RuntimeError>(())
         }
-        let channels = host
-            .channels()
-            .await
-            .map_err(|source| RuntimeError::Provider {
-                workspace_id: workspace_id.clone(),
-                source,
-            })?;
-        *provider.channels.write().await = channels;
-        *current = Some(host);
+        .await;
+        if let Err(error) = started {
+            *current = None;
+            let _ = host.shutdown().await;
+            return Err(error);
+        }
         Ok(())
     }
 

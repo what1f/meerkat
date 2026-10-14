@@ -460,7 +460,7 @@ impl<'a> AgentLifecycle<'a> {
             let computer_id = record.computer_id;
             let cleanup_workspace_id = workspace_id.clone();
             let cleanup_agent_id = agent_id.clone();
-            tokio::spawn(async move {
+            self.application.spawn_background(async move {
                 if let Err(error) = broker
                     .delete_agent_files(&computer_id, &cleanup_workspace_id, &cleanup_agent_id)
                     .await
@@ -469,7 +469,7 @@ impl<'a> AgentLifecycle<'a> {
                         "[runtime] workspace={cleanup_workspace_id} agent={cleanup_agent_id} deferred file cleanup failed: {error}"
                     );
                 }
-            });
+            })?;
         }
         Ok(())
     }

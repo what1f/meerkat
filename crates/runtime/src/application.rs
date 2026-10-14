@@ -13,7 +13,7 @@ use std::{
         Mutex as StdMutex,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -42,6 +42,8 @@ struct ApplicationInner {
     workspace_tasks: StdMutex<BTreeMap<WorkspaceId, JoinHandle<()>>>,
     execution_tasks: StdMutex<BTreeMap<String, JoinHandle<()>>>,
     shutting_down: AtomicBool,
+    background_tasks: StdMutex<tokio::task::JoinSet<()>>,
+    shutdown_timeout: Duration,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -101,6 +103,15 @@ impl RuntimeApplication {
         config: RuntimeConfig,
         factories: ProviderFactoryRegistry,
     ) -> Result<Self, RuntimeError> {
+        Self::open_with_shutdown_timeout(config, factories, Duration::from_secs(30)).await
+    }
+
+    /// Sets the maximum wait for Provider receivers to release storage on shutdown.
+    pub async fn open_with_shutdown_timeout(
+        config: RuntimeConfig,
+        factories: ProviderFactoryRegistry,
+        shutdown_timeout: Duration,
+    ) -> Result<Self, RuntimeError> {
         let profiles = AgentProfileFiles::new(&config.database.path);
         let resource_root = config
             .database
@@ -129,6 +140,8 @@ impl RuntimeApplication {
                 workspace_tasks: StdMutex::new(BTreeMap::new()),
                 execution_tasks: StdMutex::new(BTreeMap::new()),
                 shutting_down: AtomicBool::new(false),
+                background_tasks: StdMutex::new(tokio::task::JoinSet::new()),
+                shutdown_timeout,
             }),
         };
         application.load_persisted_workspaces().await?;
@@ -233,7 +246,7 @@ impl RuntimeApplication {
 
     pub async fn shutdown(&self) -> Result<(), RuntimeError> {
         self.begin_shutdown().await?;
-        self.finish_shutdown()
+        self.finish_shutdown().await
     }
 
     pub async fn begin_shutdown(&self) -> Result<(), RuntimeError> {
@@ -271,6 +284,16 @@ impl RuntimeApplication {
             let _ = task.await;
         }
         self.inner.broker.shutdown()?;
+        let mut background_tasks = {
+            let mut tasks = self
+                .inner
+                .background_tasks
+                .lock()
+                .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
+            std::mem::take(&mut *tasks)
+        };
+        background_tasks.abort_all();
+        while background_tasks.join_next().await.is_some() {}
         let runtime = self.runtime()?;
         runtime.shutdown().await?;
         self.inner
@@ -280,7 +303,7 @@ impl RuntimeApplication {
         Ok(())
     }
 
-    pub fn finish_shutdown(&self) -> Result<(), RuntimeError> {
+    pub async fn finish_shutdown(&self) -> Result<(), RuntimeError> {
         let runtime = self
             .inner
             .runtime
@@ -297,8 +320,26 @@ impl RuntimeApplication {
         drop(resources);
         Arc::try_unwrap(runtime)
             .map_err(|_| RuntimeError::RuntimeStillShared)?
-            .close()?;
+            .close(self.inner.shutdown_timeout)
+            .await?;
         self.inner.state.store(APP_STOPPED, Ordering::Release);
+        Ok(())
+    }
+
+    pub(crate) fn spawn_background(
+        &self,
+        future: impl std::future::Future<Output = ()> + Send + 'static,
+    ) -> Result<(), RuntimeError> {
+        let mut tasks = self
+            .inner
+            .background_tasks
+            .lock()
+            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
+        if self.inner.shutting_down.load(Ordering::Acquire) {
+            return Err(RuntimeError::ApplicationStopped);
+        }
+        while tasks.try_join_next().is_some() {}
+        tasks.spawn(future);
         Ok(())
     }
 

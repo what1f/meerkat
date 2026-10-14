@@ -37,99 +37,108 @@ impl RuntimePeer for RuntimePeerAdapter {
         let cleanup_broker = self.application.computer_broker();
         let cleanup_computer_id = computer_id.clone();
         let application = self.application.clone();
-        tokio::spawn(async move {
-            let mut tool_tasks = tokio::task::JoinSet::new();
-            while let Some(frame) = frames.next().await {
-                while tool_tasks.try_join_next().is_some() {}
-                match frame {
-                    Ok(frame) => {
-                        if let Some(computer_frame::Frame::ToolCall(call)) = frame.frame.clone() {
-                            let application = application.clone();
-                            let computer_id = computer_id.clone();
-                            let instance_id = instance_id.clone();
-                            tool_tasks.spawn(async move {
-                                let result = application
-                                    .invoke_capability(CapabilityInvokeRequest {
-                                        context: Some(AgentRunContext {
-                                            execution: call.execution.clone(),
-                                            execution_token: call.execution_token,
-                                        }),
-                                        capability_name: call.tool_name.clone(),
-                                        arguments_json: call.arguments_json,
-                                        invocation_id: call.tool_call_id.clone(),
+        self.application
+            .spawn_background(async move {
+                while let Some(frame) = frames.next().await {
+                    match frame {
+                        Ok(frame) => {
+                            if let Some(computer_frame::Frame::ToolCall(call)) = frame.frame.clone()
+                            {
+                                let application = application.clone();
+                                let computer_id = computer_id.clone();
+                                let instance_id = instance_id.clone();
+                                let owner = application.clone();
+                                if owner
+                                    .spawn_background(async move {
+                                        let result = application
+                                            .invoke_capability(CapabilityInvokeRequest {
+                                                context: Some(AgentRunContext {
+                                                    execution: call.execution.clone(),
+                                                    execution_token: call.execution_token,
+                                                }),
+                                                capability_name: call.tool_name.clone(),
+                                                arguments_json: call.arguments_json,
+                                                invocation_id: call.tool_call_id.clone(),
+                                            })
+                                            .await;
+                                        let tool_result = match result {
+                                            Ok(result) => ToolResult {
+                                                execution: call.execution,
+                                                tool_call_id: call.tool_call_id,
+                                                success: result.success,
+                                                content_markdown: result.content_markdown,
+                                                structured_content_json: result
+                                                    .structured_content_json,
+                                                resources: result.resources,
+                                                error: result.error,
+                                            },
+                                            Err(_) => ToolResult {
+                                                execution: call.execution,
+                                                tool_call_id: call.tool_call_id,
+                                                success: false,
+                                                content_markdown: String::new(),
+                                                structured_content_json: "{}".into(),
+                                                resources: Vec::new(),
+                                                error: Some(ToolError {
+                                                    code: "tool_unavailable".into(),
+                                                    message:
+                                                        "This tool is not available right now."
+                                                            .into(),
+                                                    retryable: true,
+                                                }),
+                                            },
+                                        };
+                                        if application
+                                            .computer_broker()
+                                            .send_frame(
+                                                &computer_id,
+                                                &instance_id,
+                                                RuntimeFrame {
+                                                    frame: Some(runtime_frame::Frame::ToolResult(
+                                                        tool_result,
+                                                    )),
+                                                },
+                                            )
+                                            .await
+                                            .is_err()
+                                        {
+                                            eprintln!(
+                                                "Runtime tool result could not reach the Computer"
+                                            );
+                                        }
                                     })
-                                    .await;
-                                let tool_result = match result {
-                                    Ok(result) => ToolResult {
-                                        execution: call.execution,
-                                        tool_call_id: call.tool_call_id,
-                                        success: result.success,
-                                        content_markdown: result.content_markdown,
-                                        structured_content_json: result.structured_content_json,
-                                        resources: result.resources,
-                                        error: result.error,
-                                    },
-                                    Err(_) => ToolResult {
-                                        execution: call.execution,
-                                        tool_call_id: call.tool_call_id,
-                                        success: false,
-                                        content_markdown: String::new(),
-                                        structured_content_json: "{}".into(),
-                                        resources: Vec::new(),
-                                        error: Some(ToolError {
-                                            code: "tool_unavailable".into(),
-                                            message: "This tool is not available right now.".into(),
-                                            retryable: true,
-                                        }),
-                                    },
-                                };
-                                if application
-                                    .computer_broker()
-                                    .send_frame(
-                                        &computer_id,
-                                        &instance_id,
-                                        RuntimeFrame {
-                                            frame: Some(runtime_frame::Frame::ToolResult(
-                                                tool_result,
-                                            )),
-                                        },
-                                    )
-                                    .await
                                     .is_err()
                                 {
-                                    eprintln!("Runtime tool result could not reach the Computer");
+                                    break;
                                 }
-                            });
-                            continue;
+                                continue;
+                            }
+                            if application
+                                .computer_broker()
+                                .handle_frame(&computer_id, &instance_id, frame)
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
                         }
-                        if application
-                            .computer_broker()
-                            .handle_frame(&computer_id, &instance_id, frame)
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
+                        Err(_) => break,
                     }
-                    Err(_) => break,
                 }
-            }
-            // Let already-started external operations finish under their own timeout;
-            // result delivery still checks the original Computer instance.
-            tool_tasks.detach_all();
-            let _ = application.computer_broker().disconnect_connection(
-                &computer_id,
-                &instance_id,
-                connection_id,
-            );
-            application.set_computer_connected(
-                application
-                    .computer_broker()
-                    .catalog()
-                    .is_ok_and(|values| !values.is_empty()),
-            );
-        });
-        tokio::spawn(async move {
+                let _ = application.computer_broker().disconnect_connection(
+                    &computer_id,
+                    &instance_id,
+                    connection_id,
+                );
+                application.set_computer_connected(
+                    application
+                        .computer_broker()
+                        .catalog()
+                        .is_ok_and(|values| !values.is_empty()),
+                );
+            })
+            .map_err(status)?;
+        self.application.spawn_background(async move {
             if let Err(error) = cleanup_broker
                 .retry_agent_file_deletions(&cleanup_computer_id)
                 .await
@@ -138,7 +147,7 @@ impl RuntimePeer for RuntimePeerAdapter {
                     "[runtime] computer={cleanup_computer_id} deferred Agent file cleanup could not start: {error}"
                 );
             }
-        });
+        }).map_err(status)?;
         Ok(output)
     }
 
@@ -492,28 +501,30 @@ impl RuntimePeer for RuntimePeerAdapter {
         let workspace = request.workspace.map(|value| value.workspace_id);
         let after = request.after_sequence;
         let (sender, output) = mpsc::channel(128);
-        tokio::spawn(async move {
-            loop {
-                let event = match receiver.recv().await {
-                    Ok(event) => event,
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                };
-                if event.sequence <= after
-                    || workspace.as_ref().is_some_and(|workspace| {
-                        event
-                            .workspace
-                            .as_ref()
-                            .is_none_or(|value| &value.workspace_id != workspace)
-                    })
-                {
-                    continue;
+        self.application
+            .spawn_background(async move {
+                loop {
+                    let event = match receiver.recv().await {
+                        Ok(event) => event,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    };
+                    if event.sequence <= after
+                        || workspace.as_ref().is_some_and(|workspace| {
+                            event
+                                .workspace
+                                .as_ref()
+                                .is_none_or(|value| &value.workspace_id != workspace)
+                        })
+                    {
+                        continue;
+                    }
+                    if sender.send(Ok(event)).await.is_err() {
+                        break;
+                    }
                 }
-                if sender.send(Ok(event)).await.is_err() {
-                    break;
-                }
-            }
-        });
+            })
+            .map_err(status)?;
         Ok(Box::pin(ReceiverStream::new(output)))
     }
 
