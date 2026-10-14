@@ -17,6 +17,7 @@ mod prompt;
 mod provider_ops;
 mod provider_registry;
 mod resource_store;
+mod retry;
 pub use application::*;
 pub use computer_broker::*;
 pub use coordination::{AttentionPolicy, CoordinatedEvent};
@@ -80,6 +81,8 @@ use tokio::sync::{Mutex, RwLock};
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct RuntimeConfig {
     pub database: DatabaseConfig,
+    #[serde(default)]
+    pub retry: RetryConfig,
 }
 
 pub struct Runtime {
@@ -91,6 +94,15 @@ pub struct Runtime {
 
 impl Runtime {
     pub fn new(config: RuntimeConfig) -> Result<Self, RuntimeError> {
+        if config.retry.base_ms <= 0
+            || config.retry.max_ms < config.retry.base_ms
+            || config.retry.notice_dedupe_ms <= 0
+            || config.retry.poll_ms == 0
+        {
+            return Err(RuntimeError::Application(
+                "invalid retry policy durations".into(),
+            ));
+        }
         let storage = Arc::new(Storage::open(config.database.clone())?);
         Ok(Self {
             config,
@@ -116,5 +128,24 @@ impl Runtime {
     /// Production management paths must use RuntimeApplication's connected Broker.
     pub fn new_computer_broker(&self) -> ComputerBroker {
         ComputerBroker::new(self.storage.clone())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct RetryConfig {
+    pub base_ms: i64,
+    pub max_ms: i64,
+    pub notice_dedupe_ms: i64,
+    pub poll_ms: u64,
+}
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            base_ms: 30_000,
+            max_ms: 600_000,
+            notice_dedupe_ms: 900_000,
+            poll_ms: 1000,
+        }
     }
 }

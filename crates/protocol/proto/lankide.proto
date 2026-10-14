@@ -20,6 +20,7 @@ service RuntimeProtocol {
   rpc GetAgentAvatar(GetAgentAvatarRequest) returns (GetAgentAvatarResponse);
   rpc CreateAgent(CreateAgentRequest) returns (Agent);
   rpc UpdateAgent(UpdateAgentRequest) returns (Agent);
+  rpc ResumeAgent(GetAgentRequest) returns (Agent);
   rpc DeleteAgent(DeleteAgentRequest) returns (DeleteAgentResponse);
   rpc GetProviderOnboarding(GetProviderOnboardingRequest) returns (ProviderOnboardingState);
   rpc AdvanceProviderOnboarding(AdvanceProviderOnboardingRequest) returns (ProviderOnboardingState);
@@ -97,6 +98,7 @@ message HarnessInfo {
   string reason = 5;
   optional ModelCatalog model_catalog = 6;
   string model_catalog_error = 7;
+  repeated string capabilities = 8;
 }
 
 message ComputerHello {
@@ -266,7 +268,12 @@ message ExecutionEventAck {
 message ExecutionCommitted { ExecutionRef execution = 1; int64 committed_at = 2; }
 
 message DeliverSteer { ExecutionRef execution = 1; Delivery delivery = 2; }
-message CancelExecution { ExecutionRef execution = 1; string reason = 2; }
+message CancelExecution {
+  ExecutionRef execution = 1;
+  string reason = 2;
+  // Close the attempt without a native cancel operation when Cancel is absent.
+  bool force_close = 3;
+}
 
 message DeliveryResult {
   ExecutionRef execution = 1;
@@ -447,6 +454,7 @@ message Agent {
   int64 updated_at = 15;
   AgentAttention attention = 16;
   string provider_agent_config_json = 17;
+  optional string pause_reason = 18;
 }
 
 enum AttentionMode {

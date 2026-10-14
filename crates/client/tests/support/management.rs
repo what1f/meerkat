@@ -91,6 +91,7 @@ impl MockManagementClient {
             provider_config: json!({"task_system_enabled": p == "feishu"}),
         };
         let agent = |w: &str, id: &str, name: &str, role: &str| Agent {
+            pause_reason: None,
             workspace_id: w.into(),
             id: id.into(),
             name: name.into(),
@@ -402,6 +403,7 @@ impl ManagementClient for MockManagementClient {
             return Err(ClientError::DuplicateAgentId(d.id));
         }
         let a = Agent {
+            pause_reason: None,
             workspace_id: w.into(),
             id: d.id,
             name: d.name,
@@ -458,6 +460,11 @@ impl ManagementClient for MockManagementClient {
             .ok_or_else(|| ClientError::AgentNotFound(a.id.clone()))?;
         *x = a.clone();
         Ok(a)
+    }
+    async fn resume_agent(&self, w: &str, a: &str) -> Result<Agent, ClientError> {
+        let mut agent = self.get_agent(w, a).await?;
+        agent.pause_reason = None;
+        self.update_agent(agent, None).await
     }
     async fn delete_agent(&self, workspace_id: &str, agent_id: &str) -> Result<(), ClientError> {
         let mut data = self.lock().await?;

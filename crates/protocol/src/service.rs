@@ -373,6 +373,16 @@ where
         ))
     }
 
+    async fn resume_agent(
+        &self,
+        request: Request<GetAgentRequest>,
+    ) -> Result<Response<Agent>, Status> {
+        validate_request_id(&request.get_ref().request_id)?;
+        validate_agent_ref(request.get_ref().agent.as_ref())?;
+        Ok(Response::new(
+            self.peer.resume_agent(request.into_inner()).await?,
+        ))
+    }
     async fn update_agent(
         &self,
         request: Request<UpdateAgentRequest>,

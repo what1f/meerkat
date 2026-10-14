@@ -1023,6 +1023,29 @@ fn spawn_poller(
     })
 }
 
+fn receiving_agent(
+    context: &InitContext,
+    handle: &Handle,
+    account_id: &str,
+) -> Result<Option<AgentId>, crate::http::ClientError> {
+    let (_, directory) = handle
+        .block_on(crate::identity::load(context.storage()))
+        .map_err(|_| {
+            crate::http::ClientError::InvalidInput("Telegram account identity is invalid".into())
+        })?;
+    let mut receivers = directory
+        .agents
+        .iter()
+        .filter(|(_, identity)| identity.account_id.to_string() == account_id)
+        .filter_map(|(id, _)| AgentId::new(id.clone()).ok());
+    let receiver = receivers.next();
+    Ok(if receivers.next().is_none() {
+        receiver
+    } else {
+        None
+    })
+}
+
 fn normalized_event_to_provider(
     context: &InitContext,
     client: &SharedClient,
@@ -1086,7 +1109,13 @@ fn normalized_event_to_provider(
                 .iter()
                 .filter_map(|value| AgentId::new(value.clone()).ok())
                 .collect();
+            let receiving_agent_id = if message.channel_id == "private_chat" {
+                receiving_agent(context, handle, &message.account_id)?
+            } else {
+                None
+            };
             Ok(ProviderEvent {
+                receiving_agent_id,
                 channel_id: channel(&message.channel_id),
                 provider_chat_id: message.chat_id,
                 sender,
@@ -1110,7 +1139,13 @@ fn normalized_event_to_provider(
                 &reaction.sender.display_name,
             )?;
             let action = reaction.action;
+            let receiving_agent_id = if reaction.channel_id == "private_chat" {
+                receiving_agent(context, handle, &reaction.account_id)?
+            } else {
+                None
+            };
             Ok(ProviderEvent {
+                receiving_agent_id,
                 channel_id: channel(&reaction.channel_id),
                 provider_chat_id: reaction.chat_id,
                 sender: sender.clone(),

@@ -2,14 +2,14 @@ use lankide_testkit::{
     CheckStatus, GateSelection, ProbeConfig, ProbeReport, run_prerequisite_probe,
 };
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::Path;
 
 #[test]
 fn scenario_evidence_requires_completed_cleanup_and_durable_results() {
     use lankide_testkit::ScenarioArtifact;
-    let root = temporary_fixture_root();
-    let success = ScenarioArtifact::new(&root, "evidence", "success.1").unwrap();
+    let fixture = temporary_fixture_root();
+    let root = fixture.path();
+    let success = ScenarioArtifact::new(root, "evidence", "success.1").unwrap();
     let read = |artifact: &ScenarioArtifact| -> serde_json::Value {
         serde_json::from_slice(&fs::read(artifact.dir.join("result.json")).unwrap()).unwrap()
     };
@@ -29,11 +29,11 @@ fn scenario_evidence_requires_completed_cleanup_and_durable_results() {
         2
     );
     assert!(
-        ScenarioArtifact::new(&root, "evidence", "success.1").is_err(),
+        ScenarioArtifact::new(root, "evidence", "success.1").is_err(),
         "duplicate run must not retain an old passing result"
     );
 
-    let failed = ScenarioArtifact::new(&root, "evidence", "cleanup-failed").unwrap();
+    let failed = ScenarioArtifact::new(root, "evidence", "cleanup-failed").unwrap();
     failed.record_cleanup("message_recalled", "owned-message", false);
     failed.complete_cleanup();
     assert!(
@@ -43,14 +43,14 @@ fn scenario_evidence_requires_completed_cleanup_and_durable_results() {
     assert_eq!(read(&failed)["status"], "failed");
     assert_eq!(read(&failed)["cleanup"], "failed");
 
-    let incomplete = ScenarioArtifact::new(&root, "evidence", "cleanup-incomplete").unwrap();
+    let incomplete = ScenarioArtifact::new(root, "evidence", "cleanup-incomplete").unwrap();
     assert!(
         incomplete.finish(Ok(())).is_err(),
         "cleanup must be explicitly finished"
     );
     assert_eq!(read(&incomplete)["cleanup"], "incomplete");
 
-    let blocked = ScenarioArtifact::new(&root, "evidence", "blocked-result").unwrap();
+    let blocked = ScenarioArtifact::new(root, "evidence", "blocked-result").unwrap();
     fs::remove_file(blocked.dir.join("result.json")).unwrap();
     fs::create_dir(blocked.dir.join("result.json")).unwrap();
     blocked.complete_cleanup();
@@ -59,15 +59,50 @@ fn scenario_evidence_requires_completed_cleanup_and_durable_results() {
         "failed result publication must fail the gate"
     );
     drop((success, failed, incomplete, blocked));
-    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn concurrent_scenario_suites_publish_independent_evidence_with_the_same_run_id() {
+    use lankide_testkit::ScenarioArtifact;
+    use std::sync::{Arc, Barrier};
+
+    let ready = Arc::new(Barrier::new(32));
+    std::thread::scope(|threads| {
+        let workers: Vec<_> = (0..32)
+            .map(|_| {
+                let ready = ready.clone();
+                threads.spawn(move || {
+                    ready.wait();
+                    let fixture = temporary_fixture_root();
+                    let root = fixture.path();
+                    let artifact = ScenarioArtifact::new(root, "evidence", "same-run").unwrap();
+                    artifact.record("message_sent", "owned-message", "ok");
+                    artifact.record_cleanup("message_recalled", "owned-message", true);
+                    artifact.complete_cleanup();
+                    artifact.finish(Ok(())).unwrap();
+                    let result: serde_json::Value = serde_json::from_slice(
+                        &fs::read(artifact.dir.join("result.json")).unwrap(),
+                    )
+                    .unwrap();
+                    assert_eq!(result["status"], "passed");
+                    assert_eq!(result["cleanup"], "passed");
+                    drop(artifact);
+                    root.to_path_buf()
+                })
+            })
+            .collect();
+        let roots: std::collections::HashSet<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect();
+        assert_eq!(roots.len(), 32, "each suite must own its fixture directory");
+    });
 }
 
 #[test]
 fn prerequisite_probe_runs_complete_hermetic_business_scenario_without_leaking_secrets() {
     let fixture = temporary_fixture_root();
-    let cleanup = fixture.clone();
-    let result = run_scenario(&fixture);
-    let _ = fs::remove_dir_all(cleanup);
+    let result = run_scenario(fixture.path());
     result.expect("testkit prerequisite probe E2E scenario failed");
 }
 
@@ -197,16 +232,14 @@ fn run_scenario(fixture: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn temporary_fixture_root() -> PathBuf {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock should be after UNIX epoch")
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "lankide-testkit-e2e-{}-{timestamp}",
-        std::process::id()
-    ));
-    fs::create_dir_all(root.join(".lankide/bootstrap")).expect("create temporary fixture");
+fn temporary_fixture_root() -> tempfile::TempDir {
+    // Reserve the directory atomically: concurrent scenarios can observe the
+    // same clock timestamp even when it is expressed in nanoseconds.
+    let root = tempfile::Builder::new()
+        .prefix("lankide-testkit-e2e-")
+        .tempdir()
+        .expect("reserve private fixture directory");
+    fs::create_dir_all(root.path().join(".lankide/bootstrap")).expect("create temporary fixture");
     root
 }
 

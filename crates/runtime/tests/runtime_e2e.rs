@@ -127,6 +127,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
     let channel = ChannelId::new("chat").map_err(err)?;
     let config = RuntimeConfig {
         database: DatabaseConfig::new(db),
+        retry: Default::default(),
     };
     let mut runtime = Runtime::new(config.clone()).map_err(err)?;
     for (workspace, agent) in [(&workspace_a, &agent_a), (&workspace_b, &agent_b)] {
@@ -623,6 +624,18 @@ async fn scenario(db: &Path) -> Result<(), String> {
         "cancel cursor",
     )?;
 
+    // A cancelled batch is terminal. Only a new message starts another run.
+    state_a
+        .emit(message(
+            &channel,
+            "chat_a",
+            "after-cancel",
+            "new request",
+            &agent_a,
+            "human",
+        ))
+        .await?;
+    pull(&runtime, &workspace_a, 28).await?;
     state_a.push_send(SendMode::Unknown);
     let pending = runtime
         .execute_ready(
@@ -775,6 +788,7 @@ async fn pause_drain_scenario(db: &Path) -> Result<(), String> {
     let state = Arc::new(FakeState::default());
     let mut runtime = Runtime::new(RuntimeConfig {
         database: DatabaseConfig::new(db),
+        retry: Default::default(),
     })
     .map_err(err)?;
     runtime
@@ -897,6 +911,7 @@ async fn collaboration_fencing_scenario(db: &Path) -> Result<(), String> {
     let channel = ChannelId::new("chat").map_err(err)?;
     let mut runtime = Runtime::new(RuntimeConfig {
         database: DatabaseConfig::new(db),
+        retry: Default::default(),
     })
     .map_err(err)?;
     runtime
@@ -1088,6 +1103,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
     let channel_id = ChannelId::new("chat").map_err(err)?;
     let runtime = Runtime::new(RuntimeConfig {
         database: DatabaseConfig::new(db),
+        retry: Default::default(),
     })
     .map_err(err)?;
     runtime
@@ -1114,6 +1130,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
     runtime
         .storage()
         .ingest_event(IngestEvent {
+            receiving_agent_id: None,
             workspace_id: workspace_id.clone(),
             provider_id,
             channel_id: channel_id.clone(),
@@ -1500,6 +1517,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "说明🙂".repeat(120)
     );
     let initial_event = IngestEvent {
+        receiving_agent_id: None,
         workspace_id: workspace_id.clone(),
         provider_id: provider_id.clone(),
         channel_id: channel_id.clone(),
@@ -1647,6 +1665,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .map_err(err)?;
     let config = RuntimeConfig {
         database: DatabaseConfig::new(db),
+        retry: Default::default(),
     };
     let application = RuntimeApplication::open(config.clone(), factories.clone())
         .await
@@ -3308,6 +3327,7 @@ fn message(
     sender_id: &str,
 ) -> ProviderEvent {
     ProviderEvent {
+        receiving_agent_id: None,
         channel_id: channel.clone(),
         provider_chat_id: chat.into(),
         sender: EventSender {
@@ -3337,6 +3357,7 @@ fn reaction(channel: &ChannelId, chat: &str, target: &str, event_id: &str) -> Pr
         name: "Reactor".into(),
     };
     ProviderEvent {
+        receiving_agent_id: None,
         channel_id: channel.clone(),
         provider_chat_id: chat.into(),
         sender: sender.clone(),
@@ -3982,6 +4003,7 @@ async fn profile_application() -> (tempfile::TempDir, RuntimeApplication, Arc<Fa
     let app = RuntimeApplication::open(
         RuntimeConfig {
             database: DatabaseConfig::new(&db),
+            retry: Default::default(),
         },
         factories,
     )
@@ -4181,6 +4203,7 @@ async fn prompt_failure_recovery_scenario() {
     let temp = tempfile::tempdir().unwrap();
     let runtime = Runtime::new(RuntimeConfig {
         database: DatabaseConfig::new(temp.path().join("runtime.db")),
+        retry: Default::default(),
     })
     .unwrap();
     let w = WorkspaceId::new("prompt_workspace").unwrap();
@@ -4257,6 +4280,7 @@ async fn durable_ingress_retry_scenario() {
     let path = temp.path().join("runtime.db");
     let runtime = Runtime::new(RuntimeConfig {
         database: DatabaseConfig::new(&path),
+        retry: Default::default(),
     })
     .unwrap();
     let w = WorkspaceId::new("receipt_workspace").unwrap();

@@ -7,6 +7,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+lankide-protocol = { path = "../../crates/protocol" }
 lankide-core = { path = "../../crates/core" }
 lankide-provider = { path = "../../crates/provider" }
 lankide-runtime = { path = "../../crates/runtime" }
@@ -32,7 +33,7 @@ bench = false
 
 [package.metadata.lankide.e2e]
 command = "cargo test -p lankide-system-e2e"
-scenario = "Mention one Agent in a group, queue a message during its run, and restart the Computer during a run; verify chat replies and execution isolation through both real daemons. Verify S4.1-S4.3: classify spawn and mid-turn failures, preserve original diagnostics in client details and Computer logs, and keep failures out of every chat."
+scenario = "Mention one Agent in a group, queue a message during its run, and restart the Computer during a run; verify chat replies and execution isolation through both real daemons. Verify S4.1-S4.3: classify spawn and mid-turn failures, preserve original diagnostics in client details and Computer logs, and keep failures out of every chat. S1.1 routes a DM only to its receiving Agent, S1.2 isolates two bot conversations with the same person, and S1.3 preserves unmentioned group attention policies. Verify S7.1: a Harness without Steer queues the next message and records no native steer; absent Resume starts fresh and absent Cancel closes a running Agent during deletion. S5.1-S5.8 cover model repair, third-attempt recovery, five-attempt limits, repeated fingerprints, durable notice dedupe, localized private notices, Runtime restart during backoff, and owner resume of queued messages."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
@@ -40,7 +41,7 @@ status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-liveness]
 command = "cargo test -p lankide-system-e2e --test execution_liveness_e2e"
-scenario = "Verify S6.1-S6.4 through real daemons: idle timeout releases the next queued message, progress extends idle but not the total budget, timeout kills the Harness and its child, and management cancellation stops the process tree within grace plus one second."
+scenario = "Verify S6.1-S6.4 through real daemons: idle timeout releases the next queued message, progress extends idle but not the total budget, timeout kills the Harness and its child, and management cancellation stops the process tree within grace plus one second. Verify timeout backoff before the next queued message and close/kill fallback without native cancel when Cancel is absent."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

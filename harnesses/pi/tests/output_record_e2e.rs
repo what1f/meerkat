@@ -30,6 +30,7 @@ async fn streamed_turn_keeps_bounded_final_record() -> Result<(), Box<dyn std::e
     let factory = PiHarness::new();
     let session = factory
         .start(SessionRequest {
+            permission_policy: Default::default(),
             config: HarnessConfig {
                 harness_id: "pi".into(),
                 model: ModelRef::new("local", "Local"),

@@ -22,9 +22,8 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-const HARNESS_ID: &str = "codex";
 const RUNTIME_SOCKET_ENV: &str = "LANKIDE_RUNTIME_SOCKET";
-const RUNTIME_PERMISSION_PROFILE: &str = "lankide-agent";
+const HARNESS_ID: &str = "codex";
 const RPC_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Clone, Debug)]
@@ -248,6 +247,10 @@ impl CodexSession {
             lankide_harness::user_config_directory("CODEX_HOME", ".codex").as_deref(),
             &["auth.json", "config.toml"],
         )?;
+        lankide_harness::prepare_native_skills(
+            &request.working_directory,
+            &request.working_directory.join(".agents/skills"),
+        )?;
         let stderr_path = codex_home.join(format!(
             "app-server-{}.stderr.log",
             std::time::SystemTime::now()
@@ -280,10 +283,18 @@ impl CodexSession {
             command.process_group(0);
         }
         let mut child = command.spawn().map_err(|error| {
-            harness_error(
+            let mut failure = harness_error(
                 HarnessErrorCode::SpawnFailed,
                 format!("failed to spawn Codex app-server: {error}"),
-            )
+            );
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
+            ) {
+                failure.failure.category = lankide_harness::FailureCategory::Configuration;
+                failure.failure.retryable = false;
+            }
+            failure
         })?;
         let stdin = child.stdin.take().ok_or_else(|| {
             harness_error(HarnessErrorCode::SpawnFailed, "Codex stdin unavailable")
@@ -353,34 +364,12 @@ impl CodexSession {
             "model": request.config.model.model_id,
             "cwd": request.working_directory,
             "approvalPolicy": "never",
-            "sandbox": "workspace-write",
+            "sandbox": match request.permission_policy {
+                lankide_harness::PermissionPolicy::FullAccess => "danger-full-access",
+            },
             "developerInstructions": request.system_prompt,
             "dynamicTools": dynamic_tools
         });
-        if let Some(runtime_socket) = request.config.environment.get(RUNTIME_SOCKET_ENV) {
-            let mut unix_sockets = serde_json::Map::new();
-            unix_sockets.insert(runtime_socket.clone(), Value::String("allow".into()));
-            let mut permission_profiles = serde_json::Map::new();
-            permission_profiles.insert(
-                RUNTIME_PERMISSION_PROFILE.into(),
-                json!({
-                    "extends": ":workspace",
-                    "network": {
-                        "enabled": true,
-                        "unix_sockets": unix_sockets
-                    }
-                }),
-            );
-            params
-                .as_object_mut()
-                .expect("thread params are an object")
-                .remove("sandbox");
-            params["permissions"] = Value::String(RUNTIME_PERMISSION_PROFILE.into());
-            params["config"] = json!({
-                "features": {"network_proxy": true},
-                "permissions": permission_profiles
-            });
-        }
         if resume {
             params["threadId"] = Value::String(
                 request
@@ -390,16 +379,6 @@ impl CodexSession {
             );
         }
         let result = inner.request(method, params).await?;
-        if request.config.environment.contains_key(RUNTIME_SOCKET_ENV)
-            && nested_string(&result, &["activePermissionProfile", "id"])
-                != Some(RUNTIME_PERMISSION_PROFILE)
-        {
-            inner.reap(true);
-            return Err(harness_error(
-                HarnessErrorCode::BindFailed,
-                "Codex did not activate the Lankide Agent permission profile",
-            ));
-        }
         let native_session_id = nested_string(&result, &["thread", "id"])
             .ok_or_else(|| {
                 harness_error(

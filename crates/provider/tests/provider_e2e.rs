@@ -859,6 +859,7 @@ fn sender() -> EventSender {
 }
 fn message_event(attachment: ResourceRef) -> ProviderEvent {
     ProviderEvent {
+        receiving_agent_id: None,
         channel_id: channel_id(),
         provider_chat_id: "chat-7".into(),
         sender: sender(),
@@ -874,6 +875,7 @@ fn message_event(attachment: ResourceRef) -> ProviderEvent {
 }
 fn reaction_event(action: ReactionAction) -> ProviderEvent {
     ProviderEvent {
+        receiving_agent_id: None,
         channel_id: channel_id(),
         provider_chat_id: "chat-7".into(),
         sender: sender(),
@@ -888,6 +890,7 @@ fn reaction_event(action: ReactionAction) -> ProviderEvent {
 }
 fn custom_event() -> ProviderEvent {
     ProviderEvent {
+        receiving_agent_id: None,
         channel_id: channel_id(),
         provider_chat_id: "task-feed".into(),
         sender: sender(),

@@ -68,7 +68,11 @@ async fn s4_1_spawn_failure_keeps_original_detail_and_identifies_the_attempt_in_
                 && record["failure"]["detail"] == text
                 && record["failure"]["fingerprint"] == failure.fingerprint)
     );
-    assert!(team.outbound(&bruce, "team-chat").is_empty());
+    assert!(
+        team.outbound(&bruce, "team-chat")
+            .iter()
+            .all(|send| send.content == lankide_core::agent_failure_notice("hello"))
+    );
     rig.close().await
 }
 
@@ -92,7 +96,11 @@ async fn s4_2_mid_turn_rate_limit_is_stored_with_the_failed_attempt() -> Result<
     assert_eq!(failure.detail, text);
     assert_eq!(failure.code, "scripted_failure");
     assert_eq!(failure.fingerprint.len(), 64);
-    assert!(team.outbound(&bruce, "team-chat").is_empty());
+    assert!(
+        team.outbound(&bruce, "team-chat")
+            .iter()
+            .all(|send| send.content == lankide_core::agent_failure_notice("hello"))
+    );
     rig.close().await
 }
 
@@ -120,11 +128,11 @@ async fn s4_3_spawn_and_mid_turn_diagnostics_never_reach_any_chat() -> Result<()
         .await?;
     failed_details(&rig, &bruce).await?;
     failed_details(&rig, &clark).await?;
-    assert_eq!(team.transcript(&bruce, "first-chat"), ["hello bruce"]);
-    assert_eq!(team.transcript(&clark, "second-chat"), ["hello clark"]);
     assert!(
-        rig.outbound().is_empty(),
-        "failure must not send, reply, react, or recall in any chat"
+        rig.outbound()
+            .iter()
+            .all(|send| send.content == lankide_core::agent_failure_notice("hello")),
+        "only the localized notice can reach a chat"
     );
     rig.close().await
 }

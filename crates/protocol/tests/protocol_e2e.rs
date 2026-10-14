@@ -1167,6 +1167,7 @@ fn computer_hello() -> ComputerHello {
         os: "macos".into(),
         arch: "aarch64".into(),
         harnesses: vec![HarnessInfo {
+            capabilities: vec!["resume".into(), "steer".into(), "cancel".into()],
             model_catalog: None,
             model_catalog_error: String::new(),
             harness_id: "pi".into(),

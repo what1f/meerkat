@@ -13,6 +13,12 @@ fn config(idle: Duration, total: Duration) -> RigConfig {
             total_budget: total,
             cancel_grace: Duration::from_millis(200),
         },
+        retry: lankide_runtime::RetryConfig {
+            base_ms: 30_000,
+            max_ms: 30_000,
+            poll_ms: 10,
+            ..Default::default()
+        },
         ..Default::default()
     }
 }
@@ -59,7 +65,10 @@ async fn gone(pids: &[u32]) -> Result<()> {
 
 #[tokio::test]
 async fn s6_1_idle_timeout_releases_the_agent_for_its_next_queued_message() -> Result<()> {
-    let rig = SystemRig::start(config(Duration::from_millis(700), Duration::from_secs(4))).await?;
+    let mut config = config(Duration::from_millis(700), Duration::from_secs(4));
+    config.retry.base_ms = 80;
+    config.retry.max_ms = 320;
+    let rig = SystemRig::start(config).await?;
     let team = rig.workspace("team").await?;
     let bruce = team
         .agent("bruce")
@@ -78,26 +87,19 @@ async fn s6_1_idle_timeout_releases_the_agent_for_its_next_queued_message() -> R
         .expect("timeout failure");
     assert_eq!(failure.category, "timeout");
     assert!(failure.detail.contains("idle"));
-    timeout(Duration::from_secs(8), async {
-        loop {
-            let executions = bruce.executions().await?;
-            if executions.len() >= 2 && executions[1].state == "succeeded" {
-                assert!(
-                    executions[1]
-                        .trigger_messages
-                        .iter()
-                        .any(|message| message == "second")
-                );
-                assert_eq!(team.outbound(&bruce, "chat").len(), 1);
-                assert_eq!(team.outbound(&bruce, "chat")[0].content, "next reply");
-                return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .map_err(|_| "next queued message did not run")??;
-    // The Runtime retains its current requeue/retry behavior for the first batch.
+    rig.settle().await?;
+    let executions = bruce.executions().await?;
+    assert_eq!(executions.len(), 3);
+    assert_eq!(executions[0].state, "failed");
+    assert_eq!(executions[1].state, "succeeded");
+    assert_eq!(executions[1].trigger_messages, ["first"]);
+    assert!(executions[1].created_at >= executions[0].completed_at.unwrap() + 80);
+    assert_eq!(executions[2].state, "succeeded");
+    assert_eq!(executions[2].trigger_messages, ["second"]);
+    let sends = team.outbound(&bruce, "chat");
+    assert_eq!(sends.len(), 2);
+    assert!(sends.iter().all(|send| send.content == "next reply"));
+    assert!(bruce.view().await?.pause_reason.is_none());
     rig.close().await
 }
 
@@ -202,5 +204,83 @@ async fn s6_4_management_cancel_stops_the_process_tree_within_grace_plus_one_sec
         "cancelled"
     );
     assert!(team.outbound(&bruce, "chat").is_empty());
+    rig.close().await
+}
+
+#[tokio::test]
+async fn timeout_without_cancel_closes_and_kills_without_native_cancel() -> Result<()> {
+    without_native_cancel(false).await
+}
+
+#[tokio::test]
+async fn management_cancel_without_cancel_closes_and_kills_within_grace() -> Result<()> {
+    without_native_cancel(true).await
+}
+
+async fn without_native_cancel(management_cancel: bool) -> Result<()> {
+    let mut config = config(
+        if management_cancel {
+            Duration::from_secs(10)
+        } else {
+            Duration::from_millis(700)
+        },
+        Duration::from_secs(30),
+    );
+    config
+        .harness_capabilities
+        .retain(|capability| capability != "cancel");
+    // Keep a retry from starting before process-cleanup assertions finish.
+    config.retry.base_ms = 30_000;
+    config.retry.max_ms = 30_000;
+    let rig = SystemRig::start(config).await?;
+    let team = rig.workspace("team").await?;
+    let agent = team
+        .agent("bruce")
+        .harness(Script::SpawnChild {
+            text: String::new(),
+            delay_ms: 0,
+        })
+        .create()
+        .await?;
+    team.mention(&agent, "chat", "alice", "work").await?;
+    let id = first_execution(&agent).await?;
+    let child = agent.child_pid().await?;
+    let mut pids = rig.harness_pids()?;
+    pids.push(child);
+    let started = Instant::now();
+    if management_cancel {
+        rig.cancel_execution(id).await?;
+    }
+    let details = terminal(&rig, id).await?;
+    gone(&pids).await?;
+    if management_cancel {
+        assert!(started.elapsed() <= Duration::from_millis(1200));
+    }
+    assert_eq!(
+        details.state,
+        if management_cancel {
+            "cancelled"
+        } else {
+            "failed"
+        }
+    );
+    assert_eq!(
+        details.attempts[0]
+            .failure
+            .as_ref()
+            .expect("failure")
+            .category,
+        if management_cancel {
+            "cancelled"
+        } else {
+            "timeout"
+        }
+    );
+    let controls = agent.native_controls()?;
+    assert!(
+        controls.iter().all(|command| command["op"] != "cancel"),
+        "{controls:?}"
+    );
+    assert!(team.outbound(&agent, "chat").is_empty());
     rig.close().await
 }

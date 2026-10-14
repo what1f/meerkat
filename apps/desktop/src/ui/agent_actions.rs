@@ -1,6 +1,30 @@
 use super::*;
 
 impl LankideApp {
+    pub(super) fn resume_agent(&mut self, id: String, cx: &mut Context<Self>) {
+        let Some(workspace) = self.selected_workspace_id.clone() else {
+            return;
+        };
+        let client = self.client.clone();
+        let epoch = self.selection_epoch;
+        cx.spawn(async move |this, cx| {
+            let result = client.resume_agent(&workspace, &id).await;
+            let _ = this.update(cx, |this, cx| {
+                if this.selection_epoch != epoch {
+                    return;
+                }
+                match result {
+                    Ok(_) => this.reload_agents(cx),
+                    Err(error) => {
+                        this.error = Some(UiMessage::client(error));
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
     pub(super) fn reload_agents(&mut self, cx: &mut Context<Self>) {
         let Some(workspace_id) = self.selected_workspace_id.clone() else {
             self.agents.clear();

@@ -58,6 +58,11 @@ pub(super) async fn handle_steer(inner: &Inner, steer: lankide_protocol::Deliver
         .lock()
         .await
         .get(&key)
+        .filter(|active| {
+            active
+                .capabilities
+                .contains(&lankide_harness::HarnessCapability::Steer)
+        })
         .map(|active| active.session.clone());
     let result = match session {
         Some(session) => {
@@ -89,7 +94,12 @@ pub(super) async fn handle_steer(inner: &Inner, steer: lankide_protocol::Deliver
     .await;
 }
 
-pub(super) async fn handle_cancel(inner: &Inner, execution: Option<ExecutionRef>, reason: String) {
+pub(super) async fn handle_cancel(
+    inner: &Inner,
+    execution: Option<ExecutionRef>,
+    reason: String,
+    force_close: bool,
+) {
     let Some(execution) = execution else { return };
     let key = assignment_key(execution.execution_id, execution.attempt);
     if let Some(starting) = inner
@@ -106,7 +116,10 @@ pub(super) async fn handle_cancel(inner: &Inner, execution: Option<ExecutionRef>
         active.cancel.clone()
     });
     if let Some(cancel) = cancel {
-        let _ = cancel.send(Some(reason));
+        cancel.send_replace(Some(super::Cancellation {
+            reason,
+            force_close,
+        }));
     }
 }
 

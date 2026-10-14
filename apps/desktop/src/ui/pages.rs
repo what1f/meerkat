@@ -296,6 +296,10 @@ impl LankideApp {
         let edit_app = app.clone();
         let delete_app = app.clone();
         let hover_app = app.clone();
+        let resume_app = app.clone();
+        let resume_id = agent.id.clone();
+        let paused_label = self.tr("已暂停", "Paused");
+        let resume_label = self.tr("继续", "Resume");
         let edit_id = agent.id.clone();
         let delete_id = agent.id.clone();
         let hover_id = agent.id.clone();
@@ -382,6 +386,34 @@ impl LankideApp {
                         agent.role.clone()
                     }),
             )
+            .when_some(agent.pause_reason.clone(), |card, reason| {
+                card.child(
+                    div()
+                        .mt(px(12.))
+                        .text_size(px(12.))
+                        .debug_selector(|| "agent-paused".to_string())
+                        .child(paused_label),
+                )
+                .child(
+                    div()
+                        .mt(px(5.))
+                        .max_w_full()
+                        .text_size(px(12.))
+                        .text_color(theme.text_secondary)
+                        .child(reason),
+                )
+                .child(
+                    DesktopButton::outline(
+                        ElementId::Name(format!("resume-agent-{}", agent.id).into()),
+                        resume_label,
+                    )
+                    .mt(px(8.))
+                    .on_click(move |_, _, cx| {
+                        let id = resume_id.clone();
+                        let _ = resume_app.update(cx, |this, cx| this.resume_agent(id, cx));
+                    }),
+                )
+            })
             .when(!agent.bio.is_empty(), |card| {
                 card.child(
                     div()

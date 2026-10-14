@@ -15,7 +15,7 @@ The `system` row in `tests/e2e-modules.tsv` also runs these scenarios in
 `./scripts/verify-all --gate hermetic` and `just test`.
 
 - S0.1: `mentioning_an_agent_replies_once_in_the_group_without_running_other_agents`
-- S0.2: `a_message_received_during_a_run_waits_for_the_next_run`
+- S0.2 / S7.1: `s7_1_a_message_received_without_steer_waits_for_the_next_run`
 - S0.3: `restarting_the_computer_during_a_run_delivers_the_reply_exactly_once`
 
 Pass a scenario name after `--test system_e2e` to run it alone.
@@ -74,8 +74,8 @@ cargo test -p lankide-system-e2e --test execution_liveness_e2e
 Each test name begins with `s6_1_`, `s6_2_`, `s6_3_`, or `s6_4_`.
 Append that prefix to run one scenario. The scenarios wait for saved events,
 terminal management details, chat replies, and process exit with bounded waits.
-S6.1 proves the next queued message runs; the failed message follows the existing
-Runtime requeue policy. S6.4 cancels through the management `CancelAttempt` RPC.
+S6.1 proves a timeout retries the frozen first batch after configured backoff,
+then runs the next queued message without a failure notice. S6.4 cancels through the management `CancelAttempt` RPC.
 Silent and child scripts ignore cancel to exercise forced cleanup. Progress
 scripts keep emitting events until the total budget expires.
 
@@ -93,7 +93,33 @@ and the production daemon. The file belongs in the Computer home. For example:
 ```
 
 Absent fields use these defaults. Restart the Computer to apply settings.
-The four scenarios use short limits in isolated homes. Native Harness sessions
+The liveness scenarios use short limits in isolated homes. Two additional
+scenarios remove Cancel and verify timeout and management cancellation close
+the native session and kill its child without a native cancel call. Native Harness sessions
 run in their own process groups; the Computer captures the group before cancel,
 waits the grace period, kills the group, and closes the session before reporting
 a timeout or cancellation.
+
+Task 7 also verifies that a second message runs separately when Steer is absent.
+The native peer records controls on a reader thread, including steers received
+while a reply is held. `Agent::received_steers` observes that boundary journal.
+`RigConfig::harness_capabilities` configures the peer's declared inventory; the
+additional scenario removes Resume and Cancel, verifies fresh starts, then
+deletes a running Agent without sending an unsupported native cancel.
+
+Task 5 retry scenarios are in `tests/retry_policy_e2e.rs`. Run them with:
+
+```sh
+cargo test -p lankide-system-e2e --test retry_policy_e2e
+```
+
+They set `RuntimeConfig.retry` through the daemon's optional `retry-policy.json`
+in each private Runtime home. The file accepts `base_ms`, `max_ms`,
+`notice_dedupe_ms`, and `poll_ms`. Production defaults are 30000, 600000,
+900000, and 1000 milliseconds. All values must be positive; maximum backoff
+must be at least the base. Omitted fields use their production defaults.
+
+A Runtime restart in these scenarios opens the same database and reconnects
+management. The graceful shutdown frame also ends the Computer daemon, so the
+rig restarts that peer with its existing private home, as a service supervisor
+would. Assertions check saved attempt times and deduplicated chat notices.

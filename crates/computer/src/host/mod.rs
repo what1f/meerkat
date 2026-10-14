@@ -375,7 +375,10 @@ impl ComputerHandle {
             .await
             .values()
             .map(|active| {
-                active.cancel.send_replace(Some(reason.to_owned()));
+                active.cancel.send_replace(Some(Cancellation {
+                    reason: reason.to_owned(),
+                    force_close: false,
+                }));
                 active.terminated.clone()
             })
             .collect();
@@ -401,11 +404,18 @@ pub struct ComputerStatus {
     pub active_attempts: Vec<ActiveAttempt>,
 }
 
+#[derive(Clone)]
+struct Cancellation {
+    reason: String,
+    force_close: bool,
+}
+
 struct ActiveExecution {
     terminated: watch::Receiver<Option<lankide_harness::AgentEventKind>>,
-    cancel: watch::Sender<Option<String>>,
+    cancel: watch::Sender<Option<Cancellation>>,
     progress: watch::Sender<tokio::time::Instant>,
     agent_key: String,
+    capabilities: std::collections::BTreeSet<lankide_harness::HarnessCapability>,
     session: Arc<dyn HarnessSession>,
     agent_home: PathBuf,
     context: AgentRunContext,

@@ -37,6 +37,7 @@ struct PendingExecution {
     computer_id: String,
     instance_id: String,
     attempt: i64,
+    harness_id: String,
     completion: oneshot::Sender<Result<ComputerCompletion, ComputerError>>,
     assignment_accepted: bool,
     delivery_accepted: bool,
@@ -92,6 +93,7 @@ impl ComputerBroker {
                     let _ = connection.sender.try_send(Ok(RuntimeFrame {
                         frame: Some(runtime_frame::Frame::CancelExecution(
                             lankide_protocol::CancelExecution {
+                                force_close: !supports(connection, &execution.harness_id, "cancel"),
                                 execution: Some(ExecutionRef {
                                     execution_id: *execution_id,
                                     attempt: *attempt as u32,
@@ -195,6 +197,9 @@ impl ComputerBroker {
             .storage()?
             .pending_steer_deliveries(&hello.computer_id, &hello.instance_id)?
         {
+            if !self.can_steer(&delivery)? {
+                continue;
+            }
             sender
                 .try_send(Ok(steer_frame(delivery)))
                 .map_err(|_| RuntimeError::Application("computer stream closed".into()))?;
@@ -656,15 +661,24 @@ impl ComputerBroker {
                     pending.computer_id.clone(),
                     pending.instance_id.clone(),
                     pending.attempt,
+                    pending.harness_id.clone(),
                 )
             });
-        if let Some((computer, instance, attempt)) = destination {
+        if let Some((computer, instance, attempt, harness_id)) = destination {
+            let force_close = self
+                .inner
+                .connections
+                .read()
+                .map_err(|_| RuntimeError::RuntimeLockPoisoned)?
+                .get(&computer)
+                .is_none_or(|connection| !supports(connection, &harness_id, "cancel"));
             self.send_to(
                 &computer,
                 &instance,
                 RuntimeFrame {
                     frame: Some(runtime_frame::Frame::CancelExecution(
                         lankide_protocol::CancelExecution {
+                            force_close,
                             execution: Some(ExecutionRef {
                                 execution_id,
                                 attempt: attempt as u32,
@@ -694,6 +708,7 @@ impl ComputerBroker {
                 let _ = connection.sender.try_send(Ok(RuntimeFrame {
                     frame: Some(runtime_frame::Frame::CancelExecution(
                         lankide_protocol::CancelExecution {
+                            force_close: !supports(connection, &pending.harness_id, "cancel"),
                             execution: Some(ExecutionRef {
                                 execution_id,
                                 attempt: pending.attempt as u32,
@@ -710,7 +725,39 @@ impl ComputerBroker {
         Ok(())
     }
 
+    fn can_steer(&self, delivery: &SteerDelivery) -> Result<bool, RuntimeError> {
+        let harness_id = self
+            .inner
+            .pending
+            .lock()
+            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?
+            .get(&delivery.execution_id)
+            .filter(|execution| {
+                execution.attempt == delivery.attempt
+                    && execution.computer_id == delivery.computer_id
+                    && execution.instance_id == delivery.computer_instance_id
+            })
+            .map(|execution| execution.harness_id.clone());
+        let Some(harness_id) = harness_id else {
+            return Ok(false);
+        };
+        let connections = self
+            .inner
+            .connections
+            .read()
+            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
+        Ok(connections
+            .get(&delivery.computer_id)
+            .is_some_and(|connection| {
+                connection.instance_id == delivery.computer_instance_id
+                    && supports(connection, &harness_id, "steer")
+            }))
+    }
+
     pub async fn deliver_steer(&self, delivery: SteerDelivery) -> Result<(), RuntimeError> {
+        if !self.can_steer(&delivery)? {
+            return Ok(());
+        }
         let computer_id = delivery.computer_id.clone();
         let computer_instance_id = delivery.computer_instance_id.clone();
         self.send_to(&computer_id, &computer_instance_id, steer_frame(delivery))
@@ -754,6 +801,13 @@ impl ComputerBroker {
     }
 }
 
+fn supports(connection: &ComputerConnection, harness_id: &str, capability: &str) -> bool {
+    connection.harnesses.iter().any(|harness| {
+        harness.harness_id == harness_id
+            && harness.capabilities.iter().any(|value| value == capability)
+    })
+}
+
 fn steer_frame(delivery: SteerDelivery) -> RuntimeFrame {
     RuntimeFrame {
         frame: Some(runtime_frame::Frame::DeliverSteer(
@@ -789,7 +843,7 @@ pub struct BrokerComputerExecutor {
     computer_id: String,
 }
 impl ComputerExecutor for BrokerComputerExecutor {
-    fn execute(&self, assignment: AssignExecution) -> ComputerFuture<'_, ComputerCompletion> {
+    fn execute(&self, mut assignment: AssignExecution) -> ComputerFuture<'_, ComputerCompletion> {
         Box::pin(async move {
             let execution_id = assignment
                 .execution
@@ -811,6 +865,17 @@ impl ComputerExecutor for BrokerComputerExecutor {
                 .ok_or_else(|| ComputerError {
                     code: "computer_unavailable".into(),
                 })?;
+            let harness_id = assignment
+                .harness
+                .as_ref()
+                .map(|harness| harness.harness_id.clone())
+                .unwrap_or_default();
+            if !supports(&connection, &harness_id, "resume")
+                && let Some(session) = assignment.session.as_mut()
+            {
+                session.action = lankide_protocol::SessionAction::StartNew as i32;
+                session.native_session_id = None;
+            }
             let execution = assignment.execution.as_ref().expect("validated execution");
             let offered_at = now_millis();
             self.broker
@@ -850,6 +915,7 @@ impl ComputerExecutor for BrokerComputerExecutor {
                         computer_id: self.computer_id.clone(),
                         instance_id: connection.instance_id.clone(),
                         attempt: i64::from(execution.attempt),
+                        harness_id,
                         completion,
                         assignment_accepted: false,
                         delivery_accepted: false,

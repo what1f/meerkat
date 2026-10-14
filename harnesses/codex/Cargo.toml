@@ -26,8 +26,8 @@ unattended = "yes after live opt-in and preflight"
 status = "implemented"
 
 [package.metadata.lankide.e2e-additional.harness-codex-hermetic]
-command = "cargo test -p lankide-harness-codex --test failures_e2e"
-scenario = "Classify missing CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through the public native Harness API; retain original error text and stderr. Start native executions in isolated process groups for Computer-owned tree cleanup."
+command = "cargo test -p lankide-harness-codex --test failures_e2e --test native_defaults_e2e"
+scenario = "Classify missing CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through the public native Harness API; retain original error text and stderr. Start native executions in isolated process groups for Computer-owned tree cleanup. Verify S7.2: full-access native launch with never approval and danger-full-access, Agent-home skills at the native project path, and preserved auth/config overlay and tool/socket wiring. Classify missing or non-executable CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through the public native Harness API; retain original error text and stderr."
 prerequisites = "Python 3"
 classification = "hermetic"
 unattended = "yes"

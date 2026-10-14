@@ -45,6 +45,8 @@ pub struct RigConfig {
     pub harness_executable: PathBuf,
     pub timeout: Duration,
     pub execution_liveness: lankide_computer::ExecutionLiveness,
+    pub harness_capabilities: Vec<String>,
+    pub retry: lankide_runtime::RetryConfig,
 }
 impl Default for RigConfig {
     fn default() -> Self {
@@ -58,6 +60,10 @@ impl Default for RigConfig {
                 .join("system-harness"),
             timeout: Duration::from_secs(15),
             execution_liveness: Default::default(),
+            harness_capabilities: ["system_prompt", "streaming", "resume", "cancel", "tools"]
+                .map(str::to_owned)
+                .to_vec(),
+            retry: Default::default(),
         }
     }
 }
@@ -67,7 +73,12 @@ struct ComputerThread {
     thread: Option<std::thread::JoinHandle<Result<()>>>,
 }
 impl ComputerThread {
-    fn start(config: DaemonConfig, executable: PathBuf, journal: PathBuf) -> Self {
+    fn start(
+        config: DaemonConfig,
+        executable: PathBuf,
+        journal: PathBuf,
+        capabilities: Vec<String>,
+    ) -> Self {
         let (stop, stopped) = oneshot::channel();
         let thread = std::thread::spawn(move || {
             // Dropping this executor is a process-crash boundary: all Computer
@@ -76,7 +87,7 @@ impl ComputerThread {
             runtime.block_on(async move {
                 let registration = RegisteredHarness::new(ScriptedHarness::new(journal), HarnessConfig {
                     harness_id: "pi".into(), model: ModelRef::new("scripted", "scripted"), thinking_level: "low".into(),
-                    cli_path: executable, environment: BTreeMap::new(), config_fingerprint: "system-rig".into(),
+                    cli_path: executable, environment: BTreeMap::from([("LANKIDE_SYSTEM_CAPABILITIES".into(), serde_json::to_string(&capabilities)?)]), config_fingerprint: "system-rig".into(),
                 });
                 tokio::select! {
                     result = lankide_computer_daemon::run_with_harnesses(config, vec![registration]) => result.map_err(Into::into),
@@ -127,25 +138,12 @@ impl SystemRig {
             .prefix("system-")
             .tempdir_in("/tmp")?;
         let paths = RuntimePaths::for_home(home.path())?;
-        let im = Arc::new(ImState::default());
-        let factories = ProviderFactoryRegistry::default();
-        let state = im.clone();
-        factories.register_host_factory(
-            ScriptedProvider {
-                state: state.clone(),
-            }
-            .info(),
-            move |workspace, services| {
-                ProviderHost::new(
-                    ScriptedProvider {
-                        state: state.clone(),
-                    },
-                    workspace.id.clone(),
-                    workspace.provider_config.clone(),
-                    services,
-                )
-            },
+        std::fs::write(
+            home.path().join("retry-policy.json"),
+            serde_json::to_vec(&config.retry)?,
         )?;
+        let im = Arc::new(ImState::default());
+        let factories = factories(im.clone())?;
         let (shutdown, stopped) = oneshot::channel();
         let daemon_paths = paths.clone();
         let runtime = tokio::spawn(async move {
@@ -212,6 +210,7 @@ impl SystemRig {
             config,
             self.config.harness_executable.clone(),
             self.home.path().join("harness-pids.tsv"),
+            self.config.harness_capabilities.clone(),
         ));
         Ok(())
     }
@@ -219,14 +218,13 @@ impl SystemRig {
         timeout(self.config.timeout, async {
             loop {
                 self.check_daemons()?;
-                if self
-                    .client
-                    .get_computer_catalog(None)
-                    .await?
-                    .iter()
-                    .any(|computer| computer.id == "local" && computer.available)
-                {
-                    return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+                if let Ok(computers) = self.client.get_computer_catalog(None).await {
+                    if computers
+                        .iter()
+                        .any(|computer| computer.id == "local" && computer.available)
+                    {
+                        return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+                    }
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
@@ -264,6 +262,33 @@ impl SystemRig {
         )
     }
 
+    pub async fn restart_runtime(&mut self) -> Result<()> {
+        if let Some(shutdown) = self.shutdown.take() {
+            let _ = shutdown.send(());
+        }
+        if let Some(runtime) = self.runtime.take() {
+            timeout(self.config.timeout, runtime).await???;
+        }
+        let factories = factories(self.im.clone())?;
+        let paths = self.paths.clone();
+        let (shutdown, stopped) = oneshot::channel();
+        self.shutdown = Some(shutdown);
+        self.runtime = Some(tokio::spawn(async move {
+            run_daemon(paths, factories, async move {
+                let _ = stopped.await;
+                Ok(ShutdownReason::Internal)
+            })
+            .await
+        }));
+        self.client = RuntimeManagementClient::connect_lazy(&self.paths.socket);
+        // The daemon's graceful shutdown frame ends its managed Computer peer.
+        // Reopen the same Computer home, as a service supervisor does.
+        if let Some(mut computer) = self.computer.take() {
+            computer.stop()?;
+        }
+        self.start_computer()?;
+        self.wait_for_computer().await
+    }
     pub async fn restart_computer(&mut self) -> Result<()> {
         if let Some(mut computer) = self.computer.take() {
             computer.stop()?;
@@ -328,12 +353,13 @@ impl SystemRig {
             let running: i64 = transaction.query_row("SELECT count(*) FROM executions WHERE state IN ('queued','assigning','running','recovering')", [], |row| row.get(0))?;
             drop(transaction);
             drop(database);
-            if inbox == 0 && running == 0 {
+            let pending_notices: i64 = self.database()?.query_row("SELECT (SELECT count(*) FROM failure_notices WHERE sent_at IS NULL)+(SELECT count(*) FROM executions WHERE state IN ('failed','cancelled') AND retry_policy_applied=0 AND (state='cancelled' OR EXISTS(SELECT 1 FROM execution_attempts a WHERE a.execution_id=executions.execution_id AND a.failure_json IS NOT NULL)))",[],|r|r.get(0))?;
+            if inbox == 0 && running == 0 && pending_notices == 0 {
                 return Ok(());
             }
             if Instant::now() >= deadline {
                 return Err(format!(
-                    "settle timed out: {inbox} inbox items, {running} active executions"
+                    "settle timed out: {inbox} inbox items, {running} active executions, {pending_notices} pending failure actions"
                 )
                 .into());
             }
@@ -412,8 +438,7 @@ impl<'a> Workspace<'a> {
         .await
     }
     pub async fn direct_message(&self, agent: &Agent<'_>, person: &str, text: &str) -> Result<()> {
-        // Keep the actual platform chat identity shared across bots. Task 1
-        // adds the receiving-Agent contract; this metadata does not fix routing.
+        // Telegram uses the person ID as the private chat ID for every bot.
         self.message(
             "private_chat",
             person,
@@ -423,6 +448,58 @@ impl<'a> Workspace<'a> {
             &[],
         )
         .await
+    }
+    pub async fn unaddressed_direct_message(&self, person: &str, text: &str) -> Result<()> {
+        self.message("private_chat", person, person, text, None, &[])
+            .await
+    }
+    pub async fn direct_reaction(
+        &self,
+        agent: &Agent<'_>,
+        person: &str,
+        target: &str,
+        event_id: &str,
+    ) -> Result<()> {
+        let sink = self
+            .rig
+            .im
+            .sinks
+            .lock()
+            .expect("sinks")
+            .get(&self.id)
+            .expect("workspace IM")
+            .clone();
+        let receiver = self
+            .rig
+            .im
+            .accounts
+            .lock()
+            .expect("accounts")
+            .iter()
+            .find(|((workspace, _), account)| {
+                workspace == &self.id && account.as_str() == agent.account.as_str()
+            })
+            .and_then(|((_, id), _)| AgentId::new(id.clone()).ok());
+        let sender = EventSender {
+            id: person.into(),
+            kind: EventSenderType::Human,
+            name: person.into(),
+        };
+        sink.emit(ProviderEvent {
+            receiving_agent_id: receiver,
+            channel_id: ChannelId::new("private_chat")?,
+            provider_chat_id: person.into(),
+            sender: sender.clone(),
+            kind: ProviderEventKind::Reaction(lankide_provider::ReactionEvent {
+                target_provider_message_id: target.into(),
+                sender,
+                reaction: "thumbs_up".into(),
+                action: lankide_provider::ReactionAction::Add,
+            }),
+            provider_data: json!({"event_id":event_id}),
+        })
+        .await?;
+        Ok(())
     }
     async fn message(
         &self,
@@ -444,9 +521,39 @@ impl<'a> Workspace<'a> {
             .expect("workspace IM")
             .clone();
         let order = self.rig.im.order.fetch_add(1, Ordering::SeqCst);
-        sink.emit(ProviderEvent { channel_id: ChannelId::new(channel)?, provider_chat_id: chat.into(),
+        let receiving_agent_id = account.and_then(|account| {
+            self.rig
+                .im
+                .accounts
+                .lock()
+                .expect("accounts")
+                .iter()
+                .find(|((workspace, _), registered)| {
+                    workspace == &self.id && registered.as_str() == account
+                })
+                .and_then(|((_, agent), _)| AgentId::new(agent.clone()).ok())
+        });
+        let provider_message_id = if let Some(account) = account {
+            let received = self
+                .rig
+                .im
+                .incoming
+                .lock()
+                .expect("incoming")
+                .iter()
+                .filter(|message| {
+                    message.workspace == self.id
+                        && message.chat == chat
+                        && message.account.as_deref() == Some(account)
+                })
+                .count();
+            format!("incoming-{}", received + 1)
+        } else {
+            format!("incoming-{id}")
+        };
+        sink.emit(ProviderEvent { receiving_agent_id, channel_id: ChannelId::new(channel)?, provider_chat_id: chat.into(),
             sender: EventSender { id: person.into(), kind: EventSenderType::Human, name: person.into() },
-            kind: ProviderEventKind::Message(MessageEvent { provider_message_id: format!("incoming-{id}"), content: text.into(), reply_to_provider_message_id: None, mentioned_agent_ids: mentions.to_vec(), attachments: Vec::new() }),
+            kind: ProviderEventKind::Message(MessageEvent { provider_message_id, content: text.into(), reply_to_provider_message_id: None, mentioned_agent_ids: mentions.to_vec(), attachments: Vec::new() }),
             provider_data: json!({"event_id":format!("event-{id}"), "chat_name":chat, "receiving_account":account}) }).await?;
         self.rig
             .im
@@ -532,6 +639,33 @@ impl<'a> AgentBuilder<'a> {
                     cli_path: self.rig.config.harness_executable.display().to_string(),
                     environment_variables: vec![
                         (
+                            "LANKIDE_SYSTEM_INPUTS".into(),
+                            self.rig
+                                .home
+                                .path()
+                                .join(format!("inputs-{}-{}.jsonl", self.workspace, self.name))
+                                .display()
+                                .to_string(),
+                        ),
+                        (
+                            "LANKIDE_SYSTEM_CONTROLS".into(),
+                            self.rig
+                                .home
+                                .path()
+                                .join(format!("controls-{}-{}.jsonl", self.workspace, self.name))
+                                .display()
+                                .to_string(),
+                        ),
+                        (
+                            "LANKIDE_SYSTEM_STEERS".into(),
+                            self.rig
+                                .home
+                                .path()
+                                .join(format!("steers-{}-{}.jsonl", self.workspace, self.name))
+                                .display()
+                                .to_string(),
+                        ),
+                        (
                             "LANKIDE_SYSTEM_SCRIPT".into(),
                             serde_json::to_string(&self.script)?,
                         ),
@@ -572,6 +706,8 @@ pub struct Execution {
     pub output: Option<String>,
     pub error_code: Option<String>,
     pub attempt: i64,
+    pub created_at: i64,
+    pub completed_at: Option<i64>,
     pub trigger_messages: Vec<String>,
 }
 impl Agent<'_> {
@@ -601,6 +737,133 @@ impl Agent<'_> {
         Ok(self.rig.database()?.query_row("SELECT coalesce(max(v.last_event_sequence),0) FROM execution_attempts v JOIN executions e USING(execution_id) WHERE e.workspace_id=?1 AND e.agent_id=?2", params![self.workspace, self.id], |row| row.get(0))?)
     }
 
+    pub async fn view(&self) -> Result<lankide_client::Agent> {
+        Ok(self.rig.client.get_agent(&self.workspace, &self.id).await?)
+    }
+    pub async fn resume(&self) -> Result<()> {
+        self.rig
+            .client
+            .resume_agent(&self.workspace, &self.id)
+            .await?;
+        Ok(())
+    }
+    pub async fn change_script(&self, script: Script, model: &str) -> Result<()> {
+        let mut agent = self.view().await?;
+        agent.model = model.into();
+        for (key, value) in &mut agent.environment_variables {
+            if key == "LANKIDE_SYSTEM_SCRIPT" {
+                *value = serde_json::to_string(&script)?;
+            }
+        }
+        self.rig.client.update_agent(agent, None).await?;
+        Ok(())
+    }
+    pub async fn wait_for(
+        &self,
+        mut condition: impl FnMut(&[Execution], &lankide_client::Agent) -> bool,
+    ) -> Result<()> {
+        timeout(self.rig.config.timeout, async {
+            loop {
+                self.rig.check_daemons()?;
+                if condition(&self.executions().await?, &self.view().await?) {
+                    return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .map_err(|_| "Agent state wait timed out")?
+    }
+    pub async fn group_attention(&self, mode: lankide_protocol::AttentionMode) -> Result<()> {
+        let mut client = lankide_protocol::connect_uds_lazy(
+            &self.rig.paths.socket,
+            lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES,
+        );
+        client
+            .update_agent(lankide_protocol::UpdateAgentRequest {
+                request_id: format!("attention-{}-{}", self.workspace, self.id),
+                agent: Some(lankide_protocol::AgentRef {
+                    workspace_id: self.workspace.clone(),
+                    agent_id: self.id.clone(),
+                }),
+                attention: Some(lankide_protocol::AgentAttention {
+                    channels: vec![lankide_protocol::ChannelAttention {
+                        channel_id: "group_chat".into(),
+                        mode: mode as i32,
+                        interval_minutes: 0,
+                    }],
+                }),
+                ..Default::default()
+            })
+            .await?;
+        Ok(())
+    }
+    pub fn inbox_states(&self) -> Result<Vec<String>> {
+        let c = self.rig.database()?;
+        let mut q=c.prepare("SELECT state FROM agent_inbox_items WHERE workspace_id=?1 AND agent_id=?2 ORDER BY inbox_item_id")?;
+        Ok(q.query_map(params![self.workspace, self.id], |r| r.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+    pub fn inbox_count(&self) -> Result<i64> {
+        Ok(self.rig.database()?.query_row(
+            "SELECT count(*) FROM agent_inbox_items WHERE workspace_id=?1 AND agent_id=?2",
+            params![self.workspace, self.id],
+            |row| row.get(0),
+        )?)
+    }
+    pub fn harness_inputs(&self) -> Result<Vec<String>> {
+        let path = self
+            .rig
+            .home
+            .path()
+            .join(format!("inputs-{}-{}.jsonl", self.workspace, self.id));
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        std::fs::read_to_string(path)?
+            .lines()
+            .map(|line| serde_json::from_str(line).map_err(Into::into))
+            .collect()
+    }
+
+    pub fn native_controls(&self) -> Result<Vec<serde_json::Value>> {
+        let path = self
+            .rig
+            .home
+            .path()
+            .join(format!("controls-{}-{}.jsonl", self.workspace, self.id));
+        let text = std::fs::read_to_string(path)?;
+        Ok(text
+            .lines()
+            .map(serde_json::from_str)
+            .collect::<std::result::Result<_, _>>()?)
+    }
+
+    pub async fn delete(&self) -> Result<()> {
+        Ok(self
+            .rig
+            .client
+            .delete_agent(&self.workspace, &self.id)
+            .await?)
+    }
+
+    pub fn received_steers(&self) -> Result<Vec<serde_json::Value>> {
+        let path = self
+            .rig
+            .home
+            .path()
+            .join(format!("steers-{}-{}.jsonl", self.workspace, self.id));
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error.into()),
+        };
+        Ok(text
+            .lines()
+            .map(serde_json::from_str)
+            .collect::<std::result::Result<_, _>>()?)
+    }
+
     pub async fn release_run(&self) -> Result<()> {
         std::fs::write(
             self.rig
@@ -614,7 +877,7 @@ impl Agent<'_> {
 
     pub async fn executions(&self) -> Result<Vec<Execution>> {
         let database = self.rig.database()?;
-        let mut query = database.prepare("SELECT execution_id,state,final_output,attempt,error_code FROM executions WHERE workspace_id=?1 AND agent_id=?2 ORDER BY execution_id")?;
+        let mut query = database.prepare("SELECT execution_id,state,final_output,attempt,error_code,created_at,completed_at FROM executions WHERE workspace_id=?1 AND agent_id=?2 ORDER BY execution_id")?;
         let mut executions = query
             .query_map(params![self.workspace, self.id], |row| {
                 Ok(Execution {
@@ -623,6 +886,8 @@ impl Agent<'_> {
                     output: row.get(2)?,
                     attempt: row.get(3)?,
                     error_code: row.get(4)?,
+                    created_at: row.get(5)?,
+                    completed_at: row.get(6)?,
                     trigger_messages: Vec::new(),
                 })
             })?
@@ -647,4 +912,26 @@ impl Agent<'_> {
             }
         }).await.map_err(|_| "Agent did not start before timeout")?
     }
+}
+
+fn factories(im: Arc<ImState>) -> Result<ProviderFactoryRegistry> {
+    let factories = ProviderFactoryRegistry::default();
+    let state = im.clone();
+    factories.register_host_factory(
+        ScriptedProvider {
+            state: state.clone(),
+        }
+        .info(),
+        move |workspace, services| {
+            ProviderHost::new(
+                ScriptedProvider {
+                    state: state.clone(),
+                },
+                workspace.id.clone(),
+                workspace.provider_config.clone(),
+                services,
+            )
+        },
+    )?;
+    Ok(factories)
 }

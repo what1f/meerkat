@@ -90,6 +90,7 @@ pub struct MessageInput {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IngestEvent {
+    pub receiving_agent_id: Option<AgentId>,
     pub workspace_id: WorkspaceId,
     pub provider_id: ProviderId,
     pub channel_id: ChannelId,
@@ -123,6 +124,7 @@ pub enum ReactionOrigin {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IncomingReaction {
+    pub receiving_agent_id: Option<AgentId>,
     pub workspace_id: WorkspaceId,
     pub provider_id: ProviderId,
     pub channel_id: ChannelId,
@@ -223,6 +225,7 @@ pub enum InboxState {
     Claimed,
     Delivered,
     Consumed,
+    Failed,
 }
 impl InboxState {
     fn parse(s: &str) -> Result<Self> {
@@ -231,6 +234,7 @@ impl InboxState {
             "claimed" => Ok(Self::Claimed),
             "delivered" => Ok(Self::Delivered),
             "consumed" => Ok(Self::Consumed),
+            "failed" => Ok(Self::Failed),
             _ => Err(StorageError::Invalid(format!("inbox state {s}"))),
         }
     }
@@ -251,9 +255,9 @@ pub struct SnapshotChatView {
 }
 fn receive(t: &Transaction<'_>, m: &IncomingMessage) -> Result<IncomingMessageResult> {
     t.execute("INSERT INTO channels VALUES(?1,?2,?3,?4) ON CONFLICT(workspace_id,channel_id)DO UPDATE SET name=excluded.name,updated_at=excluded.updated_at",params![m.workspace_id.as_str(),m.channel_id.as_str(),m.channel_name,m.now])?;
-    t.execute("INSERT INTO chats(workspace_id,channel_id,provider_chat_id,name,created_at,updated_at)VALUES(?1,?2,?3,?4,?5,?5)ON CONFLICT(workspace_id,channel_id,provider_chat_id)DO UPDATE SET name=excluded.name,updated_at=excluded.updated_at",params![m.workspace_id.as_str(),m.channel_id.as_str(),m.provider_chat_id,m.chat_name,m.now])?;
+    t.execute("INSERT INTO chats(workspace_id,channel_id,provider_chat_id,name,created_at,updated_at)VALUES(?1,?2,?3,?4,?5,?5)ON CONFLICT(workspace_id,channel_id,provider_chat_id,receiving_agent_id)DO UPDATE SET name=excluded.name,updated_at=excluded.updated_at",params![m.workspace_id.as_str(),m.channel_id.as_str(),m.provider_chat_id,m.chat_name,m.now])?;
     let ch: i64 = t.query_row(
-        "SELECT chat_id FROM chats WHERE workspace_id=?1 AND channel_id=?2 AND provider_chat_id=?3",
+        "SELECT chat_id FROM chats WHERE workspace_id=?1 AND channel_id=?2 AND provider_chat_id=?3 AND receiving_agent_id=''",
         params![
             m.workspace_id.as_str(),
             m.channel_id.as_str(),
@@ -501,12 +505,22 @@ impl Storage {
         Ok(o)
     }
     pub fn ingest_event(&self, event: IngestEvent) -> Result<IngestResult> {
+        if let Some(receiver) = &event.receiving_agent_id
+            && event
+                .dispatch
+                .iter()
+                .any(|dispatch| &dispatch.agent_id != receiver)
+        {
+            return Err(StorageError::Invalid(
+                "direct-message dispatch receiver mismatch".into(),
+            ));
+        }
         let mut c = self.conn()?;
         let t = c.transaction()?;
         ensure_workspace_provider(&t, &event.workspace_id, &event.provider_id)?;
         t.execute("INSERT INTO channels VALUES(?1,?2,?3,?4) ON CONFLICT(workspace_id,channel_id) DO UPDATE SET name=excluded.name,updated_at=excluded.updated_at",params![event.workspace_id.as_str(),event.channel_id.as_str(),event.channel_name,event.now])?;
-        t.execute("INSERT INTO chats(workspace_id,channel_id,provider_chat_id,name,created_at,updated_at)VALUES(?1,?2,?3,?4,?5,?5) ON CONFLICT(workspace_id,channel_id,provider_chat_id) DO UPDATE SET name=excluded.name,updated_at=excluded.updated_at",params![event.workspace_id.as_str(),event.channel_id.as_str(),event.provider_chat_id,event.chat_name,event.now])?;
-        let chat_id: i64 = t.query_row("SELECT chat_id FROM chats WHERE workspace_id=?1 AND channel_id=?2 AND provider_chat_id=?3",params![event.workspace_id.as_str(),event.channel_id.as_str(),event.provider_chat_id],|r|r.get(0))?;
+        t.execute("INSERT INTO chats(workspace_id,channel_id,provider_chat_id,name,created_at,updated_at,receiving_agent_id)VALUES(?1,?2,?3,?4,?5,?5,?6) ON CONFLICT(workspace_id,channel_id,provider_chat_id,receiving_agent_id) DO UPDATE SET name=excluded.name,updated_at=excluded.updated_at",params![event.workspace_id.as_str(),event.channel_id.as_str(),event.provider_chat_id,event.chat_name,event.now,event.receiving_agent_id.as_ref().map(AgentId::as_str).unwrap_or("")])?;
+        let chat_id: i64 = t.query_row("SELECT chat_id FROM chats WHERE workspace_id=?1 AND channel_id=?2 AND provider_chat_id=?3 AND receiving_agent_id=?4",params![event.workspace_id.as_str(),event.channel_id.as_str(),event.provider_chat_id,event.receiving_agent_id.as_ref().map(AgentId::as_str).unwrap_or("")],|r|r.get(0))?;
         if let Some((message_id, direction, sender_kind, sender_id)) = t
             .query_row(
                 "SELECT message_id,direction,sender_kind,sender_id FROM messages WHERE chat_id=?1 AND provider_message_id=?2",
@@ -588,13 +602,28 @@ impl Storage {
     }
 
     pub fn record_reaction(&self, reaction: IncomingReaction) -> Result<ReactionResult> {
+        if let Some(receiver) = &reaction.receiving_agent_id
+            && reaction
+                .dispatch
+                .iter()
+                .any(|dispatch| &dispatch.agent_id != receiver)
+        {
+            return Err(StorageError::Invalid(
+                "direct-reaction dispatch receiver mismatch".into(),
+            ));
+        }
+        let provider_event_id = if let Some(receiver) = &reaction.receiving_agent_id {
+            serde_json::json!([receiver.as_str(), reaction.provider_event_id]).to_string()
+        } else {
+            reaction.provider_event_id.clone()
+        };
         let mut c = self.conn()?;
         let t = c.transaction()?;
         ensure_workspace_provider(&t, &reaction.workspace_id, &reaction.provider_id)?;
-        if let Some((reaction_id, target_message_id)) = t.query_row("SELECT reaction_id,target_message_id FROM reactions WHERE workspace_id=?1 AND provider_event_id=?2",params![reaction.workspace_id.as_str(),reaction.provider_event_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()? {
+        if let Some((reaction_id, target_message_id)) = t.query_row("SELECT reaction_id,target_message_id FROM reactions WHERE workspace_id=?1 AND provider_event_id=?2",params![reaction.workspace_id.as_str(),provider_event_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()? {
             return Ok(ReactionResult { reaction_id: Some(reaction_id), target_message_id: Some(target_message_id), duplicate: true, ignored_unknown_target: false, inbox_item_ids: Vec::new() });
         }
-        let target: Option<(i64, i64)>=t.query_row("SELECT c.chat_id,m.message_id FROM chats c JOIN messages m ON m.chat_id=c.chat_id WHERE c.workspace_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND m.provider_message_id=?4",params![reaction.workspace_id.as_str(),reaction.channel_id.as_str(),reaction.provider_chat_id,reaction.target_provider_message_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+        let target: Option<(i64, i64)>=t.query_row("SELECT c.chat_id,m.message_id FROM chats c JOIN messages m ON m.chat_id=c.chat_id WHERE c.workspace_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND m.provider_message_id=?4 AND c.receiving_agent_id=?5",params![reaction.workspace_id.as_str(),reaction.channel_id.as_str(),reaction.provider_chat_id,reaction.target_provider_message_id,reaction.receiving_agent_id.as_ref().map(AgentId::as_str).unwrap_or("")],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
         let Some((chat_id, target_message_id)) = target else {
             return Ok(ReactionResult {
                 reaction_id: None,
@@ -610,7 +639,7 @@ impl Storage {
             validate_dispatch(&reaction.dispatch)?;
             &reaction.dispatch
         };
-        t.execute("INSERT INTO reactions(workspace_id,chat_id,target_message_id,provider_event_id,sender_kind,sender_id,sender_name,reaction,action,origin,occurred_at,created_at)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",params![reaction.workspace_id.as_str(),chat_id,target_message_id,reaction.provider_event_id,sender_kind(reaction.sender_kind),reaction.sender_id,reaction.sender_name,reaction.reaction,reaction_action(reaction.action),reaction_origin(reaction.origin),reaction.occurred_at,reaction.now])?;
+        t.execute("INSERT INTO reactions(workspace_id,chat_id,target_message_id,provider_event_id,sender_kind,sender_id,sender_name,reaction,action,origin,occurred_at,created_at)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",params![reaction.workspace_id.as_str(),chat_id,target_message_id,provider_event_id,sender_kind(reaction.sender_kind),reaction.sender_id,reaction.sender_name,reaction.reaction,reaction_action(reaction.action),reaction_origin(reaction.origin),reaction.occurred_at,reaction.now])?;
         let reaction_id = t.last_insert_rowid();
         let source_id = -reaction_id;
         let mut inbox_item_ids = Vec::new();
@@ -636,7 +665,18 @@ impl Storage {
         pc: &str,
         pm: &str,
     ) -> Result<Option<i64>> {
-        Ok(self.conn()?.query_row("SELECT m.message_id FROM messages m JOIN chats c USING(chat_id) WHERE c.workspace_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND m.provider_message_id=?4",params![w.as_str(),ch.as_str(),pc,pm],|r|r.get(0)).optional()?)
+        self.find_message_for_receiver(w, ch, pc, pm, None)
+    }
+    /// Resolve a native message identity within one receiving account's chat.
+    pub fn find_message_for_receiver(
+        &self,
+        w: &WorkspaceId,
+        ch: &ChannelId,
+        pc: &str,
+        pm: &str,
+        receiver: Option<&AgentId>,
+    ) -> Result<Option<i64>> {
+        Ok(self.conn()?.query_row("SELECT m.message_id FROM messages m JOIN chats c USING(chat_id) WHERE c.workspace_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND m.provider_message_id=?4 AND c.receiving_agent_id=?5",params![w.as_str(),ch.as_str(),pc,pm,receiver.map(AgentId::as_str).unwrap_or("")],|r|r.get(0)).optional()?)
     }
     pub fn message_count(&self, w: &WorkspaceId) -> Result<usize> {
         let n: i64 = self.conn()?.query_row(
@@ -676,7 +716,7 @@ impl Storage {
         let value: Option<String> = self
             .conn()?
             .query_row(
-                "SELECT a.attention_json FROM agent_chat_attention a JOIN chats c USING(chat_id) WHERE a.workspace_id=?1 AND a.agent_id=?2 AND c.channel_id=?3 AND c.provider_chat_id=?4",
+                "SELECT a.attention_json FROM agent_chat_attention a JOIN chats c USING(chat_id) WHERE a.workspace_id=?1 AND a.agent_id=?2 AND c.channel_id=?3 AND c.provider_chat_id=?4 AND (c.receiving_agent_id='' OR c.receiving_agent_id=?2)",
                 params![workspace_id.as_str(), agent_id.as_str(), channel_id.as_str(), provider_chat_id],
                 |row| row.get(0),
             )
@@ -699,8 +739,8 @@ impl Storage {
         let transaction = connection.transaction()?;
         let chat_id: Option<i64> = transaction
             .query_row(
-                "SELECT chat_id FROM chats WHERE workspace_id=?1 AND channel_id=?2 AND provider_chat_id=?3",
-                params![workspace_id.as_str(), channel_id.as_str(), provider_chat_id],
+                "SELECT chat_id FROM chats WHERE workspace_id=?1 AND channel_id=?2 AND provider_chat_id=?3 AND (receiving_agent_id='' OR receiving_agent_id=?4) ORDER BY receiving_agent_id DESC LIMIT 1",
+                params![workspace_id.as_str(), channel_id.as_str(), provider_chat_id, agent_id.as_str()],
                 |row| row.get(0),
             )
             .optional()?;

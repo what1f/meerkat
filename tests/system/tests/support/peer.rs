@@ -27,22 +27,67 @@ fn main() {
     .expect("initial JSON");
     if first["op"] == "probe" {
         emit(
-            json!({"type":"probe_result","availability":"available","version":"system-rig","capabilities":["system_prompt","streaming","resume","cancel","tools"],"reason":null}),
+            json!({"type":"probe_result","availability":"available","version":"system-rig","capabilities":serde_json::from_str::<Value>(&std::env::var("LANKIDE_SYSTEM_CAPABILITIES").expect("capabilities")).expect("capability JSON"),"reason":null}),
         );
         return;
     }
+    let controls_path = std::env::var("LANKIDE_SYSTEM_CONTROLS").expect("control journal");
+    let mut controls = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&controls_path)
+        .expect("control journal");
+    writeln!(controls, "{}", json!({"op": first["op"], "native_session_id": first["request"]["native_session_id"], "pid": std::process::id()})).expect("record session start");
     let script: Script =
         serde_json::from_str(&std::env::var("LANKIDE_SYSTEM_SCRIPT").expect("Agent script"))
             .expect("script JSON");
     emit(
         json!({"type":"bound","native_session_id":first["request"]["native_session_id"].as_str().unwrap_or("system-native")}),
     );
+    drop(lines);
     let runtime = tokio::runtime::Runtime::new().expect("peer runtime");
+    let (commands, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in io::stdin().lock().lines() {
+            let command: Value =
+                serde_json::from_str(&line.expect("command")).expect("command JSON");
+            let mut controls = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&controls_path)
+                .expect("control journal");
+            writeln!(controls, "{}", json!({"op": command["op"]})).expect("record native control");
+            if command["op"] == "steer" {
+                let path = std::env::var("LANKIDE_SYSTEM_STEERS").expect("steer journal");
+                let mut journal = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                    .expect("journal");
+                writeln!(journal, "{command}").expect("record steer");
+            }
+            if commands.send(command).is_err() {
+                break;
+            }
+        }
+    });
     let mut sequence = 0;
-    for line in lines {
-        let command: Value = serde_json::from_str(&line.expect("command")).expect("command JSON");
+    for command in received {
         match command["op"].as_str() {
             Some("execute") => {
+                let input = command["request"]["input"]
+                    .as_str()
+                    .expect("snapshot input");
+                let mut journal = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(std::env::var("LANKIDE_SYSTEM_INPUTS").expect("input journal"))
+                    .expect("open journal");
+                writeln!(
+                    journal,
+                    "{}",
+                    serde_json::to_string(input).expect("input JSON")
+                )
+                .expect("record input");
                 sequence = 0;
                 event(&mut sequence, json!({"kind":"started"}));
                 let (text, delay) = match &script {
@@ -66,6 +111,25 @@ fn main() {
                             }
                         }
                         (text, *delay_ms)
+                    }
+                    Script::FailSequence { texts, reply } => {
+                        let counter = format!(
+                            "{}.count",
+                            std::env::var("LANKIDE_SYSTEM_INPUTS").expect("counter")
+                        );
+                        let n = std::fs::read_to_string(&counter)
+                            .ok()
+                            .and_then(|s| s.parse::<usize>().ok())
+                            .unwrap_or(0);
+                        std::fs::write(counter, (n + 1).to_string()).expect("counter write");
+                        if let Some(text) = texts.get(n) {
+                            event(
+                                &mut sequence,
+                                json!({"kind":"failed","code":"scripted_failure","message":text,"failure":lankide_system_e2e::scripted_failure(text)}),
+                            );
+                            continue;
+                        }
+                        (reply, 0)
                     }
                     Script::FailMidTurn { text } | Script::FailSpawn { text } => {
                         event(

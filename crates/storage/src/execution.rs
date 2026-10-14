@@ -242,6 +242,8 @@ pub(super) fn commit_execution_transaction(
     output: &str,
     now: i64,
 ) -> Result<()> {
+    transaction.execute("UPDATE agents SET failure_fingerprint=NULL,failure_streak=0 WHERE (workspace_id,agent_id)=(SELECT workspace_id,agent_id FROM executions WHERE execution_id=?1)",[execution_id])?;
+
     let (workspace_id, agent_id, snapshot_id, current_attempt, state): (String, String, i64, i64, String) = transaction.query_row(
         "SELECT workspace_id,agent_id,snapshot_id,attempt,state FROM executions WHERE execution_id=?1",
         [execution_id],
@@ -432,7 +434,15 @@ impl Storage {
         if n > 0 {
             return Err(StorageError::Invalid("active execution".into()));
         }
-        let mut s=t.prepare("SELECT inbox_item_id,chat_id,source_id,source_kind,trigger_reason_json FROM agent_inbox_items WHERE workspace_id=?1 AND agent_id=?2 AND state='pending' AND available_at<=?3 ORDER BY inbox_item_id")?;
+        let paused: bool = t.query_row(
+            "SELECT pause_reason IS NOT NULL FROM agents WHERE workspace_id=?1 AND agent_id=?2",
+            params![w.as_str(), a.as_str()],
+            |r| r.get(0),
+        )?;
+        if paused {
+            return Ok(None);
+        }
+        let mut s=t.prepare("SELECT inbox_item_id,chat_id,source_id,source_kind,trigger_reason_json FROM agent_inbox_items WHERE workspace_id=?1 AND agent_id=?2 AND state='pending' AND available_at<=?3 AND coalesce(retry_batch_id,0)=coalesce((SELECT retry_batch_id FROM agent_inbox_items WHERE workspace_id=?1 AND agent_id=?2 AND state='pending' ORDER BY inbox_item_id LIMIT 1),0) ORDER BY inbox_item_id")?;
         let p = s
             .query_map(params![w.as_str(), a.as_str(), now], |r| {
                 Ok((

@@ -41,7 +41,10 @@ pub(super) async fn handle_delete_agent_files(
             .values()
             .filter(|active| active.agent_key == key)
             .map(|active| {
-                active.cancel.send_replace(Some("Agent was deleted".into()));
+                active.cancel.send_replace(Some(super::Cancellation {
+                    reason: "Agent was deleted".into(),
+                    force_close: false,
+                }));
                 active.terminated.clone()
             })
             .collect::<Vec<_>>();
@@ -266,6 +269,11 @@ async fn prepare_assignment(
         .get(&wire_config.harness_id)
         .cloned()
         .ok_or_else(|| ComputerError::InvalidAssignment("harness_unavailable".into()))?;
+    let capabilities = inner
+        .probes
+        .get(&wire_config.harness_id)
+        .map(|probe| probe.capabilities.clone())
+        .unwrap_or_default();
     let directive = assign
         .session
         .as_ref()
@@ -372,8 +380,10 @@ async fn prepare_assignment(
     });
     let resume = SessionAction::try_from(directive.action).ok()
         == Some(SessionAction::ResumeOrStart)
-        && requested_native.is_some();
+        && requested_native.is_some()
+        && capabilities.contains(&lankide_harness::HarnessCapability::Resume);
     let request = SessionRequest {
+        permission_policy: Default::default(),
         config: native_config,
         working_directory: agent_home.clone(),
         system_prompt,
@@ -433,6 +443,7 @@ async fn prepare_assignment(
     let started = tokio::time::Instant::now();
     let (progress_tx, progress_rx) = watch::channel(started);
     let (terminated_tx, terminated_rx) = watch::channel(None);
+    let can_cancel = capabilities.contains(&lankide_harness::HarnessCapability::Cancel);
     inner.active.lock().await.insert(
         key.clone(),
         ActiveExecution {
@@ -440,6 +451,7 @@ async fn prepare_assignment(
             cancel: cancel_tx.clone(),
             progress: progress_tx,
             agent_key,
+            capabilities,
             session: session.clone(),
             agent_home: agent_home.clone(),
             context: context.clone(),
@@ -451,6 +463,7 @@ async fn prepare_assignment(
         inner.liveness.clone(),
         started,
         session.clone(),
+        can_cancel,
         progress_rx,
         cancel_rx,
         cancel_tx,

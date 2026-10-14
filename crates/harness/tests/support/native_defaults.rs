@@ -1,0 +1,278 @@
+use lankide_harness::{
+    AgentEventKind, ExecuteRequest, HarnessCapability, HarnessConfig, HarnessFactory, ModelRef,
+    SessionRequest, ToolDefinition,
+};
+use serde_json::{Value, json};
+use std::{collections::BTreeMap, fs, os::unix::fs::PermissionsExt, path::Path, time::Duration};
+use tokio_stream::StreamExt;
+
+type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// S7.2: An Agent starts its native Harness with full access and home skills,
+/// keeps native context/settings, and sees a newly authored skill on its next run.
+pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path) -> Result {
+    for existing_native_skills in [false, true] {
+        let home = tempfile::tempdir()?;
+        let agent = home.path().join("agent");
+        let native_config = home.path().join("native-config");
+        let id = &factory.info().harness_id;
+        let record = home.path().join("start.jsonl");
+        let cli = home.path().join("native-cli");
+        fs::copy(fixture, &cli)?;
+        fs::set_permissions(&cli, fs::Permissions::from_mode(0o700))?;
+        fs::create_dir_all(agent.join("skills/bug-triage"))?;
+        let skill = "---\nname: bug-triage\ndescription: Diagnose a reported bug.\n---\nRead the report before editing.\n";
+        fs::write(agent.join("skills/bug-triage/SKILL.md"), skill)?;
+        for name in ["AGENTS.md", "CLAUDE.md"] {
+            fs::write(agent.join(name), "Keep the project instructions.")?;
+        }
+        fs::create_dir_all(&native_config)?;
+        // All overlay inputs are local, so this scenario never reads real auth.
+        for name in [
+            "auth.json",
+            "models.json",
+            "settings.json",
+            "config.toml",
+            ".credentials.json",
+            ".claude.json",
+        ] {
+            fs::write(
+                native_config.join(name),
+                if name.ends_with("toml") {
+                    "# project settings\n"
+                } else {
+                    "{}"
+                },
+            )?;
+        }
+        let native_skills = match id.as_str() {
+            "claude_code" => agent.join(".claude/skills"),
+            "codex" => agent.join(".agents/skills"),
+            _ => agent.join("skills"),
+        };
+        if existing_native_skills && id != "pi" {
+            fs::create_dir_all(native_skills.join("project-skill"))?;
+            fs::write(
+                native_skills.join("project-skill/SKILL.md"),
+                "Keep the native skill.",
+            )?;
+        }
+        let config = HarnessConfig {
+            harness_id: id.clone(),
+            model: ModelRef::new("native-model", "Native model"),
+            thinking_level: "low".into(),
+            cli_path: cli,
+            config_fingerprint: "native-defaults".into(),
+            environment: BTreeMap::from([
+                ("HOME".into(), home.path().display().to_string()),
+                ("NATIVE_ADAPTER".into(), id.clone()),
+                ("NATIVE_START_RECORD".into(), record.display().to_string()),
+                ("PI_NATIVE_FAULT".into(), "success".into()),
+                (
+                    "PI_CODING_AGENT_DIR".into(),
+                    native_config.display().to_string(),
+                ),
+                ("CODEX_HOME".into(), native_config.display().to_string()),
+                (
+                    "CLAUDE_CONFIG_DIR".into(),
+                    native_config.display().to_string(),
+                ),
+                (
+                    "LANKIDE_CLAUDE_CONFIG_DIR".into(),
+                    native_config.display().to_string(),
+                ),
+                (
+                    "LANKIDE_RUNTIME_SOCKET".into(),
+                    home.path().join("runtime.sock").display().to_string(),
+                ),
+            ]),
+        };
+        let probe = factory.probe(&config).await?;
+        assert_eq!(
+            probe.availability,
+            lankide_harness::HarnessAvailability::Available
+        );
+        let capabilities = probe.capabilities;
+        assert_eq!(
+            capabilities,
+            [
+                HarnessCapability::SystemPrompt,
+                HarnessCapability::Streaming,
+                HarnessCapability::Resume,
+                HarnessCapability::Steer,
+                HarnessCapability::Cancel,
+                HarnessCapability::Tools
+            ]
+            .into_iter()
+            .collect()
+        );
+        for run in 0..2 {
+            if run == 1 {
+                fs::create_dir_all(agent.join("skills/new-skill"))?;
+                fs::write(
+                    agent.join("skills/new-skill/SKILL.md"),
+                    "Authored after the first run.",
+                )?;
+            }
+            let session = factory
+                .start(SessionRequest {
+                    permission_policy: Default::default(),
+                    config: config.clone(),
+                    working_directory: agent.clone(),
+                    system_prompt: "Follow the project instructions.".into(),
+                    native_session_id: None,
+                    tools: vec![ToolDefinition {
+                        name: "report".into(),
+                        description: "Report the result.".into(),
+                        input_schema: json!({"type":"object"}),
+                        output_schema: json!({"type":"object"}),
+                    }],
+                })
+                .await?;
+            let mut events = session
+                .execute(ExecuteRequest {
+                    input: "Use the bug-triage skill.".into(),
+                })
+                .await?;
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while let Some(event) = events.next().await {
+                    if matches!(event?.kind, AgentEventKind::Completed { .. }) {
+                        return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+                    }
+                }
+                Err("native turn ended without completing".into())
+            })
+            .await??;
+            session.close().await?;
+            assert_eq!(
+                fs::read_to_string(native_skills.join("bug-triage/SKILL.md"))?,
+                skill
+            );
+            if run == 1 {
+                assert!(native_skills.join("new-skill/SKILL.md").is_file());
+            }
+        }
+        let recorded: Vec<Value> = fs::read_to_string(&record)?
+            .lines()
+            .map(serde_json::from_str)
+            .collect::<std::result::Result<_, _>>()?;
+        let launches: Vec<_> = recorded
+            .iter()
+            .filter(|entry| {
+                entry.get("argv").is_some()
+                    && !entry["argv"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|arg| arg == "--version" || arg == "--help")
+            })
+            .collect();
+        assert_eq!(launches.len(), 2);
+        for launch in launches {
+            assert_eq!(
+                Path::new(launch["cwd"].as_str().unwrap()).canonicalize()?,
+                agent.canonicalize()?
+            );
+            let argv: Vec<_> = launch["argv"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap())
+                .collect();
+            match id.as_str() {
+                "pi" => {
+                    assert!(argv.contains(&"--approve"));
+                    for flag in [
+                        "--no-skills",
+                        "--no-context-files",
+                        "--no-prompt-templates",
+                        "--no-approve",
+                    ] {
+                        assert!(!argv.contains(&flag));
+                    }
+                    for flag in ["--no-extensions", "--extension", "--no-themes"] {
+                        assert!(argv.contains(&flag));
+                    }
+                    let index = argv.iter().position(|arg| *arg == "--skill").unwrap();
+                    assert_eq!(Path::new(argv[index + 1]), agent.join("skills"));
+                    assert_eq!(
+                        launch["environment"]["PI_CODING_AGENT_DIR"].as_str(),
+                        native_config.to_str()
+                    );
+                }
+                "claude_code" => {
+                    let index = argv
+                        .iter()
+                        .position(|arg| *arg == "--permission-mode")
+                        .unwrap();
+                    assert_eq!(argv[index + 1], "bypassPermissions");
+                    assert!(!argv.contains(&"--setting-sources"));
+                    assert!(!argv.contains(&"--strict-mcp-config"));
+                    assert!(!argv.contains(&"--allowedTools"));
+                    let index = argv.iter().position(|arg| *arg == "--mcp-config").unwrap();
+                    let mcp: Value = serde_json::from_str(&fs::read_to_string(argv[index + 1])?)?;
+                    assert!(mcp["mcpServers"]["lankide"].is_object());
+                    assert_eq!(
+                        launch["environment"]["CLAUDE_CONFIG_DIR"].as_str(),
+                        native_config.to_str()
+                    );
+                }
+                "codex" => {
+                    assert_eq!(argv, ["app-server", "--listen", "stdio://"]);
+                    assert_eq!(
+                        launch["environment"]["CODEX_HOME"].as_str(),
+                        native_config.to_str()
+                    );
+                }
+                _ => unreachable!(),
+            }
+            assert_eq!(launch["environment"]["HOME"].as_str(), home.path().to_str());
+        }
+        if id == "codex" {
+            let threads: Vec<_> = recorded
+                .iter()
+                .filter(|entry| entry["command"]["method"] == "thread/start")
+                .collect();
+            assert_eq!(threads.len(), 2);
+            for thread in threads {
+                let params = &thread["command"]["params"];
+                assert_eq!(params["approvalPolicy"], "never");
+                assert_eq!(params["sandbox"], "danger-full-access");
+                assert!(params.get("permissions").is_none());
+                assert_eq!(params["dynamicTools"][0]["name"], "report");
+            }
+        }
+        if id == "pi" {
+            assert!(!factory.models(&config).await?.is_empty());
+            let recorded: Vec<Value> = fs::read_to_string(&record)?
+                .lines()
+                .map(serde_json::from_str)
+                .collect::<std::result::Result<_, _>>()?;
+            let catalog = recorded
+                .iter()
+                .rev()
+                .find(|entry| entry.get("argv").is_some())
+                .unwrap();
+            for flag in ["--no-skills", "--no-context-files", "--no-prompt-templates"] {
+                assert!(!catalog["argv"].as_array().unwrap().contains(&json!(flag)));
+            }
+        }
+        for name in ["AGENTS.md", "CLAUDE.md"] {
+            assert_eq!(
+                fs::read_to_string(agent.join(name))?,
+                "Keep the project instructions."
+            );
+        }
+        if existing_native_skills && id != "pi" {
+            assert_eq!(
+                fs::read_to_string(native_skills.join("project-skill/SKILL.md"))?,
+                "Keep the native skill."
+            );
+        }
+        assert_eq!(
+            fs::read_to_string(native_config.join("config.toml"))?,
+            "# project settings\n"
+        );
+    }
+    Ok(())
+}

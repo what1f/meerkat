@@ -164,7 +164,7 @@ impl RuntimeApplication {
             .storage()
             .list_agent_records(&workspace)?
             .into_iter()
-            .map(agent_dto)
+            .map(|record| agent_dto(record, runtime.storage()))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(ListAgentsResponse {
             request_id: request.request_id,
@@ -175,7 +175,10 @@ impl RuntimeApplication {
     pub async fn get_agent(&self, request: GetAgentRequest) -> Result<ProtocolAgent, RuntimeError> {
         let (workspace, agent) = agent_id(request.agent)?;
         let runtime = self.runtime()?;
-        agent_dto(runtime.storage().agent_record(&workspace, &agent)?)
+        agent_dto(
+            runtime.storage().agent_record(&workspace, &agent)?,
+            runtime.storage(),
+        )
     }
 
     pub async fn get_agent_avatar(
@@ -239,7 +242,23 @@ impl RuntimeApplication {
         let record = AgentLifecycle::new(self)
             .create(workspace, candidate, provider_agent_secrets)
             .await?;
-        agent_dto(record)
+        agent_dto(record, runtime.storage())
+    }
+
+    pub async fn resume_agent(
+        &self,
+        request: GetAgentRequest,
+    ) -> Result<ProtocolAgent, RuntimeError> {
+        let (w, a) = agent_id(request.agent.clone())?;
+        let runtime = self.runtime()?;
+        runtime.storage().resume_agent(&w, &a, now_millis())?;
+        self.emit_management(
+            ManagementEventKind::AgentUpdated,
+            &w,
+            Some(&a),
+            now_millis(),
+        );
+        self.get_agent(request).await
     }
 
     pub async fn update_agent(
@@ -317,6 +336,13 @@ impl RuntimeApplication {
             .map(parse_secrets)
             .transpose()?
             .unwrap_or_default();
+        let resume = old_record.harness_id != record.harness_id
+            || old_record.model != record.model
+            || old_record.computer_id != record.computer_id
+            || old_record.thinking != record.thinking
+            || old_record.cli_path != record.cli_path
+            || old_record.env != record.env
+            || old_record.session_config != record.session_config;
         let result = AgentLifecycle::new(self)
             .update(
                 workspace,
@@ -329,12 +355,23 @@ impl RuntimeApplication {
                     .map(|avatar| &avatar.avatar),
             )
             .await;
+        if result.is_ok() && resume {
+            runtime
+                .storage()
+                .resume_agent(&workspace_id, &agent_id, now_millis())?;
+            self.emit_management(
+                ManagementEventKind::AgentUpdated,
+                &workspace_id,
+                Some(&agent_id),
+                now_millis(),
+            );
+        }
         match (result, avatar_update) {
             (Ok(record), Some(avatar)) => {
                 avatar.finish();
-                agent_dto(record)
+                agent_dto(record, runtime.storage())
             }
-            (Ok(record), None) => agent_dto(record),
+            (Ok(record), None) => agent_dto(record, runtime.storage()),
             (Err(error), Some(avatar)) => {
                 avatar.rollback()?;
                 Err(error)
@@ -744,8 +781,10 @@ fn resource_ref(
     })
 }
 
-fn agent_dto(record: AgentRecord) -> Result<ProtocolAgent, RuntimeError> {
+fn agent_dto(record: AgentRecord, storage: &Storage) -> Result<ProtocolAgent, RuntimeError> {
+    let pause_reason = storage.agent_pause_reason(&record.workspace_id, &record.agent_id)?;
     Ok(ProtocolAgent {
+        pause_reason,
         agent: Some(AgentRef {
             workspace_id: record.workspace_id.to_string(),
             agent_id: record.agent_id.to_string(),

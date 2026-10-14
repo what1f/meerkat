@@ -426,6 +426,9 @@ impl RuntimePeer for RuntimePeerAdapter {
     async fn create_agent(&self, request: CreateAgentRequest) -> Result<Agent, Status> {
         self.application.create_agent(request).await.map_err(status)
     }
+    async fn resume_agent(&self, request: GetAgentRequest) -> Result<Agent, Status> {
+        self.application.resume_agent(request).await.map_err(status)
+    }
     async fn update_agent(&self, request: UpdateAgentRequest) -> Result<Agent, Status> {
         self.application.update_agent(request).await.map_err(status)
     }

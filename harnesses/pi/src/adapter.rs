@@ -92,6 +92,8 @@ impl PiHarness {
             .transpose()?
             .unwrap_or(4 * 1024 * 1024);
         let paths = SessionPaths::prepare(&request)?;
+        fs::create_dir_all(request.working_directory.join("skills"))
+            .map_err(io_error("create Agent skills directory"))?;
         if let Some(session_id) = request.native_session_id.as_deref() {
             validate_session_file(&paths.session_dir, &request.working_directory, session_id)?;
         }
@@ -116,18 +118,16 @@ impl PiHarness {
                 "--extension",
             ])
             .arg(&paths.extension_path)
-            .args([
-                "--no-skills",
-                "--no-prompt-templates",
-                "--no-themes",
-                "--no-context-files",
-                "--session-dir",
-            ])
+            .args(["--no-themes", "--session-dir"])
             .arg(&paths.session_dir)
+            .arg("--skill")
+            .arg(request.working_directory.join("skills"))
             .args([
                 "--system-prompt",
                 request.system_prompt.as_str(),
-                "--no-approve",
+                match request.permission_policy {
+                    lankide_harness::PermissionPolicy::FullAccess => "--approve",
+                },
             ])
             .current_dir(&request.working_directory)
             .envs(&request.config.environment)
@@ -146,10 +146,18 @@ impl PiHarness {
             command.process_group(0);
         }
         let mut child = command.spawn().map_err(|error| {
-            harness_error(
+            let mut failure = harness_error(
                 HarnessErrorCode::SpawnFailed,
                 format!("failed to spawn Pi CLI: {error}"),
-            )
+            );
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
+            ) {
+                failure.failure.category = lankide_harness::FailureCategory::Configuration;
+                failure.failure.retryable = false;
+            }
+            failure
         })?;
         record_pid(paths.pid_journal.as_deref(), "spawned", child.id());
         let mut stdin = child
@@ -287,10 +295,7 @@ impl HarnessFactory for PiHarness {
                     "rpc",
                     "--no-session",
                     "--no-extensions",
-                    "--no-skills",
-                    "--no-prompt-templates",
                     "--no-themes",
-                    "--no-context-files",
                 ],
             )?;
             let result =

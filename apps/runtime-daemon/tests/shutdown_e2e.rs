@@ -83,6 +83,7 @@ async fn shutdown_releases_connected_computer_and_provider_before_database_reope
     let application = RuntimeApplication::open_with_shutdown_timeout(
         RuntimeConfig {
             database: database.clone(),
+            retry: Default::default(),
         },
         factories.clone(),
         Duration::from_secs(2),
@@ -115,9 +116,15 @@ async fn shutdown_releases_connected_computer_and_provider_before_database_reope
     assert_eq!(application.readiness().state, "stopped");
     drop(sender);
     drop(frames);
-    let reopened = RuntimeApplication::open(RuntimeConfig { database }, factories)
-        .await
-        .unwrap();
+    let reopened = RuntimeApplication::open(
+        RuntimeConfig {
+            database,
+            retry: Default::default(),
+        },
+        factories,
+    )
+    .await
+    .unwrap();
     let peer = RuntimePeerAdapter::new(reopened.clone());
     assert_eq!(
         peer.list_workspaces(lankide_protocol::ListWorkspacesRequest {

@@ -37,7 +37,7 @@ impl TelegramServer {
                 .unwrap();
             let result = match method {
                 "getMe" => {
-                    json!({"id":bot.split(':').next().unwrap().parse::<i64>().unwrap(),"is_bot":true,"first_name":"Bot B","username":"beta_bot","can_manage_bots":true})
+                    json!({"id":bot.split(':').next().unwrap().parse::<i64>().unwrap(),"is_bot":true,"first_name":"Bot B","username":if bot == "201:local" { "alpha_bot" } else { "beta_bot" },"can_manage_bots":true})
                 }
                 "getUpdates" => {
                     let offset = request.json()["offset"].as_i64().unwrap();

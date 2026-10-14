@@ -141,6 +141,15 @@ async fn make_hello(inner: &Inner) -> ComputerHello {
             let factory = inner.factories.get(*id);
             let probe = inner.probes.get(*id);
             HarnessInfo {
+                capabilities: probe
+                    .map(|probe| {
+                        probe
+                            .capabilities
+                            .iter()
+                            .map(|capability| capability.as_str().to_owned())
+                            .collect()
+                    })
+                    .unwrap_or_default(),
                 model_catalog: None,
                 model_catalog_error: String::new(),
                 harness_id: (*id).to_owned(),
@@ -214,7 +223,7 @@ async fn dispatch(inner: Arc<Inner>, frame: RuntimeFrame) -> Result<(), Computer
             handle_steer(&inner, steer).await;
         }
         Some(runtime_frame::Frame::CancelExecution(cancel)) => {
-            handle_cancel(&inner, cancel.execution, cancel.reason).await;
+            handle_cancel(&inner, cancel.execution, cancel.reason, cancel.force_close).await;
         }
         Some(runtime_frame::Frame::DeleteAgentFiles(request)) => {
             handle_delete_agent_files(&inner, request).await;
