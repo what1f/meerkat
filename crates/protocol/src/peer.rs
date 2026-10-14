@@ -1,7 +1,7 @@
+use crate::Status;
 use crate::wire::*;
 use std::pin::Pin;
 use tokio_stream::Stream;
-use tonic::Status;
 
 pub type ComputerFrameStream =
     Pin<Box<dyn Stream<Item = Result<ComputerFrame, Status>> + Send + 'static>>;
@@ -12,8 +12,8 @@ pub type RuntimeFrameStream =
 pub type ManagementEventStream =
     Pin<Box<dyn Stream<Item = Result<ManagementEvent, Status>> + Send + 'static>>;
 
-/// A Runtime-side peer behind the protocol validation and UDS/gRPC boundary.
-#[tonic::async_trait]
+/// A Runtime-side peer behind the protocol validation and HTTP/JSON and private Agent socket boundaries.
+#[async_trait::async_trait]
 pub trait RuntimePeer: Send + Sync + 'static {
     async fn upload_resource(&self, chunks: ResourceChunkStream) -> Result<ResourceRef, Status>;
 
@@ -242,7 +242,7 @@ pub trait RuntimePeer: Send + Sync + 'static {
 }
 
 /// Accept a validated Computer connection, independent of the management transport.
-#[tonic::async_trait]
+#[async_trait::async_trait]
 pub trait ComputerPeer: Send + Sync + 'static {
     async fn authorize_link(
         &self,

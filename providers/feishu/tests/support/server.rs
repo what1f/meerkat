@@ -1,5 +1,4 @@
 use super::http::{Request, Response, Server};
-use prost::Message;
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -18,34 +17,166 @@ use tokio_tungstenite::tungstenite::{
 
 pub const FILE: &[u8] = b"attachment bytes\0\xff\r\nfrom Alice";
 // Platform-owned pbbp2 wire contract, independent of the Provider's private frame type.
-#[derive(Clone, PartialEq, Message)]
+#[derive(Clone, Default, PartialEq)]
 struct Header {
-    #[prost(string, tag = "1")]
     key: String,
-    #[prost(string, tag = "2")]
     value: String,
 }
-#[derive(Clone, PartialEq, Message)]
+#[derive(Clone, Default, PartialEq)]
 struct Frame {
-    #[prost(uint64, tag = "1")]
     seq_id: u64,
-    #[prost(uint64, tag = "2")]
     log_id: u64,
-    #[prost(int32, tag = "3")]
     service: i32,
-    #[prost(int32, tag = "4")]
     method: i32,
-    #[prost(message, repeated, tag = "5")]
     headers: Vec<Header>,
-    #[prost(string, optional, tag = "6")]
     payload_encoding: Option<String>,
-    #[prost(string, optional, tag = "7")]
     payload_type: Option<String>,
-    #[prost(bytes, optional, tag = "8")]
     payload: Option<Vec<u8>>,
-    #[prost(string, optional, tag = "9")]
     log_id_new: Option<String>,
 }
+
+// Feishu's fixed pbbp2 envelope. Payloads are opaque JSON; unknown envelope
+// fields are skipped so additions by the platform remain compatible.
+#[derive(Debug)]
+struct FrameDecodeError;
+impl std::fmt::Display for FrameDecodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("invalid Feishu frame")
+    }
+}
+fn read_varint(input: &mut &[u8]) -> Result<u64, FrameDecodeError> {
+    let mut value = 0u64;
+    for shift in (0..70).step_by(7) {
+        let (&byte, rest) = input.split_first().ok_or(FrameDecodeError)?;
+        *input = rest;
+        if shift == 63 && byte > 1 {
+            return Err(FrameDecodeError);
+        }
+        value |= ((byte & 127) as u64) << shift;
+        if byte < 128 {
+            return Ok(value);
+        }
+    }
+    Err(FrameDecodeError)
+}
+fn read_bytes<'a>(input: &mut &'a [u8]) -> Result<&'a [u8], FrameDecodeError> {
+    let length = usize::try_from(read_varint(input)?).map_err(|_| FrameDecodeError)?;
+    if length > input.len() {
+        return Err(FrameDecodeError);
+    }
+    let (value, rest) = input.split_at(length);
+    *input = rest;
+    Ok(value)
+}
+fn read_string(input: &mut &[u8]) -> Result<String, FrameDecodeError> {
+    String::from_utf8(read_bytes(input)?.to_vec()).map_err(|_| FrameDecodeError)
+}
+fn skip_field(input: &mut &[u8], kind: u64) -> Result<(), FrameDecodeError> {
+    match kind {
+        0 => {
+            read_varint(input)?;
+        }
+        2 => {
+            read_bytes(input)?;
+        }
+        1 | 5 => {
+            let length = if kind == 1 { 8 } else { 4 };
+            if input.len() < length {
+                return Err(FrameDecodeError);
+            }
+            *input = &input[length..];
+        }
+        _ => return Err(FrameDecodeError),
+    }
+    Ok(())
+}
+fn write_varint(mut value: u64, output: &mut Vec<u8>) {
+    while value >= 128 {
+        output.push((value as u8 & 127) | 128);
+        value >>= 7;
+    }
+    output.push(value as u8);
+}
+fn write_number(tag: u64, value: u64, output: &mut Vec<u8>) {
+    if value != 0 {
+        write_varint(tag << 3, output);
+        write_varint(value, output);
+    }
+}
+fn write_bytes(tag: u64, value: &[u8], output: &mut Vec<u8>) {
+    write_varint((tag << 3) | 2, output);
+    write_varint(value.len() as u64, output);
+    output.extend_from_slice(value);
+}
+impl Frame {
+    fn decode(mut input: &[u8]) -> Result<Self, FrameDecodeError> {
+        let mut frame = Self::default();
+        while !input.is_empty() {
+            let key = read_varint(&mut input)?;
+            let (tag, kind) = (key >> 3, key & 7);
+            if tag == 0 {
+                return Err(FrameDecodeError);
+            }
+            match (tag, kind) {
+                (1, 0) => frame.seq_id = read_varint(&mut input)?,
+                (2, 0) => frame.log_id = read_varint(&mut input)?,
+                (3, 0) => frame.service = read_varint(&mut input)? as i32,
+                (4, 0) => frame.method = read_varint(&mut input)? as i32,
+                (5, 2) => {
+                    let mut data = read_bytes(&mut input)?;
+                    let mut header = Header::default();
+                    while !data.is_empty() {
+                        let key = read_varint(&mut data)?;
+                        match (key >> 3, key & 7) {
+                            (1, 2) => header.key = read_string(&mut data)?,
+                            (2, 2) => header.value = read_string(&mut data)?,
+                            (0, _) => return Err(FrameDecodeError),
+                            (_, kind) => skip_field(&mut data, kind)?,
+                        }
+                    }
+                    frame.headers.push(header);
+                }
+                (6, 2) => frame.payload_encoding = Some(read_string(&mut input)?),
+                (7, 2) => frame.payload_type = Some(read_string(&mut input)?),
+                (8, 2) => frame.payload = Some(read_bytes(&mut input)?.to_vec()),
+                (9, 2) => frame.log_id_new = Some(read_string(&mut input)?),
+                (_, kind) => skip_field(&mut input, kind)?,
+            }
+        }
+        Ok(frame)
+    }
+    fn encode_to_vec(&self) -> Vec<u8> {
+        let mut output = Vec::new();
+        write_number(1, self.seq_id, &mut output);
+        write_number(2, self.log_id, &mut output);
+        write_number(3, self.service as u64, &mut output);
+        write_number(4, self.method as u64, &mut output);
+        for header in &self.headers {
+            let mut data = Vec::new();
+            if !header.key.is_empty() {
+                write_bytes(1, header.key.as_bytes(), &mut data);
+            }
+            if !header.value.is_empty() {
+                write_bytes(2, header.value.as_bytes(), &mut data);
+            }
+            write_bytes(5, &data, &mut output);
+        }
+        if let Some(value) = &self.payload_encoding {
+            write_bytes(6, value.as_bytes(), &mut output);
+        }
+        if let Some(value) = &self.payload_type {
+            write_bytes(7, value.as_bytes(), &mut output);
+        }
+        if let Some(value) = &self.payload {
+            write_bytes(8, value, &mut output);
+        }
+        if let Some(value) = &self.log_id_new {
+            write_bytes(9, value.as_bytes(), &mut output);
+        }
+        output
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Delivery {
     pub chat: String,

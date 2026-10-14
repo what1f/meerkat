@@ -334,6 +334,7 @@ async fn emit_event(
     send_frame(
         inner,
         ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::ExecutionEvent(event)),
         },
     )

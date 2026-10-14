@@ -77,7 +77,7 @@ impl From<tungstenite::Error> for LinkError {
 }
 
 /// The business layer owns a single link. It has no dependency on a socket type.
-#[tonic::async_trait]
+#[async_trait::async_trait]
 pub trait ComputerLink: Send {
     type SendFrame: Send;
     type ReceiveFrame: Send;
@@ -100,7 +100,7 @@ impl<S, Out, In> WebSocketLink<S, Out, In> {
         }
     }
 }
-#[tonic::async_trait]
+#[async_trait::async_trait]
 impl<S, Out, In> ComputerLink for WebSocketLink<S, Out, In>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
@@ -141,7 +141,7 @@ where
                             value
                                 .get("type")
                                 .and_then(|v| v.as_str())
-                                .ok_or(CloseReason::MalformedJson)?;
+                                .ok_or(CloseReason::UnknownFrameType)?;
                             // Serde distinguishes an unknown tagged variant from a malformed payload.
                             serde_json::from_value(value).map_err(|error| {
                                 if error.to_string().starts_with("unknown variant") {
@@ -281,20 +281,18 @@ async fn accept_link<
         .await
         .map_err(|_| LinkError::Closed(CloseReason::Timeout))??
         .ok_or(LinkError::Closed(CloseReason::InvalidFrame))?;
-    let ComputerPayload::Hello(hello) = first.frame else {
+    let Some(ComputerPayload::Hello(hello)) = first.frame else {
         return Err(LinkError::Closed(CloseReason::InvalidFrame));
     };
     if first.protocol_version != config.protocol_version
         || hello.protocol_version != config.protocol_version
     {
-        let hello = hello.into();
         crate::validate_computer_hello(&hello, hello.protocol_version)
             .map_err(|_| LinkError::Closed(CloseReason::InvalidFrame))?;
         peer.link_rejected(hello, CloseReason::ProtocolVersionUnsupported)
             .await;
         return Err(LinkError::Closed(CloseReason::ProtocolVersionUnsupported));
     }
-    let hello = hello.into();
     crate::validate_computer_hello(&hello, config.protocol_version)
         .map_err(|_| LinkError::Closed(CloseReason::InvalidFrame))?;
     let (sender, receiver) = tokio::sync::mpsc::channel(64);
@@ -324,15 +322,14 @@ async fn accept_link<
         tokio::select! {
             _ = &mut deadline => return Err(LinkError::Closed(CloseReason::Timeout)),
             _ = heartbeat.tick(), if !first => {
-                tokio::time::timeout(interval, link.send(RuntimeFrame { protocol_version: config.protocol_version, frame: RuntimePayload::Heartbeat }))
+                tokio::time::timeout(interval, link.send(RuntimeFrame { protocol_version: config.protocol_version, frame: Some(RuntimePayload::Heartbeat) }))
                     .await.map_err(|_| LinkError::Closed(CloseReason::Timeout))??;
             }
             frame = link.receive() => {
                 let Some(frame) = frame? else { break };
                 deadline.as_mut().reset(tokio::time::Instant::now() + interval * 3);
                 if frame.protocol_version != config.protocol_version { return Err(LinkError::Closed(CloseReason::ProtocolVersionUnsupported)); }
-                let frame = frame.into();
-                validator.validate(&frame).map_err(|error| LinkError::Closed(if error.code() == tonic::Code::OutOfRange { CloseReason::EventSequenceRegression } else { CloseReason::InvalidFrame }))?;
+                validator.validate(&frame).map_err(|error| LinkError::Closed(if error.code() == crate::Code::OutOfRange { CloseReason::EventSequenceRegression } else { CloseReason::InvalidFrame }))?;
                 if sender.send(Ok(frame)).await.is_err() { break; }
             }
             frame = output.next() => {
@@ -361,7 +358,7 @@ async fn accept_link<
                     deadline.as_mut().reset(tokio::time::Instant::now() + interval * 3);
                 }
                 first = false;
-                tokio::time::timeout(interval, link.send(frame.try_into().map_err(LinkError::Closed)?)).await.map_err(|_| LinkError::Closed(CloseReason::Timeout))??;
+                tokio::time::timeout(interval, link.send(frame)).await.map_err(|_| LinkError::Closed(CloseReason::Timeout))??;
             }
         }
     }

@@ -7,8 +7,6 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-prost.workspace = true
-tonic.workspace = true
 reqwest.workspace = true
 sha2.workspace = true
 futures-util.workspace = true
@@ -93,7 +91,7 @@ status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-agent-proxy]
 command = "cargo test -p lankide-system-e2e --test agent_proxy_e2e"
-scenario = "Verify S15.1-S15.3 with the real lankide CLI and daemons on separate homes using only WS for Computer access: send content-file text with an attachment, read chat content, list and invoke capabilities, update a profile, transfer multi-frame resources, assert no Runtime address in recorded Harness environment, check owner-only socket permissions and removal, and reject wrong or finished credentials."
+scenario = "Verify S15.1-S15.3 with the real lankide CLI and daemons on separate homes using only WS for Computer access: send content-file text with an attachment, read chat content, list and invoke capabilities, update a profile, transfer multi-frame resources, assert no Runtime address in recorded Harness environment, check owner-only socket permissions and removal, and reject wrong or finished credentials. Verify JSON capability payloads and the length-prefixed JSON Agent socket with no Runtime UDS listener (S17)."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
@@ -101,7 +99,7 @@ status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-placement]
 command = "cargo test -p lankide-system-e2e --test placement_e2e"
-scenario = "Verify S13.1-S13.4 through public management and real daemons: reject unknown or revoked Computers and missing Harnesses with typed errors, run two Agents only on their paired Computers, queue offline work until reconnect without failures or notices, and reject late revoked results. Invalidate capability tokens, HTTP resources, and Computer events after a placement change."
+scenario = "Verify S13.1-S13.4 through public management and real daemons: reject unknown or revoked Computers and missing Harnesses with typed errors, run two Agents only on their paired Computers, queue offline work until reconnect without failures or notices, and reject late revoked results. Invalidate capability tokens, HTTP resources, and Computer events after a placement change; discard stale unacknowledged progress after restart while keeping the registered Computer connected."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

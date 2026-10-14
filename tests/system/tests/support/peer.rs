@@ -321,7 +321,7 @@ async fn retry_capability(arguments: Vec<String>) -> Result<Value, lankide_cli::
         let retryable = match &result {
             Err(lankide_cli::CliError::Runtime(status)) => matches!(
                 status.code(),
-                tonic::Code::Unavailable | tonic::Code::DeadlineExceeded
+                lankide_protocol::Code::Unavailable | lankide_protocol::Code::DeadlineExceeded
             ),
             Err(lankide_cli::CliError::Transport(_)) => true,
             _ => false,

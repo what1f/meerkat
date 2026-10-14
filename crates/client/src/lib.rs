@@ -367,7 +367,7 @@ pub struct AgentAvatarImage {
     pub bytes: Vec<u8>,
 }
 
-#[tonic::async_trait]
+#[async_trait::async_trait]
 pub trait ManagementClient: Send + Sync {
     async fn upload_workspace_image(
         &self,
@@ -586,12 +586,8 @@ fn aref(w: &str, a: &str) -> wire::AgentRef {
         agent_id: a.into(),
     }
 }
-fn map_status(s: tonic::Status) -> ClientError {
-    match s
-        .metadata()
-        .get("lankide-error-code")
-        .and_then(|v| v.to_str().ok())
-    {
+fn map_status(s: lankide_protocol::Status) -> ClientError {
+    match s.detail() {
         Some("computer_not_registered") => return ClientError::ComputerNotRegistered,
         Some("computer_revoked") => return ClientError::ComputerRevoked,
         Some("harness_unavailable_on_computer") => {
@@ -601,29 +597,29 @@ fn map_status(s: tonic::Status) -> ClientError {
     }
 
     match s.code() {
-        tonic::Code::InvalidArgument => ClientError::Validation(s.message().into()),
-        tonic::Code::AlreadyExists => ClientError::Validation(s.message().into()),
-        tonic::Code::NotFound => ClientError::WorkspaceNotFound(s.message().into()),
-        tonic::Code::PermissionDenied
-        | tonic::Code::Unauthenticated
-        | tonic::Code::FailedPrecondition => ClientError::Provider(s.message().into()),
-        tonic::Code::Unavailable | tonic::Code::DeadlineExceeded | tonic::Code::Cancelled => {
-            ClientError::Unavailable(s.message().into())
-        }
+        lankide_protocol::Code::InvalidArgument => ClientError::Validation(s.message().into()),
+        lankide_protocol::Code::AlreadyExists => ClientError::Validation(s.message().into()),
+        lankide_protocol::Code::NotFound => ClientError::WorkspaceNotFound(s.message().into()),
+        lankide_protocol::Code::PermissionDenied
+        | lankide_protocol::Code::Unauthenticated
+        | lankide_protocol::Code::FailedPrecondition => ClientError::Provider(s.message().into()),
+        lankide_protocol::Code::Unavailable
+        | lankide_protocol::Code::DeadlineExceeded
+        | lankide_protocol::Code::Cancelled => ClientError::Unavailable(s.message().into()),
         _ => ClientError::Protocol(format!("{}: {}", s.code(), s.message())),
     }
 }
 
-fn map_workspace_status(s: tonic::Status) -> ClientError {
-    if s.code() == tonic::Code::AlreadyExists {
+fn map_workspace_status(s: lankide_protocol::Status) -> ClientError {
+    if s.code() == lankide_protocol::Code::AlreadyExists {
         ClientError::DuplicateWorkspaceId(s.message().into())
     } else {
         map_status(s)
     }
 }
 
-fn map_agent_status(s: tonic::Status) -> ClientError {
-    if s.code() == tonic::Code::AlreadyExists {
+fn map_agent_status(s: lankide_protocol::Status) -> ClientError {
+    if s.code() == lankide_protocol::Code::AlreadyExists {
         ClientError::DuplicateAgentId(s.message().into())
     } else {
         map_status(s)
@@ -830,7 +826,7 @@ fn from_agent_onboarding(
     })
 }
 
-#[tonic::async_trait]
+#[async_trait::async_trait]
 impl ManagementClient for RuntimeManagementClient {
     async fn upload_workspace_image(
         &self,
@@ -1385,7 +1381,7 @@ impl ManagementClient for RuntimeManagementClient {
                 paired_at: c.paired_at,
                 os: c.os,
                 version: c.version,
-                inventory: c.harnesses.into_iter().map(Into::into).collect(),
+                inventory: c.harnesses,
                 id: c.computer_id,
                 name: c.display_name,
                 available: c.observed_state == wire::ObservedState::Running as i32,

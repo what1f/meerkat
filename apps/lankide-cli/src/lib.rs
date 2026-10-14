@@ -70,7 +70,7 @@ pub enum CliError {
     Usage(String),
     Io(std::io::Error),
     Transport(String),
-    Runtime(tonic::Status),
+    Runtime(lankide_protocol::Status),
     Decode(String),
 }
 
@@ -160,7 +160,7 @@ pub async fn execute(
 }
 
 async fn profile(
-    client: &mut wire::RuntimeProtocolClient<tonic::transport::Channel>,
+    client: &mut wire::AgentClient,
     config: &RunConfig,
     args: &[String],
 ) -> Result<Value, CliError> {
@@ -302,7 +302,7 @@ fn remove_local_avatars(
 }
 
 async fn invoke(
-    client: &mut wire::RuntimeProtocolClient<tonic::transport::Channel>,
+    client: &mut wire::AgentClient,
     config: &RunConfig,
     args: &[String],
 ) -> Result<Value, CliError> {
@@ -346,7 +346,7 @@ async fn invoke(
 }
 
 async fn send(
-    client: &mut wire::RuntimeProtocolClient<tonic::transport::Channel>,
+    client: &mut wire::AgentClient,
     config: &RunConfig,
     args: &[String],
 ) -> Result<Value, CliError> {
@@ -416,7 +416,7 @@ async fn send(
 }
 
 async fn content(
-    client: &mut wire::RuntimeProtocolClient<tonic::transport::Channel>,
+    client: &mut wire::AgentClient,
     config: &RunConfig,
     args: &[String],
 ) -> Result<Value, CliError> {
@@ -449,7 +449,7 @@ async fn content(
 }
 
 async fn upload_command(
-    client: &mut wire::RuntimeProtocolClient<tonic::transport::Channel>,
+    client: &mut wire::AgentClient,
     config: &RunConfig,
     args: &[String],
 ) -> Result<Value, CliError> {
@@ -465,7 +465,7 @@ async fn upload_command(
 }
 
 async fn download_command(
-    client: &mut wire::RuntimeProtocolClient<tonic::transport::Channel>,
+    client: &mut wire::AgentClient,
     config: &RunConfig,
     args: &[String],
 ) -> Result<Value, CliError> {
@@ -517,7 +517,7 @@ async fn download_command(
 }
 
 async fn upload_file(
-    client: &mut wire::RuntimeProtocolClient<tonic::transport::Channel>,
+    client: &mut wire::AgentClient,
     config: &RunConfig,
     path: &Path,
     media_type: Option<&str>,
@@ -558,7 +558,7 @@ async fn upload_file(
         .upload_resource(tokio_stream::iter(chunks))
         .await
         .map_err(status)
-        .map(tonic::Response::into_inner)
+        .map(lankide_protocol::Response::into_inner)
 }
 
 fn capability_result(result: wire::CapabilityInvokeResult) -> Value {
@@ -594,7 +594,7 @@ fn parse_json_or_string(value: &str) -> Value {
     }
 }
 
-fn status(error: tonic::Status) -> CliError {
+fn status(error: lankide_protocol::Status) -> CliError {
     CliError::Runtime(error)
 }
 

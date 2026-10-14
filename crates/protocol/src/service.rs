@@ -2,59 +2,45 @@ use crate::validation::*;
 use crate::wire::*;
 use crate::{
     MAX_WORKSPACE_IMAGE_BYTES, ManagementEventStream, ResourceChunkStream, RuntimePeer,
-    RuntimeProtocol, TransportConfig,
+    TransportConfig,
 };
+use crate::{Request, Response, Status};
 use tokio::sync::mpsc;
 use tokio_stream::{StreamExt, wrappers::ReceiverStream};
-use tonic::{Request, Response, Status, Streaming};
 
-/// Generated-service adapter which rejects malformed wire input before it can
+/// Service adapter which rejects malformed wire input before it can
 /// reach Runtime business code.
 #[derive(Clone)]
 pub struct ValidatedRuntimeService<P> {
     peer: P,
-    agent_calls_enabled: bool,
+    max_message_bytes: usize,
 }
 
 impl<P> ValidatedRuntimeService<P> {
-    pub fn management_only(mut self) -> Self {
-        self.agent_calls_enabled = false;
-        self
-    }
-    fn require_agent_calls(&self) -> Result<(), Status> {
-        if self.agent_calls_enabled {
-            Ok(())
-        } else {
-            Err(Status::unimplemented("agent_capabilities_require_computer"))
-        }
-    }
-
-    pub const fn new(peer: P, _config: TransportConfig) -> Self {
+    pub const fn new(peer: P, config: TransportConfig) -> Self {
         Self {
             peer,
-            agent_calls_enabled: true,
+            max_message_bytes: config.max_message_bytes,
         }
     }
 }
 
-#[tonic::async_trait]
-impl<P> RuntimeProtocol for ValidatedRuntimeService<P>
+#[async_trait::async_trait]
+impl<P> RuntimePeer for ValidatedRuntimeService<P>
 where
     P: RuntimePeer,
 {
-    type DownloadResourceStream = ResourceChunkStream;
-
-    async fn upload_resource(
-        &self,
-        request: Request<Streaming<ResourceChunk>>,
-    ) -> Result<Response<ResourceRef>, Status> {
-        self.require_agent_calls()?;
-        let mut inbound = request.into_inner();
+    async fn upload_resource(&self, request: ResourceChunkStream) -> Result<ResourceRef, Status> {
+        let mut inbound = request;
         let (sender, receiver) = mpsc::channel(16);
+        let max_message_bytes = self.max_message_bytes;
         tokio::spawn(async move {
             let mut validator = ResourceUploadValidator::default();
             while let Some(next) = inbound.next().await {
                 let validated = next.and_then(|chunk| {
+                    if chunk.bytes.len() > max_message_bytes {
+                        return Err(Status::resource_exhausted("agent_message_too_large"));
+                    }
                     validator.validate(&chunk)?;
                     Ok(chunk)
                 });
@@ -74,23 +60,25 @@ where
             .upload_resource(Box::pin(ReceiverStream::new(receiver)))
             .await?;
         validate_resource_ref(&resource)?;
-        Ok(Response::new(resource))
+        Ok(resource)
     }
 
     async fn download_resource(
         &self,
-        request: Request<ResourceRequest>,
-    ) -> Result<Response<Self::DownloadResourceStream>, Status> {
-        self.require_agent_calls()?;
-        validate_resource_request(request.get_ref())?;
-        let request = request.into_inner();
+        request: ResourceRequest,
+    ) -> Result<ResourceChunkStream, Status> {
+        validate_resource_request(&request)?;
         let mut chunks = self.peer.download_resource(request.clone()).await?;
         let (sender, receiver) = mpsc::channel(16);
+        let max_message_bytes = self.max_message_bytes;
         tokio::spawn(async move {
             let mut validator =
                 ResourceUploadValidator::expecting(request.transfer_id, request.resource_id);
             while let Some(next) = chunks.next().await {
                 let validated = next.and_then(|chunk| {
+                    if chunk.bytes.len() > max_message_bytes {
+                        return Err(Status::resource_exhausted("agent_message_too_large"));
+                    }
                     validator.validate(&chunk)?;
                     Ok(chunk)
                 });
@@ -105,37 +93,26 @@ where
                     .await;
             }
         });
-        Ok(Response::new(Box::pin(ReceiverStream::new(receiver))))
+        Ok(Box::pin(ReceiverStream::new(receiver)))
     }
 
-    async fn list_capabilities(
-        &self,
-        request: Request<AgentRunContext>,
-    ) -> Result<Response<CapabilityList>, Status> {
-        self.require_agent_calls()?;
-        validate_agent_run_context(Some(request.get_ref()))?;
-        Ok(Response::new(
-            self.peer.list_capabilities(request.into_inner()).await?,
-        ))
+    async fn list_capabilities(&self, request: AgentRunContext) -> Result<CapabilityList, Status> {
+        validate_agent_run_context(Some(&request))?;
+        Ok(self.peer.list_capabilities(request).await?)
     }
 
-    async fn get_self_profile(
-        &self,
-        request: Request<AgentRunContext>,
-    ) -> Result<Response<AgentProfile>, Status> {
-        self.require_agent_calls()?;
-        validate_agent_run_context(Some(request.get_ref()))?;
-        let response = self.peer.get_self_profile(request.into_inner()).await?;
+    async fn get_self_profile(&self, request: AgentRunContext) -> Result<AgentProfile, Status> {
+        validate_agent_run_context(Some(&request))?;
+        let response = self.peer.get_self_profile(request).await?;
         validate_agent_profile(&response)?;
-        Ok(Response::new(response))
+        Ok(response)
     }
 
     async fn update_self_profile(
         &self,
-        request: Request<UpdateSelfProfileRequest>,
-    ) -> Result<Response<AgentProfile>, Status> {
-        self.require_agent_calls()?;
-        let input = request.get_ref();
+        request: UpdateSelfProfileRequest,
+    ) -> Result<AgentProfile, Status> {
+        let input = &request;
         validate_agent_run_context(input.context.as_ref())?;
         if input.name.is_none()
             && input.role.is_none()
@@ -154,55 +131,40 @@ where
         if let Some(avatar) = input.avatar.as_ref() {
             validate_avatar_upload(avatar)?;
         }
-        let response = self.peer.update_self_profile(request.into_inner()).await?;
+        let response = self.peer.update_self_profile(request).await?;
         validate_agent_profile(&response)?;
-        Ok(Response::new(response))
+        Ok(response)
     }
 
     async fn invoke_capability(
         &self,
-        request: Request<CapabilityInvokeRequest>,
-    ) -> Result<Response<CapabilityInvokeResult>, Status> {
-        self.require_agent_calls()?;
-        let input = request.get_ref();
+        request: CapabilityInvokeRequest,
+    ) -> Result<CapabilityInvokeResult, Status> {
+        let input = &request;
         validate_agent_run_context(input.context.as_ref())?;
         require_text(&input.capability_name, "capability_name")?;
         require_text(&input.invocation_id, "invocation_id")?;
         validate_json(&input.arguments_json, "arguments_json")?;
-        Ok(Response::new(
-            self.peer.invoke_capability(request.into_inner()).await?,
-        ))
+        Ok(self.peer.invoke_capability(request).await?)
     }
 
-    async fn send_message(
-        &self,
-        request: Request<SendMessageRequest>,
-    ) -> Result<Response<SendMessageResult>, Status> {
-        self.require_agent_calls()?;
-        let input = request.get_ref();
+    async fn send_message(&self, request: SendMessageRequest) -> Result<SendMessageResult, Status> {
+        let input = &request;
         validate_agent_run_context(input.context.as_ref())?;
         require_text(&input.channel_id, "channel_id")?;
         require_text(&input.chat_id, "chat_id")?;
         validate_send_message_content(&input.content_markdown, &input.resources)?;
         require_text(&input.idempotency_key, "idempotency_key")?;
-        Ok(Response::new(
-            self.peer.send_message(request.into_inner()).await?,
-        ))
+        Ok(self.peer.send_message(request).await?)
     }
 
-    async fn get_content(
-        &self,
-        request: Request<ContentRequest>,
-    ) -> Result<Response<ContentResult>, Status> {
-        self.require_agent_calls()?;
-        let input = request.get_ref();
+    async fn get_content(&self, request: ContentRequest) -> Result<ContentResult, Status> {
+        let input = &request;
         validate_agent_run_context(input.context.as_ref())?;
         ContentKind::try_from(input.kind)
             .map_err(|_| Status::invalid_argument("unknown_content_kind"))?;
         require_text(&input.content_id, "content_id")?;
-        Ok(Response::new(
-            self.peer.get_content(request.into_inner()).await?,
-        ))
+        Ok(self.peer.get_content(request).await?)
     }
 }
 

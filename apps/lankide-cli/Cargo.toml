@@ -13,7 +13,6 @@ serde_json.workspace = true
 sha2.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
-tonic.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
@@ -24,7 +23,7 @@ path = "src/main.rs"
 
 [package.metadata.lankide.e2e]
 command = "cargo run -p lankide-cli --example e2e"
-scenario = "Use the real lankide binary through a private attempt proxy and authenticated WS with separate Runtime and Computer homes: list and invoke capabilities, update and read a profile, send content-file text with reply and force plus an attachment, read content, upload and download a multi-frame resource, reject wrong and finished tokens, and remove the socket at completion."
+scenario = "Use the real lankide binary through a private attempt proxy and authenticated WS with separate Runtime and Computer homes: list and invoke capabilities, update and read a profile, send content-file text with reply and force plus an attachment, read content, upload and download a multi-frame resource, reject wrong and finished tokens, and remove the socket at completion. Use the per-attempt length-prefixed JSON socket with bounded JSON capability and attachment payloads (S17)."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

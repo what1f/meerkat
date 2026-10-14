@@ -88,13 +88,10 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, ComputerError> {
     let (tx, rx) = mpsc::channel::<ComputerFrame>(64);
     tokio::time::timeout(
         inner.config.reconnect.handshake_timeout,
-        link.send(
-            ComputerFrame {
-                frame: Some(computer_frame::Frame::Hello(make_hello(&inner).await)),
-            }
-            .try_into()
-            .map_err(LinkError::Closed)?,
-        ),
+        link.send(ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            frame: Some(computer_frame::Frame::Hello(make_hello(&inner).await)),
+        }),
     )
     .await
     .map_err(|_| LinkError::Closed(CloseReason::Timeout))??;
@@ -105,7 +102,7 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, ComputerError> {
     if first.protocol_version != lankide_protocol::PROTOCOL_VERSION {
         return Err(ComputerError::ProtocolVersionUnsupported);
     }
-    let first: RuntimeFrame = first.into();
+    let first: RuntimeFrame = first;
     lankide_protocol::validate_runtime_frame(&first)?;
     let heartbeat_interval = match first.frame {
         Some(runtime_frame::Frame::Hello(hello))
@@ -143,6 +140,7 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, ComputerError> {
             _ = &mut deadline => return Ok(started.elapsed()),
             _ = heartbeat.tick() => {
                 tx.send(ComputerFrame {
+                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
                     frame: Some(computer_frame::Frame::Heartbeat(ComputerHeartbeat {
                         computer_id: inner.config.computer_id.clone(),
                         instance_id: inner.config.instance_id.clone(),
@@ -159,8 +157,8 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, ComputerError> {
                 Some(Ok(frame)) => {
                     if frame.protocol_version != lankide_protocol::PROTOCOL_VERSION { return Err(ComputerError::ProtocolVersionUnsupported); }
                     deadline.as_mut().reset(tokio::time::Instant::now() + heartbeat_interval * 3);
-                    if !matches!(frame.frame, lankide_protocol::link::RuntimePayload::Heartbeat) {
-                        dispatch(inner.clone(), frame.into()).await?
+                    if !matches!(frame.frame, Some(lankide_protocol::link::RuntimePayload::Heartbeat)) {
+                        dispatch(inner.clone(), frame).await?
                     }
                 }
                 Some(Err(error @ LinkError::Closed(CloseReason::ComputerRevoked | CloseReason::ComputerUnknown))) => return Err(error.into()),
@@ -196,7 +194,7 @@ async fn pump_link<
                 _ = incoming.closed() => return Ok(()),
                 frame = outgoing.recv() => {
                     let Some(frame) = frame else { return Ok(()) };
-                    tokio::time::timeout(interval, link.send(frame.try_into().map_err(LinkError::Closed)?)).await.map_err(|_| LinkError::Closed(CloseReason::Timeout))??;
+                    tokio::time::timeout(interval, link.send(frame)).await.map_err(|_| LinkError::Closed(CloseReason::Timeout))??;
                 }
                 frame = link.receive() => {
                     let Some(frame) = frame? else { return Ok(()) };
@@ -276,6 +274,7 @@ async fn publish_inventory(inner: &Inner) {
     send_frame(
         inner,
         ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::InventoryChanged(
                 lankide_protocol::InventoryChanged {
                     harnesses: make_hello(inner).await.harnesses,
@@ -349,7 +348,7 @@ async fn dispatch(inner: Arc<Inner>, frame: RuntimeFrame) -> Result<(), Computer
                 state.save(&inner.state_path)?;
             }
         }
-        Some(runtime_frame::Frame::Hello(_)) => {}
+        Some(runtime_frame::Frame::Hello(_) | runtime_frame::Frame::Heartbeat) => {}
         Some(runtime_frame::Frame::Shutdown(shutdown)) => {
             ComputerHandle::cancel_inner(&inner, &shutdown.reason).await;
             let _ = inner.stop_tx.send(Some(shutdown.reason));

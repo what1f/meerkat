@@ -1,4 +1,5 @@
 use super::{ComputerError, Inner};
+use lankide_protocol::Status;
 use lankide_protocol::{
     agent::{self, AgentProxy, CapabilityTransport},
     *,
@@ -11,7 +12,6 @@ use std::{
     },
 };
 use tokio::sync::{oneshot, watch};
-use tonic::Status;
 
 pub(super) struct PendingCall {
     pub bytes: Vec<u8>,
@@ -38,7 +38,7 @@ struct LocalTransport {
     context: AgentRunContext,
     stopped: watch::Receiver<bool>,
 }
-#[tonic::async_trait]
+#[async_trait::async_trait]
 impl CapabilityTransport for LocalTransport {
     async fn call(
         &self,
@@ -63,15 +63,16 @@ impl CapabilityTransport for LocalTransport {
             id: id.clone(),
         };
         let native_call = if method == "invoke_capability" {
-            use prost::Message;
-            CapabilityInvokeRequest::decode(payload.as_slice())
-                .ok()
-                .and_then(|request| {
-                    context
-                        .execution
-                        .clone()
-                        .map(|execution| (execution, request.invocation_id))
-                })
+            lankide_protocol::agent::decode::<lankide_protocol::CapabilityInvokeRequest>(
+                payload.as_slice(),
+            )
+            .ok()
+            .and_then(|request| {
+                context
+                    .execution
+                    .clone()
+                    .map(|execution| (execution, request.invocation_id))
+            })
         } else {
             None
         };
@@ -104,6 +105,7 @@ impl CapabilityTransport for LocalTransport {
                 let offset = index * agent::CHUNK_BYTES;
                 sender
                     .send(ComputerFrame {
+                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
                         frame: Some(computer_frame::Frame::CapabilityRequest(
                             CapabilityRequest {
                                 request_id: id.clone(),
@@ -162,17 +164,14 @@ impl AttemptProxy {
             context,
             stopped: rx,
         };
-        let service = RuntimeProtocolServer::new(ValidatedRuntimeService::new(
-            AgentProxy(transport),
-            TransportConfig::default(),
-        ))
-        .max_decoding_message_size(DEFAULT_MAX_MESSAGE_BYTES)
-        .max_encoding_message_size(DEFAULT_MAX_MESSAGE_BYTES);
         let task = tokio::spawn(async move {
-            let _ = tonic::transport::Server::builder()
-                .add_service(service)
-                .serve_with_incoming(tokio_stream::wrappers::UnixListenerStream::new(listener))
-                .await;
+            let _ = serve_agent_listener(
+                listener,
+                AgentProxy(transport),
+                TransportConfig::default(),
+                std::future::pending(),
+            )
+            .await;
         });
         Ok(Self {
             path,
@@ -196,7 +195,7 @@ pub(super) async fn response(inner: &Inner, chunk: CapabilityResponse) {
         };
         let error = if chunk.error_code != 0 {
             Some(Status::new(
-                tonic::Code::from_i32(chunk.error_code),
+                lankide_protocol::Code::from_i32(chunk.error_code),
                 chunk.error_message,
             ))
         } else if chunk.offset != call.bytes.len() as u64
@@ -236,7 +235,6 @@ pub(super) async fn disconnected(inner: &Inner) {
 /// Continue to accept native ToolResult delivery frames from an older peer.
 /// New peers answer the correlated capability_request instead.
 pub(super) async fn legacy_tool_response(inner: &Inner, result: &ToolResult) -> bool {
-    use prost::Message;
     let Some(execution) = result.execution.as_ref() else {
         return false;
     };
@@ -252,15 +250,15 @@ pub(super) async fn legacy_tool_response(inner: &Inner, result: &ToolResult) -> 
     let Some(call) = id.and_then(|id| calls.remove(&id)) else {
         return false;
     };
-    let payload = CapabilityInvokeResult {
+    let payload = lankide_protocol::agent::encode(&CapabilityInvokeResult {
         invocation_id: result.tool_call_id.clone(),
         success: result.success,
         content_markdown: result.content_markdown.clone(),
         structured_content_json: result.structured_content_json.clone(),
         resources: result.resources.clone(),
         error: result.error.clone(),
-    }
-    .encode_to_vec();
+    })
+    .expect("capability JSON");
     let _ = call.response.send(Ok(payload));
     true
 }
@@ -315,7 +313,8 @@ pub(super) async fn harness_call(
                     message: error.message().into(),
                     retryable: matches!(
                         error.code(),
-                        tonic::Code::Unavailable | tonic::Code::DeadlineExceeded
+                        lankide_protocol::Code::Unavailable
+                            | lankide_protocol::Code::DeadlineExceeded
                     ),
                 }),
                 ..Default::default()

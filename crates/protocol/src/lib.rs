@@ -4,8 +4,10 @@
 //!
 //! Computer links use JSON/WebSocket through [`link::ComputerLink`]. Computer
 //! resources and management use HTTP on the same listener; management events use
-//! one WebSocket. Legacy Agent capabilities retain UDS/gRPC through [`RuntimePeer`].
+//! one WebSocket. Agent capabilities use private length-prefixed JSON sockets through [`RuntimePeer`].
 
+mod error;
+pub use error::{Code, Request, Response, Status};
 pub mod agent;
 pub mod link;
 mod peer;
@@ -14,17 +16,13 @@ mod service;
 mod transport;
 mod validation;
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 pub const DEFAULT_MAX_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_WORKSPACE_IMAGE_BYTES: usize = 3 * 1024 * 1024;
 pub use lankide_core::PROVIDER_CAPABILITY_TASK_SYSTEM;
 
-pub mod wire {
-    tonic::include_proto!("lankide.protocol.v1");
-}
+pub mod wire;
 
-pub use wire::runtime_protocol_client::RuntimeProtocolClient;
-pub use wire::runtime_protocol_server::{RuntimeProtocol, RuntimeProtocolServer};
 pub use wire::*;
 
 pub use peer::{
@@ -33,8 +31,8 @@ pub use peer::{
 };
 pub use service::ValidatedRuntimeService;
 pub use transport::{
-    TransportConfig, TransportError, connect_uds, connect_uds_lazy, serve_management_uds,
-    serve_uds, socket_path,
+    AgentClient, TransportConfig, TransportError, connect_uds, connect_uds_lazy,
+    serve_agent_listener, serve_uds, socket_path,
 };
 pub use validation::{validate_computer_hello, validate_runtime_frame};
 

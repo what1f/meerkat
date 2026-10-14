@@ -1236,6 +1236,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         matches!(
             first.next().await,
             Some(Ok(lankide_protocol::RuntimeFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::AssignExecution(_))
             }))
         ),
@@ -1246,6 +1247,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             "computer-attempt",
             "instance-stable",
             ComputerFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(computer_frame::Frame::AssignmentResult(AssignmentResult {
                     failure: None,
                     execution: Some(execution.clone()),
@@ -1262,6 +1264,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             "computer-attempt",
             "instance-stable",
             ComputerFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(computer_frame::Frame::DeliveryResult(DeliveryResult {
                     execution: Some(execution.clone()),
                     delivery_id: created.delivery_id,
@@ -1278,6 +1281,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             "computer-attempt",
             "instance-stable",
             ComputerFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(computer_frame::Frame::ExecutionEvent(ExecutionEvent {
                     execution: Some(execution.clone()),
                     sequence: 1,
@@ -1293,6 +1297,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         matches!(
             first.next().await,
             Some(Ok(lankide_protocol::RuntimeFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::ExecutionEventAck(_))
             }))
         ),
@@ -1320,6 +1325,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
                     "computer-attempt",
                     "instance-stable",
                     ComputerFrame {
+                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
                         frame: Some(computer_frame::Frame::Heartbeat(ComputerHeartbeat {
                             computer_id: "computer-attempt".into(),
                             instance_id: "instance-stable".into(),
@@ -1347,6 +1353,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             matches!(
                 first.next().await,
                 Some(Ok(lankide_protocol::RuntimeFrame {
+                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
                     frame: Some(runtime_frame::Frame::CancelExecution(_))
                 }))
             ),
@@ -1391,6 +1398,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             "computer-attempt",
             "instance-stable",
             ComputerFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(computer_frame::Frame::Heartbeat(ComputerHeartbeat {
                     computer_id: "computer-attempt".into(),
                     instance_id: "instance-stable".into(),
@@ -1415,6 +1423,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         "same instance continues",
     )?;
     let completed = ComputerFrame {
+        protocol_version: lankide_protocol::PROTOCOL_VERSION,
         frame: Some(computer_frame::Frame::ExecutionEvent(ExecutionEvent {
             execution: Some(execution.clone()),
             sequence: 2,
@@ -1441,6 +1450,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         matches!(
             resumed.next().await,
             Some(Ok(lankide_protocol::RuntimeFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::ExecutionEventAck(_))
             }))
         ),
@@ -1450,6 +1460,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         matches!(
             resumed.next().await,
             Some(Ok(lankide_protocol::RuntimeFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::ExecutionCommitted(_))
             }))
         ),
@@ -1464,6 +1475,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         matches!(
             resumed.next().await,
             Some(Ok(lankide_protocol::RuntimeFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::ExecutionCommitted(_))
             }))
         ),
@@ -1761,6 +1773,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         matches!(
             first_connection.next().await,
             Some(Ok(lankide_protocol::RuntimeFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::Hello(_)),
             }))
         ),
@@ -1782,6 +1795,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         matches!(
             first_connection.next().await,
             Some(Ok(lankide_protocol::RuntimeFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::Shutdown(_)),
             }))
         ),
@@ -2015,7 +2029,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .await
         .expect_err("unknown provider interface must fail");
     ensure(
-        unknown_interface.code() == tonic::Code::NotFound,
+        unknown_interface.code() == lankide_protocol::Code::NotFound,
         "unknown provider interface status",
     )?;
     let invalid_interface = client
@@ -2030,7 +2044,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .await
         .expect_err("invalid provider interface input must fail");
     ensure(
-        invalid_interface.code() == tonic::Code::InvalidArgument,
+        invalid_interface.code() == lankide_protocol::Code::InvalidArgument,
         "invalid provider interface status",
     )?;
     let mut subscription = client
@@ -2190,7 +2204,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         })
         .await;
     ensure(
-        failed.is_err_and(|status| status.code() == tonic::Code::FailedPrecondition),
+        failed.is_err_and(|status| status.code() == lankide_protocol::Code::FailedPrecondition),
         "provider lifecycle failure was not reported as a recoverable Provider problem",
     )?;
     state.fail_lifecycle.store(false, Ordering::SeqCst);
@@ -2274,7 +2288,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .await
         .expect_err("invalid execution token must be rejected");
     ensure(
-        denied.code() == tonic::Code::PermissionDenied
+        denied.code() == lankide_protocol::Code::PermissionDenied
             && !denied.message().contains("token_hash")
             && !denied.message().contains("must-not-leak"),
         "capability authorization is redacted",
@@ -2454,6 +2468,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     let (computer_frames, computer_input) = tokio::sync::mpsc::channel(8);
     computer_frames
         .send(ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::Hello(ComputerHello {
                 device_credential: "fixture-computer-a".into(),
                 protocol_version: PROTOCOL_VERSION,
@@ -2484,6 +2499,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     *state.tool_gate.lock().unwrap() = Some(gate.clone());
     computer_frames
         .send(ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::ToolCall(
                 lankide_protocol::ToolCall {
                     execution: context.execution.clone(),
@@ -2509,6 +2525,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .as_millis() as i64;
     computer_frames
         .send(ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::Heartbeat(ComputerHeartbeat {
                 computer_id: "computer-a".into(),
                 instance_id: "instance-2".into(),
@@ -2693,7 +2710,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .await
         .expect_err("attachment must not be exposed as a profile image");
     ensure(
-        denied_image.code() == tonic::Code::PermissionDenied,
+        denied_image.code() == lankide_protocol::Code::PermissionDenied,
         "profile resource allowlist",
     )?;
     let denied_workspace = client
@@ -2707,7 +2724,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .await
         .expect_err("image must remain workspace-scoped");
     ensure(
-        denied_workspace.code() == tonic::Code::PermissionDenied,
+        denied_workspace.code() == lankide_protocol::Code::PermissionDenied,
         "profile image workspace isolation",
     )?;
 
@@ -2768,6 +2785,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     ] {
         computer_frames
             .send(ComputerFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(computer_frame::Frame::ToolCall(
                     lankide_protocol::ToolCall {
                         execution: context.execution.clone(),
@@ -3104,6 +3122,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     let (delete_computer_frames, delete_computer_input) = tokio::sync::mpsc::channel(4);
     delete_computer_frames
         .send(ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::Hello(ComputerHello {
                 device_credential: "fixture-computer-delete".into(),
                 protocol_version: PROTOCOL_VERSION,
@@ -3149,6 +3168,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     )?;
     delete_computer_frames
         .send(ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::DeleteAgentFilesResult(
                 lankide_protocol::DeleteAgentFilesResult {
                     request_id: cleanup.request_id,
@@ -4529,6 +4549,7 @@ async fn configured_assignment_scenario() {
                 "profile-computer",
                 "config-audit",
                 ComputerFrame {
+                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
                     frame: Some(computer_frame::Frame::Heartbeat(ComputerHeartbeat {
                         computer_id: "profile-computer".into(),
                         instance_id: "config-audit".into(),

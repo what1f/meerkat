@@ -17,7 +17,6 @@ use lankide_storage::{
     AgentSpec, AttentionRecord, DatabaseConfig, DispatchReason, InboxDispatch, IngestEvent,
     MessageInput, Storage, WorkspaceSpec,
 };
-use prost::Message;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
@@ -303,6 +302,11 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
 
     let mut child = DaemonChild::spawn(paths)?;
     let ready_elapsed = child.wait_ready()?;
+    if paths.socket.exists() {
+        return Err(AppError::Invariant(
+            "Runtime must serve management through HTTP without a UDS listener",
+        ));
+    }
     if ready_elapsed >= Duration::from_millis(1500) {
         return Err(AppError::Invariant(
             "management readiness waited for Provider startup",
@@ -390,6 +394,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     let (computer_tx, computer_rx) = mpsc::channel(16);
     computer_tx
         .send(ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::Hello(ComputerHello {
                 device_credential: "fixture-computer-a".into(),
                 protocol_version: PROTOCOL_VERSION,
@@ -418,6 +423,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     // As on the production Computer, report attempts before accepting new work.
     computer_tx
         .send(ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::Heartbeat(
                 lankide_protocol::ComputerHeartbeat {
                     computer_id: "computer-a".into(),
@@ -453,6 +459,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     };
     computer_tx
         .send(ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::AssignmentResult(AssignmentResult {
                 failure: None,
                 execution: Some(execution.clone()),
@@ -465,6 +472,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         .map_err(|_| AppError::Invariant("assignment result channel closed"))?;
     computer_tx
         .send(ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::DeliveryResult(DeliveryResult {
                 execution: Some(execution.clone()),
                 delivery_id: assignment
@@ -485,8 +493,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    let mut upload = Vec::new();
-    ResourceChunk {
+    let upload = lankide_protocol::agent::encode(&vec![ResourceChunk {
         transfer_id: "daemon-upload".into(),
         resource_id: 0,
         offset: 0,
@@ -499,9 +506,8 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
             sha256: resource_sha,
             context: Some(context.clone()),
         }),
-    }
-    .encode_length_delimited(&mut upload)
-    .map_err(|_| AppError::Invariant("encode upload"))?;
+    }])
+    .expect("upload JSON");
     let response = agent_call(
         &computer_tx,
         &mut runtime_frames,
@@ -510,19 +516,20 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         upload,
     )
     .await?;
-    let uploaded = lankide_protocol::ResourceRef::decode(response.as_slice())
-        .map_err(|_| AppError::Invariant("decode upload"))?;
+    let uploaded =
+        lankide_protocol::agent::decode::<lankide_protocol::ResourceRef>(response.as_slice())
+            .map_err(|_| AppError::Invariant("decode upload"))?;
     let response = agent_call(
         &computer_tx,
         &mut runtime_frames,
         &context,
         "download_resource",
-        ResourceRequest {
+        lankide_protocol::agent::encode(&ResourceRequest {
             resource_id: uploaded.resource_id,
             transfer_id: "daemon-download".into(),
             context: Some(context.clone()),
-        }
-        .encode_to_vec(),
+        })
+        .expect("capability JSON"),
     )
     .await?;
     let downloaded: Vec<u8> = lankide_protocol::agent::decode_chunks(&response)
@@ -538,16 +545,17 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         &mut runtime_frames,
         &context,
         "get_content",
-        ContentRequest {
+        lankide_protocol::agent::encode(&ContentRequest {
             context: Some(context.clone()),
             kind: ContentKind::Message as i32,
             content_id: ingested.message_id.to_string(),
-        }
-        .encode_to_vec(),
+        })
+        .expect("capability JSON"),
     )
     .await?;
-    let content = lankide_protocol::ContentResult::decode(response.as_slice())
-        .map_err(|_| AppError::Invariant("decode content"))?;
+    let content =
+        lankide_protocol::agent::decode::<lankide_protocol::ContentResult>(response.as_slice())
+            .map_err(|_| AppError::Invariant("decode content"))?;
     if content.content_markdown != "daemon trigger" {
         return Err(AppError::Invariant("content gateway mismatch"));
     }
@@ -557,6 +565,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     ] {
         computer_tx
             .send(ComputerFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(computer_frame::Frame::ExecutionEvent(ExecutionEvent {
                     execution: Some(execution.clone()),
                     sequence,
@@ -623,6 +632,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     fs::remove_dir_all(&deletable_directory)?;
     computer_tx
         .send(ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::DeleteAgentFilesResult(
                 lankide_protocol::DeleteAgentFilesResult {
                     request_id: cleanup.request_id,
@@ -965,6 +975,7 @@ async fn agent_call(
 ) -> Result<Vec<u8>, AppError> {
     sender
         .send(ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::CapabilityRequest(
                 lankide_protocol::CapabilityRequest {
                     request_id: method.into(),
@@ -991,8 +1002,8 @@ async fn agent_call(
                     return Err(AppError::Invariant("capability correlation mismatch"));
                 }
                 if response.error_code != 0 {
-                    return Err(AppError::Status(tonic::Status::new(
-                        tonic::Code::from_i32(response.error_code),
+                    return Err(AppError::Status(lankide_protocol::Status::new(
+                        lankide_protocol::Code::from_i32(response.error_code),
                         response.error_message,
                     )));
                 }

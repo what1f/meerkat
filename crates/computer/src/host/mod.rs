@@ -75,7 +75,7 @@ impl RegisteredHarness {
 pub enum ComputerError {
     Io(std::io::Error),
     Transport(lankide_protocol::TransportError),
-    Rpc(tonic::Status),
+    Rpc(lankide_protocol::Status),
     Link(lankide_protocol::link::LinkError),
     ProtocolVersionUnsupported,
     Harness(lankide_harness::HarnessError),
@@ -132,8 +132,8 @@ impl From<lankide_protocol::link::LinkError> for ComputerError {
         }
     }
 }
-impl From<tonic::Status> for ComputerError {
-    fn from(value: tonic::Status) -> Self {
+impl From<lankide_protocol::Status> for ComputerError {
+    fn from(value: lankide_protocol::Status) -> Self {
         Self::Rpc(value)
     }
 }

@@ -68,6 +68,10 @@ execution token inside each frame.
 
 ## Computer wire protocol
 
+The current `protocol_version` is 2. Version 2 replaces protobuf capability
+payloads with UTF-8 JSON bytes; incompatible peers are rejected during hello.
+Management, pairing, and the outer link JSON shapes are unchanged.
+
 Frames are JSON objects with a `type` field, sent as WS text frames. The frame
 set keeps the current semantics of `ComputerFrame` and `RuntimeFrame`:
 
@@ -133,6 +137,21 @@ New path:
 2. `lankide-cli`, the Claude MCP bridge, and the Pi extension call that socket.
 3. The Computer forwards each call as a `capability_request` frame and returns
    the matching `capability_response`.
+
+The private Agent socket uses one request and one response per connection. A
+four-byte big-endian length precedes each UTF-8 JSON document. Requests carry
+`protocol_version`, `method`, `context`, and a JSON `payload`; responses carry
+`Ok` with the result or `Err` with a typed code and message. Resource payloads
+are JSON arrays of chunks with base64 bytes. Calls have a thirty-second deadline,
+a bounded message length, and a maximum of sixteen concurrent local calls.
+The socket directory is owner-only, the socket mode is 0600, and every request
+must match the attempt's execution context. Closing an attempt removes its
+socket and cancels pending calls. The Computer link keeps chunk offsets and
+correlation IDs for large JSON capability payloads.
+
+The Runtime has no UDS listener. Its instance lock owns the home, its discovery
+files identify the HTTP listener, and health/readiness checks use authenticated
+HTTP management calls. Desktop clients keep the same reuse-first startup flow.
 
 The execution token is bound to execution, attempt, Computer, and the Agent's
 placement generation. The Runtime rejects calls and late results from an older

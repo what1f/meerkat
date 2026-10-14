@@ -117,23 +117,18 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
             .await
             .unwrap_err()
             .code(),
-        tonic::Code::Unavailable
+        lankide_protocol::Code::Unavailable
     );
     let mut wrong = old_context.clone();
     wrong.execution_token = "wrong-token".into();
     assert_eq!(
         local.list_capabilities(wrong).await.unwrap_err().code(),
-        tonic::Code::Unauthenticated
+        lankide_protocol::Code::Unauthenticated
     );
-    if let Ok(mut runtime) = connect_uds(rig.runtime_socket(), DEFAULT_MAX_MESSAGE_BYTES).await {
-        assert!(
-            runtime
-                .list_capabilities(old_context.clone())
-                .await
-                .is_err(),
-            "the Runtime liveness socket must not serve gRPC"
-        );
-    }
+    assert!(
+        !rig.runtime_socket().exists(),
+        "Runtime uses HTTP discovery"
+    );
     // Stall replies at the network boundary: the call must fail as retryable
     // Unavailable when the Computer detects the silent link.
     rig.proxy.as_ref().unwrap().pause();
@@ -143,7 +138,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     )
     .await?
     .unwrap_err();
-    assert_eq!(failure.code(), tonic::Code::Unavailable);
+    assert_eq!(failure.code(), lankide_protocol::Code::Unavailable);
     rig.proxy.as_ref().unwrap().cut();
     let failure = timeout(
         Duration::from_secs(1),
@@ -151,7 +146,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     )
     .await?
     .unwrap_err();
-    assert_eq!(failure.code(), tonic::Code::Unavailable);
+    assert_eq!(failure.code(), lankide_protocol::Code::Unavailable);
     rig.proxy.as_ref().unwrap().restore();
     rig.wait_computer_online().await?;
     timeout(Duration::from_secs(3), async {
@@ -190,7 +185,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     let mut link = link::connect(&url, secret, DEFAULT_MAX_MESSAGE_BYTES).await?;
     link.send(link::ComputerFrame {
         protocol_version: PROTOCOL_VERSION,
-        frame: link::ComputerPayload::Hello(link::ComputerHello {
+        frame: Some(link::ComputerPayload::Hello(link::ComputerHello {
             device_credential: secret.into(),
             computer_id: computer_id.into(),
             instance_id: "credential-replay".into(),
@@ -199,26 +194,28 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
             arch: "test".into(),
             protocol_version: PROTOCOL_VERSION,
             harnesses: vec![],
-        }),
+        })),
     })
     .await?;
-    use prost::Message;
+
     link.send(link::ComputerFrame {
         protocol_version: PROTOCOL_VERSION,
-        frame: link::ComputerPayload::CapabilityRequest(link::CapabilityRequest {
-            request_id: "finished-token".into(),
-            method: "list_capabilities".into(),
-            context: Some(old_context.clone().into()),
-            payload: old_context.encode_to_vec(),
-            offset: 0,
-            eof: true,
-        }),
+        frame: Some(link::ComputerPayload::CapabilityRequest(
+            link::CapabilityRequest {
+                request_id: "finished-token".into(),
+                method: "list_capabilities".into(),
+                context: Some(old_context.clone().into()),
+                payload: lankide_protocol::agent::encode(&old_context).expect("capability JSON"),
+                offset: 0,
+                eof: true,
+            },
+        )),
     })
     .await?;
     let response = timeout(Duration::from_secs(3), async {
         loop {
             if let Some(frame) = link.receive().await? {
-                if let link::RuntimePayload::CapabilityResponse(response) = frame.frame {
+                if let Some(link::RuntimePayload::CapabilityResponse(response)) = frame.frame {
                     break Ok::<_, link::LinkError>(response);
                 }
             } else {
@@ -229,7 +226,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     .await??;
     assert_eq!(
         response.error_code,
-        tonic::Code::PermissionDenied as i32,
+        lankide_protocol::Code::PermissionDenied as i32,
         "finished token accepted: {}",
         json!(response)
     );

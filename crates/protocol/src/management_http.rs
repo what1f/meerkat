@@ -16,19 +16,8 @@ pub(crate) fn response<T: serde::Serialize>(
         )))
         .expect("HTTP response")
 }
-pub(crate) fn error(status: tonic::Status) -> Response<Full<Bytes>> {
-    let code = match status.code() {
-        tonic::Code::Unauthenticated => StatusCode::UNAUTHORIZED,
-        tonic::Code::PermissionDenied => StatusCode::FORBIDDEN,
-        tonic::Code::NotFound => StatusCode::NOT_FOUND,
-        tonic::Code::AlreadyExists => StatusCode::CONFLICT,
-        tonic::Code::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
-        tonic::Code::ResourceExhausted => StatusCode::PAYLOAD_TOO_LARGE,
-        tonic::Code::Internal | tonic::Code::DataLoss | tonic::Code::Unknown => {
-            StatusCode::INTERNAL_SERVER_ERROR
-        }
-        _ => StatusCode::BAD_REQUEST,
-    };
+pub(crate) fn error(status: crate::Status) -> Response<Full<Bytes>> {
+    let code = status.http_status();
     response(code, &json::ErrorBody::from(status))
 }
 pub(crate) async fn dispatch<P: RuntimePeer>(
@@ -37,7 +26,7 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
     config: TransportConfig,
 ) -> Response<Full<Bytes>> {
     if request.method() != hyper::Method::POST {
-        return error(tonic::Status::invalid_argument("POST required"));
+        return error(crate::Status::invalid_argument("POST required"));
     }
     let operation = request
         .uri()
@@ -53,7 +42,7 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
     {
         Ok(value) => value.to_bytes(),
         Err(_) => {
-            return error(tonic::Status::resource_exhausted(
+            return error(crate::Status::resource_exhausted(
                 "management request too large",
             ));
         }
@@ -62,11 +51,11 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
     macro_rules! call {
         ($request:ty, $response:ty, $method:ident) => {{
             match serde_json::from_slice::<$request>(&bytes) {
-                Ok(value) => match service.$method(tonic::Request::new(value.into())).await {
-                    Ok(value) => response(StatusCode::OK, &<$response>::from(value.into_inner())),
+                Ok(value) => match service.$method(crate::Request::new(value)).await {
+                    Ok(value) => response(StatusCode::OK, &value.into_inner()),
                     Err(status) => error(status),
                 },
-                Err(_) => error(tonic::Status::invalid_argument("invalid management JSON")),
+                Err(_) => error(crate::Status::invalid_argument("invalid management JSON")),
             }
         }};
     }
@@ -194,7 +183,7 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
             json::InvokeProviderInterfaceResponse,
             invoke_provider_interface
         ),
-        _ => error(tonic::Status::not_found("management route not found")),
+        _ => error(crate::Status::not_found("management route not found")),
     }
 }
 
@@ -225,7 +214,7 @@ pub(crate) async fn serve_events(
                 let Some(event) = event else { let _ = ws.close(None).await; break; };
                 let failed = event.is_err();
                 let frame = match event {
-                    Ok(event) => json::EventFrame::Event(event.into()),
+                    Ok(event) => json::EventFrame::Event(event),
                     Err(status) => json::EventFrame::Error(status.into()),
                 };
                 let text = serde_json::to_string(&frame).expect("management event JSON");

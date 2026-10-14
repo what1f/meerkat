@@ -78,6 +78,7 @@ pub(super) async fn handle_steer(inner: &Inner, steer: lankide_protocol::Deliver
     send_frame(
         inner,
         ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::DeliveryResult(DeliveryResult {
                 execution: Some(execution),
                 delivery_id: delivery.delivery_id,
@@ -283,6 +284,7 @@ async fn send_tool_result_receipt(
     send_frame(
         inner,
         ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::ResourceTransferResult(
                 lankide_protocol::ResourceTransferResult {
                     transfer_id: format!(
@@ -305,6 +307,7 @@ pub(super) async fn replay_pending(inner: &Inner, sender: &mpsc::Sender<Computer
         for event in events.values() {
             let _ = sender
                 .send(ComputerFrame {
+                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
                     frame: Some(computer_frame::Frame::ExecutionEvent(event.clone())),
                 })
                 .await;
@@ -324,6 +327,7 @@ pub(super) async fn replay_assignment_pending(inner: &Inner, key: &str) {
         send_frame(
             inner,
             ComputerFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(computer_frame::Frame::ExecutionEvent(event)),
             },
         )

@@ -38,7 +38,7 @@ impl LankideApp {
         self.pairing_address = std::fs::read_to_string(home.join("run/computer-link.url"))
             .ok()
             .and_then(|address| {
-                let uri = address.trim().parse::<tonic::codegen::http::Uri>().ok()?;
+                let uri = address.trim().parse::<http::Uri>().ok()?;
                 let host = uri.host()?;
                 let ip = host.trim_matches(['[', ']']).parse::<std::net::IpAddr>();
                 if host.eq_ignore_ascii_case("localhost")

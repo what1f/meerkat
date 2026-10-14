@@ -1,7 +1,8 @@
-//! Shared test-only wiring for the real WS and gRPC endpoints.
+//! Shared test-only wiring for the real WS, HTTP, and local JSON endpoints.
 #![allow(dead_code)]
 use lankide_protocol::link::{self, CloseReason, ComputerLink, LinkError};
 use lankide_protocol::{ComputerPeer, RuntimeFrame, RuntimePeer, TransportConfig, TransportError};
+use lankide_protocol::{Response, Status};
 use std::{
     future::Future,
     path::Path,
@@ -10,7 +11,6 @@ use std::{
 };
 use tokio::sync::mpsc;
 use tokio_stream::{Stream, StreamExt};
-use tonic::{Response, Status};
 
 pub async fn serve_local<P, F>(
     socket: impl AsRef<Path>,
@@ -106,32 +106,25 @@ pub async fn connect_stream(
     )
     .await
     .map_err(status)?;
-    link.send(
-        hello
-            .try_into()
-            .map_err(|r: CloseReason| Status::invalid_argument(r.to_string()))?,
-    )
-    .await
-    .map_err(status)?;
+    link.send(hello).await.map_err(status)?;
     let first = link
         .receive()
         .await
         .map_err(status)?
         .ok_or_else(|| Status::unavailable("closed"))?;
     let (sender, receiver) = mpsc::channel(64);
-    sender.send(Ok(first.into())).await.expect("first frame");
+    sender.send(Ok(first)).await.expect("first frame");
     tokio::spawn(async move {
         loop {
             tokio::select! {
                 _ = sender.closed() => break,
                 frame = frames.next() => {
                     let Some(frame) = frame else { break };
-                    let converted = frame.try_into();
-                    let result = match converted { Ok(frame) => link.send(frame).await, Err(reason) => Err(LinkError::Closed(reason)) };
+                    let result = link.send(frame).await;
                     if let Err(error) = result { let _ = sender.send(Err(status(error))).await; break; }
                 }
                 frame = link.receive() => match frame {
-                    Ok(Some(frame)) => { if sender.send(Ok(frame.into())).await.is_err() { break; } }
+                    Ok(Some(frame)) => { if sender.send(Ok(frame)).await.is_err() { break; } }
                     Ok(None) => break,
                     Err(LinkError::Closed(CloseReason::Shutdown)) => break,
                     Err(error) => { let _ = sender.send(Err(status(error))).await; break; }

@@ -1,10 +1,10 @@
 //! Capability calls received on an authenticated Computer connection.
 use crate::{RuntimeApplication, RuntimePeerAdapter};
+use lankide_protocol::Status;
 use lankide_protocol::{agent, *};
 use std::sync::Arc;
 use std::{collections::HashMap, time::Instant};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-use tonic::Status;
 
 pub(crate) struct CapabilityCalls {
     slots: Arc<Semaphore>,
@@ -105,7 +105,10 @@ pub(crate) async fn respond(
             ));
         }
         agent::dispatch(
-            &RuntimePeerAdapter::new(application.clone()),
+            &ValidatedRuntimeService::new(
+                RuntimePeerAdapter::new(application.clone()),
+                TransportConfig::default(),
+            ),
             &request.method,
             &request.payload,
             context,
@@ -118,7 +121,7 @@ pub(crate) async fn respond(
         Ok(bytes) if bytes.len() <= agent::MAX_CALL_BYTES => (bytes, 0, String::new()),
         Ok(_) => (
             Vec::new(),
-            tonic::Code::ResourceExhausted as i32,
+            lankide_protocol::Code::ResourceExhausted as i32,
             "capability_payload_too_large".into(),
         ),
         Err(error) => (Vec::new(), error.code() as i32, error.message().to_owned()),
@@ -140,6 +143,7 @@ pub(crate) async fn respond(
                 &computer,
                 &instance,
                 RuntimeFrame {
+                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
                     frame: Some(runtime_frame::Frame::CapabilityResponse(response)),
                 },
             )

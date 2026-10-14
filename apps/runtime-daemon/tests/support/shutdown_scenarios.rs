@@ -107,6 +107,7 @@ async fn shutdown_with_computer_and_provider(
     let (sender, receiver) = mpsc::channel(16);
     sender
         .send(ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::Hello(ComputerHello {
                 device_credential: "fixture-shutdown".into(),
                 protocol_version: PROTOCOL_VERSION,
@@ -211,9 +212,15 @@ async fn sigkill_restart_recovers(paths: &RuntimePaths, artifacts: &Path) -> Res
     assert_serving(paths).await?;
     let lock = fs::read(&paths.instance_lock)?;
     first.kill()?;
-    if !paths.socket.exists() || !paths.instance_lock.exists() {
+    if paths.socket.exists()
+        || !paths.instance_lock.exists()
+        || !paths
+            .run
+            .join(lankide_protocol::management::URL_FILE)
+            .exists()
+    {
         return Err(AppError::Invariant(
-            "SIGKILL did not leave stale ownership files",
+            "SIGKILL did not leave the HTTP discovery and ownership lock",
         ));
     }
     let mut recovered = DaemonChild::spawn(paths)?;

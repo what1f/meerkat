@@ -3,6 +3,7 @@ mod ws;
 use lankide_protocol::computer_frame;
 use lankide_protocol::runtime_frame;
 use lankide_protocol::*;
+use lankide_protocol::{Code, Status};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
@@ -13,7 +14,6 @@ use tempfile::TempDir;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::{StreamExt, iter};
-use tonic::{Code, Status};
 
 const SERVER_LIMIT: usize = 8 * 1024;
 const CLIENT_LIMIT: usize = 64 * 1024;
@@ -113,7 +113,7 @@ struct StoredResource {
     bytes: Vec<u8>,
 }
 
-#[tonic::async_trait]
+#[async_trait::async_trait]
 impl lankide_protocol::ComputerPeer for TestPeer {
     async fn authorize_link(
         &self,
@@ -146,6 +146,7 @@ impl lankide_protocol::ComputerPeer for TestPeer {
         if connection <= 2 {
             outgoing
                 .send(Ok(RuntimeFrame {
+                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
                     frame: Some(runtime_frame::Frame::AssignExecution(assignment())),
                 }))
                 .await
@@ -180,6 +181,7 @@ impl lankide_protocol::ComputerPeer for TestPeer {
                             (1, 1) | (2, 2) => {
                                 outgoing
                                     .send(Ok(RuntimeFrame {
+                                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
                                         frame: Some(runtime_frame::Frame::ExecutionEventAck(
                                             ExecutionEventAck {
                                                 execution: event.execution,
@@ -195,6 +197,7 @@ impl lankide_protocol::ComputerPeer for TestPeer {
                                 let execution = event.execution;
                                 outgoing
                                     .send(Ok(RuntimeFrame {
+                                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
                                         frame: Some(runtime_frame::Frame::ExecutionEventAck(
                                             ExecutionEventAck {
                                                 execution: execution.clone(),
@@ -206,6 +209,7 @@ impl lankide_protocol::ComputerPeer for TestPeer {
                                     .expect("final ack receiver");
                                 outgoing
                                     .send(Ok(RuntimeFrame {
+                                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
                                         frame: Some(runtime_frame::Frame::ExecutionCommitted(
                                             ExecutionCommitted {
                                                 execution,
@@ -228,7 +232,7 @@ impl lankide_protocol::ComputerPeer for TestPeer {
     }
 }
 
-#[tonic::async_trait]
+#[async_trait::async_trait]
 impl RuntimePeer for TestPeer {
     async fn upload_resource(
         &self,
@@ -513,6 +517,7 @@ async fn complete_protocol_scenario() {
     let mut invalid_tool = assignment();
     invalid_tool.tools[0].name = "feishu.reaction.catalog".into();
     let status = validate_runtime_frame(&RuntimeFrame {
+        protocol_version: lankide_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::AssignExecution(invalid_tool)),
     })
     .expect_err("dotted Tool name must be rejected by the shared protocol");
@@ -546,6 +551,7 @@ async fn complete_protocol_scenario() {
     let uploaded = exchange_resource_chunks(&path).await;
     exchange_attachment_only_message(&path, &peer, uploaded).await;
     exchange_management_and_cli(&path).await;
+    exchange_agent_json_socket(&path).await;
     reject_version_mismatch(&path).await;
     reject_oversized_frame(&path).await;
     reject_out_of_order_resource_offset(&path).await;
@@ -588,6 +594,7 @@ async fn exchange_assignment_events_and_reconnect(path: &std::path::Path, peer: 
     assert_complete_assignment(&assign);
     first_tx
         .send(ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::AssignmentResult(AssignmentResult {
                 failure: None,
                 execution: assign.execution.clone(),
@@ -1018,6 +1025,7 @@ async fn reject_version_mismatch(path: &std::path::Path) {
     let error = ws::connect_stream(
         path,
         iter([ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::Hello(hello)),
         }]),
     )
@@ -1033,6 +1041,7 @@ async fn reject_oversized_frame(path: &std::path::Path) {
     let error = ws::connect_stream(
         path,
         iter([ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::Hello(hello)),
         }]),
     )
@@ -1095,7 +1104,10 @@ async fn reject_unknown_frame(path: &std::path::Path) {
             .expect("hello frame"),
     );
     sender
-        .send(ComputerFrame { frame: None })
+        .send(ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            frame: None,
+        })
         .await
         .expect("send unknown frame");
     let error = runtime
@@ -1152,6 +1164,7 @@ async fn wait_for_socket(path: &std::path::Path) {
 
 fn hello_frame() -> ComputerFrame {
     ComputerFrame {
+        protocol_version: lankide_protocol::PROTOCOL_VERSION,
         frame: Some(computer_frame::Frame::Hello(computer_hello())),
     }
 }
@@ -1180,6 +1193,7 @@ fn computer_hello() -> ComputerHello {
 
 fn runtime_hello_frame() -> RuntimeFrame {
     RuntimeFrame {
+        protocol_version: lankide_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::Hello(RuntimeHello {
             protocol_version: PROTOCOL_VERSION,
             runtime_instance_id: "runtime_instance_1".into(),
@@ -1270,6 +1284,7 @@ fn assignment() -> AssignExecution {
 
 fn event_frame(sequence: u64, kind: ExecutionEventKind, payload: &[u8]) -> ComputerFrame {
     ComputerFrame {
+        protocol_version: lankide_protocol::PROTOCOL_VERSION,
         frame: Some(computer_frame::Frame::ExecutionEvent(ExecutionEvent {
             execution: Some(execution_ref()),
             sequence,
@@ -1362,4 +1377,67 @@ fn lowercase_hex(bytes: &[u8]) -> String {
         write!(encoded, "{byte:02x}").expect("writing to String cannot fail");
     }
     encoded
+}
+
+// A native Agent can use JSON directly, but cannot use management, another
+// attempt's credential, an older protocol, or unbounded request lengths.
+async fn exchange_agent_json_socket(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    assert_eq!(
+        fs::metadata(path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    let context = run_context("execution_token_17");
+    let mut call = serde_json::json!({
+        "protocol_version": PROTOCOL_VERSION,
+        "method": "invoke_capability",
+        "context": context,
+        "payload": CapabilityInvokeRequest {
+            context: Some(context.clone()), capability_name: "reply".into(),
+            arguments_json: "{}".into(), invocation_id: "json-native".into(),
+        },
+    });
+    for expected in [
+        "success",
+        "permission_denied",
+        "unimplemented",
+        "failed_precondition",
+        "resource_exhausted",
+    ] {
+        match expected {
+            "permission_denied" => {
+                call["context"]["execution_token"] = "wrong_token".into();
+                call["payload"]["context"]["execution_token"] = "wrong_token".into();
+            }
+            "unimplemented" => call["method"] = "list_workspaces".into(),
+            "failed_precondition" => call["protocol_version"] = (PROTOCOL_VERSION - 1).into(),
+            _ => {}
+        }
+        let mut socket = tokio::net::UnixStream::connect(path).await.unwrap();
+        if expected == "resource_exhausted" {
+            socket
+                .write_u32((agent::MAX_CALL_BYTES + 1) as u32)
+                .await
+                .unwrap();
+        } else {
+            let bytes = serde_json::to_vec(&call).unwrap();
+            socket.write_u32(bytes.len() as u32).await.unwrap();
+            socket.write_all(&bytes).await.unwrap();
+        }
+        let value = tokio::time::timeout(Duration::from_secs(2), async {
+            let length = socket.read_u32().await.unwrap() as usize;
+            assert!(length <= agent::MAX_CALL_BYTES);
+            let mut bytes = vec![0; length];
+            socket.read_exact(&mut bytes).await.unwrap();
+            serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()
+        })
+        .await
+        .expect("bounded Agent JSON reply");
+        if expected == "success" {
+            assert_eq!(value["Ok"]["success"], true);
+        } else {
+            assert_eq!(value["Err"]["code"], expected, "{value}");
+        }
+    }
 }

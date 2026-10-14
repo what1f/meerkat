@@ -5,6 +5,7 @@ use lankide_client::{
     RuntimeManagementClient, ThinkingLevel, WorkspaceDraft, WorkspaceStatus,
 };
 use lankide_protocol as wire;
+use lankide_protocol::Status;
 use management_fixture::{MockManagementClient, MockState, local_harnesses};
 use serde_json::json;
 use std::{
@@ -18,7 +19,6 @@ use std::{
 };
 use tempfile::TempDir;
 use tokio::sync::{Mutex, oneshot};
-use tonic::Status;
 
 const NORMAL: u8 = 0;
 const PROVIDER_ERROR: u8 = 1;
@@ -105,7 +105,7 @@ impl Peer {
     }
 }
 
-#[tonic::async_trait]
+#[async_trait::async_trait]
 impl wire::RuntimePeer for Peer {
     async fn upload_resource(
         &self,
@@ -670,7 +670,7 @@ impl wire::RuntimePeer for Peer {
     }
 }
 
-#[tonic::async_trait]
+#[async_trait::async_trait]
 impl wire::ComputerPeer for Peer {
     async fn connect_computer(
         &self,

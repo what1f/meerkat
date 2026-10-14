@@ -589,7 +589,7 @@ impl RuntimeApplication {
                     } else {
                         ObservedState::Stopped
                     } as i32,
-                    harnesses: inventory.into_iter().map(Into::into).collect(),
+                    harnesses: inventory,
                     status_message: String::new(),
                     registered: true,
                     revoked_at: record.revoked_at,

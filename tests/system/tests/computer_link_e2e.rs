@@ -16,7 +16,7 @@ fn config() -> RigConfig {
 fn hello(version: u32) -> ComputerFrame {
     ComputerFrame {
         protocol_version: version,
-        frame: ComputerPayload::Hello(ComputerHello {
+        frame: Some(ComputerPayload::Hello(ComputerHello {
             device_credential: String::new(),
             protocol_version: version,
             computer_id: "newer-computer".into(),
@@ -25,7 +25,7 @@ fn hello(version: u32) -> ComputerFrame {
             os: "test-os".into(),
             arch: "test-arch".into(),
             harnesses: Vec::new(),
-        }),
+        })),
     }
 }
 
@@ -44,7 +44,7 @@ async fn s9_1_newer_computer_gets_a_typed_rejection_visible_in_management() -> R
     .await?;
     let secret = credentials.device_credential.clone();
     let mut newer = hello(PROTOCOL_VERSION + 1);
-    if let ComputerPayload::Hello(hello) = &mut newer.frame {
+    if let Some(ComputerPayload::Hello(hello)) = &mut newer.frame {
         hello.computer_id = credentials.computer_id.clone();
         hello.device_credential = secret.clone();
     }
@@ -84,14 +84,14 @@ async fn s9_1_newer_computer_gets_a_typed_rejection_visible_in_management() -> R
     // A supported reconnect clears the rejection without changing storage.
     let mut compatible = link::connect(&url, &secret, DEFAULT_MAX_MESSAGE_BYTES).await?;
     newer.protocol_version = PROTOCOL_VERSION;
-    if let ComputerPayload::Hello(hello) = &mut newer.frame {
+    if let Some(ComputerPayload::Hello(hello)) = &mut newer.frame {
         hello.protocol_version = PROTOCOL_VERSION;
     }
     compatible.send(newer).await?;
     assert!(matches!(
         timeout(Duration::from_secs(3), compatible.receive())
             .await??
-            .map(|frame| frame.frame),
+            .and_then(|frame| frame.frame),
         Some(link::RuntimePayload::Hello(_))
     ));
     // Hold the active-attempt report at the link boundary. A hello alone must
@@ -116,12 +116,12 @@ async fn s9_1_newer_computer_gets_a_typed_rejection_visible_in_management() -> R
     compatible
         .send(ComputerFrame {
             protocol_version: PROTOCOL_VERSION,
-            frame: ComputerPayload::Heartbeat(link::ComputerHeartbeat {
+            frame: Some(ComputerPayload::Heartbeat(link::ComputerHeartbeat {
                 computer_id: credentials.computer_id.clone(),
                 instance_id: "first".into(),
                 sent_at: 0,
                 active_attempts: Vec::new(),
-            }),
+            })),
         })
         .await?;
     timeout(Duration::from_secs(3), async {
@@ -230,7 +230,7 @@ async fn ws_rejects_unauthorized_and_invalid_connections_without_disrupting_a_co
     // A valid hello above the byte limit must never reach the broker. TCP may
     // reset a rejected large frame before its sender has finished writing it.
     let mut oversized = hello(PROTOCOL_VERSION);
-    if let ComputerPayload::Hello(hello) = &mut oversized.frame {
+    if let Some(ComputerPayload::Hello(hello)) = &mut oversized.frame {
         hello.computer_version = "x".repeat(DEFAULT_MAX_MESSAGE_BYTES);
     }
     let mut request = url.clone().into_client_request()?;

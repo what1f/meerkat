@@ -23,7 +23,8 @@ use lankide_protocol::{
     RuntimeFrame, RuntimeFrameStream, RuntimeHello, RuntimePeer, SessionAction, SessionDirective,
     ToolDefinition, ToolResult, TransportConfig, WorkspaceRef, computer_frame, runtime_frame,
 };
-use prost::Message;
+
+use lankide_protocol::Status;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
@@ -38,7 +39,6 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::Status;
 
 const STEP: Duration = Duration::from_secs(4);
 
@@ -177,7 +177,7 @@ impl Peer {
     }
 }
 
-#[tonic::async_trait]
+#[async_trait::async_trait]
 impl lankide_protocol::ComputerPeer for Peer {
     async fn authorize_link(
         &self,
@@ -207,9 +207,9 @@ impl lankide_protocol::ComputerPeer for Peer {
                         {
                             assert_eq!(request.method, "invoke_capability");
                             assert!(request.eof);
-                            let call = lankide_protocol::CapabilityInvokeRequest::decode(
-                                request.payload.as_slice(),
-                            )
+                            let call = lankide_protocol::agent::decode::<
+                                lankide_protocol::CapabilityInvokeRequest,
+                            >(request.payload.as_slice())
                             .expect("capability request");
                             let context = call.context.expect("run context");
                             frame.frame = Some(computer_frame::Frame::ToolCall(
@@ -230,6 +230,7 @@ impl lankide_protocol::ComputerPeer for Peer {
         });
         let (sender, receiver) = mpsc::channel(64);
         let hello = RuntimeFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::Hello(RuntimeHello {
                 protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 runtime_instance_id: "runtime-computer-e2e".into(),
@@ -246,7 +247,7 @@ impl lankide_protocol::ComputerPeer for Peer {
     }
 }
 
-#[tonic::async_trait]
+#[async_trait::async_trait]
 impl RuntimePeer for Peer {
     async fn upload_resource(
         &self,
@@ -540,6 +541,7 @@ async fn computer_e2e() {
             .await;
         assert_tool_receipt(&mut incoming_rx, 17, 1, "call-1", true, "").await;
         peer.send(RuntimeFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::DeliverSteer(DeliverSteer {
                 execution: Some(execution(17)),
                 delivery: Some(delivery(170, "finish-tool")),
@@ -649,6 +651,7 @@ async fn computer_e2e() {
             .expect("running recovery state");
         assert!(recovering.contains("interrupted"));
         peer.send(RuntimeFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::DeliverSteer(DeliverSteer {
                 execution: Some(execution(3)),
                 delivery: Some(delivery(33, "urgent")),
@@ -753,6 +756,7 @@ async fn computer_e2e() {
             "assignment_conflict"
         );
         peer.send(RuntimeFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::ExecutionCommitted(
                 ExecutionCommitted {
                     execution: replayed_after_ack.execution.clone(),
@@ -950,6 +954,7 @@ async fn computer_e2e() {
             5
         );
         peer.send(RuntimeFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::DeliverSteer(DeliverSteer {
                 execution: Some(execution(13)),
                 delivery: Some(delivery(130, "finish-tool")),
@@ -1076,6 +1081,7 @@ async fn computer_e2e() {
         assert!(state.contains("config_fingerprint"));
 
         peer.send(RuntimeFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::DeleteAgentFiles(
                 lankide_protocol::DeleteAgentFiles {
                     request_id: "delete-reader".into(),
@@ -1118,6 +1124,7 @@ async fn computer_e2e() {
         fs::create_dir(workspace_root.join(".computer/state.json.tmp"))
             .expect("block atomic state write");
         peer.send(RuntimeFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::DeliverSteer(DeliverSteer {
                 execution: Some(execution(99)),
                 delivery: Some(delivery(990, "after-disk-failure")),
@@ -1217,6 +1224,7 @@ fn runtime_assign(
         });
     }
     RuntimeFrame {
+        protocol_version: lankide_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::AssignExecution(AssignExecution {
             execution: Some(execution(id)),
             workspace: Some(WorkspaceRef {
@@ -1327,6 +1335,7 @@ fn delivery(id: i64, input: &str) -> Delivery {
 }
 fn cancel(id: i64) -> RuntimeFrame {
     RuntimeFrame {
+        protocol_version: lankide_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::CancelExecution(
             lankide_protocol::CancelExecution {
                 force_close: false,
@@ -1356,6 +1365,7 @@ fn runtime_tool_result(
     resources: Vec<ResourceRef>,
 ) -> RuntimeFrame {
     RuntimeFrame {
+        protocol_version: lankide_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::ToolResult(ToolResult {
             execution: Some(execution),
             tool_call_id: tool_call_id.into(),
@@ -1489,6 +1499,7 @@ async fn finish_local_tool_error(
         "missing local Tool error {code}"
     );
     peer.send(RuntimeFrame {
+        protocol_version: lankide_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::DeliverSteer(DeliverSteer {
             execution: Some(execution(id)),
             delivery: Some(delivery(id * 10, "finish-tool")),
@@ -1662,6 +1673,7 @@ async fn wait_delivery(receiver: &mut mpsc::UnboundedReceiver<ComputerFrame>, id
 }
 async fn ack(peer: &Peer, event: &ExecutionEvent) {
     peer.send(RuntimeFrame {
+        protocol_version: lankide_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::ExecutionEventAck(ExecutionEventAck {
             execution: event.execution.clone(),
             max_saved_sequence: event.sequence,

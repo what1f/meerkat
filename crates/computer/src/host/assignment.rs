@@ -15,7 +15,6 @@ use lankide_protocol::{
     AgentRunContext, AssignExecution, AssignmentResult, ComputerFrame, DeliveryResult,
     ExecutionRef, SessionAction, computer_frame,
 };
-use prost::Message;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -66,6 +65,7 @@ pub(super) async fn handle_delete_agent_files(
     send_frame(
         inner,
         ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::DeleteAgentFilesResult(
                 lankide_protocol::DeleteAgentFilesResult {
                     request_id: request.request_id,
@@ -179,6 +179,7 @@ pub(super) async fn handle_assignment(inner: Arc<Inner>, assign: AssignExecution
         send_frame(
             &inner,
             ComputerFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(computer_frame::Frame::AssignmentResult(AssignmentResult {
                     failure: Some(failure),
                     execution: Some(execution),
@@ -215,6 +216,7 @@ async fn prepare_assignment(
         send_frame(
             &inner,
             ComputerFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(computer_frame::Frame::AssignmentResult(AssignmentResult {
                     failure: None,
                     execution: Some(execution.clone()),
@@ -484,6 +486,7 @@ async fn prepare_assignment(
     send_frame(
         &inner,
         ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::AssignmentResult(AssignmentResult {
                 failure: None,
                 execution: Some(execution.clone()),
@@ -497,6 +500,7 @@ async fn prepare_assignment(
     send_frame(
         &inner,
         ComputerFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(computer_frame::Frame::DeliveryResult(DeliveryResult {
                 execution: Some(execution.clone()),
                 delivery_id: delivery.delivery_id,
@@ -553,7 +557,7 @@ fn native_config(
 fn assignment_fingerprint(assign: &AssignExecution) -> String {
     let mut stable = assign.clone();
     stable.execution_token.clear();
-    let digest = Sha256::digest(stable.encode_to_vec());
+    let digest = Sha256::digest(serde_json::to_vec(&stable).expect("assignment JSON"));
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 

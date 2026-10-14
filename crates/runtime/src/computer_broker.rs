@@ -1,4 +1,5 @@
 use super::*;
+use lankide_protocol::Status;
 use lankide_protocol::{
     ComputerFrame, ComputerHello, ExecutionEventKind, HarnessInfo, RuntimeFrame,
     RuntimeFrameStream, computer_frame, runtime_frame,
@@ -10,7 +11,6 @@ use std::sync::{
     atomic::{AtomicI64, AtomicU64, Ordering},
 };
 use tokio::sync::{mpsc, oneshot};
-use tonic::Status;
 
 #[derive(Clone)]
 pub struct ComputerBroker {
@@ -153,6 +153,7 @@ impl ComputerBroker {
                     && connection.instance_id == execution.instance_id
                 {
                     let _ = connection.sender.try_send(Ok(RuntimeFrame {
+                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
                         frame: Some(runtime_frame::Frame::CancelExecution(
                             lankide_protocol::CancelExecution {
                                 force_close: !supports(connection, &execution.harness_id, "cancel"),
@@ -190,6 +191,7 @@ impl ComputerBroker {
         );
         for (_, connection) in connections {
             let _ = connection.sender.try_send(Ok(RuntimeFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::Shutdown(lankide_protocol::Shutdown {
                     reason: "Runtime is stopping.".into(),
                 })),
@@ -264,6 +266,7 @@ impl ComputerBroker {
             .insert(hello.computer_id.clone(), connection)
         {
             let _ = previous.sender.try_send(Ok(RuntimeFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::Shutdown(lankide_protocol::Shutdown {
                     reason: "replaced_by_reconnect".into(),
                 })),
@@ -271,6 +274,7 @@ impl ComputerBroker {
         }
         sender
             .try_send(Ok(RuntimeFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::Hello(
                     lankide_protocol::RuntimeHello {
                         protocol_version: lankide_protocol::PROTOCOL_VERSION,
@@ -392,25 +396,27 @@ impl ComputerBroker {
                 computer_id,
             )?
         {
-            // A stale terminal outbox is discarded, never persisted or delivered.
-            if let computer_frame::Frame::ExecutionEvent(event) = &frame
-                && matches!(
-                    ExecutionEventKind::try_from(event.kind),
-                    Ok(ExecutionEventKind::Completed
-                        | ExecutionEventKind::Failed
-                        | ExecutionEventKind::Cancelled)
-                )
-            {
+            // Placement changes invalidate every event in the old attempt's
+            // outbox, including progress saved before its acknowledgement arrived.
+            // Stop any stale local run and let this Computer discard that outbox;
+            // none of the rejected data reaches storage or a Provider.
+            for frame in [
+                runtime_frame::Frame::CancelExecution(lankide_protocol::CancelExecution {
+                    execution: Some(*execution),
+                    force_close: true,
+                    reason: "placement_changed".into(),
+                }),
+                runtime_frame::Frame::ExecutionCommitted(lankide_protocol::ExecutionCommitted {
+                    execution: Some(*execution),
+                    committed_at: now_millis(),
+                }),
+            ] {
                 self.send_to(
                     computer_id,
                     instance_id,
                     RuntimeFrame {
-                        frame: Some(runtime_frame::Frame::ExecutionCommitted(
-                            lankide_protocol::ExecutionCommitted {
-                                execution: event.execution.clone(),
-                                committed_at: now_millis(),
-                            },
-                        )),
+                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                        frame: Some(frame),
                     },
                 )
                 .await?;
@@ -423,17 +429,11 @@ impl ComputerBroker {
                     .observe_computer(computer_id, now_millis(), None, None, None)?;
             }
             computer_frame::Frame::InventoryChanged(inventory) => {
-                let inventory = inventory
-                    .harnesses
-                    .iter()
-                    .cloned()
-                    .map(lankide_protocol::link::HarnessInfo::from)
-                    .collect::<Vec<_>>();
                 self.storage()?.observe_computer(
                     computer_id,
                     now_millis(),
                     Some(
-                        &serde_json::to_string(&inventory)
+                        &serde_json::to_string(&inventory.harnesses)
                             .map_err(|e| RuntimeError::Application(e.to_string()))?,
                     ),
                     None,
@@ -616,6 +616,7 @@ impl ComputerBroker {
                     computer_id,
                     instance_id,
                     RuntimeFrame {
+                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
                         frame: Some(runtime_frame::Frame::ExecutionEventAck(
                             lankide_protocol::ExecutionEventAck {
                                 execution: Some(execution),
@@ -630,6 +631,7 @@ impl ComputerBroker {
                         computer_id,
                         instance_id,
                         RuntimeFrame {
+                            protocol_version: lankide_protocol::PROTOCOL_VERSION,
                             frame: Some(runtime_frame::Frame::ExecutionCommitted(
                                 lankide_protocol::ExecutionCommitted {
                                     execution: Some(execution.clone()),
@@ -733,6 +735,7 @@ impl ComputerBroker {
                             computer_id,
                             instance_id,
                             RuntimeFrame {
+                                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                                 frame: Some(runtime_frame::Frame::CancelExecution(
                                     lankide_protocol::CancelExecution {
                                         execution: Some(ExecutionRef {
@@ -764,6 +767,7 @@ impl ComputerBroker {
                                 computer_id,
                                 instance_id,
                                 RuntimeFrame {
+                                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
                                     frame: Some(runtime_frame::Frame::CancelExecution(
                                         lankide_protocol::CancelExecution {
                                             execution: Some(ExecutionRef {
@@ -856,6 +860,7 @@ impl ComputerBroker {
         if let Err(error) = connection
             .sender
             .send(Ok(RuntimeFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::DeleteAgentFiles(
                     lankide_protocol::DeleteAgentFiles {
                         request_id: request_id.clone(),
@@ -944,6 +949,7 @@ impl ComputerBroker {
                 &computer,
                 &instance,
                 RuntimeFrame {
+                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
                     frame: Some(runtime_frame::Frame::CancelExecution(
                         lankide_protocol::CancelExecution {
                             force_close,
@@ -974,6 +980,7 @@ impl ComputerBroker {
                 && connection.instance_id == pending.instance_id
             {
                 let _ = connection.sender.try_send(Ok(RuntimeFrame {
+                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
                     frame: Some(runtime_frame::Frame::CancelExecution(
                         lankide_protocol::CancelExecution {
                             force_close: !supports(connection, &pending.harness_id, "cancel"),
@@ -1079,6 +1086,7 @@ fn supports(connection: &ComputerConnection, harness_id: &str, capability: &str)
 
 fn steer_frame(delivery: SteerDelivery) -> RuntimeFrame {
     RuntimeFrame {
+        protocol_version: lankide_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::DeliverSteer(
             lankide_protocol::DeliverSteer {
                 execution: Some(lankide_protocol::ExecutionRef {
@@ -1220,6 +1228,7 @@ impl ComputerExecutor for BrokerComputerExecutor {
             if connection
                 .sender
                 .send(Ok(RuntimeFrame {
+                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
                     frame: Some(runtime_frame::Frame::AssignExecution(assignment)),
                 }))
                 .await

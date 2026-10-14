@@ -4,7 +4,7 @@ use lankide_protocol::{
     *,
 };
 use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
-use prost::Message;
+
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -302,7 +302,12 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
     assert_eq!(download().send().await?.status(), 200);
     let response = invoke(&mut link, capability()).await?;
     assert_eq!(response.error_code, 0, "{response:?}");
-    assert!(CapabilityInvokeResult::decode(response.payload.as_slice())?.success);
+    assert!(
+        lankide_protocol::agent::decode::<lankide_protocol::CapabilityInvokeResult>(
+            response.payload.as_slice()
+        )?
+        .success
+    );
     // A valid token must also be rejected on another registered Computer.
     let second_id = second.id.clone();
     let second_home = tempfile::tempdir()?;
@@ -315,12 +320,17 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
     let response = invoke(&mut other_link, capability()).await?;
     assert_eq!(
         response.error_code,
-        tonic::Code::PermissionDenied as i32,
+        lankide_protocol::Code::PermissionDenied as i32,
         "{response:?}"
     );
     let response = invoke(&mut link, capability()).await?;
     assert_eq!(response.error_code, 0, "{response:?}");
-    assert!(CapabilityInvokeResult::decode(response.payload.as_slice())?.success);
+    assert!(
+        lankide_protocol::agent::decode::<lankide_protocol::CapabilityInvokeResult>(
+            response.payload.as_slice()
+        )?
+        .success
+    );
     let original = agent.view().await?;
     let database = rusqlite::Connection::open(rig.runtime_home().join("runtime.db"))?;
     let generation = || {
@@ -334,7 +344,12 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
     assert_eq!(download().send().await?.status(), 200);
     let response = invoke(&mut link, capability()).await?;
     assert_eq!(response.error_code, 0, "{response:?}");
-    assert!(CapabilityInvokeResult::decode(response.payload.as_slice())?.success);
+    assert!(
+        lankide_protocol::agent::decode::<lankide_protocol::CapabilityInvokeResult>(
+            response.payload.as_slice()
+        )?
+        .success
+    );
     for (offset, computer) in [&second_id, &original.computer_id].into_iter().enumerate() {
         let mut moved = agent.view().await?;
         moved.computer_id = computer.clone();
@@ -344,7 +359,7 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
         let response = invoke(&mut link, capability()).await?;
         assert_eq!(
             response.error_code,
-            tonic::Code::PermissionDenied as i32,
+            lankide_protocol::Code::PermissionDenied as i32,
             "{response:?}"
         );
     }
@@ -374,7 +389,7 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
     let response = invoke(&mut link, capability()).await?;
     assert_eq!(
         response.error_code,
-        tonic::Code::PermissionDenied as i32,
+        lankide_protocol::Code::PermissionDenied as i32,
         "{response:?}"
     );
     rig.close().await
@@ -387,7 +402,7 @@ async fn capability_link(url: &str, home: &std::path::Path) -> Result<link::Clie
     let mut link = link::connect(url, secret, DEFAULT_MAX_MESSAGE_BYTES).await?;
     link.send(link::ComputerFrame {
         protocol_version: PROTOCOL_VERSION,
-        frame: link::ComputerPayload::Hello(link::ComputerHello {
+        frame: Some(link::ComputerPayload::Hello(link::ComputerHello {
             device_credential: secret.into(),
             computer_id: credentials["computer_id"].as_str().unwrap().into(),
             instance_id: "placement-capabilities".into(),
@@ -401,7 +416,7 @@ async fn capability_link(url: &str, home: &std::path::Path) -> Result<link::Clie
                 availability: HarnessAvailability::Available as i32,
                 ..Default::default()
             }],
-        }),
+        })),
     })
     .await?;
     Ok(link)
@@ -413,14 +428,16 @@ async fn invoke(
 ) -> Result<link::CapabilityResponse> {
     link.send(link::ComputerFrame {
         protocol_version: PROTOCOL_VERSION,
-        frame: link::ComputerPayload::CapabilityRequest(link::CapabilityRequest {
-            request_id: request.invocation_id.clone(),
-            method: "invoke_capability".into(),
-            context: request.context.clone().map(Into::into),
-            payload: request.encode_to_vec(),
-            offset: 0,
-            eof: true,
-        }),
+        frame: Some(link::ComputerPayload::CapabilityRequest(
+            link::CapabilityRequest {
+                request_id: request.invocation_id.clone(),
+                method: "invoke_capability".into(),
+                context: request.context.clone(),
+                payload: lankide_protocol::agent::encode(&request).expect("capability JSON"),
+                offset: 0,
+                eof: true,
+            },
+        )),
     })
     .await?;
     Ok(timeout(Duration::from_secs(3), async {
@@ -429,7 +446,7 @@ async fn invoke(
                 .receive()
                 .await?
                 .ok_or("link ended before capability response")?;
-            if let link::RuntimePayload::CapabilityResponse(response) = frame.frame {
+            if let Some(link::RuntimePayload::CapabilityResponse(response)) = frame.frame {
                 assert_eq!(response.request_id, request.invocation_id);
                 assert!(response.eof);
                 assert_eq!(response.offset, 0);
@@ -438,4 +455,80 @@ async fn invoke(
         }
     })
     .await??)
+}
+
+#[tokio::test]
+async fn stale_unacknowledged_progress_is_discarded_without_disconnect_after_placement_change()
+-> Result<()> {
+    let mut rig = SystemRig::start(RigConfig {
+        network_proxy: true,
+        ..config()
+    })
+    .await?;
+    let first = rig
+        .management()
+        .get_computer_catalog(None)
+        .await?
+        .remove(0)
+        .id;
+    let second = rig.add_computer().await?;
+    let team = rig.workspace("team").await?;
+    let agent = team
+        .agent("bruce")
+        .computer(&first)
+        .harness(Script::Progress {
+            duration_ms: 60_000,
+            interval_ms: 20,
+        })
+        .create()
+        .await?;
+    team.direct_message(&agent, "alice", "work").await?;
+    agent.wait_until_running().await?;
+    rig.proxy.as_ref().unwrap().pause_replies();
+    timeout(Duration::from_secs(5), async {
+        loop {
+            if !rig.computer_state()?["pending_events"]
+                .as_object()
+                .unwrap()
+                .is_empty()
+            {
+                break Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await??;
+    let original = agent.view().await?;
+    rig.stop_computer()?;
+    let mut moved = original.clone();
+    moved.computer_id = second.id.clone();
+    rig.management().update_agent(moved, None).await?;
+    rig.management().update_agent(original, None).await?;
+    rig.proxy.as_ref().unwrap().restore();
+    // A new listener replaces the old proxy target. Use direct local discovery
+    // for the next Computer, retaining the same paired home and durable outbox.
+    rig.proxy = None;
+    drop(second);
+    rig.restart_runtime().await?;
+    timeout(Duration::from_secs(5), async {
+        loop {
+            if rig.computer_state()?["pending_events"]
+                .as_object()
+                .unwrap()
+                .is_empty()
+            {
+                break Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await??;
+    assert!(rig.computer_online().await?);
+    let agent = rig.existing_workspace("team").existing_agent("bruce");
+    assert_eq!(
+        rig.existing_workspace("team")
+            .dm_transcript(&agent, "alice"),
+        ["work"]
+    );
+    rig.close().await
 }

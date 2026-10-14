@@ -329,7 +329,7 @@ async fn local_secret_and_unknown_or_mismatched_devices_cannot_authorize_links()
     socket
         .send(link::ComputerFrame {
             protocol_version: lankide_protocol::PROTOCOL_VERSION,
-            frame: ComputerPayload::Hello(link::ComputerHello {
+            frame: Some(ComputerPayload::Hello(link::ComputerHello {
                 protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 computer_id: "unknown".into(),
                 device_credential: device.device_credential.clone(),
@@ -338,7 +338,7 @@ async fn local_secret_and_unknown_or_mismatched_devices_cannot_authorize_links()
                 os: "test".into(),
                 arch: "test".into(),
                 ..Default::default()
-            }),
+            })),
         })
         .await?;
     assert!(matches!(

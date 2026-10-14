@@ -1,8 +1,8 @@
 use crate::MAX_WORKSPACE_IMAGE_BYTES;
+use crate::Status;
 use crate::wire::*;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeSet, HashMap};
-use tonic::Status;
 
 pub fn validate_computer_hello(hello: &ComputerHello, expected_version: u32) -> Result<(), Status> {
     if hello.protocol_version != expected_version {

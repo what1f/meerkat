@@ -28,13 +28,13 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use lankide_protocol::Status;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::Status;
 
 const STEP: Duration = Duration::from_secs(4);
 const HARD_TIMEOUT: Duration = Duration::from_secs(35);
@@ -83,7 +83,7 @@ impl Peer {
     }
 }
 
-#[tonic::async_trait]
+#[async_trait::async_trait]
 impl lankide_protocol::ComputerPeer for Peer {
     async fn authorize_link(
         &self,
@@ -112,6 +112,7 @@ impl lankide_protocol::ComputerPeer for Peer {
         let (sender, receiver) = mpsc::channel(64);
         sender
             .send(Ok(RuntimeFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::Hello(RuntimeHello {
                     protocol_version: lankide_protocol::PROTOCOL_VERSION,
                     runtime_instance_id: "runtime-daemon-e2e".into(),
@@ -126,7 +127,7 @@ impl lankide_protocol::ComputerPeer for Peer {
     }
 }
 
-#[tonic::async_trait]
+#[async_trait::async_trait]
 impl RuntimePeer for Peer {
     async fn upload_resource(
         &self,
@@ -518,6 +519,7 @@ pub async fn run() -> Result<PathBuf, AppError> {
             "restart replay started another session",
         )?;
         peer.send(RuntimeFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::Shutdown(lankide_protocol::Shutdown {
                 reason: "runtime_shutdown".into(),
             })),
@@ -694,6 +696,7 @@ fn assign(
         });
     }
     RuntimeFrame {
+        protocol_version: lankide_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::AssignExecution(AssignExecution {
             execution: Some(execution(id)),
             workspace: Some(WorkspaceRef {
@@ -753,6 +756,7 @@ fn execution(id: i64) -> ExecutionRef {
 }
 fn cancel(id: i64) -> RuntimeFrame {
     RuntimeFrame {
+        protocol_version: lankide_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::CancelExecution(
             lankide_protocol::CancelExecution {
                 force_close: false,
@@ -764,6 +768,7 @@ fn cancel(id: i64) -> RuntimeFrame {
 }
 fn steer(id: i64, input: &str) -> RuntimeFrame {
     RuntimeFrame {
+        protocol_version: lankide_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::DeliverSteer(DeliverSteer {
             execution: Some(execution(id)),
             delivery: Some(Delivery {
@@ -780,6 +785,7 @@ fn steer(id: i64, input: &str) -> RuntimeFrame {
 }
 fn tool_result(id: i64) -> RuntimeFrame {
     RuntimeFrame {
+        protocol_version: lankide_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::ToolResult(ToolResult {
             execution: Some(execution(id)),
             tool_call_id: "call-1".into(),
@@ -988,6 +994,7 @@ async fn wait_tool_receipt(
 }
 async fn acknowledge(peer: &Peer, event: &ExecutionEvent) -> Result<(), AppError> {
     peer.send(RuntimeFrame {
+        protocol_version: lankide_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::ExecutionEventAck(ExecutionEventAck {
             execution: event.execution.clone(),
             max_saved_sequence: event.sequence,

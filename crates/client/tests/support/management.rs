@@ -235,7 +235,7 @@ impl MockManagementClient {
     }
 }
 
-#[tonic::async_trait]
+#[async_trait::async_trait]
 impl ManagementClient for MockManagementClient {
     async fn get_workspace_image(
         &self,

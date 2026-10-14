@@ -106,7 +106,7 @@ pub struct Readiness<'a> {
     pub status: &'static str,
     pub run_id: &'a str,
     pub runtime_instance_id: &'a str,
-    pub socket_path: &'a Path,
+    pub management_url: &'a str,
     pub management_ready: bool,
     pub computer_connected: bool,
 }
@@ -256,18 +256,6 @@ where
         },
     ));
 
-    // Keep the legacy socket as a local liveness marker. Management readiness
-    // and owner health are checked over authenticated HTTP, not this socket.
-    let listener = tokio::net::UnixListener::bind(&paths.socket)?;
-    let (server_shutdown_tx, mut server_shutdown_rx) = oneshot::channel();
-    let mut server = tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                _ = &mut server_shutdown_rx => return Ok::<_, io::Error>(()),
-                connection = listener.accept() => { drop(connection?); }
-            }
-        }
-    });
     let readiness = application.readiness();
     println!(
         "{}",
@@ -276,7 +264,7 @@ where
             status: readiness.state,
             run_id: &run_id,
             runtime_instance_id: &run_id,
-            socket_path: &paths.socket,
+            management_url: &format!("http://{management_address}"),
             management_ready: readiness.management_ready,
             computer_connected: readiness.computer_connected,
         })?
@@ -297,18 +285,6 @@ where
     provider_start.abort();
     let _ = provider_start.await;
     application.begin_shutdown().await?;
-    let _ = server_shutdown_tx.send(());
-    match tokio::time::timeout(Duration::from_secs(1), &mut server).await {
-        Ok(result) => result
-            .map_err(|_| AppError::Invariant("protocol server task failed"))?
-            .map_err(AppError::Io)?,
-        Err(_) => {
-            server.abort();
-            let _ = server.await;
-            let _ = std::fs::remove_file(&paths.socket);
-        }
-    }
-    let _ = fs::remove_file(&paths.socket);
     let _ = link_stop.send(());
     link_server
         .await
@@ -447,7 +423,7 @@ pub enum AppError {
     Runtime(lankide_runtime::RuntimeError),
     Storage(lankide_storage::StorageError),
     Protocol(lankide_protocol::TransportError),
-    Status(tonic::Status),
+    Status(lankide_protocol::Status),
     MissingHome,
     InvalidHome(&'static str),
     InvalidWorkspaceId,

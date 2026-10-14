@@ -1,10 +1,10 @@
 use super::*;
+use lankide_protocol::Status;
 use lankide_protocol::*;
 use lankide_provider::ResourceUpload;
 use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
 use tokio_stream::{StreamExt, wrappers::ReceiverStream};
-use tonic::Status;
 
 #[derive(Clone)]
 pub struct RuntimePeerAdapter {
@@ -19,7 +19,7 @@ impl RuntimePeerAdapter {
     }
 }
 
-#[tonic::async_trait]
+#[async_trait::async_trait]
 impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
     async fn authorize_link(
         &self,
@@ -78,15 +78,8 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                     &computer_id,
                     application::now_millis(),
                     Some(
-                        &serde_json::to_string(
-                            &hello
-                                .harnesses
-                                .iter()
-                                .cloned()
-                                .map(lankide_protocol::link::HarnessInfo::from)
-                                .collect::<Vec<_>>(),
-                        )
-                        .map_err(|_| Status::internal("inventory invalid"))?,
+                        &serde_json::to_string(&hello.harnesses)
+                            .map_err(|_| Status::internal("inventory invalid"))?,
                     ),
                     Some(&hello.os),
                     Some(&hello.computer_version),
@@ -141,6 +134,8 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                                                 &computer_id,
                                                 &instance_id,
                                                 RuntimeFrame {
+                                                    protocol_version:
+                                                        lankide_protocol::PROTOCOL_VERSION,
                                                     frame: Some(
                                                         runtime_frame::Frame::CapabilityResponse(
                                                             CapabilityResponse {
@@ -230,6 +225,8 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                                                 &computer_id,
                                                 &instance_id,
                                                 RuntimeFrame {
+                                                    protocol_version:
+                                                        lankide_protocol::PROTOCOL_VERSION,
                                                     frame: Some(runtime_frame::Frame::ToolResult(
                                                         tool_result,
                                                     )),
@@ -249,13 +246,16 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                                 }
                                 continue;
                             }
-                            if application
+                            if let Err(error) = application
                                 .computer_broker()
                                 .handle_frame(&computer_id, &instance_id, frame)
                                 .await
-                                .is_err()
                             {
-                                break;
+                                // Reject this stale attempt without dropping the authenticated
+                                // Computer link before its outbox-discard response can arrive.
+                                if !matches!(error, RuntimeError::InvalidExecutionToken) {
+                                    break;
+                                }
                             }
                         }
                         Err(_) => break,
@@ -288,7 +288,7 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
     }
 }
 
-#[tonic::async_trait]
+#[async_trait::async_trait]
 impl RuntimePeer for RuntimePeerAdapter {
     async fn upload_resource(
         &self,
@@ -814,12 +814,8 @@ pub(crate) fn status(error: RuntimeError) -> Status {
         | RuntimeError::ComputerRevoked
         | RuntimeError::HarnessUnavailableOnComputer => {
             let code = error.to_string();
-            let mut result = Status::failed_precondition("Check the request values and try again.");
-            result.metadata_mut().insert(
-                "lankide-error-code",
-                code.parse().expect("static error code"),
-            );
-            result
+            Status::failed_precondition("Check the request values and try again.")
+                .with_detail(Some(code))
         }
         RuntimeError::InvalidCore(_) => {
             Status::invalid_argument("Check the request values and try again.")

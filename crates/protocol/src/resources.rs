@@ -122,14 +122,14 @@ where
                             let response = if request.uri().path().starts_with(crate::management::PREFIX) {
                                 let credential = request.headers().get("authorization").and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
                                 if !owner.as_ref().is_some_and(|owner| owner.authorizes(credential)) {
-                                    crate::management_http::error(tonic::Status::unauthenticated("owner credential required"))
+                                    crate::management_http::error(crate::Status::unauthenticated("owner credential required"))
                                 } else if request.uri().path() == crate::management::EVENTS_PATH {
                                     let subscription = request.headers().get("x-lankide-subscription").and_then(|v| v.to_str().ok()).and_then(|v| serde_json::from_str::<crate::management::ManagementSubscription>(v).ok());
                                     match subscription {
-                                        None => crate::management_http::error(tonic::Status::invalid_argument("invalid event subscription")),
+                                        None => crate::management_http::error(crate::Status::invalid_argument("invalid event subscription")),
                                         Some(subscription) => {
                                             let service = crate::ValidatedRuntimeService::new(peer, config);
-                                            match service.subscribe_management_events(tonic::Request::new(subscription.into())).await {
+                                            match service.subscribe_management_events(crate::Request::new(subscription)).await {
                                                 Err(status) => crate::management_http::error(status),
                                                 Ok(events) => {
                                                     let mut handshake = Request::builder().method(request.method()).uri(request.uri()).body(()).expect("HTTP request");
@@ -256,11 +256,11 @@ async fn download<P: RuntimePeer>(request: Request<Incoming>, peer: P) -> Respon
         Ok(chunks) => chunks,
         Err(error) => {
             return empty(match error.code() {
-                tonic::Code::PermissionDenied | tonic::Code::Unauthenticated => {
+                crate::Code::PermissionDenied | crate::Code::Unauthenticated => {
                     StatusCode::FORBIDDEN
                 }
-                tonic::Code::NotFound => StatusCode::NOT_FOUND,
-                tonic::Code::InvalidArgument => StatusCode::BAD_REQUEST,
+                crate::Code::NotFound => StatusCode::NOT_FOUND,
+                crate::Code::InvalidArgument => StatusCode::BAD_REQUEST,
                 _ => StatusCode::INTERNAL_SERVER_ERROR,
             });
         }
