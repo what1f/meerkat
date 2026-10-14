@@ -6,6 +6,7 @@
 mod agent_profile;
 mod application;
 mod capability;
+mod capability_link;
 mod computer_broker;
 mod coordination;
 mod error;

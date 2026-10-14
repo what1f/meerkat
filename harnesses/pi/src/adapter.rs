@@ -131,6 +131,8 @@ impl PiHarness {
             ])
             .current_dir(&request.working_directory)
             .envs(&request.config.environment)
+            .env_remove("LANKIDE_RUNTIME_SOCKET")
+            .env_remove("LANKIDE_RUNTIME_URL")
             .env("PI_CODING_AGENT_DIR", &paths.agent_dir)
             .env("PI_CODING_AGENT_SESSION_DIR", &paths.session_dir)
             .stdin(Stdio::piped())

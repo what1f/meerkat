@@ -1,5 +1,10 @@
 use lankide_client::{AgentDraft, ClientError, ManagementClient};
+use lankide_protocol::{
+    link::{self, ComputerLink},
+    *,
+};
 use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use prost::Message;
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -282,11 +287,12 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
             .header("x-lankide-execution", &auth.execution)
             .header("x-lankide-attempt", &auth.attempt)
     };
-    let mut management = lankide_protocol::connect_uds(
-        rig.runtime_socket(),
-        lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES,
-    )
-    .await?;
+    // Replay through an authenticated Computer link, without heartbeat-driven
+    // cancellation masking the placement authorization being checked here.
+    rig.stop_computer()?;
+    let team = rig.existing_workspace("team");
+    let agent = team.existing_agent("bruce");
+    let mut link = capability_link(&url, rig.computer_home()).await?;
     let capability = || lankide_protocol::CapabilityInvokeRequest {
         context: Some(context.clone()),
         capability_name: "unread_current".into(),
@@ -294,13 +300,27 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
         invocation_id: "placement-read".into(),
     };
     assert_eq!(download().send().await?.status(), 200);
-    assert!(
-        management
-            .invoke_capability(capability())
-            .await?
-            .into_inner()
-            .success
+    let response = invoke(&mut link, capability()).await?;
+    assert_eq!(response.error_code, 0, "{response:?}");
+    assert!(CapabilityInvokeResult::decode(response.payload.as_slice())?.success);
+    // A valid token must also be rejected on another registered Computer.
+    let second_id = second.id.clone();
+    let second_home = tempfile::tempdir()?;
+    std::fs::copy(
+        second.home.path().join("computer-credentials.json"),
+        second_home.path().join("computer-credentials.json"),
+    )?;
+    drop(second);
+    let mut other_link = capability_link(&url, second_home.path()).await?;
+    let response = invoke(&mut other_link, capability()).await?;
+    assert_eq!(
+        response.error_code,
+        tonic::Code::PermissionDenied as i32,
+        "{response:?}"
     );
+    let response = invoke(&mut link, capability()).await?;
+    assert_eq!(response.error_code, 0, "{response:?}");
+    assert!(CapabilityInvokeResult::decode(response.payload.as_slice())?.success);
     let original = agent.view().await?;
     let database = rusqlite::Connection::open(rig.runtime_home().join("runtime.db"))?;
     let generation = || {
@@ -312,18 +332,28 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
     rig.management().update_agent(edited, None).await?;
     assert_eq!(generation()?, initial);
     assert_eq!(download().send().await?.status(), 200);
-    for (offset, computer) in [&second.id, &original.computer_id].into_iter().enumerate() {
+    let response = invoke(&mut link, capability()).await?;
+    assert_eq!(response.error_code, 0, "{response:?}");
+    assert!(CapabilityInvokeResult::decode(response.payload.as_slice())?.success);
+    for (offset, computer) in [&second_id, &original.computer_id].into_iter().enumerate() {
         let mut moved = agent.view().await?;
         moved.computer_id = computer.clone();
         rig.management().update_agent(moved, None).await?;
         assert_eq!(generation()?, initial + offset as i64 + 1);
         assert_eq!(download().send().await?.status(), 403);
-        assert!(management.invoke_capability(capability()).await.is_err());
+        let response = invoke(&mut link, capability()).await?;
+        assert_eq!(
+            response.error_code,
+            tonic::Code::PermissionDenied as i32,
+            "{response:?}"
+        );
     }
     // The generation and invalid token survive a Runtime restart.
     drop(database);
-    drop(second);
+    drop(other_link);
+    drop(link);
     rig.restart_runtime().await?;
+    rig.stop_computer()?;
     let (restarted_url, _) = rig.computer_endpoint()?;
     assert_eq!(
         client
@@ -340,5 +370,72 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
             .status(),
         403
     );
+    let mut link = capability_link(&restarted_url, rig.computer_home()).await?;
+    let response = invoke(&mut link, capability()).await?;
+    assert_eq!(
+        response.error_code,
+        tonic::Code::PermissionDenied as i32,
+        "{response:?}"
+    );
     rig.close().await
+}
+
+async fn capability_link(url: &str, home: &std::path::Path) -> Result<link::ClientLink> {
+    let credentials: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(home.join("computer-credentials.json"))?)?;
+    let secret = credentials["device_credential"].as_str().unwrap();
+    let mut link = link::connect(url, secret, DEFAULT_MAX_MESSAGE_BYTES).await?;
+    link.send(link::ComputerFrame {
+        protocol_version: PROTOCOL_VERSION,
+        frame: link::ComputerPayload::Hello(link::ComputerHello {
+            device_credential: secret.into(),
+            computer_id: credentials["computer_id"].as_str().unwrap().into(),
+            instance_id: "placement-capabilities".into(),
+            computer_version: "1".into(),
+            os: "test".into(),
+            arch: "test".into(),
+            protocol_version: PROTOCOL_VERSION,
+            harnesses: vec![link::HarnessInfo {
+                harness_id: "pi".into(),
+                display_name: "Pi".into(),
+                availability: HarnessAvailability::Available as i32,
+                ..Default::default()
+            }],
+        }),
+    })
+    .await?;
+    Ok(link)
+}
+
+async fn invoke(
+    link: &mut link::ClientLink,
+    request: CapabilityInvokeRequest,
+) -> Result<link::CapabilityResponse> {
+    link.send(link::ComputerFrame {
+        protocol_version: PROTOCOL_VERSION,
+        frame: link::ComputerPayload::CapabilityRequest(link::CapabilityRequest {
+            request_id: request.invocation_id.clone(),
+            method: "invoke_capability".into(),
+            context: request.context.clone().map(Into::into),
+            payload: request.encode_to_vec(),
+            offset: 0,
+            eof: true,
+        }),
+    })
+    .await?;
+    Ok(timeout(Duration::from_secs(3), async {
+        loop {
+            let frame = link
+                .receive()
+                .await?
+                .ok_or("link ended before capability response")?;
+            if let link::RuntimePayload::CapabilityResponse(response) = frame.frame {
+                assert_eq!(response.request_id, request.invocation_id);
+                assert!(response.eof);
+                assert_eq!(response.offset, 0);
+                return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(response);
+            }
+        }
+    })
+    .await??)
 }

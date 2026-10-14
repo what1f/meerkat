@@ -22,7 +22,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-const RUNTIME_SOCKET_ENV: &str = "LANKIDE_RUNTIME_SOCKET";
+const AGENT_SOCKET_ENV: &str = "LANKIDE_AGENT_SOCKET";
 const HARNESS_ID: &str = "codex";
 const RPC_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -54,11 +54,11 @@ impl CodexHarness {
         }
         if config
             .environment
-            .get(RUNTIME_SOCKET_ENV)
+            .get(AGENT_SOCKET_ENV)
             .is_some_and(|socket| !Path::new(socket).is_absolute())
         {
             return Err(HarnessError::invalid_config(
-                "LANKIDE_RUNTIME_SOCKET must be absolute",
+                "LANKIDE_AGENT_SOCKET must be absolute",
             ));
         }
         Ok(())
@@ -272,6 +272,8 @@ impl CodexSession {
         command
             .args(["app-server", "--listen", "stdio://"])
             .envs(&request.config.environment)
+            .env_remove("LANKIDE_RUNTIME_SOCKET")
+            .env_remove("LANKIDE_RUNTIME_URL")
             .env("CODEX_HOME", &codex_home)
             .current_dir(&request.working_directory)
             .stdin(Stdio::piped())

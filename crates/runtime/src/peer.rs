@@ -103,9 +103,64 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
         let application = self.application.clone();
         self.application
             .spawn_background(async move {
+                let mut capability_calls = crate::capability_link::CapabilityCalls::default();
                 while let Some(frame) = frames.next().await {
                     match frame {
                         Ok(frame) => {
+                            if let Some(computer_frame::Frame::CapabilityRequest(chunk)) =
+                                frame.frame.clone()
+                            {
+                                let request_id = chunk.request_id.clone();
+                                match capability_calls.accept(chunk) {
+                                    Ok(Some((request, permit))) => {
+                                        let application = application.clone();
+                                        let computer = computer_id.clone();
+                                        let instance = instance_id.clone();
+                                        let owner = application.clone();
+                                        if owner
+                                            .spawn_background(async move {
+                                                let _permit = permit;
+                                                crate::capability_link::respond(
+                                                    application,
+                                                    computer,
+                                                    instance,
+                                                    request,
+                                                )
+                                                .await;
+                                            })
+                                            .is_err()
+                                        {
+                                            break;
+                                        }
+                                    }
+                                    Ok(None) => {}
+                                    Err(error) => {
+                                        let _ = application
+                                            .computer_broker()
+                                            .send_frame(
+                                                &computer_id,
+                                                &instance_id,
+                                                RuntimeFrame {
+                                                    frame: Some(
+                                                        runtime_frame::Frame::CapabilityResponse(
+                                                            CapabilityResponse {
+                                                                request_id,
+                                                                eof: true,
+                                                                error_code: error.code() as i32,
+                                                                error_message: error
+                                                                    .message()
+                                                                    .into(),
+                                                                ..Default::default()
+                                                            },
+                                                        ),
+                                                    ),
+                                                },
+                                            )
+                                            .await;
+                                    }
+                                }
+                                continue;
+                            }
                             if let Some(computer_frame::Frame::ToolCall(call)) = frame.frame.clone()
                             {
                                 let application = application.clone();
@@ -744,7 +799,7 @@ impl RuntimePeer for RuntimePeerAdapter {
     }
 }
 
-fn status(error: RuntimeError) -> Status {
+pub(crate) fn status(error: RuntimeError) -> Status {
     match error {
         RuntimeError::UnknownWorkspace(_) => Status::not_found("Workspace not found."),
         RuntimeError::UnknownAgent { .. } => Status::not_found("Agent not found."),

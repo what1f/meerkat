@@ -24,7 +24,7 @@ path = "src/main.rs"
 
 [package.metadata.lankide.e2e]
 command = "cargo run -p lankide-cli --example e2e"
-scenario = "Use execution-scoped credentials over a real Runtime UDS to list and invoke capabilities, send content-file text with reply and force, upload an attachment, read content, and download a resource."
+scenario = "Use the real lankide binary through a private attempt proxy and authenticated WS with separate Runtime and Computer homes: list and invoke capabilities, update and read a profile, send content-file text with reply and force plus an attachment, read content, upload and download a multi-frame resource, reject wrong and finished tokens, and remove the socket at completion."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

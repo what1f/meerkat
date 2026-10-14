@@ -309,6 +309,7 @@ message ComputerFrame {
     ResourceTransferResult resource_transfer_result = 7;
     InventoryChanged inventory_changed = 8;
     DeleteAgentFilesResult delete_agent_files_result = 9;
+    CapabilityRequest capability_request = 10;
   }
 }
 
@@ -323,6 +324,7 @@ message RuntimeFrame {
     ExecutionCommitted execution_committed = 7;
     Shutdown shutdown = 8;
     DeleteAgentFiles delete_agent_files = 9;
+    CapabilityResponse capability_response = 10;
   }
 }
 
@@ -745,4 +747,22 @@ message UploadWorkspaceImageResponse {
   string request_id = 1;
   WorkspaceRef workspace = 2;
   ResourceRef resource = 3;
+}
+
+// Bounded chunks keep JSON frames below the link limit, including binary resources.
+message CapabilityRequest {
+  string request_id = 1;
+  string method = 2;
+  AgentRunContext context = 3;
+  bytes payload = 4;
+  uint64 offset = 5;
+  bool eof = 6;
+}
+message CapabilityResponse {
+  string request_id = 1;
+  bytes payload = 2;
+  uint64 offset = 3;
+  bool eof = 4;
+  int32 error_code = 5;
+  string error_message = 6;
 }

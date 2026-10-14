@@ -331,11 +331,15 @@ async fn prepare_assignment(
         &execution,
         &mut native_config,
     )?;
+    let proxy = super::proxy::AttemptProxy::start(inner.clone(), context.clone())?;
+    native_config
+        .environment
+        .retain(|key, _| !key.starts_with("LANKIDE_RUNTIME_"));
     // Execution credentials belong to this attempt, never to editable Agent configuration.
     native_config.environment.extend([
         (
-            "LANKIDE_RUNTIME_SOCKET".into(),
-            inner.socket_path.display().to_string(),
+            "LANKIDE_AGENT_SOCKET".into(),
+            proxy.path.display().to_string(),
         ),
         (
             "LANKIDE_EXECUTION_ID".into(),
@@ -513,6 +517,7 @@ async fn prepare_assignment(
         session,
         stream,
         terminated_rx,
+        proxy,
     ));
     Ok(())
 }

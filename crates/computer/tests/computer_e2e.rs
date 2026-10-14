@@ -23,6 +23,7 @@ use lankide_protocol::{
     RuntimeFrame, RuntimeFrameStream, RuntimeHello, RuntimePeer, SessionAction, SessionDirective,
     ToolDefinition, ToolResult, TransportConfig, WorkspaceRef, computer_frame, runtime_frame,
 };
+use prost::Message;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
@@ -200,7 +201,27 @@ impl lankide_protocol::ComputerPeer for Peer {
         tokio::spawn(async move {
             while let Some(frame) = frames.next().await {
                 match frame {
-                    Ok(frame) => {
+                    Ok(mut frame) => {
+                        if let Some(computer_frame::Frame::CapabilityRequest(request)) =
+                            &frame.frame
+                        {
+                            assert_eq!(request.method, "invoke_capability");
+                            assert!(request.eof);
+                            let call = lankide_protocol::CapabilityInvokeRequest::decode(
+                                request.payload.as_slice(),
+                            )
+                            .expect("capability request");
+                            let context = call.context.expect("run context");
+                            frame.frame = Some(computer_frame::Frame::ToolCall(
+                                lankide_protocol::ToolCall {
+                                    execution: context.execution,
+                                    tool_call_id: call.invocation_id,
+                                    tool_name: call.capability_name,
+                                    arguments_json: call.arguments_json,
+                                    execution_token: context.execution_token,
+                                },
+                            ));
+                        }
                         let _ = incoming.send(frame);
                     }
                     Err(_) => break,
@@ -1355,6 +1376,7 @@ async fn wait_tool_prefix(
     wait_assignment(receiver, id, true).await;
     let mut events = Vec::new();
     let mut saw_call = false;
+    let mut saw_started = false;
     loop {
         let frame = timeout(STEP, receiver.recv())
             .await
@@ -1376,14 +1398,14 @@ async fn wait_tool_prefix(
                     .as_ref()
                     .is_some_and(|execution| execution.execution_id == id) =>
             {
-                let tool_started = event.kind == ExecutionEventKind::ToolStarted as i32;
+                saw_started |= event.kind == ExecutionEventKind::ToolStarted as i32;
                 ack(peer, &event).await;
                 events.push(event);
-                if tool_started && saw_call {
-                    return events;
-                }
             }
             _ => {}
+        }
+        if saw_call && saw_started {
+            return events;
         }
     }
 }

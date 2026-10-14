@@ -6,6 +6,7 @@
 //! resources and management use HTTP on the same listener; management events use
 //! one WebSocket. Legacy Agent capabilities retain UDS/gRPC through [`RuntimePeer`].
 
+pub mod agent;
 pub mod link;
 mod peer;
 pub mod resources;
@@ -32,7 +33,8 @@ pub use peer::{
 };
 pub use service::ValidatedRuntimeService;
 pub use transport::{
-    TransportConfig, TransportError, connect_uds, connect_uds_lazy, serve_uds, socket_path,
+    TransportConfig, TransportError, connect_uds, connect_uds_lazy, serve_management_uds,
+    serve_uds, socket_path,
 };
 pub use validation::{validate_computer_hello, validate_runtime_frame};
 

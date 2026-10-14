@@ -956,11 +956,15 @@ async fn wait_tool_call(
     id: i64,
 ) -> Result<(), AppError> {
     loop {
-        if let Some(computer_frame::Frame::ToolCall(call)) = next_frame(receiver).await?.frame {
-            if call
-                .execution
-                .as_ref()
-                .is_some_and(|value| value.execution_id == id)
+        if let Some(computer_frame::Frame::CapabilityRequest(call)) =
+            next_frame(receiver).await?.frame
+        {
+            if call.method == "invoke_capability"
+                && call
+                    .context
+                    .as_ref()
+                    .and_then(|context| context.execution.as_ref())
+                    .is_some_and(|value| value.execution_id == id)
             {
                 return Ok(());
             }

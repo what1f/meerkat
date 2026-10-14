@@ -6,7 +6,7 @@ use lankide_harness::{
     AgentEvent, AgentEventKind, ExecuteRequest, HarnessSession, ToolResultError, ToolResultRequest,
 };
 use lankide_protocol::{
-    AgentRunContext, ComputerFrame, ExecutionEvent, ExecutionEventKind, ExecutionRef, ToolCall,
+    AgentRunContext, ComputerFrame, ExecutionEvent, ExecutionEventKind, ExecutionRef,
     computer_frame,
 };
 use std::path::PathBuf;
@@ -30,6 +30,7 @@ pub(super) async fn run_events(
     session: Arc<dyn HarnessSession>,
     mut stream: lankide_harness::AgentEventStream,
     mut terminated: tokio::sync::watch::Receiver<Option<AgentEventKind>>,
+    proxy: super::proxy::AttemptProxy,
 ) {
     let mut last_sequence = 0_u64;
     let mut stream_sequence = 0_u64;
@@ -110,17 +111,12 @@ pub(super) async fn run_events(
                                 .lock()
                                 .await
                                 .insert((key.clone(), tool_call_id.clone()));
-                            send_frame(
-                                &inner,
-                                ComputerFrame {
-                                    frame: Some(computer_frame::Frame::ToolCall(ToolCall {
-                                        execution: Some(execution.clone()),
-                                        tool_call_id: tool_call_id.clone(),
-                                        tool_name: tool_name.clone(),
-                                        arguments_json: arguments.to_string(),
-                                        execution_token: context.execution_token.clone(),
-                                    })),
-                                },
+                            super::proxy::harness_call(
+                                inner.clone(),
+                                context.clone(),
+                                tool_call_id.clone(),
+                                tool_name.clone(),
+                                arguments.to_string(),
                             )
                             .await;
                         }
@@ -216,6 +212,7 @@ pub(super) async fn run_events(
             },
         )
     });
+    drop(proxy);
     let _ = session.close().await;
     // Persist and enqueue the terminal event before removing the execution
     // from the active inventory. Otherwise a heartbeat can report the attempt

@@ -17,6 +17,7 @@ use lankide_storage::{
     AgentSpec, AttentionRecord, DatabaseConfig, DispatchReason, InboxDispatch, IngestEvent,
     MessageInput, Storage, WorkspaceSpec,
 };
+use prost::Message;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
@@ -484,52 +485,69 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    let mut agent_client = lankide_protocol::connect_uds(&paths.socket, DEFAULT_MAX_MESSAGE_BYTES)
-        .await
-        .map_err(AppError::Protocol)?;
-    let uploaded = agent_client
-        .upload_resource(tokio_stream::iter(vec![ResourceChunk {
-            transfer_id: "daemon-upload".into(),
-            resource_id: 0,
-            offset: 0,
-            bytes: resource_bytes.clone(),
-            eof: true,
-            descriptor: Some(ResourceDescriptor {
-                file_name: "daemon.txt".into(),
-                media_type: "text/plain".into(),
-                size_bytes: resource_bytes.len() as u64,
-                sha256: resource_sha,
-                context: Some(context.clone()),
-            }),
-        }]))
-        .await
-        .map_err(AppError::Status)?
-        .into_inner();
-    let mut download = agent_client
-        .download_resource(ResourceRequest {
+    let mut upload = Vec::new();
+    ResourceChunk {
+        transfer_id: "daemon-upload".into(),
+        resource_id: 0,
+        offset: 0,
+        bytes: resource_bytes.clone(),
+        eof: true,
+        descriptor: Some(ResourceDescriptor {
+            file_name: "daemon.txt".into(),
+            media_type: "text/plain".into(),
+            size_bytes: resource_bytes.len() as u64,
+            sha256: resource_sha,
+            context: Some(context.clone()),
+        }),
+    }
+    .encode_length_delimited(&mut upload)
+    .map_err(|_| AppError::Invariant("encode upload"))?;
+    let response = agent_call(
+        &computer_tx,
+        &mut runtime_frames,
+        &context,
+        "upload_resource",
+        upload,
+    )
+    .await?;
+    let uploaded = lankide_protocol::ResourceRef::decode(response.as_slice())
+        .map_err(|_| AppError::Invariant("decode upload"))?;
+    let response = agent_call(
+        &computer_tx,
+        &mut runtime_frames,
+        &context,
+        "download_resource",
+        ResourceRequest {
             resource_id: uploaded.resource_id,
             transfer_id: "daemon-download".into(),
             context: Some(context.clone()),
-        })
-        .await
+        }
+        .encode_to_vec(),
+    )
+    .await?;
+    let downloaded: Vec<u8> = lankide_protocol::agent::decode_chunks(&response)
         .map_err(AppError::Status)?
-        .into_inner();
-    let mut downloaded = Vec::new();
-    while let Some(chunk) = download.message().await.map_err(AppError::Status)? {
-        downloaded.extend(chunk.bytes);
-    }
+        .into_iter()
+        .flat_map(|chunk| chunk.bytes)
+        .collect();
     if downloaded != resource_bytes {
         return Err(AppError::Invariant("resource roundtrip mismatch"));
     }
-    let content = agent_client
-        .get_content(ContentRequest {
-            context: Some(context),
+    let response = agent_call(
+        &computer_tx,
+        &mut runtime_frames,
+        &context,
+        "get_content",
+        ContentRequest {
+            context: Some(context.clone()),
             kind: ContentKind::Message as i32,
             content_id: ingested.message_id.to_string(),
-        })
-        .await
-        .map_err(AppError::Status)?
-        .into_inner();
+        }
+        .encode_to_vec(),
+    )
+    .await?;
+    let content = lankide_protocol::ContentResult::decode(response.as_slice())
+        .map_err(|_| AppError::Invariant("decode content"))?;
     if content.content_markdown != "daemon trigger" {
         return Err(AppError::Invariant("content gateway mismatch"));
     }
@@ -936,4 +954,55 @@ fn verify_private_directory(path: &Path) -> Result<(), AppError> {
         return Err(AppError::Invariant("directory permissions are not 0700"));
     }
     Ok(())
+}
+
+async fn agent_call(
+    sender: &mpsc::Sender<ComputerFrame>,
+    frames: &mut ws::Messages,
+    context: &AgentRunContext,
+    method: &str,
+    payload: Vec<u8>,
+) -> Result<Vec<u8>, AppError> {
+    sender
+        .send(ComputerFrame {
+            frame: Some(computer_frame::Frame::CapabilityRequest(
+                lankide_protocol::CapabilityRequest {
+                    request_id: method.into(),
+                    method: method.into(),
+                    context: Some(context.clone()),
+                    payload,
+                    offset: 0,
+                    eof: true,
+                },
+            )),
+        })
+        .await
+        .map_err(|_| AppError::Invariant("capability link closed"))?;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let mut bytes = Vec::new();
+        loop {
+            let frame = frames
+                .message()
+                .await
+                .map_err(AppError::Status)?
+                .ok_or(AppError::Invariant("capability link closed"))?;
+            if let Some(runtime_frame::Frame::CapabilityResponse(response)) = frame.frame {
+                if response.request_id != method || response.offset != bytes.len() as u64 {
+                    return Err(AppError::Invariant("capability correlation mismatch"));
+                }
+                if response.error_code != 0 {
+                    return Err(AppError::Status(tonic::Status::new(
+                        tonic::Code::from_i32(response.error_code),
+                        response.error_message,
+                    )));
+                }
+                bytes.extend(response.payload);
+                if response.eof {
+                    return Ok(bytes);
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|_| AppError::Invariant("capability response timeout"))?
 }

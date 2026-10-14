@@ -13,11 +13,27 @@ use tonic::{Request, Response, Status, Streaming};
 #[derive(Clone)]
 pub struct ValidatedRuntimeService<P> {
     peer: P,
+    agent_calls_enabled: bool,
 }
 
 impl<P> ValidatedRuntimeService<P> {
+    pub fn management_only(mut self) -> Self {
+        self.agent_calls_enabled = false;
+        self
+    }
+    fn require_agent_calls(&self) -> Result<(), Status> {
+        if self.agent_calls_enabled {
+            Ok(())
+        } else {
+            Err(Status::unimplemented("agent_capabilities_require_computer"))
+        }
+    }
+
     pub const fn new(peer: P, _config: TransportConfig) -> Self {
-        Self { peer }
+        Self {
+            peer,
+            agent_calls_enabled: true,
+        }
     }
 }
 
@@ -32,6 +48,7 @@ where
         &self,
         request: Request<Streaming<ResourceChunk>>,
     ) -> Result<Response<ResourceRef>, Status> {
+        self.require_agent_calls()?;
         let mut inbound = request.into_inner();
         let (sender, receiver) = mpsc::channel(16);
         tokio::spawn(async move {
@@ -64,6 +81,7 @@ where
         &self,
         request: Request<ResourceRequest>,
     ) -> Result<Response<Self::DownloadResourceStream>, Status> {
+        self.require_agent_calls()?;
         validate_resource_request(request.get_ref())?;
         let request = request.into_inner();
         let mut chunks = self.peer.download_resource(request.clone()).await?;
@@ -94,6 +112,7 @@ where
         &self,
         request: Request<AgentRunContext>,
     ) -> Result<Response<CapabilityList>, Status> {
+        self.require_agent_calls()?;
         validate_agent_run_context(Some(request.get_ref()))?;
         Ok(Response::new(
             self.peer.list_capabilities(request.into_inner()).await?,
@@ -104,6 +123,7 @@ where
         &self,
         request: Request<AgentRunContext>,
     ) -> Result<Response<AgentProfile>, Status> {
+        self.require_agent_calls()?;
         validate_agent_run_context(Some(request.get_ref()))?;
         let response = self.peer.get_self_profile(request.into_inner()).await?;
         validate_agent_profile(&response)?;
@@ -114,6 +134,7 @@ where
         &self,
         request: Request<UpdateSelfProfileRequest>,
     ) -> Result<Response<AgentProfile>, Status> {
+        self.require_agent_calls()?;
         let input = request.get_ref();
         validate_agent_run_context(input.context.as_ref())?;
         if input.name.is_none()
@@ -142,6 +163,7 @@ where
         &self,
         request: Request<CapabilityInvokeRequest>,
     ) -> Result<Response<CapabilityInvokeResult>, Status> {
+        self.require_agent_calls()?;
         let input = request.get_ref();
         validate_agent_run_context(input.context.as_ref())?;
         require_text(&input.capability_name, "capability_name")?;
@@ -156,6 +178,7 @@ where
         &self,
         request: Request<SendMessageRequest>,
     ) -> Result<Response<SendMessageResult>, Status> {
+        self.require_agent_calls()?;
         let input = request.get_ref();
         validate_agent_run_context(input.context.as_ref())?;
         require_text(&input.channel_id, "channel_id")?;
@@ -171,6 +194,7 @@ where
         &self,
         request: Request<ContentRequest>,
     ) -> Result<Response<ContentResult>, Status> {
+        self.require_agent_calls()?;
         let input = request.get_ref();
         validate_agent_run_context(input.context.as_ref())?;
         ContentKind::try_from(input.kind)

@@ -22,7 +22,7 @@ pub struct RunConfig {
 
 impl RunConfig {
     pub fn from_environment() -> Result<Self, CliError> {
-        let socket = required_env("LANKIDE_RUNTIME_SOCKET")?.into();
+        let socket = required_env("LANKIDE_AGENT_SOCKET")?.into();
         let agent_home = required_env("LANKIDE_AGENT_HOME")?.into();
         let execution_id = required_env("LANKIDE_EXECUTION_ID")?
             .parse()
@@ -46,7 +46,7 @@ impl RunConfig {
 
     fn context(&self) -> Result<wire::AgentRunContext, CliError> {
         if !self.socket.is_absolute() {
-            return Err(CliError::Config("LANKIDE_RUNTIME_SOCKET must be absolute"));
+            return Err(CliError::Config("LANKIDE_AGENT_SOCKET must be absolute"));
         }
         if !self.agent_home.is_absolute() {
             return Err(CliError::Config("LANKIDE_AGENT_HOME must be absolute"));
@@ -70,7 +70,7 @@ pub enum CliError {
     Usage(String),
     Io(std::io::Error),
     Transport(String),
-    Runtime(String),
+    Runtime(tonic::Status),
     Decode(String),
 }
 
@@ -81,7 +81,12 @@ impl std::fmt::Display for CliError {
             Self::Usage(message) => write!(formatter, "usage: {message}"),
             Self::Io(error) => write!(formatter, "file operation failed: {error}"),
             Self::Transport(message) => write!(formatter, "Runtime is unavailable: {message}"),
-            Self::Runtime(message) => write!(formatter, "request failed: {message}"),
+            Self::Runtime(error) => write!(
+                formatter,
+                "request failed: {}: {}",
+                error.code(),
+                error.message()
+            ),
             Self::Decode(message) => write!(formatter, "response is invalid: {message}"),
         }
     }
@@ -590,7 +595,7 @@ fn parse_json_or_string(value: &str) -> Value {
 }
 
 fn status(error: tonic::Status) -> CliError {
-    CliError::Runtime(format!("{}: {}", error.code(), error.message()))
+    CliError::Runtime(error)
 }
 
 fn required_env(name: &'static str) -> Result<String, CliError> {

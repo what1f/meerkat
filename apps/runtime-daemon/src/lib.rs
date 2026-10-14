@@ -2,7 +2,7 @@
 
 pub use lankide_daemon_runtime::InstanceGuard;
 use lankide_daemon_runtime::{DaemonRuntimeError, create_private_directory};
-use lankide_protocol::{DEFAULT_MAX_MESSAGE_BYTES, PROTOCOL_VERSION, TransportConfig, serve_uds};
+use lankide_protocol::TransportConfig;
 use lankide_provider::{HostServices, Provider, ProviderError, ProviderHost, ProviderInfo};
 use lankide_runtime::{
     ProviderFactoryFuture, ProviderFactoryRegistry, ProviderOnboarding, ProviderTypeFactory,
@@ -256,37 +256,18 @@ where
         },
     ));
 
-    // The management plane only depends on local storage and recovery. Publish
-    // it before resuming external Provider connections so the Desktop can
-    // render persisted data while the Runtime restores background work.
-    let (server_shutdown_tx, server_shutdown_rx) = oneshot::channel();
-    let socket = paths.socket.clone();
-    let mut server = tokio::spawn(serve_uds(
-        socket.clone(),
-        RuntimePeerAdapter::new(application.clone()),
-        TransportConfig {
-            protocol_version: PROTOCOL_VERSION,
-            max_message_bytes: DEFAULT_MAX_MESSAGE_BYTES,
-        },
-        async move {
-            let _ = server_shutdown_rx.await;
-        },
-    ));
-    for _ in 0..200 {
-        if socket.exists() {
-            break;
+    // Keep the legacy socket as a local liveness marker. Management readiness
+    // and owner health are checked over authenticated HTTP, not this socket.
+    let listener = tokio::net::UnixListener::bind(&paths.socket)?;
+    let (server_shutdown_tx, mut server_shutdown_rx) = oneshot::channel();
+    let mut server = tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                _ = &mut server_shutdown_rx => return Ok::<_, io::Error>(()),
+                connection = listener.accept() => { drop(connection?); }
+            }
         }
-        if server.is_finished() {
-            return server
-                .await
-                .map_err(|_| AppError::Invariant("protocol server task failed"))?
-                .map_err(AppError::Protocol);
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    if !socket.exists() {
-        return Err(AppError::Invariant("runtime socket was not ready"));
-    }
+    });
     let readiness = application.readiness();
     println!(
         "{}",
@@ -303,7 +284,7 @@ where
     io::stdout().flush()?;
 
     // Active Providers must keep running for background message reception, but
-    // their network startup must not hold the management socket hostage.
+    // their network startup must not delay management readiness.
     let provider_start = {
         let application = application.clone();
         tokio::spawn(async move {
@@ -320,13 +301,14 @@ where
     match tokio::time::timeout(Duration::from_secs(1), &mut server).await {
         Ok(result) => result
             .map_err(|_| AppError::Invariant("protocol server task failed"))?
-            .map_err(AppError::Protocol)?,
+            .map_err(AppError::Io)?,
         Err(_) => {
             server.abort();
             let _ = server.await;
             let _ = std::fs::remove_file(&paths.socket);
         }
     }
+    let _ = fs::remove_file(&paths.socket);
     let _ = link_stop.send(());
     link_server
         .await
