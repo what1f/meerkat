@@ -55,13 +55,10 @@ Computer rejected it, requested correction, and eventually failed with
 `completion_protocol` (`crates/computer/src/host/events.rs`). Runtime then retried
 the unread message. This rig bug caused all three settle timeouts.
 
-During S0.3, Runtime can log `storage_invalid: active execution` until the next
-Computer heartbeat. Disconnect removes the scheduler's pending completion and
-marks the execution recovering (`crates/runtime/src/computer_broker.rs`), while
-`crates/runtime/src/application.rs` starts scheduling again before heartbeat
-reconciliation releases that execution. Storage correctly rejects the second
-active execution (`crates/storage/src/execution.rs`). This transient log does
-not block recovery. Task 0 makes no production change for it.
+Disconnect keeps the scheduler's completion waiter and marks the execution
+recovering. The Agent remains reserved until completion, lease expiry, or a
+heartbeat reporting the attempt absent. A reconnected Computer becomes available
+only after its first active-attempt report is reconciled.
 
 ## Execution liveness (Task 6)
 
@@ -182,3 +179,24 @@ atomic rename and directory sync, with mode 0600. Local devices rediscover the
 Runtime URL; paired remote devices use the stored URL. Revocation stops the
 real Computer daemon with `computer_revoked`, including a child process using a
 copied home.
+
+Recovery regression scenarios:
+
+```sh
+cargo test -p lankide-system-e2e --test reconnect_recovery_e2e
+cargo test -p lankide-system-e2e --test retry_policy_e2e ownership_conflicts
+```
+
+The first holds an active native run through four observed disconnect/re-adoption
+cycles while new messages arrive for the same Agent. The original batch replies
+once; queued messages then run together in a second batch and reply once in their
+own chat. Every offline and re-adopted state is observed before the next step.
+The second supplies six identical structured ownership conflicts at the native
+Harness boundary, then a transient failure and success. Real Runtime policy
+keeps the work queued without spending the failure budget or sending a notice.
+The Computer module's parallel-run business scenario separately verifies that a
+real `agent_busy` rejection has category `conflict` and is retryable.
+
+The recovery file also holds a run offline past its lease, reconnects the same
+Computer, and verifies forced cleanup of the expired run, release of its durable
+terminal outbox, and exactly one successful queued retry.

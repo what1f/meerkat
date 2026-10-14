@@ -14,6 +14,13 @@ impl Runtime {
                 .and_then(|f| f.get("category"))
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("transient");
+            if category == "conflict" {
+                self.storage.retry_execution_conflict(
+                    id,
+                    failed_at.saturating_add(self.config.retry.base_ms.max(1)),
+                )?;
+                continue;
+            }
             let cancelled = self.storage.execution(id)?.state
                 == lankide_storage::ExecutionState::Cancelled
                 || category == "cancelled";

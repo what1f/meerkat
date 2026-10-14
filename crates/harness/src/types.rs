@@ -342,6 +342,8 @@ pub enum FailureCategory {
     Authentication,
     RateLimit,
     Transient,
+    /// Runtime and Computer disagree about ownership of an active run.
+    Conflict,
     Agent,
     Cancelled,
     Timeout,

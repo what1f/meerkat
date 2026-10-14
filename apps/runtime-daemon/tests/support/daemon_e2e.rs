@@ -412,6 +412,20 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     if !matches!(first.frame, Some(runtime_frame::Frame::Hello(_))) {
         return Err(AppError::Invariant("Runtime hello missing"));
     }
+    // As on the production Computer, report attempts before accepting new work.
+    computer_tx
+        .send(ComputerFrame {
+            frame: Some(computer_frame::Frame::Heartbeat(
+                lankide_protocol::ComputerHeartbeat {
+                    computer_id: "computer-a".into(),
+                    instance_id: "instance-a".into(),
+                    sent_at: 0,
+                    active_attempts: Vec::new(),
+                },
+            )),
+        })
+        .await
+        .map_err(|_| AppError::Invariant("Computer heartbeat channel closed"))?;
     let assignment = tokio::time::timeout(Duration::from_secs(4), async {
         loop {
             let frame = runtime_frames

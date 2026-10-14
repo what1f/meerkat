@@ -135,6 +135,8 @@ pub fn scripted_failure(text: &str) -> HarnessFailure {
         FailureCategory::Configuration
     } else if text.contains("rate limit") {
         FailureCategory::RateLimit
+    } else if text.contains("ownership conflict") {
+        FailureCategory::Conflict
     } else if text.contains("transient") {
         FailureCategory::Transient
     } else if text.contains("authentication") {
@@ -149,7 +151,10 @@ pub fn scripted_failure(text: &str) -> HarnessFailure {
     HarnessFailure {
         code: "scripted_failure".into(),
         category,
-        retryable: category == FailureCategory::RateLimit,
+        retryable: matches!(
+            category,
+            FailureCategory::RateLimit | FailureCategory::Conflict
+        ),
         detail: text.into(),
     }
 }

@@ -1354,8 +1354,8 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         .disconnect("computer-attempt", "instance-stable")
         .map_err(err)?;
     ensure(
-        execution_task.await.map_err(err)?.is_err(),
-        "disconnect releases waiting execution",
+        !execution_task.is_finished(),
+        "disconnect preserves the waiting execution",
     )?;
     ensure(
         runtime
@@ -1410,6 +1410,16 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         .handle_frame("computer-attempt", "instance-stable", completed.clone())
         .await
         .map_err(err)?;
+    let completion = tokio::time::timeout(Duration::from_secs(2), execution_task)
+        .await
+        .map_err(err)?
+        .map_err(err)?
+        .map_err(|error| error.code)?;
+    ensure(
+        completion.delivery_accepted
+            && matches!(completion.outcome, ComputerOutcome::Succeeded { .. }),
+        "re-adopted waiter keeps acceptance and receives completion",
+    )?;
     ensure(
         matches!(
             resumed.next().await,
@@ -2494,7 +2504,14 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
                 .execution_attempt(execution.execution_id, 1)
                 .unwrap()
                 .unwrap();
-            if current.lease_expires_at == heartbeat_at + 15_000 {
+            let observed_at = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64;
+            // Leases use Runtime receipt time, not the peer's send timestamp.
+            if current.lease_expires_at >= heartbeat_at + 15_000
+                && current.lease_expires_at <= observed_at + 15_000
+            {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(5)).await;
@@ -4454,6 +4471,21 @@ async fn configured_assignment_scenario() {
             })
             .unwrap();
         let _ = connection.next().await.unwrap().unwrap();
+        broker
+            .handle_frame(
+                "local",
+                "config-audit",
+                ComputerFrame {
+                    frame: Some(computer_frame::Frame::Heartbeat(ComputerHeartbeat {
+                        computer_id: "local".into(),
+                        instance_id: "config-audit".into(),
+                        sent_at: 0,
+                        active_attempts: Vec::new(),
+                    })),
+                },
+            )
+            .await
+            .unwrap();
         state
             .emit(message(
                 &ChannelId::new("chat").unwrap(),

@@ -92,23 +92,58 @@ async fn s9_1_newer_computer_gets_a_typed_rejection_visible_in_management() -> R
             .map(|frame| frame.frame),
         Some(link::RuntimePayload::Hello(_))
     ));
-    let catalog = management
+    // Hold the active-attempt report at the link boundary. A hello alone must
+    // not make the Computer available, even with an otherwise healthy socket.
+    let before_report = management
         .get_computer_catalog(lankide_protocol::CatalogRequest {
-            request_id: "compatible-reconnect".into(),
+            request_id: "before-reconciliation".into(),
             workspace: None,
         })
         .await?
         .into_inner();
-    let computer = catalog
-        .computers
-        .iter()
-        .find(|computer| computer.computer_id == credentials.computer_id)
-        .unwrap();
     assert_eq!(
-        computer.observed_state,
-        lankide_protocol::ObservedState::Running as i32
+        before_report
+            .computers
+            .iter()
+            .find(|computer| computer.computer_id == credentials.computer_id)
+            .unwrap()
+            .observed_state,
+        lankide_protocol::ObservedState::Stopped as i32
     );
-    assert!(computer.status_message.is_empty());
+    // Availability requires the first active-attempt report, as on the real peer.
+    compatible
+        .send(ComputerFrame {
+            protocol_version: PROTOCOL_VERSION,
+            frame: ComputerPayload::Heartbeat(link::ComputerHeartbeat {
+                computer_id: credentials.computer_id.clone(),
+                instance_id: "first".into(),
+                sent_at: 0,
+                active_attempts: Vec::new(),
+            }),
+        })
+        .await?;
+    timeout(Duration::from_secs(3), async {
+        loop {
+            let catalog = management
+                .get_computer_catalog(lankide_protocol::CatalogRequest {
+                    request_id: "compatible-reconnect".into(),
+                    workspace: None,
+                })
+                .await?
+                .into_inner();
+            let computer = catalog
+                .computers
+                .iter()
+                .find(|computer| computer.computer_id == credentials.computer_id)
+                .unwrap();
+            if computer.observed_state == lankide_protocol::ObservedState::Running as i32 {
+                assert!(computer.status_message.is_empty());
+                return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await??;
     compatible.close(CloseReason::Shutdown).await?;
     rig.close().await
 }

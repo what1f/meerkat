@@ -58,6 +58,15 @@ impl Runtime {
             })?;
         self.apply_pending_failure_policies(workspace_id, agent_id)
             .await?;
+        // Recovery after Runtime restart has no in-memory waiter. Storage still
+        // owns the Agent until the attempt is completed or declared lost.
+        if !self
+            .storage
+            .active_execution_ids_for_agent(workspace_id, agent_id)?
+            .is_empty()
+        {
+            return Ok(ExecutionProgress::Idle);
+        }
         let execution_token = if agent.execution_token.is_empty() {
             generate_execution_token()?
         } else {
