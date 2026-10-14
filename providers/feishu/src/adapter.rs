@@ -1007,6 +1007,28 @@ impl NormalizedEventSink for FeishuEventBridge {
     }
 }
 
+fn receiving_agent(
+    context: &InitContext,
+    handle: &Handle,
+    app_id: &str,
+) -> Result<Option<AgentId>, crate::events::SinkError> {
+    let (_, directory) = handle
+        .block_on(crate::identity::load(context.storage()))
+        .map_err(|error| crate::events::SinkError(error.to_string()))?;
+    let mut receivers = directory
+        .agents
+        .iter()
+        .filter(|(_, identity)| identity.app_id == app_id)
+        .filter_map(|(id, _)| AgentId::new(id.clone()).ok());
+    let receiver = receivers.next();
+    // An ambiguous account binding must not leak a DM to either Agent.
+    Ok(if receivers.next().is_none() {
+        receiver
+    } else {
+        None
+    })
+}
+
 fn normalized_event_to_provider(
     context: &InitContext,
     client: &SharedClient,
@@ -1118,7 +1140,13 @@ fn normalized_event_to_provider(
                 .collect();
             let provider_data = serde_json::to_value(&message)
                 .map_err(|error| crate::events::SinkError(error.to_string()))?;
+            let receiving_agent_id = if message.channel_id == "private_chat" {
+                receiving_agent(context, handle, &message.app_id)?
+            } else {
+                None
+            };
             Ok(ProviderEvent {
+                receiving_agent_id,
                 channel_id: channel(&message.channel_id),
                 provider_chat_id: message.chat_id,
                 sender,
@@ -1149,9 +1177,29 @@ fn normalized_event_to_provider(
             let provider_data = serde_json::to_value(&reaction)
                 .map_err(|error| crate::events::SinkError(error.to_string()))?;
             let action = reaction.action;
-            let provider_chat_id = reaction.chat_id.unwrap_or_default();
+            // Feishu reaction callbacks omit chat identity. Resolve the target
+            // through the same App before choosing a channel or recipient.
+            let target = client
+                .get_message(&reaction.target_provider_message_id, auth)
+                .map_err(|error| crate::events::SinkError(error.to_string()))?;
+            let direct = match target.chat_type.as_str() {
+                "p2p" => true,
+                "group" => false,
+                _ => {
+                    return Err(crate::events::SinkError(
+                        "Feishu reaction target chat type is missing".into(),
+                    ));
+                }
+            };
+            let receiving_agent_id = if direct {
+                receiving_agent(context, handle, &reaction.app_id)?
+            } else {
+                None
+            };
+            let provider_chat_id = target.chat_id;
             Ok(ProviderEvent {
-                channel_id: channel("group_chat"),
+                receiving_agent_id,
+                channel_id: channel(if direct { "private_chat" } else { "group_chat" }),
                 provider_chat_id,
                 sender: sender.clone(),
                 kind: ProviderEventKind::Reaction(ReactionEvent {
@@ -1164,6 +1212,7 @@ fn normalized_event_to_provider(
             })
         }
         NormalizedEvent::ChatUpdated(update) => Ok(ProviderEvent {
+            receiving_agent_id: None,
             channel_id: channel("group_chat"),
             provider_chat_id: update.chat_id.clone(),
             sender: EventSender {
@@ -1189,6 +1238,7 @@ fn normalized_event_to_provider(
             let target_agent_ids =
                 crate::agent_tasks::target_agents_for_task(&directory, client, auth, &task.task_id);
             Ok(ProviderEvent {
+                receiving_agent_id: None,
                 channel_id: channel("task"),
                 provider_chat_id: "tasks".to_owned(),
                 sender: EventSender {

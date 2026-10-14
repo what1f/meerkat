@@ -53,7 +53,25 @@ impl Runtime {
                 channel_id: event.channel_id.clone(),
             })?;
         drop(channels);
-        let agents = provider.agents.read().await.clone();
+        let mut agents = provider.agents.read().await.clone();
+        let receiving_agent_id = if channel.default_attention
+            == ChannelDefaultAttention::DirectMessage
+        {
+            let Some(receiver) = event
+                .receiving_agent_id
+                .as_ref()
+                .filter(|id| agents.contains_key(*id))
+            else {
+                eprintln!(
+                    "[runtime] warning: workspace={workspace_id} direct message dropped: missing or unknown receiving Agent"
+                );
+                return Ok(CoordinatedEvent::Dropped);
+            };
+            agents.retain(|id, _| id == receiver);
+            Some(receiver.clone())
+        } else {
+            None
+        };
         let provider_id = self.storage.workspace(workspace_id)?.provider_id;
         let occurred_at = event.occurred_at_millis().unwrap_or(now);
         let chat_name = event
@@ -97,6 +115,7 @@ impl Runtime {
                     .map(resource_view)
                     .collect::<Result<Vec<_>, _>>()?;
                 let result = self.storage.ingest_event(IngestEvent {
+                    receiving_agent_id: receiving_agent_id.clone(),
                     workspace_id: workspace_id.clone(),
                     provider_id,
                     channel_id: event.channel_id.clone(),
@@ -189,6 +208,7 @@ impl Runtime {
                     )
                 });
                 let result = self.storage.record_reaction(IncomingReaction {
+                    receiving_agent_id,
                     workspace_id: workspace_id.clone(),
                     provider_id,
                     channel_id: event.channel_id,
@@ -231,6 +251,7 @@ impl Runtime {
                     .map(|value| format!("custom-event:{value}"))
                     .unwrap_or_else(|| format!("custom-object:{}", custom.subject_id));
                 let result = self.storage.ingest_event(IngestEvent {
+                    receiving_agent_id: receiving_agent_id.clone(),
                     workspace_id: workspace_id.clone(),
                     provider_id,
                     channel_id: event.channel_id,
@@ -361,6 +382,7 @@ pub enum AttentionPolicy {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CoordinatedEvent {
+    Dropped,
     Message {
         result: IngestResult,
         auto_reaction_errors: Vec<String>,

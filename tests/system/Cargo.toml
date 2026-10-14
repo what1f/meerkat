@@ -7,6 +7,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+lankide-protocol = { path = "../../crates/protocol" }
 lankide-core = { path = "../../crates/core" }
 lankide-provider = { path = "../../crates/provider" }
 lankide-runtime = { path = "../../crates/runtime" }
@@ -32,7 +33,7 @@ bench = false
 
 [package.metadata.lankide.e2e]
 command = "cargo test -p lankide-system-e2e"
-scenario = "Mention one Agent in a group, queue a message during its run, and restart the Computer during a run; verify chat replies and execution isolation through both real daemons."
+scenario = "Mention one Agent in a group, queue a message during its run, and restart the Computer during a run; S1.1 routes a DM only to its receiving Agent, S1.2 isolates two bot conversations with the same person, and S1.3 preserves unmentioned group attention policies through both real daemons."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

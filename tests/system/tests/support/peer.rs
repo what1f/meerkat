@@ -43,6 +43,20 @@ fn main() {
         let command: Value = serde_json::from_str(&line.expect("command")).expect("command JSON");
         match command["op"].as_str() {
             Some("execute") => {
+                let input = command["request"]["input"]
+                    .as_str()
+                    .expect("snapshot input");
+                let mut journal = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(std::env::var("LANKIDE_SYSTEM_INPUTS").expect("input journal"))
+                    .expect("open journal");
+                writeln!(
+                    journal,
+                    "{}",
+                    serde_json::to_string(input).expect("input JSON")
+                )
+                .expect("record input");
                 sequence = 0;
                 event(&mut sequence, json!({"kind":"started"}));
                 let (text, delay) = match &script {

@@ -143,7 +143,15 @@ impl Provider for ScriptedProvider {
                 None => None,
             };
             let mut sends = self.state.outbound.lock().expect("outbound");
-            let id = format!("sent-{}", sends.len() + 1);
+            let count = sends
+                .iter()
+                .filter(|send| {
+                    send.workspace == context.workspace_id.as_str()
+                        && send.account == account
+                        && send.chat == context.chat_id
+                })
+                .count();
+            let id = format!("sent-{}", count + 1);
             sends.push(Outbound {
                 order: self.state.order.fetch_add(1, Ordering::SeqCst),
                 workspace: context.workspace_id.to_string(),

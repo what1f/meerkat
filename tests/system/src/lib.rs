@@ -376,8 +376,7 @@ impl<'a> Workspace<'a> {
         .await
     }
     pub async fn direct_message(&self, agent: &Agent<'_>, person: &str, text: &str) -> Result<()> {
-        // Keep the actual platform chat identity shared across bots. Task 1
-        // adds the receiving-Agent contract; this metadata does not fix routing.
+        // Telegram uses the person ID as the private chat ID for every bot.
         self.message(
             "private_chat",
             person,
@@ -387,6 +386,58 @@ impl<'a> Workspace<'a> {
             &[],
         )
         .await
+    }
+    pub async fn unaddressed_direct_message(&self, person: &str, text: &str) -> Result<()> {
+        self.message("private_chat", person, person, text, None, &[])
+            .await
+    }
+    pub async fn direct_reaction(
+        &self,
+        agent: &Agent<'_>,
+        person: &str,
+        target: &str,
+        event_id: &str,
+    ) -> Result<()> {
+        let sink = self
+            .rig
+            .im
+            .sinks
+            .lock()
+            .expect("sinks")
+            .get(&self.id)
+            .expect("workspace IM")
+            .clone();
+        let receiver = self
+            .rig
+            .im
+            .accounts
+            .lock()
+            .expect("accounts")
+            .iter()
+            .find(|((workspace, _), account)| {
+                workspace == &self.id && account.as_str() == agent.account.as_str()
+            })
+            .and_then(|((_, id), _)| AgentId::new(id.clone()).ok());
+        let sender = EventSender {
+            id: person.into(),
+            kind: EventSenderType::Human,
+            name: person.into(),
+        };
+        sink.emit(ProviderEvent {
+            receiving_agent_id: receiver,
+            channel_id: ChannelId::new("private_chat")?,
+            provider_chat_id: person.into(),
+            sender: sender.clone(),
+            kind: ProviderEventKind::Reaction(lankide_provider::ReactionEvent {
+                target_provider_message_id: target.into(),
+                sender,
+                reaction: "thumbs_up".into(),
+                action: lankide_provider::ReactionAction::Add,
+            }),
+            provider_data: json!({"event_id":event_id}),
+        })
+        .await?;
+        Ok(())
     }
     async fn message(
         &self,
@@ -408,9 +459,39 @@ impl<'a> Workspace<'a> {
             .expect("workspace IM")
             .clone();
         let order = self.rig.im.order.fetch_add(1, Ordering::SeqCst);
-        sink.emit(ProviderEvent { channel_id: ChannelId::new(channel)?, provider_chat_id: chat.into(),
+        let receiving_agent_id = account.and_then(|account| {
+            self.rig
+                .im
+                .accounts
+                .lock()
+                .expect("accounts")
+                .iter()
+                .find(|((workspace, _), registered)| {
+                    workspace == &self.id && registered.as_str() == account
+                })
+                .and_then(|((_, agent), _)| AgentId::new(agent.clone()).ok())
+        });
+        let provider_message_id = if let Some(account) = account {
+            let received = self
+                .rig
+                .im
+                .incoming
+                .lock()
+                .expect("incoming")
+                .iter()
+                .filter(|message| {
+                    message.workspace == self.id
+                        && message.chat == chat
+                        && message.account.as_deref() == Some(account)
+                })
+                .count();
+            format!("incoming-{}", received + 1)
+        } else {
+            format!("incoming-{id}")
+        };
+        sink.emit(ProviderEvent { receiving_agent_id, channel_id: ChannelId::new(channel)?, provider_chat_id: chat.into(),
             sender: EventSender { id: person.into(), kind: EventSenderType::Human, name: person.into() },
-            kind: ProviderEventKind::Message(MessageEvent { provider_message_id: format!("incoming-{id}"), content: text.into(), reply_to_provider_message_id: None, mentioned_agent_ids: mentions.to_vec(), attachments: Vec::new() }),
+            kind: ProviderEventKind::Message(MessageEvent { provider_message_id, content: text.into(), reply_to_provider_message_id: None, mentioned_agent_ids: mentions.to_vec(), attachments: Vec::new() }),
             provider_data: json!({"event_id":format!("event-{id}"), "chat_name":chat, "receiving_account":account}) }).await?;
         self.rig
             .im
@@ -496,6 +577,15 @@ impl<'a> AgentBuilder<'a> {
                     cli_path: self.rig.config.harness_executable.display().to_string(),
                     environment_variables: vec![
                         (
+                            "LANKIDE_SYSTEM_INPUTS".into(),
+                            self.rig
+                                .home
+                                .path()
+                                .join(format!("inputs-{}-{}.jsonl", self.workspace, self.name))
+                                .display()
+                                .to_string(),
+                        ),
+                        (
                             "LANKIDE_SYSTEM_SCRIPT".into(),
                             serde_json::to_string(&self.script)?,
                         ),
@@ -539,6 +629,52 @@ pub struct Execution {
     pub trigger_messages: Vec<String>,
 }
 impl Agent<'_> {
+    pub async fn group_attention(&self, mode: lankide_protocol::AttentionMode) -> Result<()> {
+        let mut client = lankide_protocol::connect_uds_lazy(
+            &self.rig.paths.socket,
+            lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES,
+        );
+        client
+            .update_agent(lankide_protocol::UpdateAgentRequest {
+                request_id: format!("attention-{}-{}", self.workspace, self.id),
+                agent: Some(lankide_protocol::AgentRef {
+                    workspace_id: self.workspace.clone(),
+                    agent_id: self.id.clone(),
+                }),
+                attention: Some(lankide_protocol::AgentAttention {
+                    channels: vec![lankide_protocol::ChannelAttention {
+                        channel_id: "group_chat".into(),
+                        mode: mode as i32,
+                        interval_minutes: 0,
+                    }],
+                }),
+                ..Default::default()
+            })
+            .await?;
+        Ok(())
+    }
+    pub fn inbox_count(&self) -> Result<i64> {
+        Ok(self.rig.database()?.query_row(
+            "SELECT count(*) FROM agent_inbox_items WHERE workspace_id=?1 AND agent_id=?2",
+            params![self.workspace, self.id],
+            |row| row.get(0),
+        )?)
+    }
+    pub fn harness_inputs(&self) -> Result<Vec<String>> {
+        let path = self
+            .rig
+            .home
+            .path()
+            .join(format!("inputs-{}-{}.jsonl", self.workspace, self.id));
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        std::fs::read_to_string(path)?
+            .lines()
+            .map(|line| serde_json::from_str(line).map_err(Into::into))
+            .collect()
+    }
+
     pub async fn release_run(&self) -> Result<()> {
         std::fs::write(
             self.rig

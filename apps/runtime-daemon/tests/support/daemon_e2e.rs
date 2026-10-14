@@ -245,6 +245,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     deletable_agent.thinking = "low".into();
     storage.upsert_agent_record(deletable_agent)?;
     let ingested = storage.ingest_event(IngestEvent {
+        receiving_agent_id: None,
         workspace_id: active_workspace.clone(),
         provider_id: fixture,
         channel_id: channel_id.clone(),
