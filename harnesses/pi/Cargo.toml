@@ -14,6 +14,7 @@ tokio.workspace = true
 tokio-stream.workspace = true
 
 [dev-dependencies]
+tempfile.workspace = true
 serde.workspace = true
 lankide-testkit = { path = "../../crates/testkit" }
 
@@ -23,4 +24,12 @@ scenario = "Start and resume a Pi Native Session, execute a native shell command
 prerequisites = "Pi CLI; deepseek-v4-flash; harness-live prerequisite probe"
 classification = "live"
 unattended = "yes after live opt-in and preflight"
+status = "implemented"
+
+[package.metadata.lankide.e2e-hermetic]
+command = "cargo test -p lankide-harness-pi --test output_record_e2e"
+scenario = "Stream ten thousand Pi deltas through a configured native CLI, retain final events without streaming deltas, and rotate bounded output records."
+prerequisites = "Python 3"
+classification = "hermetic"
+unattended = "yes"
 status = "implemented"

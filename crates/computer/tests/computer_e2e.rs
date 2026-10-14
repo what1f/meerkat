@@ -460,6 +460,19 @@ async fn computer_e2e() {
         .await;
         let reader_events = collect_terminal(&peer, &mut incoming_rx, 1, true).await;
         assert!(payloads(&reader_events).contains("content-from-file"));
+        let diagnostics_path = workspace_root.join(".computer/diagnostics/1-1/diagnostics.json");
+        let diagnostics: serde_json::Value =
+            serde_json::from_slice(&fs::read(&diagnostics_path).expect("attempt diagnostics"))
+                .expect("diagnostics JSON");
+        assert_eq!(diagnostics["execution_id"], 1);
+        assert_eq!(diagnostics["attempt"], 1);
+        assert_eq!(
+            diagnostics["output_record"],
+            workspace_root
+                .join(".computer/diagnostics/1-1/rpc.jsonl")
+                .display()
+                .to_string()
+        );
 
         fs::write(
             content_home.join("tool-message.md"),
