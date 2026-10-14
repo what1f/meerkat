@@ -32,3 +32,17 @@ A partial review, changed screenshot, missing scenario, changed source/binary or
 live owned process fails the gate. This checks evidence integrity; the reviewer is
 responsible for the truth of visual observations. A local debug review cannot be
 reused for a different release binary.
+
+Task 14 scenarios:
+
+- `first-launch-local-computer`: launch the product Desktop in a fresh private
+  home. In Settings, the local Computer appears online without a pairing dialog.
+- `computer-list-offline`: pair a second Computer through the product daemon,
+  connect it, then stop it. In Settings and the Agent create/edit selector, both
+  Computers remain visible with the second offline. Revoked Computers are absent.
+  Create an Agent on the chosen Computer and save an edited placement; verify it
+  through management. A new form defaults to the local Computer.
+- `pairing-code-dialog`: Add Computer opens a compact code dialog. Copy produces
+  the displayed code. A loopback-only listener shows no command. A remotely
+  addressed listener also shows a copyable `lankide-computer-daemon pair` command.
+  Check English and Chinese copy, including online/offline state, in both themes.

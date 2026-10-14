@@ -27,6 +27,9 @@ objc2-foundation = "0.3.2"
 objc2-service-management = { version = "0.3.2", default-features = false, features = ["std", "SMAppService", "objc2", "objc2-foundation"] }
 
 [dev-dependencies]
+lankide-system-e2e = { path = "../../tests/system" }
+lankide-computer-daemon = { path = "../computer-daemon" }
+tempfile.workspace = true
 tokio-stream.workspace = true
 gpui = { workspace = true, features = ["test-support"] }
 gpui_platform = { workspace = true, features = ["test-support"] }
@@ -37,8 +40,16 @@ path = "src/main.rs"
 
 [package.metadata.lankide.e2e]
 command = "./apps/desktop/visual-e2e.sh"
-scenario = "Review the actual production window across the complete Workspace, Agent, onboarding, resource-image, light and dark scenario set; verify exact source/binary/baseline evidence and owned process cleanup. The bootstrap scenario also proves an unbundled Desktop with a private default home starts transient helpers when no owner runs, and reuses healthy owners without spawning helpers. New Agent creation uses the sole registered non-revoked Computer through the ManagementClient without additional UI copy."
+scenario = "Review the actual production window across the complete Workspace, Agent, onboarding, resource-image, light and dark scenario set; verify exact source/binary/baseline evidence and owned process cleanup. The bootstrap scenario also proves an unbundled Desktop with a private default home starts transient helpers when no owner runs, and reuses healthy owners without spawning helpers. First launch shows the self-paired local Computer online without a code. Settings and Agent create/edit list registered non-revoked Computers including an offline Computer; new forms default to the local Computer and save explicit placement. Add Computer shows a copyable pairing code and a command only for a remotely addressed listener, localized in English and Chinese."
 prerequisites = "macOS window session; authorized live Provider accounts; four product binaries; completed human or Computer Use review via LANKIDE_VISUAL_REVIEW"
 classification = "visual-semantic"
 unattended = "no; requires actual-window review"
+status = "implemented"
+
+[package.metadata.lankide.e2e-additional.desktop-computers]
+command = "cargo build --locked --bin lankide-computer-daemon && cargo test -p lankide-desktop --test computer_pairing_e2e"
+scenario = "Use the real system rig through the production Desktop UI: reflect local self-pairing without a code, retain an offline Computer, hide revoked Computers, create on the local default and edit placement to the offline Computer, and pair another Computer with the copied dialog code while hiding a loopback command."
+prerequisites = "GPUI test platform; private daemon homes"
+classification = "hermetic"
+unattended = "yes"
 status = "implemented"

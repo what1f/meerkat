@@ -26,6 +26,7 @@ fn main() {
         .expect("desktop startup result receiver");
     let _tokio_guard = backend.enter();
     let client = backend.client.clone();
+    let local_home = backend.local_home.clone();
     gpui_platform::application()
         .with_assets(Assets)
         .run(move |cx: &mut App| {
@@ -98,6 +99,7 @@ fn main() {
                         LankideApp::new_with_startup(
                             client,
                             startup_result,
+                            local_home,
                             initial_dark,
                             window,
                             cx,

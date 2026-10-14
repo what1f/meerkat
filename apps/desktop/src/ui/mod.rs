@@ -35,6 +35,8 @@ const BOOT_LOADER_MIN_VISIBLE: Duration = Duration::from_millis(600);
 
 mod agent_actions;
 mod components;
+mod computers;
+pub(crate) use computers::local_computer_id;
 mod dialogs;
 mod errors;
 pub(super) mod onboarding;
@@ -44,6 +46,7 @@ mod workspace_actions;
 
 use agent_actions::{new_environment_row, selected_harness_id};
 use components::*;
+use computers::ComputerChoice;
 use errors::friendly_error;
 pub(super) use onboarding::localized_agent_onboarding_copy;
 use onboarding::telegram_bot_username;
@@ -70,6 +73,7 @@ enum Page {
 enum Modal {
     CreateWorkspace { step: usize },
     CreateAgent,
+    PairComputer,
     EditAgent(String),
     DeleteAgent(String),
     AgentOnboarding(AgentOnboardingState),
@@ -211,6 +215,14 @@ pub struct LankideApp {
     agent_model_error: Option<UiMessage>,
     agent_provider_handle_error: Option<UiMessage>,
     agent_secret_error: Option<UiMessage>,
+    local_computer_id: Option<String>,
+    pairing_address: Option<String>,
+    computers: Vec<lankide_client::ComputerOption>,
+    computer_request: u64,
+    pairing_code: Option<lankide_client::PairingCode>,
+    pairing_loading: bool,
+    pairing_request: u64,
+    agent_computer: Entity<SelectState<Vec<ComputerChoice>>>,
     agent_harness: Entity<SelectState<Vec<HarnessChoice>>>,
     agent_thinking: Entity<SelectState<Vec<ThinkingChoice>>>,
     agent_reaction: Option<String>,
@@ -293,6 +305,7 @@ impl LankideApp {
     pub fn new_with_startup(
         client: Arc<dyn ManagementClient>,
         startup_result: tokio::sync::oneshot::Receiver<Result<(), ClientError>>,
+        local_home: std::path::PathBuf,
         initial_dark: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -304,7 +317,10 @@ impl LankideApp {
             let _ = this.update(cx, |this, cx| {
                 this.startup_pending = false;
                 match result {
-                    Ok(Ok(())) => this.reload_workspaces(cx),
+                    Ok(Ok(())) => {
+                        this.read_local_computer(&local_home);
+                        this.reload_workspaces(cx);
+                    }
                     Ok(Err(error)) => {
                         // Drop the pending workspace retry so it cannot clear this error.
                         this.workspace_request += 1;
@@ -412,6 +428,8 @@ impl LankideApp {
                 cx,
             )
         });
+        let agent_computer =
+            cx.new(|cx| SelectState::new(Vec::<ComputerChoice>::new(), None, window, cx));
         let language_select = cx.new(|cx| {
             SelectState::new(
                 vec!["简体中文".into(), "English".into()],
@@ -628,6 +646,14 @@ impl LankideApp {
             agent_model_error: None,
             agent_provider_handle_error: None,
             agent_secret_error: None,
+            local_computer_id: None,
+            pairing_address: None,
+            computers: Vec::new(),
+            computer_request: 0,
+            pairing_code: None,
+            pairing_loading: false,
+            pairing_request: 0,
+            agent_computer,
             agent_harness,
             agent_thinking,
             agent_reaction: None,
@@ -710,6 +736,8 @@ impl LankideApp {
         cx: &mut Context<Self>,
     ) {
         self.language = language;
+        let selected = self.agent_computer.read(cx).selected_value().cloned();
+        self.update_computer_choices(selected, window, cx);
         for (input, zh, en) in [
             (
                 &self.workspace_id_input,

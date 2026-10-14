@@ -136,8 +136,8 @@ impl Provider for ScriptedProvider {
                 ),
                 context.new_provider_agent_config["account"]
                     .as_str()
-                    .expect("bot account")
-                    .into(),
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| format!("bot-{}", context.agent_id)),
             );
             Ok(())
         })

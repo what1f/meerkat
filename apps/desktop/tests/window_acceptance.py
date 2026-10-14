@@ -15,6 +15,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[3]
 SCENARIOS = (
+    "first-launch-local-computer", "computer-list-offline", "pairing-code-dialog",
     "empty-state", "agent-list", "agent-list-hover", "feishu-create-agent",
     "telegram-create-agent", "edit-agent", "edit-agent-reaction", "edit-agent-advanced",
     "workspace-settings", "create-workspace", "create-workspace-provider", "agent-onboarding",

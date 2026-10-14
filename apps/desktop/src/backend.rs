@@ -12,6 +12,7 @@ const SOCKET_ENV: &str = "LANKIDE_RUNTIME_SOCKET";
 
 pub struct DesktopBackend {
     pub client: Arc<dyn ManagementClient>,
+    pub local_home: PathBuf,
     pub startup_error: Option<ClientError>,
     startup_result: Option<tokio::sync::oneshot::Receiver<Result<(), ClientError>>>,
     _tokio: tokio::runtime::Runtime,
@@ -60,6 +61,7 @@ impl DesktopBackend {
 
         Self {
             client: Arc::new(client),
+            local_home: home.clone(),
             startup_error: None,
             startup_result: Some(startup_result),
             _tokio: tokio,
@@ -93,6 +95,7 @@ impl DesktopBackend {
         match client {
             Ok(client) => Self {
                 client: Arc::new(client),
+                local_home: home.clone(),
                 startup_error: None,
                 startup_result: None,
                 _tokio: tokio,
@@ -106,6 +109,7 @@ impl DesktopBackend {
                 };
                 Self {
                     client: Arc::new(client),
+                    local_home: home.clone(),
                     startup_error: Some(error),
                     startup_result: None,
                     _tokio: tokio,
@@ -187,7 +191,11 @@ pub fn run_local_bootstrap_smoke() -> i32 {
             let catalog = backend
                 ._tokio
                 .block_on(backend.client.get_computer_catalog(None));
-            if catalog.is_ok_and(|items| items.iter().any(|item| item.available)) {
+            if catalog.is_ok_and(|items| {
+                items
+                    .iter()
+                    .any(|item| local_computer_online(&lankide_home(), item))
+            }) {
                 computer_connected = true;
                 break;
             }
@@ -203,6 +211,7 @@ pub fn run_local_bootstrap_smoke() -> i32 {
         "status": status,
         "runtime_ready": runtime_ready,
         "computer_connected": computer_connected,
+        "local_computer_id": crate::ui::local_computer_id(&lankide_home()),
         "management": management,
     });
     let write_result = result_path
@@ -249,7 +258,7 @@ async fn ensure_computer_ready(
         .get_computer_catalog(None)
         .await?
         .iter()
-        .any(|item| item.available)
+        .any(|item| local_computer_online(home, item))
     {
         return Ok(());
     }
@@ -259,7 +268,7 @@ async fn ensure_computer_ready(
             .get_computer_catalog(None)
             .await?
             .iter()
-            .any(|item| item.available)
+            .any(|item| local_computer_online(home, item))
         {
             return Ok(());
         }
@@ -273,4 +282,12 @@ async fn ensure_computer_ready(
     Err(ClientError::Unavailable(
         "本地执行服务尚未就绪，请稍后重试。".into(),
     ))
+}
+
+fn local_computer_online(home: &Path, computer: &lankide_client::ComputerOption) -> bool {
+    let id = crate::ui::local_computer_id(home);
+    computer.registered
+        && computer.revoked_at.is_none()
+        && computer.available
+        && id.as_deref() == Some(computer.id.as_str())
 }

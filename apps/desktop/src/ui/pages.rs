@@ -45,7 +45,8 @@ impl LankideApp {
                         div()
                             .id("nav-settings")
                             .debug_selector(|| "nav-settings".into())
-                            .on_click(cx.listener(|this, _, _, cx| {
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.reload_computers(None, window, cx);
                                 this.page = Page::Settings;
                                 cx.notify();
                             }))
@@ -823,6 +824,7 @@ impl LankideApp {
                 true,
             ))
             .child(self.runtime_status_card(cx))
+            .child(self.computer_settings(cx))
             .child(desktop_settings_section_title(
                 self.tr("语言", "Language"),
                 false,

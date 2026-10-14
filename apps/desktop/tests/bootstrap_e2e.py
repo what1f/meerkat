@@ -135,6 +135,9 @@ def run(binary_dir, artifact_dir):
                     if failed_helper is None:
                         assert code == 0 and payload["status"] == "passed", payload
                         assert payload["runtime_ready"] and payload["computer_connected"] and payload["management"], payload
+                        credentials = json.loads((home / "computer-credentials.json").read_text())
+                        assert credentials["local_discovery"] and credentials["computer_id"] != "local", "first launch did not self-pair"
+                        assert payload["local_computer_id"] == credentials["computer_id"], "Desktop waited for another Computer"
                         for name in ("lankide-runtime-daemon", "lankide-computer-daemon"):
                             assert (home / "logs" / f"{name}.log").is_file(), "Desktop did not start its helper"
                     else:

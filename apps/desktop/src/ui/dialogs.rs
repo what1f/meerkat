@@ -43,6 +43,7 @@ impl LankideApp {
             Some(Modal::CreateWorkspace { step }) => {
                 self.workspace_dialog(dialog, app, step, window, cx)
             }
+            Some(Modal::PairComputer) => self.pair_computer_dialog(dialog, app, window),
             Some(Modal::CreateAgent) => self.agent_dialog(dialog, app, None, window, cx),
             Some(Modal::EditAgent(id)) => self.agent_dialog(dialog, app, Some(id), window, cx),
             Some(Modal::DeleteAgent(id)) => self.delete_agent_dialog(dialog, app, id, window),
@@ -411,6 +412,7 @@ impl LankideApp {
         let cli_input = self.agent_cli_input.clone();
         let provider_handle_input = self.agent_provider_handle_input.clone();
         let secret_input = self.agent_secret_input.clone();
+        let computer = self.agent_computer.clone();
         let harness = self.agent_harness.clone();
         let thinking = self.agent_thinking.clone();
         let reaction_options = self.reaction_options.clone();
@@ -485,17 +487,18 @@ impl LankideApp {
         let preview_bio = input_value(&self.agent_bio_input, cx);
         let preview_model = input_value(&self.agent_model_input, cx);
         let preview_harness = selected_harness_id(&self.agent_harness, cx);
-        let desired_dialog_height = px(if is_edit && advanced_open {
-            850.
-        } else if is_edit {
-            760.
-        } else if provider_id == "telegram" {
-            720.
-        } else if !mode_new {
-            620.
-        } else {
-            540.
-        });
+        let desired_dialog_height = px(80.
+            + if is_edit && advanced_open {
+                850.
+            } else if is_edit {
+                760.
+            } else if provider_id == "telegram" {
+                720.
+            } else if !mode_new {
+                620.
+            } else {
+                540.
+            });
         let viewport = window.viewport_size();
         let dialog_height = desired_dialog_height.min((viewport.height - px(48.)).max(px(480.)));
         let dialog_width =
@@ -760,6 +763,11 @@ impl LankideApp {
                             ),
                     );
                 }
+                form = form.child(DesktopFormField::new(
+                    theme, language.text("电脑", "Computer"),
+                    div().debug_selector(|| "agent-computer-select".into())
+                        .child(DesktopSelect::large(&computer).w_full()),
+                ));
                 form = form.child(
                     div()
                         .flex()
