@@ -26,6 +26,10 @@ const CANCEL_GRACE: Duration = Duration::from_secs(3);
 const CLOSE_GRACE: Duration = Duration::from_secs(2);
 const TOOL_UI_TITLE: &str = "lankide-tool-result";
 
+/// Pi RPC adapter. `HarnessConfig.environment` accepts
+/// `LANKIDE_PI_RECORD_MAX_BYTES` (default 4 MiB, minimum 256 bytes),
+/// `LANKIDE_PI_ARTIFACT_DIR`, and an optional `LANKIDE_PI_RECORD_PATH`.
+/// Records keep one previous segment and bounded previews of oversized events.
 #[derive(Clone, Debug)]
 pub struct PiHarness {
     info: HarnessInfo,
@@ -74,6 +78,19 @@ impl PiHarness {
             _ => {}
         }
 
+        let record_limit = request
+            .config
+            .environment
+            .get("LANKIDE_PI_RECORD_MAX_BYTES")
+            .map(|value| {
+                value
+                    .parse::<u64>()
+                    .ok()
+                    .filter(|limit| *limit >= 256)
+                    .ok_or_else(|| HarnessError::invalid_config("invalid Pi record size limit"))
+            })
+            .transpose()?
+            .unwrap_or(4 * 1024 * 1024);
         let paths = SessionPaths::prepare(&request)?;
         if let Some(session_id) = request.native_session_id.as_deref() {
             validate_session_file(&paths.session_dir, &request.working_directory, session_id)?;
@@ -138,7 +155,7 @@ impl PiHarness {
         })?;
         let (line_sender, line_receiver) = std_mpsc::channel();
         let rpc_artifact = paths.rpc_artifact.clone();
-        thread::spawn(move || read_jsonl(stdout, line_sender, &rpc_artifact));
+        thread::spawn(move || read_jsonl(stdout, line_sender, &rpc_artifact, record_limit));
         if let Err(error) = write_line(&mut stdin, &json!({"id":"lankide-bind","type":"get_state"}))
         {
             reap(&mut child, paths.pid_journal.as_deref(), true);
@@ -373,14 +390,19 @@ impl SessionPaths {
             .environment
             .get("LANKIDE_PI_ARTIFACT_DIR")
             .map(PathBuf::from)
-            .unwrap_or_else(|| session_dir.clone());
+            .unwrap_or_else(|| base.join("records"));
         fs::create_dir_all(&artifact_dir).map_err(io_error("create Pi artifact dir"))?;
         let suffix = unique();
         Ok(Self {
             agent_dir,
             extension_path: session_dir.join(format!("lankide-extension-{suffix}.ts")),
             stderr_path: artifact_dir.join(format!("pi-{suffix}.stderr.log")),
-            rpc_artifact: artifact_dir.join(format!("pi-{suffix}.rpc.jsonl")),
+            rpc_artifact: request
+                .config
+                .environment
+                .get("LANKIDE_PI_RECORD_PATH")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| artifact_dir.join(format!("pi-{suffix}.rpc.jsonl"))),
             session_dir,
             pid_journal,
         })
@@ -1289,21 +1311,29 @@ fn read_jsonl(
     stdout: impl std::io::Read,
     sender: std_mpsc::Sender<Result<String, std::io::Error>>,
     artifact: &Path,
+    record_limit: u64,
 ) {
     let mut reader = BufReader::new(stdout);
-    let mut artifact = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(artifact)
-        .ok();
+    let mut record = OutputRecord {
+        path: artifact.to_owned(),
+        limit: record_limit,
+    };
     loop {
         let mut line = String::new();
         match reader.read_line(&mut line) {
             Ok(0) => return,
             Ok(_) => {
-                if let Some(file) = artifact.as_mut() {
-                    let _ = file.write_all(line.as_bytes());
-                    let _ = file.flush();
+                let value = serde_json::from_str::<Value>(&line)
+                    .unwrap_or_else(|_| json!({"type": "invalid_output", "line": line}));
+                let streaming = (value.get("type").and_then(Value::as_str)
+                    == Some("message_update")
+                    && value
+                        .pointer("/assistantMessageEvent/type")
+                        .and_then(Value::as_str)
+                        .is_some_and(|kind| kind.ends_with("_delta")))
+                    || value.get("type").and_then(Value::as_str) == Some("tool_execution_update");
+                if !streaming {
+                    let _ = record.append(value);
                 }
                 if line.ends_with('\n') {
                     line.pop();
@@ -1320,6 +1350,79 @@ fn read_jsonl(
                 return;
             }
         }
+    }
+}
+
+// Keep one previous segment. Oversized events retain bounded string previews.
+struct OutputRecord {
+    path: PathBuf,
+    limit: u64,
+}
+
+impl OutputRecord {
+    fn append(&mut self, mut value: Value) -> std::io::Result<()> {
+        let mut bytes = serde_json::to_vec(&value)?;
+        if bytes.len() as u64 + 1 > self.limit {
+            if let Value::Object(fields) = &mut value {
+                fields.insert("record_truncated".into(), Value::Bool(true));
+            }
+        }
+        let mut preview = self.limit as usize / 4;
+        while bytes.len() as u64 + 1 > self.limit && preview > 0 {
+            shorten_strings(&mut value, preview);
+            bytes = serde_json::to_vec(&value)?;
+            preview /= 2;
+        }
+        if bytes.len() as u64 + 1 > self.limit {
+            bytes = serde_json::to_vec(&json!({
+                "type": "oversized_output", "record_truncated": true
+            }))?;
+        }
+        bytes.push(b'\n');
+        let size = fs::metadata(&self.path)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        if size + bytes.len() as u64 > self.limit {
+            let previous = self.path.with_extension("jsonl.1");
+            if previous.exists() {
+                fs::remove_file(&previous)?;
+            }
+            if self.path.exists() {
+                fs::rename(&self.path, previous)?;
+            }
+        }
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)?;
+        file.write_all(&bytes)?;
+        file.flush()
+    }
+}
+
+fn shorten_strings(value: &mut Value, limit: usize) {
+    match value {
+        Value::String(text) if text.len() > limit => {
+            let mut end = limit;
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            text.truncate(end);
+            text.push_str("…");
+        }
+        Value::Array(values) => {
+            for value in values {
+                shorten_strings(value, limit);
+            }
+        }
+        Value::Object(values) => {
+            for (key, value) in values.iter_mut() {
+                if !matches!(key.as_str(), "type" | "role" | "stopReason") {
+                    shorten_strings(value, limit);
+                }
+            }
+        }
+        _ => {}
     }
 }
 

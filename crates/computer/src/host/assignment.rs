@@ -286,6 +286,12 @@ async fn prepare_assignment(
         .ok_or_else(|| ComputerError::InvalidAssignment("harness_unavailable".into()))?;
     let mut native_config =
         native_config(wire_config, &directive.config_fingerprint, default_config)?;
+    super::records::prepare(
+        &inner.root,
+        &inner.output_records,
+        &execution,
+        &mut native_config,
+    )?;
     // Execution credentials belong to this attempt, never to editable Agent configuration.
     native_config.environment.extend([
         (

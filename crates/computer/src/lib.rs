@@ -8,8 +8,8 @@ mod resources;
 mod state;
 
 pub use host::{
-    Computer, ComputerConfig, ComputerError, ComputerHandle, ComputerStatus, ReconnectPolicy,
-    RegisteredHarness,
+    Computer, ComputerConfig, ComputerError, ComputerHandle, ComputerStatus, OutputRecordPolicy,
+    ReconnectPolicy, RegisteredHarness,
 };
 pub use resources::{agent_directory, resolve_content_file, workspace_directory};
 

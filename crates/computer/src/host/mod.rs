@@ -2,6 +2,7 @@ mod assignment;
 mod connection;
 mod control;
 mod events;
+mod records;
 
 use self::connection::run_loop;
 use self::control::active_attempts;
@@ -118,7 +119,24 @@ impl From<lankide_harness::HarnessError> for ComputerError {
     }
 }
 
+/// Local Harness diagnostics policy. Each record has one previous segment.
+#[derive(Clone, Debug)]
+pub struct OutputRecordPolicy {
+    pub max_bytes: u64,
+    pub retention: Duration,
+}
+
+impl Default for OutputRecordPolicy {
+    fn default() -> Self {
+        Self {
+            max_bytes: 4 * 1024 * 1024,
+            retention: Duration::from_secs(7 * 24 * 60 * 60),
+        }
+    }
+}
+
 pub struct Computer {
+    output_records: OutputRecordPolicy,
     capability_cli: Option<PathBuf>,
     config: ComputerConfig,
     harnesses: HashMap<String, RegisteredHarness>,
@@ -128,9 +146,18 @@ impl Computer {
     pub fn new(config: ComputerConfig) -> Self {
         Self {
             config,
+            output_records: OutputRecordPolicy::default(),
             capability_cli: crate::capability_cli::discover(),
             harnesses: HashMap::new(),
         }
+    }
+
+    /// Configure local Pi records and startup cleanup. The size limit applies
+    /// to each of the current and previous segments; minimum size is 256 bytes.
+    /// Native session history is never expired by this policy.
+    pub fn with_output_record_policy(mut self, policy: OutputRecordPolicy) -> Self {
+        self.output_records = policy;
+        self
     }
 
     pub fn with_capability_cli(mut self, path: impl Into<PathBuf>) -> Self {
@@ -184,6 +211,12 @@ impl Computer {
         let socket_path = socket_path.into();
         let root = expanded_root(&self.config.workspace_root)?;
         std::fs::create_dir_all(&root)?;
+        if self.output_records.max_bytes < 256 {
+            return Err(ComputerError::InvalidAssignment(
+                "invalid_output_record_limit".into(),
+            ));
+        }
+        records::expire(&root, self.output_records.retention)?;
         let state_path = root.join(".computer/state.json");
         let mut persisted = PersistedState::load(&state_path)?;
         for session in persisted.sessions.values_mut() {
@@ -232,6 +265,7 @@ impl Computer {
         let (stop_tx, stop_rx) = watch::channel(None);
         let inner = Arc::new(Inner {
             config: self.config,
+            output_records: self.output_records,
             capability_cli: self.capability_cli,
             root,
             socket_path,
@@ -352,6 +386,7 @@ struct StartingExecution {
 }
 
 struct Inner {
+    output_records: OutputRecordPolicy,
     capability_cli: Option<PathBuf>,
     config: ComputerConfig,
     root: PathBuf,
