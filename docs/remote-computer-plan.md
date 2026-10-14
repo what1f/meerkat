@@ -1,6 +1,7 @@
 # Remote Computer refactor plan
 
-Status: working plan. Design rationale lives in `docs/remote-computer.md`.
+Status: Tasks 0–17 implemented; see "Open items" at the end. Design rationale
+lives in `docs/remote-computer.md`.
 
 This plan splits the refactor into tasks that one implementer can finish and
 that a reviewer can accept by running business scenarios, without reading the
@@ -342,7 +343,7 @@ Contract:
 - The Runtime daemon listens on a configured address. The Computer daemon
   connects to a configured URL. Local default: loopback.
 - gRPC for the Computer path is removed in this task. Management stays on gRPC
-  until Task 15.
+  until Task 16.
 
 Acceptance scenarios: every existing `computer`, `computer-daemon`, and
 `runtime-daemon` scenario passes over WS, plus:
@@ -510,3 +511,14 @@ Acceptance: `cargo tree` shows no `tonic` or `prost`; `just check`,
 Tasks run in order. Tasks 1 and 2, 4 and 6, and 7 and 8 touch separate files
 and may run in parallel after Task 0. Each task ends with a review: run the
 listed scenarios, read the report, and run `just check` and `just test`.
+
+## Open items
+
+- Desktop visual acceptance for Tasks 14–17 needs an actual-window review with
+  authorized live Provider accounts (`./apps/desktop/visual-e2e.sh`).
+- Computer links, pairing, and management use plain WS and HTTP. Binding the
+  Runtime listener beyond loopback needs TLS before remote use.
+- HTTP resource downloads read the whole resource into memory before serving
+  a range.
+- Steer requests to a Harness without steering support are skipped at
+  delivery, so their rows can linger.
