@@ -192,24 +192,30 @@ where
     struct LinkSettings {
         #[serde(default = "default_link_listen")]
         computer_link_listen: String,
+        #[serde(default)]
+        computer_link: lankide_protocol::link::LinkSettings,
     }
     fn default_link_listen() -> String {
         "127.0.0.1:0".into()
     }
-    let address = match fs::read(paths.home.join("runtime.json")) {
-        Ok(bytes) => serde_json::from_slice::<LinkSettings>(&bytes)?.computer_link_listen,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => default_link_listen(),
+    let settings = match fs::read(paths.home.join("runtime.json")) {
+        Ok(bytes) => serde_json::from_slice::<LinkSettings>(&bytes)?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => LinkSettings {
+            computer_link_listen: default_link_listen(),
+            computer_link: Default::default(),
+        },
         Err(error) => return Err(error.into()),
     };
-    let listener = tokio::net::TcpListener::bind(&address).await?;
+    let listener = tokio::net::TcpListener::bind(&settings.computer_link_listen).await?;
     let url = format!("ws://{}", listener.local_addr()?);
     let secret = lankide_protocol::link::publish(&paths.run, &url)?;
     let (link_stop, link_stopped) = oneshot::channel();
-    let link_server = tokio::spawn(lankide_protocol::link::serve(
+    let link_server = tokio::spawn(lankide_protocol::link::serve_with_settings(
         listener,
         secret,
         RuntimePeerAdapter::new(application.clone()),
         TransportConfig::default(),
+        settings.computer_link,
         async {
             let _ = link_stopped.await;
         },

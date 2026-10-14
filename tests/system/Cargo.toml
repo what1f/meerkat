@@ -56,3 +56,17 @@ prerequisites = "None"
 unattended = "yes"
 status = "implemented"
 classification = "hermetic"
+
+[[bin]]
+name = "system-computer"
+path = "tests/support/computer.rs"
+test = false
+bench = false
+
+[package.metadata.lankide.e2e-additional.system-network-delivery]
+command = "cargo test -p lankide-system-e2e --test network_delivery_e2e"
+scenario = "Verify S10.1-S10.4 through real daemons and a reusable TCP proxy: cut mid-turn and replay one reply, detect stalled frames on both sides within three heartbeat intervals, SIGKILL the Computer after Harness completion before acknowledgement and drain its durable outbox once after restart, and flap ten times with connection timestamps proving exponential backoff and healthy-duration reset. Bound silent WebSocket handshakes and hello waits."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"

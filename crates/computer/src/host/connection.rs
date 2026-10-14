@@ -41,55 +41,61 @@ pub(super) async fn run_loop(
             _ = stop_rx.changed() => continue,
             result = run_connection(inner.clone()) => {
                 *inner.connection.write().await = None;
-                let established = inner.connected.swap(false, Ordering::AcqRel);
-                if let Err(error) = result {
+                inner.connected.store(false, Ordering::Release);
+                if let Err(error) = &result {
                     if matches!(error, ComputerError::InvalidAssignment(_) | ComputerError::ProtocolVersionUnsupported) {
-                        return Err(error);
+                        return result.map(|_| ());
                     }
                 }
                 if stop_rx.borrow().is_some() {
                     continue;
                 }
-                    if established {
-                        delay = inner.config.reconnect.initial;
+                if result.as_ref().is_ok_and(|healthy| *healthy >= inner.config.reconnect.healthy_duration) {
+                    delay = inner.config.reconnect.initial;
+                }
+                // Independent per-attempt jitter in the range 75%-125%.
+                let entropy = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().subsec_nanos();
+                let sleep_delay = delay.mul_f64(0.75 + f64::from(entropy % 501) / 1000.0);
+                tokio::select! {
+                    _ = stop_rx.changed() => {}
+                    _ = tokio::time::sleep(sleep_delay) => {
+                        delay = std::cmp::min(inner.config.reconnect.maximum,
+                            delay.saturating_mul(inner.config.reconnect.multiplier));
                     }
-                    let sleep_delay = delay;
-                    tokio::select! {
-                        _ = stop_rx.changed() => {}
-                        _ = tokio::time::sleep(sleep_delay) => {
-                            if !established {
-                                delay = std::cmp::min(
-                                    inner.config.reconnect.maximum,
-                                    delay.saturating_mul(inner.config.reconnect.multiplier),
-                                );
-                            }
-                        }
-                    }
+                }
             }
         }
     }
 }
 
-async fn run_connection(inner: Arc<Inner>) -> Result<(), ComputerError> {
+async fn run_connection(inner: Arc<Inner>) -> Result<Duration, ComputerError> {
     let (url, secret) = match &inner.link_endpoint {
         Some(endpoint) => endpoint.clone(),
         None => lankide_protocol::link::discover(&inner.socket_path)?,
     };
-    let mut link =
-        lankide_protocol::link::connect(&url, &secret, lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES)
-            .await?;
-    let (tx, rx) = mpsc::channel::<ComputerFrame>(64);
-    link.send(
-        ComputerFrame {
-            frame: Some(computer_frame::Frame::Hello(make_hello(&inner).await)),
-        }
-        .try_into()
-        .map_err(LinkError::Closed)?,
+    let mut link = tokio::time::timeout(
+        inner.config.reconnect.handshake_timeout,
+        lankide_protocol::link::connect(&url, &secret, lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES),
     )
-    .await?;
-    let first = link
-        .receive()
-        .await?
+    .await
+    .map_err(|_| LinkError::Closed(CloseReason::Timeout))??;
+    let (tx, rx) = mpsc::channel::<ComputerFrame>(64);
+    tokio::time::timeout(
+        inner.config.reconnect.handshake_timeout,
+        link.send(
+            ComputerFrame {
+                frame: Some(computer_frame::Frame::Hello(make_hello(&inner).await)),
+            }
+            .try_into()
+            .map_err(LinkError::Closed)?,
+        ),
+    )
+    .await
+    .map_err(|_| LinkError::Closed(CloseReason::Timeout))??;
+    let first = tokio::time::timeout(inner.config.reconnect.handshake_timeout, link.receive())
+        .await
+        .map_err(|_| LinkError::Closed(CloseReason::Timeout))??
         .ok_or(LinkError::Closed(CloseReason::Shutdown))?;
     if first.protocol_version != lankide_protocol::PROTOCOL_VERSION {
         return Err(ComputerError::ProtocolVersionUnsupported);
@@ -108,8 +114,14 @@ async fn run_connection(inner: Arc<Inner>) -> Result<(), ComputerError> {
             ));
         }
     };
+    let started = tokio::time::Instant::now();
     let (inbound_tx, mut inbound) = mpsc::channel(64);
-    let _link_task = LinkTask(tokio::spawn(pump_link(link, rx, inbound_tx)));
+    let _link_task = LinkTask(tokio::spawn(pump_link(
+        link,
+        rx,
+        inbound_tx,
+        heartbeat_interval,
+    )));
     *inner.connection.write().await = Some(tx.clone());
     inner.connected.store(true, Ordering::Release);
     publish_inventory(&inner).await;
@@ -118,8 +130,11 @@ async fn run_connection(inner: Arc<Inner>) -> Result<(), ComputerError> {
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     heartbeat.tick().await;
     let mut stop_rx = inner.stop_tx.subscribe();
+    let deadline = tokio::time::sleep(heartbeat_interval * 3);
+    tokio::pin!(deadline);
     loop {
         tokio::select! {
+            _ = &mut deadline => return Ok(started.elapsed()),
             _ = heartbeat.tick() => {
                 tx.send(ComputerFrame {
                     frame: Some(computer_frame::Frame::Heartbeat(ComputerHeartbeat {
@@ -132,15 +147,17 @@ async fn run_connection(inner: Arc<Inner>) -> Result<(), ComputerError> {
             }
             changed = stop_rx.changed() => {
                 let _ = changed;
-                return Ok(());
+                return Ok(started.elapsed());
             }
             frame = inbound.recv() => match frame {
                 Some(Ok(frame)) => {
                     if frame.protocol_version != lankide_protocol::PROTOCOL_VERSION { return Err(ComputerError::ProtocolVersionUnsupported); }
-                    dispatch(inner.clone(), frame.into()).await?
+                    deadline.as_mut().reset(tokio::time::Instant::now() + heartbeat_interval * 3);
+                    if !matches!(frame.frame, lankide_protocol::link::RuntimePayload::Heartbeat) {
+                        dispatch(inner.clone(), frame.into()).await?
+                    }
                 }
-                Some(Err(error)) => return Err(error.into()),
-                None => return Ok(()),
+                Some(Err(_)) | None => return Ok(started.elapsed()),
             }
         }
     }
@@ -163,6 +180,7 @@ async fn pump_link<
     mut link: L,
     mut outgoing: mpsc::Receiver<ComputerFrame>,
     incoming: mpsc::Sender<Result<lankide_protocol::link::RuntimeFrame, LinkError>>,
+    interval: Duration,
 ) {
     let result: Result<(), LinkError> = async {
         loop {
@@ -170,7 +188,7 @@ async fn pump_link<
                 _ = incoming.closed() => return Ok(()),
                 frame = outgoing.recv() => {
                     let Some(frame) = frame else { return Ok(()) };
-                    link.send(frame.try_into().map_err(LinkError::Closed)?).await?;
+                    tokio::time::timeout(interval, link.send(frame.try_into().map_err(LinkError::Closed)?)).await.map_err(|_| LinkError::Closed(CloseReason::Timeout))??;
                 }
                 frame = link.receive() => {
                     let Some(frame) = frame? else { return Ok(()) };

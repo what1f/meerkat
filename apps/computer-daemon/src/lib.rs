@@ -121,6 +121,19 @@ fn read_execution_liveness(
     }
 }
 
+fn read_reconnect(home: &std::path::Path) -> Result<ReconnectPolicy, AppError> {
+    #[derive(serde::Deserialize, Default)]
+    struct Settings {
+        #[serde(default)]
+        reconnect: ReconnectPolicy,
+    }
+    match std::fs::read(home.join("computer.json")) {
+        Ok(bytes) => Ok(serde_json::from_slice::<Settings>(&bytes)?.reconnect),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Default::default()),
+        Err(error) => Err(error.into()),
+    }
+}
+
 fn resolve_executable(executable: &std::path::Path, path: &str) -> PathBuf {
     if executable.is_absolute() {
         return executable.to_owned();
@@ -173,7 +186,7 @@ pub async fn run_with_harnesses(
         computer_id: "local".into(),
         instance_id: config.instance_id.clone(),
         workspace_root: config.paths.workspaces.display().to_string(),
-        reconnect: ReconnectPolicy::default(),
+        reconnect: read_reconnect(&config.paths.home)?,
     })
     .with_execution_liveness(config.execution_liveness);
     if let Some(url) = &config.runtime_url {

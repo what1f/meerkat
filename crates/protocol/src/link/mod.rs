@@ -25,6 +25,7 @@ pub enum CloseReason {
     MessageTooLarge,
     Unauthorized,
     Shutdown,
+    Timeout,
 }
 impl fmt::Display for CloseReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -204,12 +205,67 @@ pub async fn connect(url: &str, secret: &str, limit: usize) -> Result<ClientLink
     Ok(WebSocketLink::new(socket, limit))
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LinkSettings {
+    pub heartbeat_interval: std::time::Duration,
+    pub handshake_timeout: std::time::Duration,
+}
+impl Default for LinkSettings {
+    fn default() -> Self {
+        Self {
+            heartbeat_interval: std::time::Duration::from_secs(5),
+            handshake_timeout: std::time::Duration::from_secs(10),
+        }
+    }
+}
+
 /// Serve authenticated Computer links. Shutdown drops and joins every connection.
 pub async fn serve<P, F>(
     listener: TcpListener,
     secret: String,
     peer: P,
     config: crate::TransportConfig,
+    shutdown: F,
+) -> Result<(), LinkError>
+where
+    P: crate::ComputerPeer + Clone,
+    F: Future<Output = ()> + Send,
+{
+    serve_inner(
+        listener,
+        secret,
+        peer,
+        config,
+        LinkSettings::default(),
+        false,
+        shutdown,
+    )
+    .await
+}
+
+pub async fn serve_with_settings<P, F>(
+    listener: TcpListener,
+    secret: String,
+    peer: P,
+    config: crate::TransportConfig,
+    settings: LinkSettings,
+    shutdown: F,
+) -> Result<(), LinkError>
+where
+    P: crate::ComputerPeer + Clone,
+    F: Future<Output = ()> + Send,
+{
+    serve_inner(listener, secret, peer, config, settings, true, shutdown).await
+}
+
+async fn serve_inner<P, F>(
+    listener: TcpListener,
+    secret: String,
+    peer: P,
+    config: crate::TransportConfig,
+    settings: LinkSettings,
+    override_heartbeat: bool,
     shutdown: F,
 ) -> Result<(), LinkError>
 where
@@ -224,20 +280,20 @@ where
             result = tasks.join_next(), if !tasks.is_empty() => { let _ = result; }
             accepted = listener.accept() => {
                 let (socket, _) = accepted?;
-                let secret = secret.clone(); let peer = peer.clone();
+                let secret = secret.clone(); let peer = peer.clone(); let settings = settings.clone();
                 tasks.spawn(async move {
-                    let upgraded = tokio_tungstenite::accept_hdr_async_with_config(socket, move |request: &tungstenite::handshake::server::Request, response: tungstenite::handshake::server::Response| {
+                    let upgraded = tokio::time::timeout(settings.handshake_timeout, tokio_tungstenite::accept_hdr_async_with_config(socket, move |request: &tungstenite::handshake::server::Request, response: tungstenite::handshake::server::Response| {
                         if request.headers().get("authorization").and_then(|v| v.to_str().ok()) != Some(format!("Bearer {secret}").as_str()) {
                             let mut denied = tungstenite::http::Response::new(Some("unauthorized".to_owned()));
                             *denied.status_mut() = tungstenite::http::StatusCode::UNAUTHORIZED; return Err(denied);
                         }
                         Ok(response)
-                    }, Some(ws_config(config.max_message_bytes))).await;
-                    if let Ok(socket) = upgraded {
+                    }, Some(ws_config(config.max_message_bytes)))).await;
+                    if let Ok(Ok(socket)) = upgraded {
                         let mut link = WebSocketLink::new(socket, config.max_message_bytes);
-                        match accept_link(&mut link, peer, config).await {
-                            Ok(()) => { let _ = link.close(CloseReason::Shutdown).await; }
-                            Err(LinkError::Closed(reason)) => { let _ = link.close(reason).await; }
+                        match accept_link(&mut link, peer, config, settings.clone(), override_heartbeat).await {
+                            Ok(()) => { let _ = tokio::time::timeout(settings.handshake_timeout, link.close(CloseReason::Shutdown)).await; }
+                            Err(LinkError::Closed(reason)) => { let _ = tokio::time::timeout(settings.handshake_timeout, link.close(reason)).await; }
                             Err(_) => {}
                         }
                     }
@@ -257,10 +313,12 @@ async fn accept_link<
     link: &mut L,
     peer: P,
     config: crate::TransportConfig,
+    settings: LinkSettings,
+    override_heartbeat: bool,
 ) -> Result<(), LinkError> {
-    let first = link
-        .receive()
-        .await?
+    let first = tokio::time::timeout(settings.handshake_timeout, link.receive())
+        .await
+        .map_err(|_| LinkError::Closed(CloseReason::Timeout))??
         .ok_or(LinkError::Closed(CloseReason::InvalidFrame))?;
     let ComputerPayload::Hello(hello) = first.frame else {
         return Err(LinkError::Closed(CloseReason::InvalidFrame));
@@ -288,10 +346,23 @@ async fn accept_link<
         .map_err(|_| LinkError::Closed(CloseReason::InvalidFrame))?;
     let mut validator = crate::validation::ComputerFrameValidator::default();
     let mut first = true;
+    let mut interval = settings
+        .heartbeat_interval
+        .max(std::time::Duration::from_millis(1));
+    let mut heartbeat = tokio::time::interval(interval);
+    heartbeat.tick().await;
+    let deadline = tokio::time::sleep(interval * 3);
+    tokio::pin!(deadline);
     loop {
         tokio::select! {
+            _ = &mut deadline => return Err(LinkError::Closed(CloseReason::Timeout)),
+            _ = heartbeat.tick(), if !first => {
+                tokio::time::timeout(interval, link.send(RuntimeFrame { protocol_version: config.protocol_version, frame: RuntimePayload::Heartbeat }))
+                    .await.map_err(|_| LinkError::Closed(CloseReason::Timeout))??;
+            }
             frame = link.receive() => {
                 let Some(frame) = frame? else { break };
+                deadline.as_mut().reset(tokio::time::Instant::now() + interval * 3);
                 if frame.protocol_version != config.protocol_version { return Err(LinkError::Closed(CloseReason::ProtocolVersionUnsupported)); }
                 let frame = frame.into();
                 validator.validate(&frame).map_err(|error| LinkError::Closed(if error.code() == tonic::Code::OutOfRange { CloseReason::EventSequenceRegression } else { CloseReason::InvalidFrame }))?;
@@ -299,7 +370,7 @@ async fn accept_link<
             }
             frame = output.next() => {
                 let Some(frame) = frame else { break };
-                let frame = frame.map_err(|_| LinkError::Closed(CloseReason::InvalidFrame))?;
+                let mut frame = frame.map_err(|_| LinkError::Closed(CloseReason::InvalidFrame))?;
                 crate::validate_runtime_frame(&frame).map_err(|_| LinkError::Closed(CloseReason::InvalidFrame))?;
                 match (&frame.frame, first) {
                     (Some(crate::runtime_frame::Frame::Hello(hello)), true)
@@ -309,8 +380,17 @@ async fn accept_link<
                     }
                     _ => {},
                 }
+                if let Some(crate::runtime_frame::Frame::Hello(hello)) = frame.frame.as_mut() {
+                    if override_heartbeat {
+                        hello.heartbeat_interval_ms = interval.as_millis() as u64;
+                    } else {
+                        interval = std::time::Duration::from_millis(hello.heartbeat_interval_ms.max(1));
+                        heartbeat = tokio::time::interval_at(tokio::time::Instant::now() + interval, interval);
+                    }
+                    deadline.as_mut().reset(tokio::time::Instant::now() + interval * 3);
+                }
                 first = false;
-                link.send(frame.try_into().map_err(LinkError::Closed)?).await?;
+                tokio::time::timeout(interval, link.send(frame.try_into().map_err(LinkError::Closed)?)).await.map_err(|_| LinkError::Closed(CloseReason::Timeout))??;
             }
         }
     }

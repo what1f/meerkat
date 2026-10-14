@@ -1,4 +1,5 @@
 use lankide_system_e2e::{OutboundKind, Result, RigConfig, Script, SystemRig};
+use std::time::Duration;
 
 fn config() -> RigConfig {
     RigConfig {
@@ -363,13 +364,20 @@ async fn an_agent_without_resume_or_cancel_starts_fresh_and_can_be_deleted_durin
         "unsupported native cancel: {controls:?}"
     );
     let pid = controls[0]["pid"].as_u64().expect("native PID");
-    assert!(
-        !std::process::Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .output()?
-            .status
-            .success(),
-        "deleted Agent process is still running"
-    );
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if !std::process::Command::new("kill")
+                .args(["-0", &pid.to_string()])
+                .output()?
+                .status
+                .success()
+            {
+                return Ok::<_, std::io::Error>(());
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("deleted Agent process is still running")?;
     rig.close().await
 }

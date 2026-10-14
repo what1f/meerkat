@@ -218,7 +218,9 @@ impl ComputerBroker {
                     lankide_protocol::RuntimeHello {
                         protocol_version: lankide_protocol::PROTOCOL_VERSION,
                         runtime_instance_id: format!("runtime-{}", std::process::id()),
-                        heartbeat_interval_ms: 5_000,
+                        heartbeat_interval_ms: lankide_protocol::link::LinkSettings::default()
+                            .heartbeat_interval
+                            .as_millis() as u64,
                         max_message_bytes: lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES as u64,
                     },
                 )),
@@ -386,13 +388,24 @@ impl ComputerBroker {
                     .ok_or_else(|| RuntimeError::Application("event missing execution".into()))?;
                 let kind = ExecutionEventKind::try_from(event.kind)
                     .unwrap_or(ExecutionEventKind::Unspecified);
+                // A restarted daemon keeps the durable per-attempt outbox but has
+                // a new process identity. Authenticate its Computer ownership,
+                // then let storage enforce the attempt/sequence commit boundary.
+                let owner = self
+                    .storage()?
+                    .execution_attempt(execution.execution_id, i64::from(execution.attempt))?;
+                let event_instance = owner
+                    .as_ref()
+                    .filter(|owner| owner.computer_id == computer_id)
+                    .map(|owner| owner.computer_instance_id.as_str())
+                    .unwrap_or(instance_id);
                 let receipt = self
                     .storage()?
                     .record_execution_event(RecordExecutionEvent {
                         execution_id: execution.execution_id,
                         attempt: i64::from(execution.attempt),
                         computer_id: computer_id.to_owned(),
-                        computer_instance_id: instance_id.to_owned(),
+                        computer_instance_id: event_instance.to_owned(),
                         sequence: event.sequence,
                         kind: execution_event_kind_name(kind).to_owned(),
                         payload: event.payload.clone(),
@@ -429,6 +442,22 @@ impl ComputerBroker {
                         completion = pending.remove(&execution.execution_id);
                     }
                 }
+                if let Some(value) = completion {
+                    let outcome = match kind {
+                        ExecutionEventKind::Completed => ComputerOutcome::Succeeded {
+                            output: value.output,
+                            reply: None,
+                        },
+                        ExecutionEventKind::Cancelled => ComputerOutcome::Cancelled,
+                        _ => ComputerOutcome::Failed {
+                            code: "computer_execution_failed".into(),
+                        },
+                    };
+                    let _ = value.completion.send(Ok(ComputerCompletion {
+                        delivery_accepted: value.assignment_accepted && value.delivery_accepted,
+                        outcome,
+                    }));
+                }
                 self.send_to(
                     computer_id,
                     instance_id,
@@ -456,22 +485,6 @@ impl ComputerBroker {
                         },
                     )
                     .await?;
-                }
-                if let Some(value) = completion {
-                    let outcome = match kind {
-                        ExecutionEventKind::Completed => ComputerOutcome::Succeeded {
-                            output: value.output,
-                            reply: None,
-                        },
-                        ExecutionEventKind::Cancelled => ComputerOutcome::Cancelled,
-                        _ => ComputerOutcome::Failed {
-                            code: "computer_execution_failed".into(),
-                        },
-                    };
-                    let _ = value.completion.send(Ok(ComputerCompletion {
-                        delivery_accepted: value.assignment_accepted && value.delivery_accepted,
-                        outcome,
-                    }));
                 }
             }
             computer_frame::Frame::DeliveryResult(result) => {

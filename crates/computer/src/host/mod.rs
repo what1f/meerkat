@@ -35,10 +35,13 @@ pub struct ComputerConfig {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
 pub struct ReconnectPolicy {
     pub initial: Duration,
     pub maximum: Duration,
     pub multiplier: u32,
+    pub healthy_duration: Duration,
+    pub handshake_timeout: Duration,
 }
 
 impl Default for ReconnectPolicy {
@@ -47,6 +50,8 @@ impl Default for ReconnectPolicy {
             initial: Duration::from_millis(50),
             maximum: Duration::from_secs(5),
             multiplier: 2,
+            healthy_duration: Duration::from_secs(60),
+            handshake_timeout: Duration::from_secs(10),
         }
     }
 }

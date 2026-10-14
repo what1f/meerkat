@@ -103,7 +103,7 @@ impl lankide_protocol::ComputerPeer for Peer {
                 frame: Some(runtime_frame::Frame::Hello(RuntimeHello {
                     protocol_version: lankide_protocol::PROTOCOL_VERSION,
                     runtime_instance_id: "runtime-daemon-e2e".into(),
-                    heartbeat_interval_ms: 40,
+                    heartbeat_interval_ms: 500,
                     max_message_bytes: lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES as u64,
                 })),
             }))
@@ -610,6 +610,7 @@ fn build_computer(
             initial: Duration::from_millis(15),
             maximum: Duration::from_millis(80),
             multiplier: 2,
+            ..Default::default()
         },
     })
     .with_execution_liveness(lankide_computer::ExecutionLiveness {
