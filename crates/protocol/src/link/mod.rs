@@ -250,6 +250,30 @@ where
     Ok(())
 }
 
+/// Serve an already authenticated HTTP upgrade using the existing link contract.
+pub(crate) async fn serve_upgraded<S, P>(socket: S, peer: P, config: crate::TransportConfig)
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
+    P: crate::ComputerPeer,
+{
+    let socket = WebSocketStream::from_raw_socket(
+        socket,
+        tungstenite::protocol::Role::Server,
+        Some(ws_config(config.max_message_bytes)),
+    )
+    .await;
+    let mut link = WebSocketLink::new(socket, config.max_message_bytes);
+    match accept_link(&mut link, peer, config).await {
+        Ok(()) => {
+            let _ = link.close(CloseReason::Shutdown).await;
+        }
+        Err(LinkError::Closed(reason)) => {
+            let _ = link.close(reason).await;
+        }
+        Err(_) => {}
+    }
+}
+
 async fn accept_link<
     L: ComputerLink<SendFrame = RuntimeFrame, ReceiveFrame = ComputerFrame>,
     P: crate::ComputerPeer,

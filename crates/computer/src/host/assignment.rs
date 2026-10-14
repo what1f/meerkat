@@ -157,7 +157,8 @@ pub(super) async fn handle_assignment(inner: Arc<Inner>, assign: AssignExecution
                     ComputerError::Io(_)
                     | ComputerError::Transport(_)
                     | ComputerError::Rpc(_)
-                    | ComputerError::Resource(_) => FailureCategory::Transient,
+                    | ComputerError::Resource(_)
+                    | ComputerError::ResourceIntegrityMismatch => FailureCategory::Transient,
                     _ => FailureCategory::Configuration,
                 };
                 super::failure::attempt_failure(&HarnessFailure {
@@ -299,6 +300,7 @@ async fn prepare_assignment(
         }
         let path = download_resource(
             &inner.socket_path,
+            inner.link_endpoint.as_ref().map(|(url, _)| url.as_str()),
             resource,
             context.clone(),
             &agent_home.join("resources"),
@@ -553,6 +555,7 @@ fn error_code(error: &ComputerError) -> &'static str {
         ComputerError::InvalidAssignment(value) if value == "assignment_conflict" => {
             "assignment_conflict"
         }
+        ComputerError::ResourceIntegrityMismatch => "resource_integrity_mismatch",
         ComputerError::Resource(_) => "resource_error",
         ComputerError::PathOutsideAgentHome => "path_outside_agent_home",
         ComputerError::Harness(_) => "harness_error",
@@ -564,7 +567,9 @@ fn public_error(error: &ComputerError) -> String {
     match error {
         ComputerError::InvalidAssignment(value) => value.clone(),
         ComputerError::PathOutsideAgentHome => "Content file is outside the Agent directory".into(),
-        ComputerError::Resource(_) => "A required resource could not be prepared".into(),
+        ComputerError::Resource(_) | ComputerError::ResourceIntegrityMismatch => {
+            "A required resource could not be prepared".into()
+        }
         ComputerError::Harness(error) => error.failure.detail.clone(),
         _ => "The execution could not be prepared".into(),
     }

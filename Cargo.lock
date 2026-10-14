@@ -3630,6 +3630,7 @@ dependencies = [
  "lankide-harness",
  "lankide-protocol",
  "prost",
+ "reqwest",
  "rustix 1.1.4",
  "serde",
  "serde_json",
@@ -3750,7 +3751,10 @@ dependencies = [
 name = "lankide-protocol"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "futures-util",
+ "http-body-util",
+ "hyper",
  "hyper-util",
  "lankide-core",
  "prost",
@@ -3891,9 +3895,11 @@ dependencies = [
  "lankide-runtime",
  "lankide-runtime-daemon",
  "lankide-storage",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tempfile",
  "tokio",
  "tokio-stream",

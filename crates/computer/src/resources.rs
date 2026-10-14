@@ -1,8 +1,7 @@
-use lankide_protocol::{AgentRunContext, ResourceRef, ResourceRequest};
+use lankide_protocol::{AgentRunContext, ResourceRef};
 use sha2::{Digest, Sha256};
 use std::fmt::Write;
 use std::path::{Component, Path, PathBuf};
-use tokio_stream::StreamExt;
 
 use crate::ComputerError;
 
@@ -52,6 +51,7 @@ pub fn resolve_content_file(agent_home: &Path, value: &str) -> Result<PathBuf, C
 
 pub(crate) async fn download_resource(
     socket: &Path,
+    endpoint: Option<&str>,
     resource: &ResourceRef,
     context: AgentRunContext,
     directory: &Path,
@@ -72,42 +72,131 @@ pub(crate) async fn download_resource(
     std::fs::create_dir_all(directory)?;
     let path = directory.join(format!("{}-{file_name}", resource.resource_id));
     let temporary = path.with_extension("part");
-    let mut file = std::fs::File::create(&temporary)?;
-    let mut client =
-        lankide_protocol::connect_uds(socket, lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES).await?;
-    let transfer_id = format!("download-{}-{}", resource.resource_id, std::process::id());
-    let mut stream = client
-        .download_resource(ResourceRequest {
-            resource_id: resource.resource_id,
-            transfer_id,
-            context: Some(context),
-        })
-        .await?
-        .into_inner();
-    let mut digest = Sha256::new();
-    let mut size = 0_u64;
-    let mut saw_eof = false;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
-        if chunk.offset != size {
-            return Err(ComputerError::Resource("resource_offset_mismatch".into()));
+    let runtime_url = match endpoint {
+        Some(url) => url.to_owned(),
+        None => lankide_protocol::link::discover(socket)?.0,
+    };
+    let mut url = reqwest::Url::parse(&runtime_url)
+        .map_err(|_| ComputerError::Resource("invalid_runtime_url".into()))?;
+    let scheme = match url.scheme() {
+        "ws" | "http" => "http",
+        "wss" | "https" => "https",
+        _ => return Err(ComputerError::Resource("invalid_runtime_url".into())),
+    };
+    url.set_scheme(scheme)
+        .map_err(|_| ComputerError::Resource("invalid_runtime_url".into()))?;
+    url.set_path(&format!("/resources/{}", resource.resource_id));
+    url.set_query(None);
+    url.set_fragment(None);
+    let execution = context
+        .execution
+        .as_ref()
+        .ok_or_else(|| ComputerError::Resource("missing_execution".into()))?;
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| ComputerError::Resource(e.to_string()))?;
+    // Keep an interrupted file for the next bounded retry, including retries
+    // after a Computer restart. Never publish bytes before integrity checks.
+    for retry in 0..3 {
+        let offset = std::fs::metadata(&temporary).map(|m| m.len()).unwrap_or(0);
+        if offset > resource.size_bytes {
+            let _ = std::fs::remove_file(&temporary);
+            return Err(ComputerError::ResourceIntegrityMismatch);
         }
-        digest.update(&chunk.bytes);
-        std::io::Write::write_all(&mut file, &chunk.bytes)?;
-        size += chunk.bytes.len() as u64;
-        if chunk.eof {
-            saw_eof = true;
+        if offset == resource.size_bytes && temporary.exists() {
             break;
         }
+        let mut request = client
+            .get(url.clone())
+            .bearer_auth(&context.execution_token)
+            .header("x-lankide-execution", execution.execution_id)
+            .header("x-lankide-attempt", execution.attempt);
+        if offset > 0 {
+            request = request.header("range", format!("bytes={offset}-"));
+        }
+        let response = request.send().await;
+        let mut response = match response {
+            Ok(response) => response,
+            Err(_) if retry < 2 => continue,
+            Err(error) => return Err(ComputerError::Resource(error.to_string())),
+        };
+        if offset > 0 {
+            let expected = format!(
+                "bytes {offset}-{}/{}",
+                resource.size_bytes.saturating_sub(1),
+                resource.size_bytes
+            );
+            if response.status() != reqwest::StatusCode::PARTIAL_CONTENT
+                || response
+                    .headers()
+                    .get("content-range")
+                    .and_then(|v| v.to_str().ok())
+                    != Some(expected.as_str())
+            {
+                let _ = std::fs::remove_file(&temporary);
+                return Err(ComputerError::Resource("resource_resume_rejected".into()));
+            }
+        } else if response.status() != reqwest::StatusCode::OK {
+            return Err(ComputerError::Resource(format!(
+                "resource_http_{}",
+                response.status().as_u16()
+            )));
+        }
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&temporary)?;
+        let mut size = offset;
+        let mut interrupted = false;
+        loop {
+            match response.chunk().await {
+                Ok(Some(bytes)) => {
+                    size += bytes.len() as u64;
+                    if size > resource.size_bytes {
+                        drop(file);
+                        let _ = std::fs::remove_file(&temporary);
+                        return Err(ComputerError::ResourceIntegrityMismatch);
+                    }
+                    std::io::Write::write_all(&mut file, &bytes)?;
+                }
+                Ok(None) => break,
+                Err(_) => {
+                    interrupted = true;
+                    break;
+                }
+            }
+        }
+        file.sync_all()?;
+        if !interrupted {
+            break;
+        }
+        if retry == 2 {
+            return Err(ComputerError::Resource(
+                "resource_transfer_interrupted".into(),
+            ));
+        }
     }
-    std::io::Write::flush(&mut file)?;
+    let mut file = std::fs::File::open(&temporary)?;
+    let mut digest = Sha256::new();
+    let mut size = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = std::io::Read::read(&mut file, &mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        digest.update(&buffer[..count]);
+        size += count as u64;
+    }
     let actual = lowercase_hex(&digest.finalize());
-    if !saw_eof || size != resource.size_bytes || actual != resource.sha256.to_ascii_lowercase() {
+    if size != resource.size_bytes || actual != resource.sha256.to_ascii_lowercase() {
+        drop(file);
         let _ = std::fs::remove_file(&temporary);
-        return Err(ComputerError::Resource(
-            "resource_integrity_mismatch".into(),
-        ));
+        return Err(ComputerError::ResourceIntegrityMismatch);
     }
+    drop(file);
     std::fs::rename(&temporary, &path)?;
     Ok(path)
 }

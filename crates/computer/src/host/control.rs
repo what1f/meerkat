@@ -177,6 +177,7 @@ pub(super) async fn route_tool_result(inner: &Inner, result: lankide_protocol::T
     for resource in &result.resources {
         match download_resource(
             &inner.socket_path,
+            inner.link_endpoint.as_ref().map(|(url, _)| url.as_str()),
             resource,
             context.clone(),
             &agent_home.join("tool-results"),

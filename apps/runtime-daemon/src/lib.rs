@@ -192,20 +192,32 @@ where
     struct LinkSettings {
         #[serde(default = "default_link_listen")]
         computer_link_listen: String,
+        #[serde(default = "default_token_lifetime_ms")]
+        execution_token_lifetime_ms: u64,
     }
     fn default_link_listen() -> String {
         "127.0.0.1:0".into()
     }
-    let address = match fs::read(paths.home.join("runtime.json")) {
-        Ok(bytes) => serde_json::from_slice::<LinkSettings>(&bytes)?.computer_link_listen,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => default_link_listen(),
+    fn default_token_lifetime_ms() -> u64 {
+        3_600_000
+    }
+    let settings = match fs::read(paths.home.join("runtime.json")) {
+        Ok(bytes) => serde_json::from_slice::<LinkSettings>(&bytes)?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => LinkSettings {
+            computer_link_listen: default_link_listen(),
+            execution_token_lifetime_ms: default_token_lifetime_ms(),
+        },
         Err(error) => return Err(error.into()),
     };
+    application.set_execution_token_lifetime(Duration::from_millis(
+        settings.execution_token_lifetime_ms,
+    ))?;
+    let address = settings.computer_link_listen;
     let listener = tokio::net::TcpListener::bind(&address).await?;
     let url = format!("ws://{}", listener.local_addr()?);
     let secret = lankide_protocol::link::publish(&paths.run, &url)?;
     let (link_stop, link_stopped) = oneshot::channel();
-    let link_server = tokio::spawn(lankide_protocol::link::serve(
+    let link_server = tokio::spawn(lankide_protocol::resources::serve(
         listener,
         secret,
         RuntimePeerAdapter::new(application.clone()),

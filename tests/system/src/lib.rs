@@ -3,6 +3,7 @@
 //! Test-only business scenarios through the real Runtime and Computer daemons.
 
 mod provider;
+mod resources;
 mod script;
 pub use provider::{Incoming, Outbound, OutboundKind};
 pub use script::{Script, scripted_failure};
@@ -45,6 +46,7 @@ pub struct RigConfig {
     pub harness_executable: PathBuf,
     pub timeout: Duration,
     pub computer_ws_only: bool,
+    pub execution_token_lifetime: Duration,
     pub execution_liveness: lankide_computer::ExecutionLiveness,
     pub harness_capabilities: Vec<String>,
     pub retry: lankide_runtime::RetryConfig,
@@ -61,6 +63,7 @@ impl Default for RigConfig {
                 .join("system-harness"),
             timeout: Duration::from_secs(15),
             computer_ws_only: false,
+            execution_token_lifetime: Duration::from_secs(3600),
             execution_liveness: Default::default(),
             harness_capabilities: ["system_prompt", "streaming", "resume", "cancel", "tools"]
                 .map(str::to_owned)
@@ -143,6 +146,12 @@ impl SystemRig {
         std::fs::write(
             home.path().join("retry-policy.json"),
             serde_json::to_vec(&config.retry)?,
+        )?;
+        std::fs::write(
+            home.path().join("runtime.json"),
+            serde_json::to_vec(
+                &json!({"execution_token_lifetime_ms": config.execution_token_lifetime.as_millis()}),
+            )?,
         )?;
         let im = Arc::new(ImState::default());
         let factories = factories(im.clone())?;

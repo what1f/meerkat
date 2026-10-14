@@ -72,7 +72,8 @@ impl Runtime {
             ExecutionAuthSpec {
                 attempt: 1,
                 token_hash: token_hash(&execution_token),
-                expires_at: now.saturating_add(3_600_000),
+                expires_at: now
+                    .saturating_add(self.execution_token_lifetime_ms.load(Ordering::Relaxed)),
             },
         )?
         else {

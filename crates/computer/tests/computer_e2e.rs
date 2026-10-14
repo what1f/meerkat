@@ -826,7 +826,7 @@ async fn computer_e2e() {
             wait_assignment(&mut incoming_rx, 12, false)
                 .await
                 .error_code,
-            "resource_error"
+            "resource_integrity_mismatch"
         );
 
         peer.send(runtime_assign(

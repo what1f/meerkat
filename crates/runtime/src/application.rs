@@ -417,6 +417,14 @@ impl RuntimeApplication {
         Ok(())
     }
 
+    /// Configure the lifetime of newly issued resource and capability tokens.
+    pub fn set_execution_token_lifetime(
+        &self,
+        duration: std::time::Duration,
+    ) -> Result<(), RuntimeError> {
+        self.runtime()?.set_execution_token_lifetime(duration)
+    }
+
     pub(crate) fn runtime(&self) -> Result<Arc<Runtime>, RuntimeError> {
         self.inner
             .runtime

@@ -76,6 +76,7 @@ pub enum ComputerError {
     InvalidAssignment(String),
     InvalidHarnessRegistration(String),
     Resource(String),
+    ResourceIntegrityMismatch,
     PathOutsideAgentHome,
     PersistenceFailed,
     Join(String),
@@ -94,6 +95,7 @@ impl fmt::Display for ComputerError {
             Self::InvalidHarnessRegistration(id) => {
                 write!(formatter, "invalid_harness_registration: {id}")
             }
+            Self::ResourceIntegrityMismatch => formatter.write_str("resource_integrity_mismatch"),
             Self::Resource(error) => write!(formatter, "resource: {error}"),
             Self::PathOutsideAgentHome => formatter.write_str("path_outside_agent_home"),
             Self::PersistenceFailed => formatter.write_str("computer_state_persistence_failed"),

@@ -27,9 +27,15 @@ where
     let url = format!("ws://{}", listener.local_addr()?);
     let secret = link::publish(socket.parent().expect("run directory"), &url)?;
     let (stop, stopped) = tokio::sync::oneshot::channel();
-    let ws = tokio::spawn(link::serve(listener, secret, peer.clone(), config, async {
-        let _ = stopped.await;
-    }));
+    let ws = tokio::spawn(lankide_protocol::resources::serve(
+        listener,
+        secret,
+        peer.clone(),
+        config,
+        async {
+            let _ = stopped.await;
+        },
+    ));
     let result = lankide_protocol::serve_uds(socket, peer, config, shutdown).await;
     let _ = stop.send(());
     let _ = ws.await;

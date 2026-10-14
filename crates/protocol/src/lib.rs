@@ -2,11 +2,13 @@
 
 //! Versioned wire contracts shared by Runtime, Computer, and clients.
 //!
-//! Computer links use JSON/WebSocket through [`link::ComputerLink`]. Resources,
-//! management, and Agent capabilities use UDS/gRPC through [`RuntimePeer`].
+//! Computer links use JSON/WebSocket through [`link::ComputerLink`]. Computer
+//! resources use HTTP on the same listener. Management and legacy Agent
+//! capabilities use UDS/gRPC through [`RuntimePeer`].
 
 pub mod link;
 mod peer;
+pub mod resources;
 mod service;
 mod transport;
 mod validation;

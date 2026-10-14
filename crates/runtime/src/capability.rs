@@ -132,6 +132,13 @@ impl RuntimeApplication {
     ) -> Result<ResourceBytes, RuntimeError> {
         let runtime = self.runtime()?;
         let validated = runtime.validate_run_context(context, now_millis()).await?;
+        if runtime
+            .storage()
+            .resource_metadata(&validated.workspace_id, resource_id)?
+            .is_none()
+        {
+            return Err(RuntimeError::InvalidExecutionToken);
+        }
         self.resource_store()?
             .read(&validated.workspace_id, resource_id)
             .await

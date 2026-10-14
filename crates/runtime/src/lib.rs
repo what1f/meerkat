@@ -73,7 +73,7 @@ use std::{
     pin::Pin,
     sync::{
         Arc, RwLock as StdRwLock,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI64, Ordering},
     },
 };
 use tokio::sync::{Mutex, RwLock};
@@ -87,6 +87,7 @@ pub struct RuntimeConfig {
 
 pub struct Runtime {
     config: RuntimeConfig,
+    execution_token_lifetime_ms: AtomicI64,
     storage: Arc<Storage>,
     background_tasks: std::sync::Mutex<tokio::task::JoinSet<()>>,
     providers: StdRwLock<BTreeMap<WorkspaceId, Arc<ProviderInstance>>>,
@@ -106,10 +107,25 @@ impl Runtime {
         let storage = Arc::new(Storage::open(config.database.clone())?);
         Ok(Self {
             config,
+            execution_token_lifetime_ms: AtomicI64::new(3_600_000),
             storage,
             background_tasks: std::sync::Mutex::new(tokio::task::JoinSet::new()),
             providers: StdRwLock::new(BTreeMap::new()),
         })
+    }
+
+    /// Configure the authorization lifetime for newly issued attempts.
+    pub fn set_execution_token_lifetime(
+        &self,
+        duration: std::time::Duration,
+    ) -> Result<(), RuntimeError> {
+        let millis = i64::try_from(duration.as_millis())
+            .ok()
+            .filter(|value| *value > 0)
+            .ok_or_else(|| RuntimeError::Application("invalid execution token lifetime".into()))?;
+        self.execution_token_lifetime_ms
+            .store(millis, Ordering::Relaxed);
+        Ok(())
     }
 
     pub fn config(&self) -> &RuntimeConfig {

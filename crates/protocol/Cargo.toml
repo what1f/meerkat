@@ -8,6 +8,9 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+bytes = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["server", "http1"] }
 futures-util.workspace = true
 tokio-tungstenite.workspace = true
 uuid.workspace = true
@@ -32,7 +35,7 @@ tempfile.workspace = true
 
 [package.metadata.lankide.e2e]
 command = "cargo test -p lankide-protocol --test protocol_e2e"
-scenario = "Exchange Runtime-Computer frames, multi-chunk resources, attachment-only and text message sends, typed management operations, subscriptions, and authorized Agent CLI calls over authenticated JSON/WS Computer links and real UDS/gRPC resource, management, and Agent capability calls; replay after reconnect and reject empty messages plus typed version, size, sequence, offset, and token errors. Carry structured assignment failures and expose per-attempt execution diagnostics through management. Carry management cancellation for an execution through the validated public transport. Carry Harness capability declarations in Computer inventory and cancellation close fallback without a storage schema change. Expose Agent pause reasons and a validated owner resume operation."
+scenario = "Exchange Runtime-Computer frames, multi-chunk resources, attachment-only and text message sends, typed management operations, subscriptions, and authorized Agent CLI calls over authenticated JSON/WS Computer links and real UDS/gRPC resource, management, and Agent capability calls; replay after reconnect and reject empty messages plus typed version, size, sequence, offset, and token errors. Carry structured assignment failures and expose per-attempt execution diagnostics through management. Carry management cancellation for an execution through the validated public transport. Carry Harness capability declarations in Computer inventory and cancellation close fallback without a storage schema change. Expose Agent pause reasons and a validated owner resume operation. Serve Computer HTTP resource downloads with attempt tokens and byte ranges on the WS listener; retain legacy Agent resource RPCs until Task 15."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

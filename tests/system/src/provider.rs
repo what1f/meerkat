@@ -43,6 +43,7 @@ pub struct Incoming {
 #[derive(Default)]
 pub(crate) struct ImState {
     pub order: AtomicU64,
+    pub resource_contexts: Mutex<BTreeMap<String, InitContext>>,
     pub sinks: Mutex<BTreeMap<String, EventSink>>,
     pub accounts: Mutex<BTreeMap<(String, String), String>>,
     pub outbound: Mutex<Vec<Outbound>>,
@@ -104,10 +105,25 @@ impl Provider for ScriptedProvider {
     }
     fn init<'a>(&'a self, context: InitContext) -> ProviderFuture<'a, ()> {
         Box::pin(async move {
+            self.state
+                .resource_contexts
+                .lock()
+                .expect("resource contexts")
+                .insert(context.workspace_id().to_string(), context.clone());
             self.state.sinks.lock().expect("sinks").insert(
                 context.workspace_id().to_string(),
                 context.event_sink().clone(),
             );
+            Ok(())
+        })
+    }
+    fn shutdown<'a>(&'a self, context: InitContext) -> ProviderFuture<'a, ()> {
+        Box::pin(async move {
+            self.state
+                .resource_contexts
+                .lock()
+                .expect("resource contexts")
+                .remove(context.workspace_id().as_str());
             Ok(())
         })
     }
