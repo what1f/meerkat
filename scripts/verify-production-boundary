@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 # These executables/libraries are never shipped or linked by product code.
-TEST_ONLY = {"lankide-testkit", "desktop-ui-preview"}
+TEST_ONLY = {"lankide-testkit", "desktop-ui-preview", "lankide-system-e2e"}
 MARKERS = re.compile(
     r"\b(?:Mock|Fake|Fixture)[A-Z]\w*|\b(?:scripted_harness|run_scripted|QueueEventSource|AtomicFailure|InjectedFailure|ProcessHarnessFactory|ProcessHarnessSpec)\b"
     r"|--(?:scripted-harness|scripted-composition|visual-e2e|e2e)\b"

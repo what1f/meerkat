@@ -3865,6 +3865,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "lankide-system-e2e"
+version = "0.1.0"
+dependencies = [
+ "lankide-cli",
+ "lankide-client",
+ "lankide-computer",
+ "lankide-computer-daemon",
+ "lankide-core",
+ "lankide-harness",
+ "lankide-provider",
+ "lankide-runtime",
+ "lankide-runtime-daemon",
+ "lankide-storage",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
 name = "lankide-testkit"
 version = "0.1.0"
 dependencies = [

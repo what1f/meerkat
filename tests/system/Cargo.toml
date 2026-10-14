@@ -1,0 +1,39 @@
+[package]
+name = "lankide-system-e2e"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lankide-core = { path = "../../crates/core" }
+lankide-provider = { path = "../../crates/provider" }
+lankide-runtime = { path = "../../crates/runtime" }
+lankide-storage = { path = "../../crates/storage" }
+lankide-harness = { path = "../../crates/harness", features = ["test-support"] }
+lankide-computer = { path = "../../crates/computer" }
+lankide-client = { path = "../../crates/client" }
+lankide-runtime-daemon = { path = "../../apps/runtime-daemon" }
+lankide-computer-daemon = { path = "../../apps/computer-daemon" }
+lankide-cli = { path = "../../apps/lankide-cli" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+rusqlite.workspace = true
+tempfile.workspace = true
+
+[[bin]]
+name = "system-harness"
+path = "tests/support/peer.rs"
+test = false
+bench = false
+
+[package.metadata.lankide.e2e]
+command = "cargo test -p lankide-system-e2e"
+scenario = "Mention one Agent in a group, queue a message during its run, and restart the Computer during a run; verify chat replies and execution isolation through both real daemons."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"
