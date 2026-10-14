@@ -4,6 +4,7 @@ mod control;
 mod events;
 mod failure;
 mod liveness;
+mod proxy;
 mod records;
 
 use self::connection::run_loop;
@@ -346,6 +347,7 @@ impl Computer {
             pending_events: Mutex::new(pending_events),
             outstanding_tools: Mutex::new(HashSet::new()),
             deferred_tool_results: Mutex::new(HashMap::new()),
+            capability_calls: Mutex::new(HashMap::new()),
             connection: RwLock::new(None),
             connected: AtomicBool::new(false),
             persistence_failed: AtomicBool::new(false),
@@ -488,6 +490,7 @@ struct Inner {
     // Delivery into HarnessSession awaits the shared Harness contract method.
     outstanding_tools: Mutex<HashSet<(String, String)>>,
     deferred_tool_results: Mutex<HashMap<(String, String), lankide_protocol::ToolResult>>,
+    capability_calls: Mutex<HashMap<String, proxy::PendingCall>>,
     connection: RwLock<Option<mpsc::Sender<ComputerFrame>>>,
     connected: AtomicBool,
     persistence_failed: AtomicBool,

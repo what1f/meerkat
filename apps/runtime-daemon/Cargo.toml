@@ -22,6 +22,7 @@ serde_json = { workspace = true }
 tokio = { workspace = true, features = ["signal"] }
 
 [dev-dependencies]
+prost.workspace = true
 lankide-testkit = { path = "../../crates/testkit" }
 sha2.workspace = true
 tempfile = { workspace = true }
@@ -35,7 +36,7 @@ path = "src/main.rs"
 
 [package.metadata.lankide.e2e]
 command = "cargo run -p lankide-runtime-daemon --example runtime-daemon-e2e -- --e2e"
-scenario = "Boot one Runtime over a private local UDS, exercise management including Agent deletion and acknowledged Computer file cleanup and authenticated JSON/WS Computer composition; S3.1 shuts down with a live Computer and running Provider, exits 0 without still_shared and reopens the database; S3.2 exits a duplicate 0 without opening SQLite while the owner serves; S3.3 recovers stale ownership after SIGKILL. Load optional retry-policy.json duration configuration from the private Runtime home. Serve HTTP resources and WS links on one listener, with configurable execution token lifetime. Read Computer heartbeat interval and handshake timeout from runtime.json with production defaults. Serve POST /computers/pair on the shared listener; local discovery secret authorizes pairing only, and pairing validity is configured in runtime.json (default ten minutes). Reconcile the peer active-attempt report before dispatching its queued execution."
+scenario = "Boot one Runtime over a private local UDS, exercise management including Agent deletion and acknowledged Computer file cleanup and authenticated JSON/WS Computer composition; S3.1 shuts down with a live Computer and running Provider, exits 0 without still_shared and reopens the database; S3.2 exits a duplicate 0 without opening SQLite while the owner serves; S3.3 recovers stale ownership after SIGKILL. Load optional retry-policy.json duration configuration from the private Runtime home. Serve HTTP resources and WS links on one listener, with configurable execution token lifetime. Read Computer heartbeat interval and handshake timeout from runtime.json with production defaults. Serve POST /computers/pair on the shared listener; local discovery secret authorizes pairing only, and pairing validity is configured in runtime.json (default ten minutes). Reconcile the peer active-attempt report before dispatching its queued execution. Restrict the production Runtime UDS to management; Agent capabilities and attachment transfers use the Computer WS proxy (S15 system scenarios)."
 prerequisites = "None for hermetic boot check"
 classification = "hermetic"
 unattended = "yes"

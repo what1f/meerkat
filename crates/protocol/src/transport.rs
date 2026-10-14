@@ -66,10 +66,44 @@ where
     P: RuntimePeer,
     F: Future<Output = ()> + Send + 'static,
 {
+    serve_uds_inner(socket_path, peer, config, shutdown, false).await
+}
+
+/// Management listener excludes all Agent capability RPCs. Agent RPCs are local
+/// to the Computer's private per-attempt proxy.
+pub async fn serve_management_uds<P, F>(
+    socket_path: impl AsRef<Path>,
+    peer: P,
+    config: TransportConfig,
+    shutdown: F,
+) -> Result<(), TransportError>
+where
+    P: RuntimePeer,
+    F: Future<Output = ()> + Send + 'static,
+{
+    serve_uds_inner(socket_path, peer, config, shutdown, true).await
+}
+async fn serve_uds_inner<P, F>(
+    socket_path: impl AsRef<Path>,
+    peer: P,
+    config: TransportConfig,
+    shutdown: F,
+    management_only: bool,
+) -> Result<(), TransportError>
+where
+    P: RuntimePeer,
+    F: Future<Output = ()> + Send + 'static,
+{
     let socket_path = socket_path.as_ref().to_path_buf();
     prepare_socket_parent(&socket_path)?;
     let listener = UnixListener::bind(&socket_path)?;
-    let service = RuntimeProtocolServer::new(ValidatedRuntimeService::new(peer, config))
+    let service = ValidatedRuntimeService::new(peer, config);
+    let service = if management_only {
+        service.management_only()
+    } else {
+        service
+    };
+    let service = RuntimeProtocolServer::new(service)
         .max_decoding_message_size(config.max_message_bytes)
         .max_encoding_message_size(config.max_message_bytes);
     let result = Server::builder()

@@ -476,7 +476,7 @@ async fn codex_default_home_is_agent_local() {
         thinking_level: "low".into(),
         cli_path: resolve_codex_path().unwrap(),
         environment: BTreeMap::from([(
-            "LANKIDE_RUNTIME_SOCKET".into(),
+            "LANKIDE_AGENT_SOCKET".into(),
             runtime_socket.display().to_string(),
         )]),
         config_fingerprint: "isolation".into(),

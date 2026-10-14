@@ -18,7 +18,7 @@ fn main() {
         return;
     }
     for name in [
-        "LANKIDE_RUNTIME_SOCKET",
+        "LANKIDE_AGENT_SOCKET",
         "LANKIDE_EXECUTION_ID",
         "LANKIDE_EXECUTION_ATTEMPT",
         "LANKIDE_EXECUTION_TOKEN",

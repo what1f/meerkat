@@ -2,7 +2,9 @@
 
 pub use lankide_daemon_runtime::InstanceGuard;
 use lankide_daemon_runtime::{DaemonRuntimeError, create_private_directory};
-use lankide_protocol::{DEFAULT_MAX_MESSAGE_BYTES, PROTOCOL_VERSION, TransportConfig, serve_uds};
+use lankide_protocol::{
+    DEFAULT_MAX_MESSAGE_BYTES, PROTOCOL_VERSION, TransportConfig, serve_management_uds,
+};
 use lankide_provider::{HostServices, Provider, ProviderError, ProviderHost, ProviderInfo};
 use lankide_runtime::{
     ProviderFactoryFuture, ProviderFactoryRegistry, ProviderOnboarding, ProviderTypeFactory,
@@ -252,7 +254,7 @@ where
     // render persisted data while the Runtime restores background work.
     let (server_shutdown_tx, server_shutdown_rx) = oneshot::channel();
     let socket = paths.socket.clone();
-    let mut server = tokio::spawn(serve_uds(
+    let mut server = tokio::spawn(serve_management_uds(
         socket.clone(),
         RuntimePeerAdapter::new(application.clone()),
         TransportConfig {

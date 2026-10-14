@@ -749,7 +749,7 @@ impl ComputerBroker {
                     });
                 }
             }
-            computer_frame::Frame::ToolCall(_) => {}
+            computer_frame::Frame::ToolCall(_) | computer_frame::Frame::CapabilityRequest(_) => {}
             computer_frame::Frame::Hello(_) => {
                 return Err(RuntimeError::Application("duplicate computer hello".into()));
             }

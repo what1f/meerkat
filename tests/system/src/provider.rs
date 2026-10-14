@@ -28,6 +28,7 @@ pub struct Outbound {
     pub message_id: String,
     pub reply_to: Option<String>,
     pub idempotency_key: Option<String>,
+    pub resources: Vec<lankide_provider::MessageAttachment>,
 }
 
 #[derive(Clone, Debug)]
@@ -181,6 +182,7 @@ impl Provider for ScriptedProvider {
                 content: context.content,
                 message_id: id.clone(),
                 reply_to,
+                resources: context.attachments,
                 idempotency_key: Some(context.idempotency_key),
             });
             SendMessageResult::sent(id)
@@ -203,6 +205,7 @@ impl Provider for ScriptedProvider {
                         content: context.auto_reaction.clone(),
                         message_id: message.to_string(),
                         reply_to: None,
+                        resources: Vec::new(),
                         idempotency_key: None,
                     });
             }
@@ -224,6 +227,7 @@ impl Provider for ScriptedProvider {
                     content: String::new(),
                     message_id: context.provider_message_id,
                     reply_to: None,
+                    resources: Vec::new(),
                     idempotency_key: None,
                 });
             Ok(())
@@ -244,6 +248,7 @@ impl Provider for ScriptedProvider {
                     content: context.content,
                     message_id: context.provider_message_id,
                     reply_to: None,
+                    resources: Vec::new(),
                     idempotency_key: None,
                 });
             Ok(())

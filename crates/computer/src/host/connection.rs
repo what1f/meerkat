@@ -42,6 +42,7 @@ pub(super) async fn run_loop(
             result = run_connection(inner.clone()) => {
                 *inner.connection.write().await = None;
                 inner.connected.store(false, Ordering::Release);
+                super::proxy::disconnected(&inner).await;
                 if let Err(error) = &result {
                     if matches!(error, ComputerError::InvalidAssignment(_) | ComputerError::ProtocolVersionUnsupported | ComputerError::Link(LinkError::Closed(CloseReason::ComputerRevoked | CloseReason::ComputerUnknown))) {
                         ComputerHandle::cancel_inner(&inner, "computer_link_rejected").await;
@@ -287,6 +288,9 @@ async fn publish_inventory(inner: &Inner) {
 
 async fn dispatch(inner: Arc<Inner>, frame: RuntimeFrame) -> Result<(), ComputerError> {
     match frame.frame {
+        Some(runtime_frame::Frame::CapabilityResponse(response)) => {
+            super::proxy::response(&inner, response).await
+        }
         Some(runtime_frame::Frame::AssignExecution(assign)) => {
             let task_inner = inner.clone();
             let task = tokio::spawn(async move {
@@ -331,7 +335,9 @@ async fn dispatch(inner: Arc<Inner>, frame: RuntimeFrame) -> Result<(), Computer
             }
         }
         Some(runtime_frame::Frame::ToolResult(result)) => {
-            route_tool_result(&inner, result).await;
+            if !super::proxy::legacy_tool_response(&inner, &result).await {
+                route_tool_result(&inner, result).await;
+            }
         }
         Some(runtime_frame::Frame::ExecutionCommitted(committed)) => {
             if let Some(execution) = committed.execution {

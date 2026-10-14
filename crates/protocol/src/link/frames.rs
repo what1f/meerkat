@@ -964,6 +964,7 @@ pub struct ComputerFrame {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum ComputerPayload {
+    CapabilityRequest(CapabilityRequest),
     Hello(ComputerHello),
     Heartbeat(ComputerHeartbeat),
     AssignmentResult(AssignmentResult),
@@ -978,6 +979,9 @@ impl TryFrom<crate::wire::ComputerFrame> for ComputerFrame {
     type Error = super::CloseReason;
     fn try_from(value: crate::wire::ComputerFrame) -> Result<Self, Self::Error> {
         let frame = match value.frame {
+            Some(crate::wire::computer_frame::Frame::CapabilityRequest(value)) => {
+                ComputerPayload::CapabilityRequest(value.into())
+            }
             Some(crate::wire::computer_frame::Frame::Hello(value)) => {
                 ComputerPayload::Hello(value.into())
             }
@@ -1021,6 +1025,9 @@ impl From<ComputerFrame> for crate::wire::ComputerFrame {
     fn from(value: ComputerFrame) -> Self {
         Self {
             frame: Some(match value.frame {
+                ComputerPayload::CapabilityRequest(value) => {
+                    crate::wire::computer_frame::Frame::CapabilityRequest(value.into())
+                }
                 ComputerPayload::Hello(value) => {
                     crate::wire::computer_frame::Frame::Hello(value.into())
                 }
@@ -1061,6 +1068,7 @@ pub struct RuntimeFrame {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum RuntimePayload {
+    CapabilityResponse(CapabilityResponse),
     Heartbeat,
     Hello(RuntimeHello),
     AssignExecution(AssignExecution),
@@ -1076,6 +1084,9 @@ impl TryFrom<crate::wire::RuntimeFrame> for RuntimeFrame {
     type Error = super::CloseReason;
     fn try_from(value: crate::wire::RuntimeFrame) -> Result<Self, Self::Error> {
         let frame = match value.frame {
+            Some(crate::wire::runtime_frame::Frame::CapabilityResponse(value)) => {
+                RuntimePayload::CapabilityResponse(value.into())
+            }
             Some(crate::wire::runtime_frame::Frame::Hello(value)) => {
                 RuntimePayload::Hello(value.into())
             }
@@ -1119,6 +1130,9 @@ impl From<RuntimeFrame> for crate::wire::RuntimeFrame {
     fn from(value: RuntimeFrame) -> Self {
         Self {
             frame: Some(match value.frame {
+                RuntimePayload::CapabilityResponse(value) => {
+                    crate::wire::runtime_frame::Frame::CapabilityResponse(value.into())
+                }
                 RuntimePayload::Heartbeat => return Self { frame: None },
                 RuntimePayload::Hello(value) => {
                     crate::wire::runtime_frame::Frame::Hello(value.into())
@@ -1163,4 +1177,94 @@ pub struct PairComputerRequest {
 pub struct PairComputerResponse {
     pub computer_id: String,
     pub device_credential: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CapabilityRequest {
+    pub request_id: String,
+    pub method: String,
+    pub context: Option<AgentRunContext>,
+    pub payload: Vec<u8>,
+    pub offset: u64,
+    pub eof: bool,
+}
+impl From<crate::wire::CapabilityRequest> for CapabilityRequest {
+    fn from(value: crate::wire::CapabilityRequest) -> Self {
+        Self {
+            request_id: value.request_id,
+            method: value.method,
+            context: value.context.map(Into::into),
+            payload: value.payload,
+            offset: value.offset,
+            eof: value.eof,
+        }
+    }
+}
+impl From<CapabilityRequest> for crate::wire::CapabilityRequest {
+    fn from(value: CapabilityRequest) -> Self {
+        Self {
+            request_id: value.request_id,
+            method: value.method,
+            context: value.context.map(Into::into),
+            payload: value.payload,
+            offset: value.offset,
+            eof: value.eof,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CapabilityResponse {
+    pub request_id: String,
+    pub payload: Vec<u8>,
+    pub offset: u64,
+    pub eof: bool,
+    pub error_code: i32,
+    pub error_message: String,
+}
+impl From<crate::wire::CapabilityResponse> for CapabilityResponse {
+    fn from(value: crate::wire::CapabilityResponse) -> Self {
+        Self {
+            request_id: value.request_id,
+            payload: value.payload,
+            offset: value.offset,
+            eof: value.eof,
+            error_code: value.error_code,
+            error_message: value.error_message,
+        }
+    }
+}
+impl From<CapabilityResponse> for crate::wire::CapabilityResponse {
+    fn from(value: CapabilityResponse) -> Self {
+        Self {
+            request_id: value.request_id,
+            payload: value.payload,
+            offset: value.offset,
+            eof: value.eof,
+            error_code: value.error_code,
+            error_message: value.error_message,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct AgentRunContext {
+    pub execution: Option<ExecutionRef>,
+    pub execution_token: String,
+}
+impl From<crate::wire::AgentRunContext> for AgentRunContext {
+    fn from(value: crate::wire::AgentRunContext) -> Self {
+        Self {
+            execution: value.execution.map(Into::into),
+            execution_token: value.execution_token,
+        }
+    }
+}
+impl From<AgentRunContext> for crate::wire::AgentRunContext {
+    fn from(value: AgentRunContext) -> Self {
+        Self {
+            execution: value.execution.map(Into::into),
+            execution_token: value.execution_token,
+        }
+    }
 }

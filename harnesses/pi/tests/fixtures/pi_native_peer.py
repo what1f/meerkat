@@ -9,7 +9,7 @@ def write_record(value):
         with open(record, "a") as output:
             output.write(json.dumps(value) + "\n")
 
-write_record({"argv": sys.argv[1:], "cwd": os.getcwd(), "environment": {key: os.environ[key] for key in ("HOME", "PI_CODING_AGENT_DIR", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "LANKIDE_RUNTIME_SOCKET") if key in os.environ}})
+write_record({"argv": sys.argv[1:], "cwd": os.getcwd(), "environment": {key: os.environ[key] for key in ("HOME", "PI_CODING_AGENT_DIR", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "LANKIDE_AGENT_SOCKET") if key in os.environ}})
 if "--version" in sys.argv:
     print("native-fixture")
     sys.exit(0)

@@ -16,6 +16,9 @@ pub enum Script {
         deltas: Vec<String>,
         held: bool,
     },
+    ReplyBeforeTerminal {
+        text: String,
+    },
     LinkReply {
         text: String,
     },
@@ -40,6 +43,9 @@ pub enum Script {
     SpawnChild {
         text: String,
         delay_ms: u64,
+    },
+    ProxyScenario {
+        binary: String,
     },
     Capability {
         arguments: Vec<String>,

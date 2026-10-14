@@ -7,6 +7,8 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+prost.workspace = true
+tonic.workspace = true
 reqwest.workspace = true
 sha2.workspace = true
 futures-util.workspace = true
@@ -84,6 +86,14 @@ status = "implemented"
 [package.metadata.lankide.e2e-additional.system-pairing]
 command = "cargo test -p lankide-system-e2e --test pairing_e2e"
 scenario = "Verify S12.1 fresh-code pairing and online registration; S12.2 single use and configurable ten-minute expiry; S12.3 offline registration and inventory; S12.4 immediate revocation and terminal daemon stop; S12.5 copied revoked home rejected. Verify local self-pairing with fresh homes, an Agent reply, management-visible legacy placement reassignment in the registration transaction, credential reuse across Runtime restart, private atomic credential files, and rejection of local pairing secrets and mismatched device IDs as link credentials."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"
+
+[package.metadata.lankide.e2e-additional.system-agent-proxy]
+command = "cargo test -p lankide-system-e2e --test agent_proxy_e2e"
+scenario = "Verify S15.1-S15.3 with the real lankide CLI and daemons on separate homes using only WS for Computer access: send content-file text with an attachment, read chat content, list and invoke capabilities, update a profile, transfer multi-frame resources, assert no Runtime address in recorded Harness environment, check owner-only socket permissions and removal, and reject wrong or finished credentials."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

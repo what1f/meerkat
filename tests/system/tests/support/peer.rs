@@ -1,3 +1,4 @@
+mod agent_proxy;
 use lankide_system_e2e::Script;
 use serde_json::{Value, json};
 use std::{
@@ -112,7 +113,7 @@ fn main() {
                         }
                         (text, *delay_ms)
                     }
-                    Script::LinkReply { text } => (text, 0),
+                    Script::LinkReply { text } | Script::ReplyBeforeTerminal { text } => (text, 0),
                     Script::FailSequence { texts, reply } => {
                         let counter = format!(
                             "{}.count",
@@ -176,6 +177,14 @@ fn main() {
                         let _ = (text, delay_ms);
                         continue;
                     }
+                    Script::ProxyScenario { binary } => {
+                        agent_proxy::run(binary, input);
+                        event(
+                            &mut sequence,
+                            json!({"kind":"completed","final_output":"OK"}),
+                        );
+                        continue;
+                    }
                     Script::Capability { arguments, text } => {
                         runtime
                             .block_on(lankide_cli::execute_from_environment(arguments.clone()))
@@ -235,7 +244,7 @@ fn main() {
                         continue;
                     }
                     let result = runtime
-                        .block_on(lankide_cli::execute_from_environment([
+                        .block_on(retry_capability(vec![
                             "send".into(),
                             "--channel".into(),
                             channel.into(),
@@ -251,6 +260,23 @@ fn main() {
                         ]))
                         .expect("send through Agent capability");
                     assert_eq!(result["accepted"], true, "reply rejected: {result}");
+                }
+                if matches!(script, Script::ReplyBeforeTerminal { .. }) {
+                    let mut journal = std::fs::OpenOptions::new()
+                        .append(true)
+                        .open(std::env::var("LANKIDE_SYSTEM_CONTROLS").expect("control journal"))
+                        .expect("open control journal");
+                    writeln!(journal, "{}", json!({"op":"reply_sent"}))
+                        .expect("record capability reply");
+                    let release = std::env::var("LANKIDE_SYSTEM_RELEASE").expect("terminal gate");
+                    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+                    while !std::path::Path::new(&release).exists() {
+                        assert!(
+                            std::time::Instant::now() < deadline,
+                            "terminal gate timeout"
+                        );
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
                 }
                 event(
                     &mut sequence,
@@ -269,5 +295,26 @@ fn main() {
             Some("close") => return,
             _ => {}
         }
+    }
+}
+
+// A native Agent may retry typed transport failures. Keep retries at the outer
+// Harness boundary and reuse the send idempotency key across an unknown reply.
+async fn retry_capability(arguments: Vec<String>) -> Result<Value, lankide_cli::CliError> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let result = lankide_cli::execute_from_environment(arguments.clone()).await;
+        let retryable = match &result {
+            Err(lankide_cli::CliError::Runtime(status)) => matches!(
+                status.code(),
+                tonic::Code::Unavailable | tonic::Code::DeadlineExceeded
+            ),
+            Err(lankide_cli::CliError::Transport(_)) => true,
+            _ => false,
+        };
+        if !retryable || tokio::time::Instant::now() >= deadline {
+            return result;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }

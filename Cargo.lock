@@ -3864,6 +3864,7 @@ dependencies = [
  "lankide-runtime",
  "lankide-storage",
  "lankide-testkit",
+ "prost",
  "rusqlite",
  "serde",
  "serde_json",
@@ -3902,6 +3903,7 @@ dependencies = [
  "lankide-runtime",
  "lankide-runtime-daemon",
  "lankide-storage",
+ "prost",
  "reqwest",
  "rusqlite",
  "serde",
@@ -3911,6 +3913,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-tungstenite",
+ "tonic",
 ]
 
 [[package]]

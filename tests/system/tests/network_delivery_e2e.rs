@@ -101,11 +101,22 @@ async fn s10_3_sigkill_after_finish_before_ack_replays_once() -> Result<()> {
         let team = rig.workspace("team").await?;
         let agent = team
             .agent("bruce")
-            .harness(Script::reply("durable").held())
+            .harness(Script::ReplyBeforeTerminal {
+                text: "durable".into(),
+            })
             .create()
             .await?;
         team.direct_message(&agent, "alice", "hello").await?;
         agent.wait_until_running().await?;
+        // Let the capability reply reach the Harness before withholding the
+        // terminal event ACK on the same link.
+        wait(async || {
+            Ok(agent
+                .native_controls()?
+                .iter()
+                .any(|control| control["op"] == "reply_sent"))
+        })
+        .await?;
         rig.proxy.as_ref().unwrap().pause_replies();
         agent.release_run().await?;
         wait(async || {
