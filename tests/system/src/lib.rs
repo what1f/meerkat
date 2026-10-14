@@ -44,6 +44,7 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 pub struct RigConfig {
     pub harness_executable: PathBuf,
     pub timeout: Duration,
+    pub computer_ws_only: bool,
     pub execution_liveness: lankide_computer::ExecutionLiveness,
     pub harness_capabilities: Vec<String>,
     pub retry: lankide_runtime::RetryConfig,
@@ -59,6 +60,7 @@ impl Default for RigConfig {
                 .expect("target directory")
                 .join("system-harness"),
             timeout: Duration::from_secs(15),
+            computer_ws_only: false,
             execution_liveness: Default::default(),
             harness_capabilities: ["system_prompt", "streaming", "resume", "cancel", "tools"]
                 .map(str::to_owned)
@@ -205,11 +207,28 @@ impl SystemRig {
         )?;
         let mut config = DaemonConfig::for_home(self.computer_home.path())?;
         config.paths.prepare()?;
-        config.paths.runtime_socket = self.paths.socket.clone();
+        let (url, secret) = lankide_protocol::link::discover(&self.paths.socket)?;
+        let secret_path = self.computer_home.path().join("run/computer-link.secret");
+        {
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&secret_path)?;
+            file.write_all(secret.as_bytes())?;
+        }
+        if !self.config.computer_ws_only {
+            config.paths.runtime_socket = self.paths.socket.clone();
+        }
+        config.runtime_url = Some(url);
+        config.link_secret_file = Some(secret_path);
         self.computer = Some(ComputerThread::start(
             config,
             self.config.harness_executable.clone(),
-            self.home.path().join("harness-pids.tsv"),
+            self.computer_home.path().join("harness-pids.tsv"),
             self.config.harness_capabilities.clone(),
         ));
         Ok(())
@@ -232,6 +251,19 @@ impl SystemRig {
         .await
         .map_err(|_| "Computer startup timed out")?
     }
+    pub fn computer_endpoint(&self) -> Result<(String, String)> {
+        Ok(lankide_protocol::link::discover(&self.paths.socket)?)
+    }
+    pub fn runtime_socket(&self) -> &std::path::Path {
+        &self.paths.socket
+    }
+    pub fn homes_are_separate(&self) -> bool {
+        self.home.path() != self.computer_home.path()
+    }
+    pub fn computer_has_runtime_socket(&self) -> bool {
+        self.computer_home.path().join("run/runtime.sock").exists()
+    }
+
     pub fn outbound(&self) -> Vec<Outbound> {
         self.im.outbound.lock().expect("outbound").clone()
     }
@@ -255,7 +287,7 @@ impl SystemRig {
 
     pub fn harness_pids(&self) -> Result<Vec<u32>> {
         Ok(
-            std::fs::read_to_string(self.home.path().join("harness-pids.tsv"))?
+            std::fs::read_to_string(self.computer_home.path().join("harness-pids.tsv"))?
                 .lines()
                 .filter_map(|line| line.strip_prefix("spawned\t")?.parse().ok())
                 .collect(),
@@ -286,6 +318,17 @@ impl SystemRig {
         if let Some(mut computer) = self.computer.take() {
             computer.stop()?;
         }
+        timeout(self.config.timeout, async {
+            loop {
+                if self.client.list_workspaces().await.is_ok() {
+                    return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+                }
+                self.check_daemons()?;
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .map_err(|_| "Runtime restart timed out")??;
         self.start_computer()?;
         self.wait_for_computer().await
     }
@@ -641,7 +684,7 @@ impl<'a> AgentBuilder<'a> {
                         (
                             "LANKIDE_SYSTEM_INPUTS".into(),
                             self.rig
-                                .home
+                                .computer_home
                                 .path()
                                 .join(format!("inputs-{}-{}.jsonl", self.workspace, self.name))
                                 .display()
@@ -650,7 +693,7 @@ impl<'a> AgentBuilder<'a> {
                         (
                             "LANKIDE_SYSTEM_CONTROLS".into(),
                             self.rig
-                                .home
+                                .computer_home
                                 .path()
                                 .join(format!("controls-{}-{}.jsonl", self.workspace, self.name))
                                 .display()
@@ -659,7 +702,7 @@ impl<'a> AgentBuilder<'a> {
                         (
                             "LANKIDE_SYSTEM_STEERS".into(),
                             self.rig
-                                .home
+                                .computer_home
                                 .path()
                                 .join(format!("steers-{}-{}.jsonl", self.workspace, self.name))
                                 .display()
@@ -672,7 +715,7 @@ impl<'a> AgentBuilder<'a> {
                         (
                             "LANKIDE_SYSTEM_RELEASE".into(),
                             self.rig
-                                .home
+                                .computer_home
                                 .path()
                                 .join(format!("release-{}-{}", self.workspace, self.name))
                                 .display()
@@ -814,7 +857,7 @@ impl Agent<'_> {
     pub fn harness_inputs(&self) -> Result<Vec<String>> {
         let path = self
             .rig
-            .home
+            .computer_home
             .path()
             .join(format!("inputs-{}-{}.jsonl", self.workspace, self.id));
         if !path.exists() {
@@ -829,7 +872,7 @@ impl Agent<'_> {
     pub fn native_controls(&self) -> Result<Vec<serde_json::Value>> {
         let path = self
             .rig
-            .home
+            .computer_home
             .path()
             .join(format!("controls-{}-{}.jsonl", self.workspace, self.id));
         let text = std::fs::read_to_string(path)?;
@@ -850,7 +893,7 @@ impl Agent<'_> {
     pub fn received_steers(&self) -> Result<Vec<serde_json::Value>> {
         let path = self
             .rig
-            .home
+            .computer_home
             .path()
             .join(format!("steers-{}-{}.jsonl", self.workspace, self.id));
         let text = match std::fs::read_to_string(path) {
@@ -867,7 +910,7 @@ impl Agent<'_> {
     pub async fn release_run(&self) -> Result<()> {
         std::fs::write(
             self.rig
-                .home
+                .computer_home
                 .path()
                 .join(format!("release-{}-{}", self.workspace, self.id)),
             b"release",

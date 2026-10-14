@@ -56,6 +56,8 @@ pub struct DaemonConfig {
     pub execution_liveness: lankide_computer::ExecutionLiveness,
     pub paths: ComputerDaemonPaths,
     pub instance_id: String,
+    pub runtime_url: Option<String>,
+    pub link_secret_file: Option<PathBuf>,
     pub pi_cli: PathBuf,
     pub codex_cli: PathBuf,
     pub claude_code_cli: PathBuf,
@@ -70,6 +72,8 @@ impl DaemonConfig {
             )?,
             paths: ComputerDaemonPaths::local_default()?,
             instance_id: unique_run_id(),
+            runtime_url: None,
+            link_secret_file: None,
             pi_cli: PathBuf::from("pi"),
             codex_cli: PathBuf::from("codex"),
             claude_code_cli: PathBuf::from("claude"),
@@ -83,6 +87,8 @@ impl DaemonConfig {
             execution_liveness: read_execution_liveness(&paths.home)?,
             paths,
             instance_id: unique_run_id(),
+            runtime_url: None,
+            link_secret_file: None,
             pi_cli: PathBuf::from("pi"),
             codex_cli: PathBuf::from("codex"),
             claude_code_cli: PathBuf::from("claude"),
@@ -170,6 +176,14 @@ pub async fn run_with_harnesses(
         reconnect: ReconnectPolicy::default(),
     })
     .with_execution_liveness(config.execution_liveness);
+    if let Some(url) = &config.runtime_url {
+        let secret_file = config
+            .link_secret_file
+            .clone()
+            .unwrap_or_else(|| config.paths.run.join("computer-link.secret"));
+        let secret = std::fs::read_to_string(secret_file)?;
+        computer = computer.with_link_endpoint(url.clone(), secret.trim().to_owned());
+    }
     for registration in registrations {
         computer
             .register_harness(registration)

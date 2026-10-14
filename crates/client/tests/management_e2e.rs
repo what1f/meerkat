@@ -87,10 +87,6 @@ fn agent(input: wire::CreateAgentRequest) -> wire::Agent {
         updated_at: 1,
     }
 }
-fn empty_stream<T: Send + 'static>()
--> std::pin::Pin<Box<dyn tokio_stream::Stream<Item = Result<T, Status>> + Send>> {
-    Box::pin(tokio_stream::empty())
-}
 
 impl Peer {
     fn inject(&self, fault: u8) {
@@ -111,13 +107,6 @@ impl Peer {
 
 #[tonic::async_trait]
 impl wire::RuntimePeer for Peer {
-    async fn connect_computer(
-        &self,
-        _: wire::ComputerHello,
-        _: wire::ComputerFrameStream,
-    ) -> Result<wire::RuntimeFrameStream, Status> {
-        Ok(empty_stream())
-    }
     async fn upload_resource(
         &self,
         _: wire::ResourceChunkStream,

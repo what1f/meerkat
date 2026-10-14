@@ -20,19 +20,35 @@ async fn main() {
 async fn execute() -> Result<(), AppError> {
     let mut arguments = std::env::args_os().skip(1);
     let mut home = None;
+    let mut runtime_url = None;
+    let mut link_secret_file = None;
     let mut instance_id = None;
     while let Some(argument) = arguments.next() {
         if argument == "--version" {
             println!("lankide-computer-daemon {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         } else if argument == "--help" {
-            println!("Usage: lankide-computer-daemon [--home PATH] [--instance-id ID]");
+            println!(
+                "Usage: lankide-computer-daemon [--home PATH] [--instance-id ID] [--runtime-url URL] [--link-secret-file PATH]"
+            );
             return Ok(());
         } else if argument == "--home" {
             home =
                 Some(PathBuf::from(arguments.next().ok_or(
                     AppError::InvalidArgument("--home requires a path"),
                 )?));
+        } else if argument == "--runtime-url" {
+            runtime_url = Some(
+                arguments
+                    .next()
+                    .ok_or(AppError::InvalidArgument("--runtime-url requires a URL"))?
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        } else if argument == "--link-secret-file" {
+            link_secret_file = Some(PathBuf::from(arguments.next().ok_or(
+                AppError::InvalidArgument("--link-secret-file requires a path"),
+            )?));
         } else if argument == "--instance-id" {
             instance_id = Some(
                 arguments
@@ -49,6 +65,8 @@ async fn execute() -> Result<(), AppError> {
         Some(home) => DaemonConfig::for_home(home)?,
         None => DaemonConfig::local_default()?,
     };
+    config.runtime_url = runtime_url;
+    config.link_secret_file = link_secret_file;
     if let Some(path) = user_executable_path() {
         config.set_executable_path(path.to_string_lossy().into_owned());
     }

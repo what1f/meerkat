@@ -15,12 +15,6 @@ pub type ManagementEventStream =
 /// A Runtime-side peer behind the protocol validation and UDS/gRPC boundary.
 #[tonic::async_trait]
 pub trait RuntimePeer: Send + Sync + 'static {
-    async fn connect_computer(
-        &self,
-        hello: ComputerHello,
-        frames: ComputerFrameStream,
-    ) -> Result<RuntimeFrameStream, Status>;
-
     async fn upload_resource(&self, chunks: ResourceChunkStream) -> Result<ResourceRef, Status>;
 
     async fn download_resource(
@@ -236,4 +230,16 @@ pub trait RuntimePeer: Send + Sync + 'static {
     async fn get_content(&self, _request: ContentRequest) -> Result<ContentResult, Status> {
         Err(Status::unimplemented("get_content"))
     }
+}
+
+/// Accept a validated Computer connection, independent of the management transport.
+#[tonic::async_trait]
+pub trait ComputerPeer: Send + Sync + 'static {
+    async fn link_rejected(&self, _hello: ComputerHello, _reason: crate::link::CloseReason) {}
+
+    async fn connect_computer(
+        &self,
+        hello: ComputerHello,
+        frames: ComputerFrameStream,
+    ) -> Result<RuntimeFrameStream, Status>;
 }

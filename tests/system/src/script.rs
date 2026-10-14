@@ -16,6 +16,9 @@ pub enum Script {
         deltas: Vec<String>,
         held: bool,
     },
+    LinkReply {
+        text: String,
+    },
     FailSequence {
         texts: Vec<String>,
         reply: String,

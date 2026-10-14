@@ -1,3 +1,5 @@
+#[path = "../../../../crates/protocol/tests/support/ws.rs"]
+mod ws;
 use lankide_core::{AgentId, AttentionLevel, ChannelAbility, ChannelId, ProviderId, WorkspaceId};
 use lankide_protocol::{
     AgentRef, AgentRunContext, AssignmentResult, ComputerFrame, ComputerHello, ContentKind,
@@ -364,9 +366,6 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         .await
         .map_err(AppError::Status)?;
 
-    let mut computer_client = connect_uds(&paths.socket, DEFAULT_MAX_MESSAGE_BYTES)
-        .await
-        .map_err(AppError::Protocol)?;
     let (computer_tx, computer_rx) = mpsc::channel(16);
     computer_tx
         .send(ComputerFrame {
@@ -382,8 +381,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         })
         .await
         .map_err(|_| AppError::Invariant("Computer hello channel closed"))?;
-    let mut runtime_frames = computer_client
-        .connect_computer(ReceiverStream::new(computer_rx))
+    let mut runtime_frames = ws::connect_stream(&paths.socket, ReceiverStream::new(computer_rx))
         .await
         .map_err(AppError::Status)?
         .into_inner();

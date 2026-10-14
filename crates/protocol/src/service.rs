@@ -1,12 +1,11 @@
 use crate::validation::*;
 use crate::wire::*;
 use crate::{
-    MAX_WORKSPACE_IMAGE_BYTES, ManagementEventStream, ResourceChunkStream, RuntimeFrameStream,
-    RuntimePeer, RuntimeProtocol, TransportConfig,
+    MAX_WORKSPACE_IMAGE_BYTES, ManagementEventStream, ResourceChunkStream, RuntimePeer,
+    RuntimeProtocol, TransportConfig,
 };
 use tokio::sync::mpsc;
-use tokio_stream::StreamExt;
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::{StreamExt, wrappers::ReceiverStream};
 use tonic::{Request, Response, Status, Streaming};
 
 /// Generated-service adapter which rejects malformed wire input before it can
@@ -14,12 +13,11 @@ use tonic::{Request, Response, Status, Streaming};
 #[derive(Clone)]
 pub struct ValidatedRuntimeService<P> {
     peer: P,
-    config: TransportConfig,
 }
 
 impl<P> ValidatedRuntimeService<P> {
-    pub const fn new(peer: P, config: TransportConfig) -> Self {
-        Self { peer, config }
+    pub const fn new(peer: P, _config: TransportConfig) -> Self {
+        Self { peer }
     }
 }
 
@@ -28,89 +26,8 @@ impl<P> RuntimeProtocol for ValidatedRuntimeService<P>
 where
     P: RuntimePeer,
 {
-    type ConnectComputerStream = RuntimeFrameStream;
     type DownloadResourceStream = ResourceChunkStream;
     type SubscribeManagementEventsStream = ManagementEventStream;
-
-    async fn connect_computer(
-        &self,
-        request: Request<Streaming<ComputerFrame>>,
-    ) -> Result<Response<Self::ConnectComputerStream>, Status> {
-        let mut inbound = request.into_inner();
-        let first = inbound
-            .next()
-            .await
-            .ok_or_else(|| Status::invalid_argument("missing_computer_hello"))??;
-        let hello = match first.frame {
-            Some(computer_frame::Frame::Hello(hello)) => hello,
-            Some(_) => {
-                return Err(Status::invalid_argument(
-                    "first_frame_must_be_computer_hello",
-                ));
-            }
-            None => return Err(Status::invalid_argument("unknown_computer_frame")),
-        };
-        validate_computer_hello(&hello, self.config.protocol_version)?;
-
-        let (sender, receiver) = mpsc::channel(16);
-        tokio::spawn(async move {
-            let mut validator = ComputerFrameValidator::default();
-            while let Some(next) = inbound.next().await {
-                let validated = next.and_then(|frame| {
-                    validator.validate(&frame)?;
-                    Ok(frame)
-                });
-                let failed = validated.is_err();
-                if sender.send(validated).await.is_err() || failed {
-                    break;
-                }
-            }
-        });
-        let mut outgoing = self
-            .peer
-            .connect_computer(hello, Box::pin(ReceiverStream::new(receiver)))
-            .await?;
-        let (sender, receiver) = mpsc::channel(16);
-        let expected_version = self.config.protocol_version;
-        tokio::spawn(async move {
-            let mut first = true;
-            while let Some(next) = outgoing.next().await {
-                let validated = next.and_then(|frame| {
-                    validate_runtime_frame(&frame)?;
-                    match (&frame.frame, first) {
-                        (Some(runtime_frame::Frame::Hello(hello)), true)
-                            if hello.protocol_version == expected_version => {}
-                        (Some(runtime_frame::Frame::Hello(_)), true) => {
-                            return Err(Status::failed_precondition(
-                                "runtime_protocol_version_mismatch",
-                            ));
-                        }
-                        (Some(runtime_frame::Frame::Hello(_)), false) => {
-                            return Err(Status::invalid_argument("duplicate_runtime_hello"));
-                        }
-                        (_, true) => {
-                            return Err(Status::invalid_argument(
-                                "first_frame_must_be_runtime_hello",
-                            ));
-                        }
-                        (_, false) => {}
-                    }
-                    first = false;
-                    Ok(frame)
-                });
-                let failed = validated.is_err();
-                if sender.send(validated).await.is_err() || failed {
-                    return;
-                }
-            }
-            if first {
-                let _ = sender
-                    .send(Err(Status::invalid_argument("missing_runtime_hello")))
-                    .await;
-            }
-        });
-        Ok(Response::new(Box::pin(ReceiverStream::new(receiver))))
-    }
 
     async fn upload_resource(
         &self,

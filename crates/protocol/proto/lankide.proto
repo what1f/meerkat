@@ -3,7 +3,6 @@ syntax = "proto3";
 package lankide.protocol.v1;
 
 service RuntimeProtocol {
-  rpc ConnectComputer(stream ComputerFrame) returns (stream RuntimeFrame);
   rpc UploadResource(stream ResourceChunk) returns (ResourceRef);
   rpc DownloadResource(ResourceRequest) returns (stream ResourceChunk);
   rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);

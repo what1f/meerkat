@@ -1,10 +1,11 @@
 #![forbid(unsafe_code)]
 
-//! The single versioned gRPC contract shared by Runtime, Computer, and clients.
+//! Versioned wire contracts shared by Runtime, Computer, and clients.
 //!
-//! This crate owns wire data and Unix-domain-socket transport only. Runtime and
-//! Computer business behavior is supplied through [`RuntimePeer`].
+//! Computer links use JSON/WebSocket through [`link::ComputerLink`]. Resources,
+//! management, and Agent capabilities use UDS/gRPC through [`RuntimePeer`].
 
+pub mod link;
 mod peer;
 mod service;
 mod transport;
@@ -24,8 +25,8 @@ pub use wire::runtime_protocol_server::{RuntimeProtocol, RuntimeProtocolServer};
 pub use wire::*;
 
 pub use peer::{
-    ComputerFrameStream, ManagementEventStream, ResourceChunkStream, RuntimeFrameStream,
-    RuntimePeer,
+    ComputerFrameStream, ComputerPeer, ManagementEventStream, ResourceChunkStream,
+    RuntimeFrameStream, RuntimePeer,
 };
 pub use service::ValidatedRuntimeService;
 pub use transport::{

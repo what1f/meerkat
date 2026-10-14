@@ -1,5 +1,7 @@
 #[path = "../../harness/tests/support/process.rs"]
 mod process_support;
+#[path = "../../protocol/tests/support/ws.rs"]
+mod ws;
 use process_support::{ProcessHarnessFactory, ProcessHarnessSpec};
 
 use lankide_computer::{
@@ -175,7 +177,7 @@ impl Peer {
 }
 
 #[tonic::async_trait]
-impl RuntimePeer for Peer {
+impl lankide_protocol::ComputerPeer for Peer {
     async fn connect_computer(
         &self,
         hello: ComputerHello,
@@ -209,7 +211,10 @@ impl RuntimePeer for Peer {
         *self.state.runtime.lock().expect("runtime mutex") = Some(sender);
         Ok(Box::pin(ReceiverStream::new(receiver)))
     }
+}
 
+#[tonic::async_trait]
+impl RuntimePeer for Peer {
     async fn upload_resource(
         &self,
         mut chunks: ResourceChunkStream,
@@ -316,7 +321,7 @@ async fn computer_e2e() {
     let server_peer = peer.clone();
     let server_socket = socket.clone();
     let server = tokio::spawn(async move {
-        lankide_protocol::serve_uds(
+        ws::serve_local(
             server_socket,
             server_peer,
             TransportConfig::default(),
@@ -690,12 +695,12 @@ async fn computer_e2e() {
         }
         peer.disconnect();
         wait_for(|| peer.state.hellos.lock().expect("hello mutex").len() >= 2).await;
-        let replayed = wait_event(&mut incoming_rx, 8).await;
+        let replayed = wait_replayed_terminal(&mut incoming_rx, &replay_events).await;
         assert_eq!(replayed.sequence, terminal.sequence);
         ack(&peer, &replayed).await;
         peer.disconnect();
         wait_for(|| peer.state.hellos.lock().expect("hello mutex").len() >= 3).await;
-        let replayed_after_ack = wait_event(&mut incoming_rx, 8).await;
+        let replayed_after_ack = wait_replayed_terminal(&mut incoming_rx, &replay_events).await;
         assert_eq!(replayed_after_ack.sequence, terminal.sequence);
         peer.send(runtime_assign(
             8,
@@ -1548,6 +1553,30 @@ async fn wait_assignment(
             return result;
         }
     }
+}
+
+// A sent acknowledgement may still be in flight when the peer disconnects.
+// Every replay must match the saved execution; the terminal must arrive in time.
+async fn wait_replayed_terminal(
+    receiver: &mut mpsc::UnboundedReceiver<ComputerFrame>,
+    original: &[ExecutionEvent],
+) -> ExecutionEvent {
+    let terminal = original.last().expect("terminal event");
+    let id = terminal.execution.as_ref().expect("execution").execution_id;
+    timeout(STEP, async {
+        loop {
+            let event = wait_event(receiver, id).await;
+            assert!(
+                original.contains(&event),
+                "replay changed an execution event"
+            );
+            if event.sequence == terminal.sequence {
+                return event;
+            }
+        }
+    })
+    .await
+    .expect("terminal replay timeout")
 }
 
 async fn wait_event(

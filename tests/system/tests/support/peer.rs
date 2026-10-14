@@ -71,7 +71,7 @@ fn main() {
         }
     });
     let mut sequence = 0;
-    for command in received {
+    for command in &received {
         match command["op"].as_str() {
             Some("execute") => {
                 let input = command["request"]["input"]
@@ -112,6 +112,7 @@ fn main() {
                         }
                         (text, *delay_ms)
                     }
+                    Script::LinkReply { text } => (text, 0),
                     Script::FailSequence { texts, reply } => {
                         let counter = format!(
                             "{}.count",
@@ -210,6 +211,29 @@ fn main() {
                         .split(']')
                         .next()
                         .expect("message");
+                    if matches!(script, Script::LinkReply { .. }) {
+                        let call_id = format!("system-reply-{message}");
+                        event(
+                            &mut sequence,
+                            json!({"kind":"tool_started", "tool_call_id":call_id,
+                            "tool_name":"message_send", "arguments":{
+                                "channel_id":channel, "chat_id":chat, "content":text,
+                                "reply_to":message.parse::<i64>().expect("message ID"), "force":true
+                            }}),
+                        );
+                        let result = received
+                            .recv_timeout(Duration::from_secs(10))
+                            .expect("Tool result over Computer link");
+                        assert_eq!(result["op"], "tool_result");
+                        assert_eq!(result["request"]["tool_call_id"], call_id);
+                        assert_eq!(result["request"]["success"], true, "Tool failed: {result}");
+                        event(
+                            &mut sequence,
+                            json!({"kind":"tool_finished", "tool_call_id":call_id,
+                            "success":true, "output":result["request"]["structured_content"]}),
+                        );
+                        continue;
+                    }
                     let result = runtime
                         .block_on(lankide_cli::execute_from_environment([
                             "send".into(),

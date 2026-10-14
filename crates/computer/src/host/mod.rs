@@ -70,6 +70,8 @@ pub enum ComputerError {
     Io(std::io::Error),
     Transport(lankide_protocol::TransportError),
     Rpc(tonic::Status),
+    Link(lankide_protocol::link::LinkError),
+    ProtocolVersionUnsupported,
     Harness(lankide_harness::HarnessError),
     InvalidAssignment(String),
     InvalidHarnessRegistration(String),
@@ -84,6 +86,8 @@ impl fmt::Display for ComputerError {
         match self {
             Self::Io(error) => write!(formatter, "computer_io: {error}"),
             Self::Transport(error) => write!(formatter, "computer_transport: {error}"),
+            Self::ProtocolVersionUnsupported => formatter.write_str("protocol_version_unsupported"),
+            Self::Link(error) => write!(formatter, "computer_link: {error}"),
             Self::Rpc(error) => write!(formatter, "computer_rpc: {error}"),
             Self::Harness(error) => write!(formatter, "computer_harness: {error}"),
             Self::InvalidAssignment(error) => write!(formatter, "invalid_assignment: {error}"),
@@ -108,6 +112,16 @@ impl From<std::io::Error> for ComputerError {
 impl From<lankide_protocol::TransportError> for ComputerError {
     fn from(value: lankide_protocol::TransportError) -> Self {
         Self::Transport(value)
+    }
+}
+impl From<lankide_protocol::link::LinkError> for ComputerError {
+    fn from(error: lankide_protocol::link::LinkError) -> Self {
+        match error {
+            lankide_protocol::link::LinkError::Closed(
+                lankide_protocol::link::CloseReason::ProtocolVersionUnsupported,
+            ) => Self::ProtocolVersionUnsupported,
+            error => Self::Link(error),
+        }
     }
 }
 impl From<tonic::Status> for ComputerError {
@@ -159,6 +173,7 @@ pub struct Computer {
     liveness: ExecutionLiveness,
     output_records: OutputRecordPolicy,
     capability_cli: Option<PathBuf>,
+    link_endpoint: Option<(String, String)>,
     config: ComputerConfig,
     harnesses: HashMap<String, RegisteredHarness>,
 }
@@ -166,6 +181,7 @@ pub struct Computer {
 impl Computer {
     pub fn new(config: ComputerConfig) -> Self {
         Self {
+            link_endpoint: None,
             config,
             liveness: ExecutionLiveness::default(),
             output_records: OutputRecordPolicy::default(),
@@ -189,6 +205,11 @@ impl Computer {
 
     pub fn with_execution_liveness(mut self, policy: ExecutionLiveness) -> Self {
         self.liveness = policy;
+        self
+    }
+
+    pub fn with_link_endpoint(mut self, url: String, secret: String) -> Self {
+        self.link_endpoint = Some((url, secret));
         self
     }
 
@@ -297,6 +318,7 @@ impl Computer {
             capability_cli: self.capability_cli,
             root,
             socket_path,
+            link_endpoint: self.link_endpoint,
             state_path,
             factories,
             defaults,
@@ -435,6 +457,7 @@ struct Inner {
     config: ComputerConfig,
     root: PathBuf,
     socket_path: PathBuf,
+    link_endpoint: Option<(String, String)>,
     state_path: PathBuf,
     factories: HashMap<String, Arc<dyn HarnessFactory>>,
     defaults: HashMap<String, NativeHarnessConfig>,

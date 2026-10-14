@@ -20,7 +20,19 @@ impl RuntimePeerAdapter {
 }
 
 #[tonic::async_trait]
-impl RuntimePeer for RuntimePeerAdapter {
+impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
+    async fn link_rejected(
+        &self,
+        hello: ComputerHello,
+        reason: lankide_protocol::link::CloseReason,
+    ) {
+        eprintln!("computer={} link_rejected={reason}", hello.computer_id);
+        let _ = self
+            .application
+            .computer_broker()
+            .reject_link(hello.computer_id, reason);
+    }
+
     async fn connect_computer(
         &self,
         hello: ComputerHello,
@@ -150,7 +162,10 @@ impl RuntimePeer for RuntimePeerAdapter {
         }).map_err(status)?;
         Ok(output)
     }
+}
 
+#[tonic::async_trait]
+impl RuntimePeer for RuntimePeerAdapter {
     async fn upload_resource(
         &self,
         mut chunks: ResourceChunkStream,

@@ -1,3 +1,5 @@
+#[path = "support/ws.rs"]
+mod ws;
 use lankide_protocol::computer_frame;
 use lankide_protocol::runtime_frame;
 use lankide_protocol::*;
@@ -13,7 +15,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::{StreamExt, iter};
 use tonic::{Code, Status};
 
-const SERVER_LIMIT: usize = 1024;
+const SERVER_LIMIT: usize = 8 * 1024;
 const CLIENT_LIMIT: usize = 64 * 1024;
 
 struct ScenarioReport {
@@ -112,7 +114,7 @@ struct StoredResource {
 }
 
 #[tonic::async_trait]
-impl RuntimePeer for TestPeer {
+impl lankide_protocol::ComputerPeer for TestPeer {
     async fn connect_computer(
         &self,
         hello: ComputerHello,
@@ -212,7 +214,10 @@ impl RuntimePeer for TestPeer {
         });
         Ok(Box::pin(ReceiverStream::new(receiver)))
     }
+}
 
+#[tonic::async_trait]
+impl RuntimePeer for TestPeer {
     async fn upload_resource(
         &self,
         mut chunks: ResourceChunkStream,
@@ -509,7 +514,7 @@ async fn complete_protocol_scenario() {
     let server_peer = peer.clone();
     let server_path = path.clone();
     let server = tokio::spawn(async move {
-        serve_uds(
+        ws::serve_local(
             server_path,
             server_peer,
             TransportConfig {
@@ -545,16 +550,12 @@ async fn complete_protocol_scenario() {
 }
 
 async fn exchange_assignment_events_and_reconnect(path: &std::path::Path, peer: &TestPeer) {
-    let mut first = connect_uds(path, CLIENT_LIMIT)
-        .await
-        .expect("first UDS client");
     let (first_tx, first_rx) = mpsc::channel(8);
     first_tx
         .send(hello_frame())
         .await
         .expect("send first hello");
-    let mut first_runtime = first
-        .connect_computer(ReceiverStream::new(first_rx))
+    let mut first_runtime = ws::connect_stream(path, ReceiverStream::new(first_rx))
         .await
         .expect("first connect stream")
         .into_inner();
@@ -615,16 +616,12 @@ async fn exchange_assignment_events_and_reconnect(path: &std::path::Path, peer: 
     );
     drop(first_tx);
 
-    let mut second = connect_uds(path, CLIENT_LIMIT)
-        .await
-        .expect("reconnected UDS client");
     let (second_tx, second_rx) = mpsc::channel(8);
     second_tx
         .send(hello_frame())
         .await
         .expect("send reconnect hello");
-    let mut second_runtime = second
-        .connect_computer(ReceiverStream::new(second_rx))
+    let mut second_runtime = ws::connect_stream(path, ReceiverStream::new(second_rx))
         .await
         .expect("reconnect stream")
         .into_inner();
@@ -1005,35 +1002,33 @@ async fn exchange_management_and_cli(path: &std::path::Path) {
 }
 
 async fn reject_version_mismatch(path: &std::path::Path) {
-    let mut client = connect_uds(path, CLIENT_LIMIT)
-        .await
-        .expect("version test client");
     let mut hello = computer_hello();
     hello.protocol_version += 1;
-    let error = client
-        .connect_computer(iter([ComputerFrame {
+    let error = ws::connect_stream(
+        path,
+        iter([ComputerFrame {
             frame: Some(computer_frame::Frame::Hello(hello)),
-        }]))
-        .await
-        .expect_err("mismatched version must fail");
+        }]),
+    )
+    .await
+    .expect_err("mismatched version must fail");
     assert_eq!(error.code(), Code::FailedPrecondition);
-    assert!(error.message().contains("protocol_version_mismatch"));
+    assert!(error.message().contains("protocol_version_unsupported"));
 }
 
 async fn reject_oversized_frame(path: &std::path::Path) {
-    let mut client = connect_uds(path, CLIENT_LIMIT)
-        .await
-        .expect("oversize test client");
     let mut hello = computer_hello();
     hello.computer_version = "x".repeat(SERVER_LIMIT * 2);
-    let error = client
-        .connect_computer(iter([ComputerFrame {
+    let error = ws::connect_stream(
+        path,
+        iter([ComputerFrame {
             frame: Some(computer_frame::Frame::Hello(hello)),
-        }]))
-        .await
-        .expect_err("oversized frame must fail");
+        }]),
+    )
+    .await
+    .expect_err("oversized frame must fail");
     assert_eq!(error.code(), Code::OutOfRange);
-    assert!(error.message().contains("message length too large"));
+    assert!(error.message().contains("message_too_large"));
 }
 
 async fn reject_out_of_order_resource_offset(path: &std::path::Path) {
@@ -1075,13 +1070,9 @@ async fn reject_out_of_order_resource_offset(path: &std::path::Path) {
 }
 
 async fn reject_unknown_frame(path: &std::path::Path) {
-    let mut client = connect_uds(path, CLIENT_LIMIT)
-        .await
-        .expect("unknown frame client");
     let (sender, receiver) = mpsc::channel(4);
     sender.send(hello_frame()).await.expect("send hello");
-    let mut runtime = client
-        .connect_computer(ReceiverStream::new(receiver))
+    let mut runtime = ws::connect_stream(path, ReceiverStream::new(receiver))
         .await
         .expect("open unknown frame stream")
         .into_inner();
@@ -1101,17 +1092,13 @@ async fn reject_unknown_frame(path: &std::path::Path) {
         .await
         .expect_err("unknown frame must fail explicitly");
     assert_eq!(error.code(), Code::InvalidArgument);
-    assert_eq!(error.message(), "unknown_computer_frame");
+    assert_eq!(error.message(), "unknown_frame_type");
 }
 
 async fn reject_event_sequence_regression(path: &std::path::Path) {
-    let mut client = connect_uds(path, CLIENT_LIMIT)
-        .await
-        .expect("sequence test client");
     let (sender, receiver) = mpsc::channel(4);
     sender.send(hello_frame()).await.expect("send hello");
-    let mut runtime = client
-        .connect_computer(ReceiverStream::new(receiver))
+    let mut runtime = ws::connect_stream(path, ReceiverStream::new(receiver))
         .await
         .expect("open sequence stream")
         .into_inner();

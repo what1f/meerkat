@@ -21,6 +21,7 @@ struct BrokerInner {
     storage: Weak<Storage>,
     connections: StdRwLock<BTreeMap<String, ComputerConnection>>,
     next_connection_id: AtomicU64,
+    link_rejections: StdRwLock<BTreeMap<String, lankide_protocol::link::CloseReason>>,
     pending: StdMutex<BTreeMap<i64, PendingExecution>>,
     pending_agent_deletions: StdMutex<BTreeMap<String, oneshot::Sender<Result<(), String>>>>,
 }
@@ -54,10 +55,35 @@ impl ComputerBroker {
                 storage: Arc::downgrade(&storage),
                 connections: StdRwLock::new(BTreeMap::new()),
                 next_connection_id: AtomicU64::new(0),
+                link_rejections: StdRwLock::new(BTreeMap::new()),
                 pending: StdMutex::new(BTreeMap::new()),
                 pending_agent_deletions: StdMutex::new(BTreeMap::new()),
             }),
         }
+    }
+
+    pub fn reject_link(
+        &self,
+        computer_id: String,
+        reason: lankide_protocol::link::CloseReason,
+    ) -> Result<(), RuntimeError> {
+        self.inner
+            .link_rejections
+            .write()
+            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?
+            .insert(computer_id, reason);
+        Ok(())
+    }
+
+    pub fn rejected_links(
+        &self,
+    ) -> Result<BTreeMap<String, lankide_protocol::link::CloseReason>, RuntimeError> {
+        Ok(self
+            .inner
+            .link_rejections
+            .read()
+            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?
+            .clone())
     }
 
     pub fn is_connected(&self, computer_id: &str) -> bool {
@@ -156,6 +182,11 @@ impl ComputerBroker {
         &self,
         hello: ComputerHello,
     ) -> Result<(u64, RuntimeFrameStream), RuntimeError> {
+        self.inner
+            .link_rejections
+            .write()
+            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?
+            .remove(&hello.computer_id);
         let (sender, receiver) = mpsc::channel(256);
         let connection_id = self
             .inner

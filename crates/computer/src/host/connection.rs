@@ -7,6 +7,7 @@ use super::{ComputerError, ComputerHandle, Inner, now_millis};
 use crate::STANDARD_HARNESS_IDS;
 use crate::state::assignment_key;
 use lankide_harness::HarnessAvailability as NativeHarnessAvailability;
+use lankide_protocol::link::{CloseReason, ComputerLink, LinkError};
 use lankide_protocol::{
     ComputerFrame, ComputerHeartbeat, ComputerHello, HarnessAvailability, HarnessInfo,
     RuntimeFrame, computer_frame, runtime_frame,
@@ -15,8 +16,6 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
-use tokio_stream::StreamExt;
-use tokio_stream::wrappers::ReceiverStream;
 
 pub(super) async fn run_loop(
     inner: Arc<Inner>,
@@ -44,7 +43,7 @@ pub(super) async fn run_loop(
                 *inner.connection.write().await = None;
                 let established = inner.connected.swap(false, Ordering::AcqRel);
                 if let Err(error) = result {
-                    if matches!(error, ComputerError::InvalidAssignment(_)) {
+                    if matches!(error, ComputerError::InvalidAssignment(_) | ComputerError::ProtocolVersionUnsupported) {
                         return Err(error);
                     }
                 }
@@ -72,24 +71,31 @@ pub(super) async fn run_loop(
 }
 
 async fn run_connection(inner: Arc<Inner>) -> Result<(), ComputerError> {
-    let mut client = lankide_protocol::connect_uds(
-        &inner.socket_path,
-        lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES,
+    let (url, secret) = match &inner.link_endpoint {
+        Some(endpoint) => endpoint.clone(),
+        None => lankide_protocol::link::discover(&inner.socket_path)?,
+    };
+    let mut link =
+        lankide_protocol::link::connect(&url, &secret, lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES)
+            .await?;
+    let (tx, rx) = mpsc::channel::<ComputerFrame>(64);
+    link.send(
+        ComputerFrame {
+            frame: Some(computer_frame::Frame::Hello(make_hello(&inner).await)),
+        }
+        .try_into()
+        .map_err(LinkError::Closed)?,
     )
     .await?;
-    let (tx, rx) = mpsc::channel(64);
-    tx.send(ComputerFrame {
-        frame: Some(computer_frame::Frame::Hello(make_hello(&inner).await)),
-    })
-    .await
-    .map_err(|_| ComputerError::InvalidAssignment("computer_stream_closed".into()))?;
-    let mut inbound = client
-        .connect_computer(ReceiverStream::new(rx))
+    let first = link
+        .receive()
         .await?
-        .into_inner();
-    let first = inbound.next().await.ok_or_else(|| {
-        ComputerError::InvalidAssignment("runtime_stream_closed_before_hello".into())
-    })??;
+        .ok_or(LinkError::Closed(CloseReason::Shutdown))?;
+    if first.protocol_version != lankide_protocol::PROTOCOL_VERSION {
+        return Err(ComputerError::ProtocolVersionUnsupported);
+    }
+    let first: RuntimeFrame = first.into();
+    lankide_protocol::validate_runtime_frame(&first)?;
     let heartbeat_interval = match first.frame {
         Some(runtime_frame::Frame::Hello(hello))
             if hello.protocol_version == lankide_protocol::PROTOCOL_VERSION =>
@@ -102,6 +108,8 @@ async fn run_connection(inner: Arc<Inner>) -> Result<(), ComputerError> {
             ));
         }
     };
+    let (inbound_tx, mut inbound) = mpsc::channel(64);
+    let _link_task = LinkTask(tokio::spawn(pump_link(link, rx, inbound_tx)));
     *inner.connection.write().await = Some(tx.clone());
     inner.connected.store(true, Ordering::Release);
     publish_inventory(&inner).await;
@@ -120,17 +128,60 @@ async fn run_connection(inner: Arc<Inner>) -> Result<(), ComputerError> {
                         sent_at: now_millis(),
                         active_attempts: active_attempts(&inner).await,
                     })),
-                }).await.map_err(|_| ComputerError::InvalidAssignment("computer_stream_closed".into()))?;
+                }).await.map_err(|_| LinkError::Closed(CloseReason::Shutdown))?;
             }
             changed = stop_rx.changed() => {
                 let _ = changed;
                 return Ok(());
             }
-            frame = inbound.next() => match frame {
-                Some(frame) => dispatch(inner.clone(), frame?).await?,
+            frame = inbound.recv() => match frame {
+                Some(Ok(frame)) => {
+                    if frame.protocol_version != lankide_protocol::PROTOCOL_VERSION { return Err(ComputerError::ProtocolVersionUnsupported); }
+                    dispatch(inner.clone(), frame.into()).await?
+                }
+                Some(Err(error)) => return Err(error.into()),
                 None => return Ok(()),
             }
         }
+    }
+}
+
+// Keep outbound delivery active while business handlers persist or replay work.
+// Dropping the connection cancels its pump and releases both channel halves.
+struct LinkTask(tokio::task::JoinHandle<()>);
+impl Drop for LinkTask {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+async fn pump_link<
+    L: ComputerLink<
+            SendFrame = lankide_protocol::link::ComputerFrame,
+            ReceiveFrame = lankide_protocol::link::RuntimeFrame,
+        >,
+>(
+    mut link: L,
+    mut outgoing: mpsc::Receiver<ComputerFrame>,
+    incoming: mpsc::Sender<Result<lankide_protocol::link::RuntimeFrame, LinkError>>,
+) {
+    let result: Result<(), LinkError> = async {
+        loop {
+            tokio::select! {
+                _ = incoming.closed() => return Ok(()),
+                frame = outgoing.recv() => {
+                    let Some(frame) = frame else { return Ok(()) };
+                    link.send(frame.try_into().map_err(LinkError::Closed)?).await?;
+                }
+                frame = link.receive() => {
+                    let Some(frame) = frame? else { return Ok(()) };
+                    if incoming.send(Ok(frame)).await.is_err() { return Ok(()); }
+                }
+            }
+        }
+    }
+    .await;
+    if let Err(error) = result {
+        let _ = incoming.send(Err(error)).await;
     }
 }
 

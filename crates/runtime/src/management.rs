@@ -542,20 +542,34 @@ impl RuntimeApplication {
     }
 
     pub fn computer_catalog(&self, _: CatalogRequest) -> Result<ComputerCatalog, RuntimeError> {
-        Ok(ComputerCatalog {
-            computers: self
-                .computer_broker()
-                .catalog()?
-                .into_iter()
-                .map(|value| ComputerCatalogItem {
-                    computer_id: value.computer_id.clone(),
-                    display_name: value.computer_id,
-                    observed_state: ObservedState::Running as i32,
-                    harnesses: value.harnesses,
-                    status_message: String::new(),
-                })
-                .collect(),
-        })
+        let broker = self.computer_broker();
+        let mut computers: Vec<_> = broker
+            .catalog()?
+            .into_iter()
+            .map(|value| ComputerCatalogItem {
+                computer_id: value.computer_id.clone(),
+                display_name: value.computer_id,
+                observed_state: ObservedState::Running as i32,
+                harnesses: value.harnesses,
+                status_message: String::new(),
+            })
+            .collect();
+        for (computer_id, reason) in broker.rejected_links()? {
+            if computers
+                .iter()
+                .any(|value| value.computer_id == computer_id)
+            {
+                continue;
+            }
+            computers.push(ComputerCatalogItem {
+                display_name: computer_id.clone(),
+                computer_id,
+                observed_state: ObservedState::Error as i32,
+                harnesses: Vec::new(),
+                status_message: reason.to_string(),
+            });
+        }
+        Ok(ComputerCatalog { computers })
     }
 
     pub fn harness_catalog(&self, _: CatalogRequest) -> Result<HarnessCatalog, RuntimeError> {

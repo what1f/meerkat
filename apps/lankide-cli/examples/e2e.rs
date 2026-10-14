@@ -26,16 +26,6 @@ struct State {
 
 #[tonic::async_trait]
 impl wire::RuntimePeer for Peer {
-    async fn connect_computer(
-        &self,
-        _hello: wire::ComputerHello,
-        _frames: wire::ComputerFrameStream,
-    ) -> Result<wire::RuntimeFrameStream, Status> {
-        Ok(Box::pin(iter(
-            Vec::<Result<wire::RuntimeFrame, Status>>::new(),
-        )))
-    }
-
     async fn upload_resource(
         &self,
         mut chunks: wire::ResourceChunkStream,

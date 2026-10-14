@@ -1,5 +1,7 @@
 #[path = "../../../../crates/harness/tests/support/process.rs"]
 mod process_support;
+#[path = "../../../../crates/protocol/tests/support/ws.rs"]
+mod ws;
 use process_support::{ProcessHarnessFactory, ProcessHarnessSpec};
 
 use lankide_computer::{Computer, ComputerConfig, ReconnectPolicy, RegisteredHarness};
@@ -82,7 +84,7 @@ impl Peer {
 }
 
 #[tonic::async_trait]
-impl RuntimePeer for Peer {
+impl lankide_protocol::ComputerPeer for Peer {
     async fn connect_computer(
         &self,
         hello: ComputerHello,
@@ -110,7 +112,10 @@ impl RuntimePeer for Peer {
         *self.state.runtime.lock().expect("runtime lock") = Some(sender);
         Ok(Box::pin(ReceiverStream::new(receiver)))
     }
+}
 
+#[tonic::async_trait]
+impl RuntimePeer for Peer {
     async fn upload_resource(
         &self,
         mut chunks: ResourceChunkStream,
@@ -249,7 +254,7 @@ pub async fn run() -> Result<PathBuf, AppError> {
     let server_peer = peer.clone();
     let socket = paths.runtime_socket.clone();
     let server = tokio::spawn(async move {
-        lankide_protocol::serve_uds(socket, server_peer, TransportConfig::default(), async {
+        ws::serve_local(socket, server_peer, TransportConfig::default(), async {
             let _ = server_stop_rx.await;
         })
         .await
@@ -262,7 +267,7 @@ pub async fn run() -> Result<PathBuf, AppError> {
             .spawn(&paths.runtime_socket)
             .await
             .map_err(AppError::Computer)?;
-        wait_for(|| peer.state.hellos.lock().expect("hello lock").len() >= 1).await?;
+        wait_for("first Computer hello", || peer.state.hellos.lock().expect("hello lock").len() >= 1).await?;
         let hello = peer.state.hellos.lock().expect("hello lock")[0].clone();
         require(hello.computer_id == "local", "computer id was not local")?;
         require(
@@ -428,12 +433,25 @@ pub async fn run() -> Result<PathBuf, AppError> {
             acknowledge(&peer, event).await?;
         }
         peer.disconnect();
-        wait_for(|| peer.state.hellos.lock().expect("hello lock").len() >= 2).await?;
-        let replayed = wait_event(&mut incoming_rx, 8).await?;
-        require(
-            replayed.sequence == events.last().expect("terminal event").sequence,
-            "replay sequence mismatch",
-        )?;
+        tokio::select! {
+            result = wait_for("Computer reconnect hello", || peer.state.hellos.lock().expect("hello lock").len() >= 2) => result?,
+            result = handle.join() => {
+                result.map_err(AppError::Computer)?;
+                return Err(AppError::Invariant("Computer stopped before reconnect"));
+            }
+        }
+        // An acknowledgement sent just before disconnect may still be in flight.
+        // Earlier events can replay too; the unacknowledged terminal must arrive.
+        let replayed = timeout(STEP, async {
+            loop {
+                let event = wait_event(&mut incoming_rx, 8).await?;
+                require(events.contains(&event), "replay changed an execution event")?;
+                if event.sequence == events.last().expect("terminal event").sequence {
+                    return Ok::<_, AppError>(event);
+                }
+                acknowledge(&peer, &event).await?;
+            }
+        }).await.map_err(|_| AppError::Invariant("terminal replay timeout"))??;
         acknowledge(&peer, &replayed).await?;
         let sessions_before_duplicate = session_open_count(&harness_log)?;
         peer.send(assign(
@@ -464,7 +482,7 @@ pub async fn run() -> Result<PathBuf, AppError> {
             .spawn(&paths.runtime_socket)
             .await
             .map_err(AppError::Computer)?;
-        wait_for(|| peer.state.hellos.lock().expect("hello lock").len() >= 3).await?;
+        wait_for("restarted Computer hello", || peer.state.hellos.lock().expect("hello lock").len() >= 3).await?;
         let restarted = peer.state.hellos.lock().expect("hello lock")[2].clone();
         require(
             restarted.instance_id == "daemon-e2e-second",
@@ -509,7 +527,7 @@ pub async fn run() -> Result<PathBuf, AppError> {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()?;
-        wait_for(|| peer.state.hellos.lock().expect("hello lock").len() >= 4).await?;
+        wait_for("signal daemon hello", || peer.state.hellos.lock().expect("hello lock").len() >= 4).await?;
         peer.send(assign(
             9,
             "signal",
@@ -529,7 +547,7 @@ pub async fn run() -> Result<PathBuf, AppError> {
         require(signal_status.success(), "could not send SIGTERM")?;
         let exit = child.wait()?;
         require(exit.success(), "daemon did not exit cleanly after SIGTERM")?;
-        wait_for(|| !paths.instance_lock.exists()).await?;
+        wait_for("Computer ownership release", || !paths.instance_lock.exists()).await?;
         Ok::<(), AppError>(())
     })
     .await;
@@ -766,16 +784,19 @@ fn resource_ref(id: i64, bytes: &[u8]) -> ResourceRef {
 }
 
 async fn wait_socket(path: &Path) -> Result<(), AppError> {
-    wait_for(|| path.exists()).await
+    wait_for("Runtime socket readiness", || path.exists()).await
 }
-async fn wait_for(mut predicate: impl FnMut() -> bool) -> Result<(), AppError> {
+async fn wait_for(
+    description: &'static str,
+    mut predicate: impl FnMut() -> bool,
+) -> Result<(), AppError> {
     for _ in 0..400 {
         if predicate() {
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    Err(AppError::Invariant("bounded wait expired"))
+    Err(AppError::Invariant(description))
 }
 async fn next_frame(
     receiver: &mut mpsc::UnboundedReceiver<ComputerFrame>,

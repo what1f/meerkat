@@ -3750,6 +3750,7 @@ dependencies = [
 name = "lankide-protocol"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "hyper-util",
  "lankide-core",
  "prost",
@@ -3760,10 +3761,12 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-stream",
+ "tokio-tungstenite",
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
  "tower",
+ "uuid",
 ]
 
 [[package]]
@@ -3876,6 +3879,7 @@ dependencies = [
 name = "lankide-system-e2e"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "lankide-cli",
  "lankide-client",
  "lankide-computer",
@@ -3893,6 +3897,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-stream",
+ "tokio-tungstenite",
 ]
 
 [[package]]

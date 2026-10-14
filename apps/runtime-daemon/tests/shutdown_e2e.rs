@@ -1,6 +1,6 @@
 //! Public Runtime lifecycle acceptance, without the OS socket boundary.
 use lankide_core::{ProviderId, WorkspaceId};
-use lankide_protocol::{ComputerHello, PROTOCOL_VERSION, RuntimePeer};
+use lankide_protocol::{ComputerHello, ComputerPeer, PROTOCOL_VERSION, RuntimePeer};
 use lankide_provider::{
     ChannelDefinition, InitContext, Provider, ProviderFuture, ProviderHost, ProviderInfo,
 };

@@ -1,3 +1,5 @@
+#[path = "../../protocol/tests/support/ws.rs"]
+mod ws;
 use lankide_core::{
     AgentId, AttentionLevel, ChannelAbility, ChannelId, MessageId, PersonId, ProviderId,
     ScheduleInterval, WorkspaceId,
@@ -11,7 +13,7 @@ use lankide_protocol::{
     HarnessConfig, ListWorkspacesRequest, ManagementSubscription, PROTOCOL_VERSION, ResourceChunk,
     ResourceDescriptor, ResourceRequest, SendMessageRequest, SessionAction, SessionDirective,
     TransportConfig, UpdateAgentRequest, UpdateSelfProfileRequest, UpdateWorkspaceRequest,
-    WorkspaceRef, computer_frame, connect_uds, runtime_frame, serve_uds,
+    WorkspaceRef, computer_frame, connect_uds, runtime_frame,
 };
 use lankide_provider::{
     AgentContext, AgentRuntimeContext, AutoReactionContext, ChannelDefaultAttention,
@@ -1853,7 +1855,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     let server_socket = socket.to_path_buf();
     let peer = RuntimePeerAdapter::new(application.clone());
     let server = tokio::spawn(async move {
-        serve_uds(
+        ws::serve_local(
             server_socket,
             peer,
             TransportConfig {
@@ -2406,11 +2408,13 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         })
         .await
         .map_err(err)?;
-    let mut computer_output = client
-        .connect_computer(tokio_stream::wrappers::ReceiverStream::new(computer_input))
-        .await
-        .map_err(err)?
-        .into_inner();
+    let mut computer_output = ws::connect_stream(
+        &socket,
+        tokio_stream::wrappers::ReceiverStream::new(computer_input),
+    )
+    .await
+    .map_err(err)?
+    .into_inner();
     let _ = computer_output.message().await.map_err(err)?;
     let gate = Arc::new(tokio::sync::Notify::new());
     *state.tool_gate.lock().unwrap() = Some(gate.clone());
@@ -3041,13 +3045,13 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         })
         .await
         .map_err(err)?;
-    let mut delete_computer_output = client
-        .connect_computer(tokio_stream::wrappers::ReceiverStream::new(
-            delete_computer_input,
-        ))
-        .await
-        .map_err(err)?
-        .into_inner();
+    let mut delete_computer_output = ws::connect_stream(
+        &socket,
+        tokio_stream::wrappers::ReceiverStream::new(delete_computer_input),
+    )
+    .await
+    .map_err(err)?
+    .into_inner();
     let cleanup = tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             let frame = delete_computer_output

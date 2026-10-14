@@ -1,3 +1,5 @@
+#[path = "../../../../crates/protocol/tests/support/ws.rs"]
+mod ws;
 use super::daemon_e2e::DaemonChild;
 use lankide_core::{ProviderId, WorkspaceId};
 use lankide_protocol::{
@@ -82,9 +84,6 @@ async fn shutdown_with_computer_and_provider(
 ) -> Result<(), AppError> {
     let mut daemon = DaemonChild::spawn(paths)?;
     daemon.wait_ready()?;
-    let mut client = connect_uds(&paths.socket, DEFAULT_MAX_MESSAGE_BYTES)
-        .await
-        .map_err(AppError::Protocol)?;
     let (sender, receiver) = mpsc::channel(16);
     sender
         .send(ComputerFrame {
@@ -100,8 +99,7 @@ async fn shutdown_with_computer_and_provider(
         })
         .await
         .map_err(|_| AppError::Invariant("Computer input closed"))?;
-    let mut frames = client
-        .connect_computer(ReceiverStream::new(receiver))
+    let mut frames = ws::connect_stream(&paths.socket, ReceiverStream::new(receiver))
         .await
         .map_err(AppError::Status)?
         .into_inner();

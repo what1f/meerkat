@@ -188,6 +188,32 @@ where
     )
     .await?;
     let _ = application.recover(now_millis())?;
+    #[derive(serde::Deserialize)]
+    struct LinkSettings {
+        #[serde(default = "default_link_listen")]
+        computer_link_listen: String,
+    }
+    fn default_link_listen() -> String {
+        "127.0.0.1:0".into()
+    }
+    let address = match fs::read(paths.home.join("runtime.json")) {
+        Ok(bytes) => serde_json::from_slice::<LinkSettings>(&bytes)?.computer_link_listen,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => default_link_listen(),
+        Err(error) => return Err(error.into()),
+    };
+    let listener = tokio::net::TcpListener::bind(&address).await?;
+    let url = format!("ws://{}", listener.local_addr()?);
+    let secret = lankide_protocol::link::publish(&paths.run, &url)?;
+    let (link_stop, link_stopped) = oneshot::channel();
+    let link_server = tokio::spawn(lankide_protocol::link::serve(
+        listener,
+        secret,
+        RuntimePeerAdapter::new(application.clone()),
+        TransportConfig::default(),
+        async {
+            let _ = link_stopped.await;
+        },
+    ));
 
     // The management plane only depends on local storage and recovery. Publish
     // it before resuming external Provider connections so the Desktop can
@@ -259,6 +285,14 @@ where
             let _ = server.await;
             let _ = std::fs::remove_file(&paths.socket);
         }
+    }
+    let _ = link_stop.send(());
+    link_server
+        .await
+        .map_err(|_| AppError::Invariant("computer link server task failed"))?
+        .map_err(|error| AppError::Io(io::Error::other(error.to_string())))?;
+    for name in ["computer-link.url", "computer-link.secret"] {
+        let _ = fs::remove_file(paths.run.join(name));
     }
     application.finish_shutdown().await?;
     Ok(())
