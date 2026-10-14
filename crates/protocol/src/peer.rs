@@ -100,6 +100,9 @@ pub trait RuntimePeer: Send + Sync + 'static {
         Err(Status::unimplemented("create_agent"))
     }
 
+    async fn resume_agent(&self, _request: GetAgentRequest) -> Result<Agent, Status> {
+        Err(Status::unimplemented("resume_agent"))
+    }
     async fn update_agent(&self, _request: UpdateAgentRequest) -> Result<Agent, Status> {
         Err(Status::unimplemented("update_agent"))
     }

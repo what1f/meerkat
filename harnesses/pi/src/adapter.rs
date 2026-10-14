@@ -141,10 +141,18 @@ impl PiHarness {
         }
 
         let mut child = command.spawn().map_err(|error| {
-            harness_error(
+            let mut failure = harness_error(
                 HarnessErrorCode::SpawnFailed,
                 format!("failed to spawn Pi CLI: {error}"),
-            )
+            );
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
+            ) {
+                failure.failure.category = lankide_harness::FailureCategory::Configuration;
+                failure.failure.retryable = false;
+            }
+            failure
         })?;
         record_pid(paths.pid_journal.as_deref(), "spawned", child.id());
         let mut stdin = child

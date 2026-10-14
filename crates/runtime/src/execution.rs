@@ -56,6 +56,8 @@ impl Runtime {
                 workspace_id: workspace_id.clone(),
                 agent_id: agent_id.clone(),
             })?;
+        self.apply_pending_failure_policies(workspace_id, agent_id)
+            .await?;
         let execution_token = if agent.execution_token.is_empty() {
             generate_execution_token()?
         } else {
@@ -197,7 +199,9 @@ impl Runtime {
                 });
             }
         };
-        if !completion.delivery_accepted {
+        if !completion.delivery_accepted
+            && matches!(completion.outcome, ComputerOutcome::Succeeded { .. })
+        {
             self.storage
                 .fail_execution(created.execution_id, "delivery_rejected", now)?;
             return Ok(ExecutionProgress::Failed {
@@ -205,16 +209,16 @@ impl Runtime {
                 code: "delivery_rejected".into(),
             });
         }
-        self.storage
-            .mark_delivery_delivered(created.delivery_id, now)?;
+        if completion.delivery_accepted {
+            self.storage
+                .mark_delivery_delivered(created.delivery_id, now)?;
+        }
         match completion.outcome {
             ComputerOutcome::Failed { code } => {
-                self.storage.fail_execution_retry_after(
-                    created.execution_id,
-                    &code,
-                    now.saturating_add(60_000),
-                    now,
-                )?;
+                self.storage
+                    .fail_execution(created.execution_id, &code, now_millis())?;
+                self.apply_pending_failure_policies(workspace_id, agent_id)
+                    .await?;
                 Ok(ExecutionProgress::Failed {
                     execution_id: created.execution_id,
                     code,
@@ -222,6 +226,8 @@ impl Runtime {
             }
             ComputerOutcome::Cancelled => {
                 self.storage.cancel_execution(created.execution_id, now)?;
+                self.apply_pending_failure_policies(workspace_id, agent_id)
+                    .await?;
                 Ok(ExecutionProgress::Cancelled {
                     execution_id: created.execution_id,
                 })

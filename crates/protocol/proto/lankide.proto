@@ -19,6 +19,7 @@ service RuntimeProtocol {
   rpc GetAgentAvatar(GetAgentAvatarRequest) returns (GetAgentAvatarResponse);
   rpc CreateAgent(CreateAgentRequest) returns (Agent);
   rpc UpdateAgent(UpdateAgentRequest) returns (Agent);
+  rpc ResumeAgent(GetAgentRequest) returns (Agent);
   rpc DeleteAgent(DeleteAgentRequest) returns (DeleteAgentResponse);
   rpc GetProviderOnboarding(GetProviderOnboardingRequest) returns (ProviderOnboardingState);
   rpc AdvanceProviderOnboarding(AdvanceProviderOnboardingRequest) returns (ProviderOnboardingState);
@@ -444,6 +445,7 @@ message Agent {
   int64 updated_at = 15;
   AgentAttention attention = 16;
   string provider_agent_config_json = 17;
+  optional string pause_reason = 18;
 }
 
 enum AttentionMode {

@@ -16,6 +16,10 @@ pub enum Script {
         deltas: Vec<String>,
         held: bool,
     },
+    FailSequence {
+        texts: Vec<String>,
+        reply: String,
+    },
     FailSpawn {
         text: String,
     },
@@ -125,6 +129,14 @@ pub fn scripted_failure(text: &str) -> HarnessFailure {
         FailureCategory::Configuration
     } else if text.contains("rate limit") {
         FailureCategory::RateLimit
+    } else if text.contains("transient") {
+        FailureCategory::Transient
+    } else if text.contains("authentication") {
+        FailureCategory::Authentication
+    } else if text.contains("timeout") {
+        FailureCategory::Timeout
+    } else if text.contains("cancelled") {
+        FailureCategory::Cancelled
     } else {
         FailureCategory::Agent
     };

@@ -94,6 +94,14 @@ fn core_public_domain_scenario() -> Result<(), Box<dyn std::error::Error>> {
         "invalid_schedule_interval"
     );
 
+    // Chat notices retain one short sentence in the triggering language.
+    let english = lankide_core::agent_failure_notice("Please help");
+    let chinese = lankide_core::agent_failure_notice("请帮忙");
+    assert_eq!(
+        english,
+        "I couldn’t handle this message; please ask my owner to check Lankide."
+    );
+    assert_eq!(chinese, "我未能处理这条消息，请负责人在 Lankide 中检查。");
     write_result(
         &artifact,
         &run_id,

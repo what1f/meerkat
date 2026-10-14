@@ -566,10 +566,18 @@ impl Inner {
             .stdout(Stdio::piped())
             .stderr(Stdio::from(stderr));
         let mut child = command.spawn().map_err(|error| {
-            harness_error(
+            let mut failure = harness_error(
                 HarnessErrorCode::SpawnFailed,
                 format!("failed to spawn Claude Code CLI: {error}"),
-            )
+            );
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
+            ) {
+                failure.failure.category = lankide_harness::FailureCategory::Configuration;
+                failure.failure.retryable = false;
+            }
+            failure
         })?;
         let pid = child.id();
         record_pid(self.pid_journal.as_deref(), "spawned", pid);

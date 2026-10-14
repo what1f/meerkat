@@ -67,6 +67,7 @@ fn workspace(
 }
 fn agent(input: wire::CreateAgentRequest) -> wire::Agent {
     wire::Agent {
+        pause_reason: None,
         agent: input.agent,
         name: input.name,
         role: input.role,
@@ -340,6 +341,18 @@ impl wire::RuntimePeer for Peer {
         }
         d.agents.insert(key, a.clone());
         Ok(a)
+    }
+    async fn resume_agent(&self, r: wire::GetAgentRequest) -> Result<wire::Agent, Status> {
+        let agent = r
+            .agent
+            .ok_or_else(|| Status::invalid_argument("agent required"))?;
+        let mut d = self.data.lock().await;
+        let record = d
+            .agents
+            .get_mut(&(agent.workspace_id, agent.agent_id))
+            .ok_or_else(|| Status::not_found("agent_not_found"))?;
+        record.pause_reason = None;
+        Ok(record.clone())
     }
     async fn update_agent(&self, r: wire::UpdateAgentRequest) -> Result<wire::Agent, Status> {
         let key = {
@@ -854,6 +867,14 @@ async fn common_contract<C: ManagementClient>(client: &C, prefix: &str) -> Resul
     {
         return Err(format!("agent edit failed: {updated:?}"));
     }
+    let resumed = client
+        .resume_agent(&workspace_id, "builder")
+        .await
+        .map_err(|e| e.to_string())?;
+    need(
+        resumed.pause_reason.is_none() && resumed.bio == "Edited",
+        "resume must preserve Agent configuration",
+    )?;
     let avatar = client
         .get_agent_avatar(&workspace_id, "builder")
         .await

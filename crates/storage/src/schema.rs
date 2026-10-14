@@ -28,7 +28,7 @@ fn configure(c: &Connection) -> Result<()> {
 
 fn migrate(c: &mut Connection) -> Result<()> {
     let v: i64 = c.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    if v > 17 {
+    if v > 18 {
         return Err(StorageError::Invalid(format!("unsupported schema {v}")));
     }
     if v == 0 {
@@ -157,6 +157,13 @@ fn migrate(c: &mut Connection) -> Result<()> {
         c.pragma_update(None, "foreign_keys", true)?;
         result?;
     }
+    let current: i64 = c.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if current == 17 {
+        let transaction = c.transaction()?;
+        transaction.execute_batch(MIGRATION_V18)?;
+        transaction.pragma_update(None, "user_version", 18)?;
+        transaction.commit()?;
+    }
     Ok(())
 }
 const MIGRATION_V17: &str = r#"
@@ -195,6 +202,18 @@ WHERE state='pending' AND EXISTS (
 );
 DROP TABLE chats;
 ALTER TABLE chats_v17 RENAME TO chats;
+"#;
+const MIGRATION_V18: &str = r#"
+ALTER TABLE agents ADD COLUMN pause_reason TEXT;
+ALTER TABLE agents ADD COLUMN failure_fingerprint TEXT;
+ALTER TABLE agents ADD COLUMN failure_streak INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE agent_inbox_items ADD COLUMN retry_batch_id INTEGER;
+ALTER TABLE agent_inbox_items ADD COLUMN failure_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE executions ADD COLUMN retry_policy_applied INTEGER NOT NULL DEFAULT 0;
+-- Historical failures must not send retrospective notices after upgrading.
+UPDATE executions SET retry_policy_applied=1 WHERE state IN('succeeded','failed','cancelled');
+CREATE TABLE failure_notices(notice_id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id TEXT NOT NULL,agent_id TEXT NOT NULL,chat_id INTEGER NOT NULL,fingerprint TEXT NOT NULL,content TEXT NOT NULL,created_at INTEGER NOT NULL,sent_at INTEGER);
+CREATE INDEX failure_notice_dedupe ON failure_notices(workspace_id,agent_id,chat_id,fingerprint,created_at);
 "#;
 const SCHEMA: &str = r#"
 CREATE TABLE workspaces(workspace_id TEXT PRIMARY KEY,name TEXT NOT NULL,provider_id TEXT NOT NULL,provider_config_json TEXT NOT NULL,desired_state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,rules TEXT NOT NULL DEFAULT '',cover_resource_id INTEGER,setup_status TEXT NOT NULL DEFAULT 'pending',setup_error_code TEXT,provider_state_json TEXT NOT NULL DEFAULT '{}');

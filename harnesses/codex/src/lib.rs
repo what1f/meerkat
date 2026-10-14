@@ -275,10 +275,18 @@ impl CodexSession {
             .stdout(Stdio::piped())
             .stderr(Stdio::from(stderr));
         let mut child = command.spawn().map_err(|error| {
-            harness_error(
+            let mut failure = harness_error(
                 HarnessErrorCode::SpawnFailed,
                 format!("failed to spawn Codex app-server: {error}"),
-            )
+            );
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
+            ) {
+                failure.failure.category = lankide_harness::FailureCategory::Configuration;
+                failure.failure.retryable = false;
+            }
+            failure
         })?;
         let stdin = child.stdin.take().ok_or_else(|| {
             harness_error(HarnessErrorCode::SpawnFailed, "Codex stdin unavailable")

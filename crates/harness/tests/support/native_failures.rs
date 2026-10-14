@@ -16,6 +16,12 @@ pub async fn run(factory: &dyn HarnessFactory, adapter: &str) -> Result<()> {
     for (index, (mode, detail, category, retryable)) in [
         ("missing_cli", "", FailureCategory::Configuration, false),
         (
+            "non_executable_cli",
+            "",
+            FailureCategory::Configuration,
+            false,
+        ),
+        (
             "start_failure",
             "model not found: configured-model",
             FailureCategory::Configuration,
@@ -100,6 +106,11 @@ pub async fn run(factory: &dyn HarnessFactory, adapter: &str) -> Result<()> {
                 thinking_level: "low".into(),
                 cli_path: if mode == "missing_cli" {
                     cwd.join("missing-cli")
+                } else if mode == "non_executable_cli" {
+                    let path = cwd.join("non-executable");
+                    fs::write(&path, b"#!/bin/sh\nexit 0\n")?;
+                    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+                    path
                 } else {
                     cli.clone()
                 },

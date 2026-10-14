@@ -44,6 +44,7 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 pub struct RigConfig {
     pub harness_executable: PathBuf,
     pub timeout: Duration,
+    pub retry: lankide_runtime::RetryConfig,
 }
 impl Default for RigConfig {
     fn default() -> Self {
@@ -56,6 +57,7 @@ impl Default for RigConfig {
                 .expect("target directory")
                 .join("system-harness"),
             timeout: Duration::from_secs(15),
+            retry: Default::default(),
         }
     }
 }
@@ -125,25 +127,12 @@ impl SystemRig {
             .prefix("system-")
             .tempdir_in("/tmp")?;
         let paths = RuntimePaths::for_home(home.path())?;
-        let im = Arc::new(ImState::default());
-        let factories = ProviderFactoryRegistry::default();
-        let state = im.clone();
-        factories.register_host_factory(
-            ScriptedProvider {
-                state: state.clone(),
-            }
-            .info(),
-            move |workspace, services| {
-                ProviderHost::new(
-                    ScriptedProvider {
-                        state: state.clone(),
-                    },
-                    workspace.id.clone(),
-                    workspace.provider_config.clone(),
-                    services,
-                )
-            },
+        std::fs::write(
+            home.path().join("retry-policy.json"),
+            serde_json::to_vec(&config.retry)?,
         )?;
+        let im = Arc::new(ImState::default());
+        let factories = factories(im.clone())?;
         let (shutdown, stopped) = oneshot::channel();
         let daemon_paths = paths.clone();
         let runtime = tokio::spawn(async move {
@@ -213,14 +202,13 @@ impl SystemRig {
         timeout(self.config.timeout, async {
             loop {
                 self.check_daemons()?;
-                if self
-                    .client
-                    .get_computer_catalog(None)
-                    .await?
-                    .iter()
-                    .any(|computer| computer.id == "local" && computer.available)
-                {
-                    return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+                if let Ok(computers) = self.client.get_computer_catalog(None).await {
+                    if computers
+                        .iter()
+                        .any(|computer| computer.id == "local" && computer.available)
+                    {
+                        return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+                    }
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
@@ -243,6 +231,33 @@ impl SystemRig {
         execution_id: i64,
     ) -> Result<lankide_client::ExecutionDetails> {
         Ok(self.client.get_execution_details(execution_id).await?)
+    }
+    pub async fn restart_runtime(&mut self) -> Result<()> {
+        if let Some(shutdown) = self.shutdown.take() {
+            let _ = shutdown.send(());
+        }
+        if let Some(runtime) = self.runtime.take() {
+            timeout(self.config.timeout, runtime).await???;
+        }
+        let factories = factories(self.im.clone())?;
+        let paths = self.paths.clone();
+        let (shutdown, stopped) = oneshot::channel();
+        self.shutdown = Some(shutdown);
+        self.runtime = Some(tokio::spawn(async move {
+            run_daemon(paths, factories, async move {
+                let _ = stopped.await;
+                Ok(ShutdownReason::Internal)
+            })
+            .await
+        }));
+        self.client = RuntimeManagementClient::connect_lazy(&self.paths.socket);
+        // The daemon's graceful shutdown frame ends its managed Computer peer.
+        // Reopen the same Computer home, as a service supervisor does.
+        if let Some(mut computer) = self.computer.take() {
+            computer.stop()?;
+        }
+        self.start_computer()?;
+        self.wait_for_computer().await
     }
     pub async fn restart_computer(&mut self) -> Result<()> {
         if let Some(mut computer) = self.computer.take() {
@@ -308,12 +323,13 @@ impl SystemRig {
             let running: i64 = transaction.query_row("SELECT count(*) FROM executions WHERE state IN ('queued','assigning','running','recovering')", [], |row| row.get(0))?;
             drop(transaction);
             drop(database);
-            if inbox == 0 && running == 0 {
+            let pending_notices: i64 = self.database()?.query_row("SELECT (SELECT count(*) FROM failure_notices WHERE sent_at IS NULL)+(SELECT count(*) FROM executions WHERE state IN ('failed','cancelled') AND retry_policy_applied=0 AND (state='cancelled' OR EXISTS(SELECT 1 FROM execution_attempts a WHERE a.execution_id=executions.execution_id AND a.failure_json IS NOT NULL)))",[],|r|r.get(0))?;
+            if inbox == 0 && running == 0 && pending_notices == 0 {
                 return Ok(());
             }
             if Instant::now() >= deadline {
                 return Err(format!(
-                    "settle timed out: {inbox} inbox items, {running} active executions"
+                    "settle timed out: {inbox} inbox items, {running} active executions, {pending_notices} pending failure actions"
                 )
                 .into());
             }
@@ -642,9 +658,48 @@ pub struct Execution {
     pub output: Option<String>,
     pub error_code: Option<String>,
     pub attempt: i64,
+    pub created_at: i64,
+    pub completed_at: Option<i64>,
     pub trigger_messages: Vec<String>,
 }
 impl Agent<'_> {
+    pub async fn view(&self) -> Result<lankide_client::Agent> {
+        Ok(self.rig.client.get_agent(&self.workspace, &self.id).await?)
+    }
+    pub async fn resume(&self) -> Result<()> {
+        self.rig
+            .client
+            .resume_agent(&self.workspace, &self.id)
+            .await?;
+        Ok(())
+    }
+    pub async fn change_script(&self, script: Script, model: &str) -> Result<()> {
+        let mut agent = self.view().await?;
+        agent.model = model.into();
+        for (key, value) in &mut agent.environment_variables {
+            if key == "LANKIDE_SYSTEM_SCRIPT" {
+                *value = serde_json::to_string(&script)?;
+            }
+        }
+        self.rig.client.update_agent(agent, None).await?;
+        Ok(())
+    }
+    pub async fn wait_for(
+        &self,
+        mut condition: impl FnMut(&[Execution], &lankide_client::Agent) -> bool,
+    ) -> Result<()> {
+        timeout(self.rig.config.timeout, async {
+            loop {
+                self.rig.check_daemons()?;
+                if condition(&self.executions().await?, &self.view().await?) {
+                    return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .map_err(|_| "Agent state wait timed out")?
+    }
     pub async fn group_attention(&self, mode: lankide_protocol::AttentionMode) -> Result<()> {
         let mut client = lankide_protocol::connect_uds_lazy(
             &self.rig.paths.socket,
@@ -668,6 +723,12 @@ impl Agent<'_> {
             })
             .await?;
         Ok(())
+    }
+    pub fn inbox_states(&self) -> Result<Vec<String>> {
+        let c = self.rig.database()?;
+        let mut q=c.prepare("SELECT state FROM agent_inbox_items WHERE workspace_id=?1 AND agent_id=?2 ORDER BY inbox_item_id")?;
+        Ok(q.query_map(params![self.workspace, self.id], |r| r.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?)
     }
     pub fn inbox_count(&self) -> Result<i64> {
         Ok(self.rig.database()?.query_row(
@@ -704,7 +765,7 @@ impl Agent<'_> {
 
     pub async fn executions(&self) -> Result<Vec<Execution>> {
         let database = self.rig.database()?;
-        let mut query = database.prepare("SELECT execution_id,state,final_output,attempt,error_code FROM executions WHERE workspace_id=?1 AND agent_id=?2 ORDER BY execution_id")?;
+        let mut query = database.prepare("SELECT execution_id,state,final_output,attempt,error_code,created_at,completed_at FROM executions WHERE workspace_id=?1 AND agent_id=?2 ORDER BY execution_id")?;
         let mut executions = query
             .query_map(params![self.workspace, self.id], |row| {
                 Ok(Execution {
@@ -713,6 +774,8 @@ impl Agent<'_> {
                     output: row.get(2)?,
                     attempt: row.get(3)?,
                     error_code: row.get(4)?,
+                    created_at: row.get(5)?,
+                    completed_at: row.get(6)?,
                     trigger_messages: Vec::new(),
                 })
             })?
@@ -737,4 +800,26 @@ impl Agent<'_> {
             }
         }).await.map_err(|_| "Agent did not start before timeout")?
     }
+}
+
+fn factories(im: Arc<ImState>) -> Result<ProviderFactoryRegistry> {
+    let factories = ProviderFactoryRegistry::default();
+    let state = im.clone();
+    factories.register_host_factory(
+        ScriptedProvider {
+            state: state.clone(),
+        }
+        .info(),
+        move |workspace, services| {
+            ProviderHost::new(
+                ScriptedProvider {
+                    state: state.clone(),
+                },
+                workspace.id.clone(),
+                workspace.provider_config.clone(),
+                services,
+            )
+        },
+    )?;
+    Ok(factories)
 }

@@ -225,6 +225,7 @@ pub enum InboxState {
     Claimed,
     Delivered,
     Consumed,
+    Failed,
 }
 impl InboxState {
     fn parse(s: &str) -> Result<Self> {
@@ -233,6 +234,7 @@ impl InboxState {
             "claimed" => Ok(Self::Claimed),
             "delivered" => Ok(Self::Delivered),
             "consumed" => Ok(Self::Consumed),
+            "failed" => Ok(Self::Failed),
             _ => Err(StorageError::Invalid(format!("inbox state {s}"))),
         }
     }

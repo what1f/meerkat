@@ -62,3 +62,20 @@ marks the execution recovering (`crates/runtime/src/computer_broker.rs`), while
 reconciliation releases that execution. Storage correctly rejects the second
 active execution (`crates/storage/src/execution.rs`). This transient log does
 not block recovery. Task 0 makes no production change for it.
+
+Task 5 retry scenarios are in `tests/retry_policy_e2e.rs`. Run them with:
+
+```sh
+cargo test -p lankide-system-e2e --test retry_policy_e2e
+```
+
+They set `RuntimeConfig.retry` through the daemon's optional `retry-policy.json`
+in each private Runtime home. The file accepts `base_ms`, `max_ms`,
+`notice_dedupe_ms`, and `poll_ms`. Production defaults are 30000, 600000,
+900000, and 1000 milliseconds. All values must be positive; maximum backoff
+must be at least the base. Omitted fields use their production defaults.
+
+A Runtime restart in these scenarios opens the same database and reconnects
+management. The graceful shutdown frame also ends the Computer daemon, so the
+rig restarts that peer with its existing private home, as a service supervisor
+would. Assertions check saved attempt times and deduplicated chat notices.

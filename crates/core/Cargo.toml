@@ -19,7 +19,7 @@ serde_json.workspace = true
 
 [package.metadata.lankide.e2e]
 command = "cargo test -p lankide-core --test core_e2e"
-scenario = "Validate canonical Tool names, Markdown mentions, attention levels, schedule boundaries, and identifier validation through public constructors and deserialization."
+scenario = "Validate canonical Tool names, Markdown mentions, attention levels, schedule boundaries, and identifier validation through public constructors and deserialization. Select short English or Simplified Chinese failure notices from the triggering message."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
