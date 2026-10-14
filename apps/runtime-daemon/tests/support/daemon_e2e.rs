@@ -18,9 +18,9 @@ use lankide_storage::{
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -41,7 +41,7 @@ struct E2eResult {
     cleanup: &'static str,
 }
 
-pub async fn run_e2e() -> Result<PathBuf, AppError> {
+pub async fn run_e2e(selected: Option<&str>) -> Result<PathBuf, AppError> {
     let run_id = unique_run_id();
     let artifact_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/e2e-artifacts/runtime-daemon")
@@ -52,7 +52,13 @@ pub async fn run_e2e() -> Result<PathBuf, AppError> {
         .prefix("lkrt-")
         .tempdir_in("/tmp")?;
     let paths = RuntimePaths::for_home(temp.path().join(".lankide"))?;
-    let scenario = daemon_e2e_scenario(&paths).await;
+    let scenario = async {
+        if selected.is_none() {
+            daemon_e2e_scenario(&paths).await?;
+        }
+        super::shutdown_scenarios::run(selected, temp.path(), &artifact_dir).await
+    }
+    .await;
     let cleanup = if temp.close().is_ok() {
         "complete"
     } else {
@@ -66,26 +72,35 @@ pub async fn run_e2e() -> Result<PathBuf, AppError> {
         } else {
             "failed"
         },
-        checks: vec![
-            "temporary_home",
-            "private_directories",
-            "sqlite_migration",
-            "single_instance_lock",
-            "second_instance_preserves_socket",
-            "stale_instance_lock_removed",
-            "unsafe_socket_rejected",
-            "stale_socket_removed",
-            "production_provider_factories",
-            "multi_workspace_restore",
-            "management_ready_before_provider_start",
-            "pause_resume_provider",
-            "computer_assignment",
-            "agent_delete_rpc",
-            "computer_file_cleanup",
-            "authorized_resource_roundtrip",
-            "execution_commit",
-            "graceful_restart",
-        ],
+        checks: match selected {
+            Some("S3.1") => vec!["S3.1_shutdown_with_computer_and_provider"],
+            Some("S3.2") => vec!["S3.2_second_instance_exits_cleanly"],
+            Some("S3.3") => vec!["S3.3_sigkill_restart_recovers"],
+            Some(_) => Vec::new(),
+            None => vec![
+                "temporary_home",
+                "private_directories",
+                "sqlite_migration",
+                "single_instance_lock",
+                "second_instance_preserves_socket",
+                "stale_instance_lock_removed",
+                "unsafe_socket_rejected",
+                "stale_socket_removed",
+                "production_provider_factories",
+                "multi_workspace_restore",
+                "management_ready_before_provider_start",
+                "pause_resume_provider",
+                "computer_assignment",
+                "agent_delete_rpc",
+                "computer_file_cleanup",
+                "authorized_resource_roundtrip",
+                "execution_commit",
+                "graceful_restart",
+                "S3.1_shutdown_with_computer_and_provider",
+                "S3.2_second_instance_exits_cleanly",
+                "S3.3_sigkill_restart_recovers",
+            ],
+        },
         cleanup,
     };
     fs::write(&artifact, serde_json::to_vec_pretty(&result)?)?;
@@ -303,8 +318,10 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         return Err(AppError::Invariant("not all workspaces were restored"));
     }
     let mut second = DaemonChild::spawn(paths)?;
-    if second.wait_for_exit(Duration::from_secs(3))? == 0 {
-        return Err(AppError::Invariant("second daemon instance was accepted"));
+    if second.wait_for_exit(Duration::from_secs(3))? != 0 {
+        return Err(AppError::Invariant(
+            "second daemon instance did not exit cleanly",
+        ));
     }
     let mut second_connection = connect_uds(&paths.socket, DEFAULT_MAX_MESSAGE_BYTES)
         .await
@@ -670,6 +687,14 @@ impl Provider for FixtureProvider {
 
     fn init<'a>(&'a self, context: InitContext) -> ProviderFuture<'a, ()> {
         Box::pin(async move {
+            // Hold real HostServices while the outer receiver stops, as a
+            // native blocking receiver does, including during cancelled init.
+            let receiver_context = context.clone();
+            tokio::spawn(async move {
+                receiver_context.shutdown_signal().cancelled().await;
+                tokio::time::sleep(Duration::from_millis(150)).await;
+                drop(receiver_context);
+            });
             if self.startup_delay_ms > 0 {
                 tokio::time::sleep(Duration::from_millis(self.startup_delay_ms)).await;
             }
@@ -728,30 +753,47 @@ impl Provider for FixtureProvider {
     }
 }
 
-struct DaemonChild {
+pub(super) struct DaemonChild {
     child: Child,
-    socket: PathBuf,
+    stdout_log: PathBuf,
+    stderr_log: PathBuf,
 }
 
 impl DaemonChild {
-    fn spawn(paths: &RuntimePaths) -> Result<Self, AppError> {
+    pub(super) fn spawn(paths: &RuntimePaths) -> Result<Self, AppError> {
+        let id = unique_run_id();
+        let stdout_log = paths.home.join(format!("{id}.stdout.log"));
+        let stderr_log = paths.home.join(format!("{id}.stderr.log"));
         let child = Command::new(std::env::current_exe()?)
             .arg("--home")
             .arg(&paths.home)
             .arg("--e2e-fixture-provider")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stdout(File::create(&stdout_log)?)
+            .stderr(File::create(&stderr_log)?)
             .spawn()?;
         Ok(Self {
             child,
-            socket: paths.socket.clone(),
+            stdout_log,
+            stderr_log,
         })
     }
 
-    fn wait_ready(&mut self) -> Result<Duration, AppError> {
+    pub(super) fn wait_ready(&mut self) -> Result<Duration, AppError> {
         let started = Instant::now();
-        while !self.socket.exists() {
+        loop {
+            let output = fs::read_to_string(&self.stdout_log)?;
+            if let Some(line) = output
+                .lines()
+                .find(|line| line.contains("\"event\":\"ready\""))
+            {
+                let readiness: serde_json::Value = serde_json::from_str(line)?;
+                if readiness.get("management_ready").and_then(|v| v.as_bool()) != Some(true) {
+                    return Err(AppError::Invariant("daemon readiness was invalid"));
+                }
+                return Ok(started.elapsed());
+            }
             if self.child.try_wait()?.is_some() {
+                eprintln!("{}", fs::read_to_string(&self.stderr_log)?);
                 return Err(AppError::Invariant("daemon exited before readiness"));
             }
             if started.elapsed() >= Duration::from_secs(5) {
@@ -759,26 +801,26 @@ impl DaemonChild {
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        let stdout = self
-            .child
-            .stdout
-            .take()
-            .ok_or(AppError::Invariant("daemon stdout unavailable"))?;
-        let mut line = String::new();
-        BufReader::new(stdout).read_line(&mut line)?;
-        let readiness: serde_json::Value = serde_json::from_str(&line)?;
-        if readiness.get("event").and_then(|value| value.as_str()) != Some("ready")
-            || readiness
-                .get("management_ready")
-                .and_then(|value| value.as_bool())
-                != Some(true)
-        {
-            return Err(AppError::Invariant("daemon readiness was invalid"));
-        }
-        Ok(started.elapsed())
     }
 
-    fn wait_for_exit(&mut self, timeout: Duration) -> Result<i32, AppError> {
+    pub(super) fn logs(&self) -> Result<String, AppError> {
+        Ok(format!(
+            "{}{}",
+            fs::read_to_string(&self.stdout_log)?,
+            fs::read_to_string(&self.stderr_log)?
+        ))
+    }
+
+    pub(super) fn kill(&mut self) -> Result<(), AppError> {
+        self.child.kill()?;
+        let status = self.child.wait()?;
+        if status.success() {
+            return Err(AppError::Invariant("SIGKILL unexpectedly succeeded"));
+        }
+        Ok(())
+    }
+
+    pub(super) fn wait_for_exit(&mut self, timeout: Duration) -> Result<i32, AppError> {
         let started = std::time::Instant::now();
         loop {
             if let Some(status) = self.child.try_wait()? {
@@ -791,7 +833,7 @@ impl DaemonChild {
         }
     }
 
-    fn terminate(&mut self) -> Result<(), AppError> {
+    pub(super) fn terminate(&mut self) -> Result<(), AppError> {
         #[cfg(unix)]
         {
             let status = Command::new("kill")
@@ -817,6 +859,7 @@ impl DaemonChild {
             std::thread::sleep(Duration::from_millis(10));
         };
         if !status.success() {
+            eprintln!("daemon shutdown status={status}; logs={}", self.logs()?);
             return Err(AppError::Invariant("daemon did not stop cleanly"));
         }
         Ok(())

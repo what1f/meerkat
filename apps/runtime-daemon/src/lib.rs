@@ -149,7 +149,31 @@ where
 {
     let run_id = unique_run_id();
     paths.prepare()?;
-    let _guard = InstanceGuard::acquire(&paths.run, &paths.instance_lock, &run_id)?;
+    let _guard = match InstanceGuard::acquire(&paths.run, &paths.instance_lock, &run_id) {
+        Ok(guard) => guard,
+        Err(DaemonRuntimeError::AlreadyRunning) => {
+            // A live lock owner is not sufficient: prove it serves management
+            // before treating this launch as a successful no-op.
+            tokio::time::timeout(Duration::from_secs(2), async {
+                let mut client =
+                    lankide_protocol::connect_uds(&paths.socket, DEFAULT_MAX_MESSAGE_BYTES)
+                        .await
+                        .map_err(AppError::Protocol)?;
+                client
+                    .list_workspaces(lankide_protocol::ListWorkspacesRequest {
+                        request_id: run_id.clone(),
+                    })
+                    .await
+                    .map_err(AppError::Status)?;
+                Ok::<_, AppError>(())
+            })
+            .await
+            .map_err(|_| AppError::AlreadyRunning)??;
+            println!("runtime_daemon_already_running");
+            return Ok(());
+        }
+        Err(error) => return Err(error.into()),
+    };
     prepare_socket_path(&paths.socket)?;
     let application = RuntimeApplication::open(
         RuntimeConfig {
@@ -231,7 +255,7 @@ where
             let _ = std::fs::remove_file(&paths.socket);
         }
     }
-    application.finish_shutdown()?;
+    application.finish_shutdown().await?;
     Ok(())
 }
 

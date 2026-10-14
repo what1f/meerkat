@@ -137,26 +137,6 @@ impl BackgroundServices {
         }
     }
 
-    pub(crate) fn recover_runtime(&mut self, home: &Path) -> Result<(), ClientError> {
-        match &mut self.adapter {
-            Adapter::Transient { runtime, .. } => {
-                if let Some(mut child) = runtime.take() {
-                    stop_helper(&mut child);
-                }
-                let executable = helper_executable("lankide-runtime-daemon")?;
-                *runtime = Some(spawn_helper(&executable, home)?);
-                Ok(())
-            }
-            #[cfg(target_os = "macos")]
-            Adapter::ModernLaunchAgents => {
-                ensure_launch_agent(RUNTIME_AGENT_PLIST)?;
-                restart_launch_agent(RUNTIME_AGENT_LABEL)
-            }
-            #[cfg(target_os = "macos")]
-            Adapter::AdHocLaunchAgents => restart_launch_agent(RUNTIME_AGENT_LABEL),
-        }
-    }
-
     pub(crate) fn computer_exited(&mut self) -> Result<Option<String>, ClientError> {
         match &mut self.adapter {
             Adapter::Transient { computer, .. } => computer
@@ -235,7 +215,9 @@ fn launch_agent(plist_name: &str) -> objc2::rc::Retained<SMAppService> {
 fn ensure_launch_agent(plist_name: &str) -> Result<(), ClientError> {
     let service = launch_agent(plist_name);
     match unsafe { service.status() } {
-        SMAppServiceStatus::Enabled => return Ok(()),
+        SMAppServiceStatus::Enabled => {
+            return start_launch_agent(plist_name.trim_end_matches(".plist"));
+        }
         SMAppServiceStatus::RequiresApproval => return Err(background_permission_error()),
         SMAppServiceStatus::NotFound => return Err(background_installation_error()),
         SMAppServiceStatus::NotRegistered => {}
@@ -337,6 +319,25 @@ fn install_ad_hoc_launch_agent(
 }
 
 #[cfg(target_os = "macos")]
+fn start_launch_agent(label: &str) -> Result<(), ClientError> {
+    let domain = launch_agent_domain()?;
+    // Without -k, launchd leaves an already-running owner in place.
+    let output = Command::new("/bin/launchctl")
+        .args(["kickstart", &format!("{domain}/{label}")])
+        .output()
+        .map_err(|error| ClientError::Unavailable(error.to_string()))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        eprintln!(
+            "lankide-desktop: could not start {label}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+        Err(background_installation_error())
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn restart_launch_agent(label: &str) -> Result<(), ClientError> {
     let domain = launch_agent_domain()?;
     let output = Command::new("/bin/launchctl")
@@ -357,7 +358,7 @@ fn restart_launch_agent(label: &str) -> Result<(), ClientError> {
 #[cfg(target_os = "macos")]
 fn ensure_ad_hoc_launch_agent(label: &str) -> Result<(), ClientError> {
     if ad_hoc_launch_agent_is_loaded(label) {
-        Ok(())
+        start_launch_agent(label)
     } else {
         Err(background_installation_error())
     }
@@ -432,7 +433,10 @@ fn ad_hoc_launch_agent_plist(label: &str, executable: &Path, home: &Path) -> Str
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
-    <true/>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
     <key>ProcessType</key>
     <string>Background</string>
     <key>ThrottleInterval</key>

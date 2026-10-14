@@ -85,6 +85,7 @@ pub struct RuntimeConfig {
 pub struct Runtime {
     config: RuntimeConfig,
     storage: Arc<Storage>,
+    background_tasks: std::sync::Mutex<tokio::task::JoinSet<()>>,
     providers: StdRwLock<BTreeMap<WorkspaceId, Arc<ProviderInstance>>>,
 }
 
@@ -94,6 +95,7 @@ impl Runtime {
         Ok(Self {
             config,
             storage,
+            background_tasks: std::sync::Mutex::new(tokio::task::JoinSet::new()),
             providers: StdRwLock::new(BTreeMap::new()),
         })
     }

@@ -75,9 +75,11 @@ impl DesktopBackend {
             .clone()
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join("run/runtime.sock"));
-        // The local smoke entrypoint owns transient helpers, including when
-        // executed from an extracted, signed App. Never register LaunchAgents.
-        let services = Arc::new(Mutex::new(BackgroundServices::new(false)));
+        // A private home keeps bundled smoke runs on transient helpers.
+        // Unbundled runs use transient helpers even with the default home.
+        let services = Arc::new(Mutex::new(BackgroundServices::new(
+            env::var_os(HOME_ENV).is_none(),
+        )));
         let startup = start_services(
             tokio.handle(),
             &services,
@@ -138,20 +140,17 @@ fn start_services(
     socket: &Path,
     manage_services: bool,
 ) -> Result<(), ClientError> {
-    if manage_services {
-        let mut services = services
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        services.prepare(home)?;
-        services.ensure_runtime(home)?;
-    }
-    let client = match runtime.block_on(connect_with_retry(socket)) {
+    // Reuse a healthy owner before preparing or launching any local service.
+    let client = match runtime.block_on(RuntimeManagementClient::connect(socket)) {
         Ok(client) => client,
         Err(_) if manage_services => {
-            services
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .recover_runtime(home)?;
+            {
+                let mut services = services
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                services.prepare(home)?;
+                services.ensure_runtime(home)?;
+            }
             runtime.block_on(connect_with_retry(socket))?
         }
         Err(error) => return Err(error),

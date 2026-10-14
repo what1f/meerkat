@@ -151,7 +151,12 @@ impl Runtime {
                             trigger_messages: vec![message_id],
                             provider_agent_config: agent.provider_agent_config.clone(),
                         };
-                        tokio::spawn(async move {
+                        let mut tasks = self
+                            .background_tasks
+                            .lock()
+                            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
+                        while tasks.try_join_next().is_some() {}
+                        tasks.spawn(async move {
                             if let Err(error) = host.auto_reaction(agent_id.clone(), spec).await {
                                 eprintln!(
                                     "[runtime] workspace={workspace_id} agent={agent_id} auto reaction failed: {error}"

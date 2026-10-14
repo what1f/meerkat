@@ -17,15 +17,78 @@ def group_members(group):
     return [int(pid) for pid, pgid in (row.split() for row in rows.splitlines()) if int(pgid) == group]
 
 
+def reuse_running_services(binaries, artifact_dir):
+    result = {"scenario": "unbundled-default-home-existing-owner", "status": "failed"}
+    with tempfile.TemporaryDirectory(prefix="lk-owner-", dir="/tmp") as directory:
+        home = Path(directory) / ".lankide"
+        env = {**os.environ, "HOME": directory}
+        env.pop("LANKIDE_HOME", None)
+        env.pop("LANKIDE_RUNTIME_SOCKET", None)
+        owners = []
+        with (artifact_dir / "existing-owner.log").open("w") as log:
+            try:
+                for name in ("lankide-runtime-daemon", "lankide-computer-daemon"):
+                    owners.append(subprocess.Popen(
+                        [str(binaries[name]), "--home", str(home)],
+                        env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+                    ))
+                deadline = time.monotonic() + 10
+                while True:
+                    assert all(owner.poll() is None for owner in owners), "service owner exited"
+                    assert time.monotonic() < deadline, "service owner did not start"
+                    probe = subprocess.run(
+                        [str(binaries["lankide-desktop"]), "--local-bootstrap-smoke", "--result", str(artifact_dir / "existing-owner-ready.json")],
+                        env={**env, "LANKIDE_RUNTIME_SOCKET": str(home / "run/runtime.sock")},
+                        stdout=log, stderr=subprocess.STDOUT, timeout=10,
+                    )
+                    if probe.returncode == 0:
+                        break
+                    time.sleep(0.05)
+                locks = {name: (home / f"run/{name}.lock").read_bytes() for name in ("runtime", "computer")}
+                for attempt in range(2):
+                    output = artifact_dir / f"existing-owner-{attempt}.json"
+                    process = subprocess.Popen(
+                        [str(binaries["lankide-desktop"]), "--local-bootstrap-smoke", "--result", str(output)],
+                        env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+                    )
+                    try:
+                        assert process.wait(timeout=40) == 0, "Desktop could not reuse services"
+                        payload = json.loads(output.read_text())
+                        assert payload["runtime_ready"] and payload["computer_connected"] and payload["management"], payload
+                        assert not group_members(process.pid), "Desktop left a helper alive"
+                        assert all(owner.poll() is None for owner in owners), "Desktop stopped an external owner"
+                        assert not (home / "logs").exists(), "Desktop spawned a competing helper"
+                        for name, contents in locks.items():
+                            assert (home / f"run/{name}.lock").read_bytes() == contents, "Desktop replaced a service owner"
+                    finally:
+                        if process.poll() is None:
+                            os.killpg(process.pid, signal.SIGKILL)
+                            process.wait()
+                result.update(status="passed", cleanup="passed")
+            finally:
+                for owner in reversed(owners):
+                    if owner.poll() is None:
+                        os.killpg(owner.pid, signal.SIGTERM)
+                        try:
+                            owner.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            os.killpg(owner.pid, signal.SIGKILL)
+                            owner.wait()
+                    assert not group_members(owner.pid), "service owner cleanup failed"
+                assert not list((home / "run").glob("*.lock")), "service ownership remained after shutdown"
+    return result
+
+
 def run(binary_dir, artifact_dir):
     names = ("lankide-desktop", "lankide-runtime-daemon", "lankide-computer-daemon", "lankide")
     binaries = {name: binary_dir / name for name in names}
     for binary in binaries.values():
         assert binary.is_file() and os.access(binary, os.X_OK), f"build required: {binary}"
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    scenarios = []
+    scenarios = [reuse_running_services(binaries, artifact_dir)]
     for scenario, failed_helper in (
         ("ready", None),
+        ("unbundled-default-home-ready", None),
         ("runtime-exits", "lankide-runtime-daemon"),
         ("computer-exits", "lankide-computer-daemon"),
     ):
@@ -33,7 +96,8 @@ def run(binary_dir, artifact_dir):
         scenarios.append(result)
         with tempfile.TemporaryDirectory(prefix="lk-boot-", dir="/tmp") as directory:
             root = Path(directory)
-            home = root / "home"
+            default_home = scenario == "unbundled-default-home-ready"
+            home = root / (".lankide" if default_home else "home")
             bundle = root / "bin"
             bundle.mkdir()
             for name, binary in binaries.items():
@@ -44,7 +108,10 @@ def run(binary_dir, artifact_dir):
                 else:
                     shutil.copy2(binary, destination)
             output = artifact_dir / f"{scenario}.json"
-            env = {**os.environ, "LANKIDE_HOME": str(home)}
+            env = {**os.environ, "HOME": str(root)}
+            env.pop("LANKIDE_HOME", None)
+            if not default_home:
+                env["LANKIDE_HOME"] = str(home)
             env.pop("LANKIDE_RUNTIME_SOCKET", None)
             with (artifact_dir / f"{scenario}.log").open("w") as log:
                 process = subprocess.Popen(
@@ -68,6 +135,8 @@ def run(binary_dir, artifact_dir):
                     if failed_helper is None:
                         assert code == 0 and payload["status"] == "passed", payload
                         assert payload["runtime_ready"] and payload["computer_connected"] and payload["management"], payload
+                        for name in ("lankide-runtime-daemon", "lankide-computer-daemon"):
+                            assert (home / "logs" / f"{name}.log").is_file(), "Desktop did not start its helper"
                     else:
                         assert code != 0 and payload["status"] == "failed", payload
                         assert not payload["computer_connected"], payload
@@ -92,7 +161,7 @@ def run(binary_dir, artifact_dir):
                     if logs.exists():
                         shutil.copytree(logs, artifact_dir / f"{scenario}-services", dirs_exist_ok=True)
                     (artifact_dir / "result.json").write_text(json.dumps({
-                        "status": "passed" if len(scenarios) == 3 and all(item["status"] == "passed" for item in scenarios) else "failed",
+                        "status": "passed" if len(scenarios) == 5 and all(item["status"] == "passed" for item in scenarios) else "failed",
                         "classification": "real-process-startup-with-external-faults",
                         "binaries": {name: {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()} for name, path in binaries.items()},
                         "scenarios": scenarios,
