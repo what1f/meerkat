@@ -85,6 +85,18 @@ impl Peer {
 
 #[tonic::async_trait]
 impl lankide_protocol::ComputerPeer for Peer {
+    async fn authorize_link(
+        &self,
+        credential: &str,
+        local_secret: &str,
+    ) -> Result<(), lankide_protocol::link::CloseReason> {
+        if credential == local_secret {
+            Ok(())
+        } else {
+            Err(lankide_protocol::link::CloseReason::Unauthorized)
+        }
+    }
+
     async fn connect_computer(
         &self,
         hello: ComputerHello,
@@ -515,6 +527,10 @@ pub async fn run() -> Result<PathBuf, AppError> {
             .await
             .map_err(|_| AppError::Invariant("shutdown timeout"))?
             .map_err(AppError::Computer)?;
+        let (url, credential) = lankide_protocol::link::discover(&paths.runtime_socket)?;
+        fs::write(paths.home.join("computer-credentials.json"), serde_json::to_vec(&lankide_computer_daemon::DeviceCredentials {
+            computer_id:"local".into(),device_credential:credential,runtime_url:url,local_discovery:true,
+        })?)?;
         let mut child = Command::new(&executable)
             .arg("--home")
             .arg(&paths.home)
@@ -613,6 +629,7 @@ fn build_computer(
             ..Default::default()
         },
     })
+    .with_device_credential(lankide_protocol::link::discover(&paths.runtime_socket)?.1)
     .with_execution_liveness(lankide_computer::ExecutionLiveness {
         cancel_grace: Duration::from_millis(150),
         ..Default::default()

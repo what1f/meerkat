@@ -46,6 +46,9 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 pub struct RigConfig {
     pub harness_executable: PathBuf,
     pub timeout: Duration,
+    pub pairing_validity: Duration,
+    pub auto_start_computer: bool,
+    pub local_discovery: bool,
     pub computer_ws_only: bool,
     pub execution_token_lifetime: Duration,
     pub attempt_lease: Duration,
@@ -68,6 +71,9 @@ impl Default for RigConfig {
                 .expect("target directory")
                 .join("system-harness"),
             timeout: Duration::from_secs(15),
+            pairing_validity: Duration::from_secs(600),
+            auto_start_computer: true,
+            local_discovery: false,
             computer_ws_only: false,
             execution_token_lifetime: Duration::from_secs(3600),
             attempt_lease: Duration::from_secs(15),
@@ -163,7 +169,7 @@ impl SystemRig {
         std::fs::write(
             home.path().join("runtime.json"),
             serde_json::to_vec(
-                &json!({"execution_token_lifetime_ms": config.execution_token_lifetime.as_millis(), "attempt_lease_ms": config.attempt_lease.as_millis(), "computer_link": config.link}),
+                &json!({"pairing_validity_ms":config.pairing_validity.as_millis(), "execution_token_lifetime_ms": config.execution_token_lifetime.as_millis(), "attempt_lease_ms": config.attempt_lease.as_millis(), "computer_link": config.link}),
             )?,
         )?;
         let im = Arc::new(ImState::default());
@@ -207,12 +213,20 @@ impl SystemRig {
         .await
         .map_err(|_| "Runtime management startup timed out")??;
         if rig.config.network_proxy {
-            let (url, _) = rig.computer_endpoint()?;
+            let (url, secret) = rig.local_pairing_endpoint()?;
+            lankide_computer_daemon::pair(
+                &lankide_computer_daemon::ComputerDaemonPaths::for_home(rig.computer_home.path())?,
+                &url,
+                &secret,
+            )
+            .await?;
             rig.proxy =
                 Some(net_proxy::NetProxy::start(url.trim_start_matches("ws://").parse()?).await?);
         }
-        rig.start_computer()?;
-        rig.wait_for_computer().await?;
+        if rig.config.auto_start_computer {
+            rig.start_computer()?;
+            rig.wait_for_computer().await?;
+        }
         Ok(rig)
     }
     fn check_daemons(&self) -> Result<()> {
@@ -254,7 +268,11 @@ impl SystemRig {
         if !self.config.computer_ws_only {
             config.paths.runtime_socket = self.paths.socket.clone();
         }
-        config.runtime_url = Some(self.proxy.as_ref().map_or(url, net_proxy::NetProxy::url));
+        config.runtime_url = if self.config.local_discovery {
+            None
+        } else {
+            Some(self.proxy.as_ref().map_or(url, net_proxy::NetProxy::url))
+        };
         config.link_secret_file = Some(secret_path);
         if let Some(binary) = &self.config.computer_process {
             self.child_computer = Some(
@@ -284,7 +302,7 @@ impl SystemRig {
                 if let Ok(computers) = self.client.get_computer_catalog(None).await {
                     if computers
                         .iter()
-                        .any(|computer| computer.id == "local" && computer.available)
+                        .any(|computer| computer.registered && computer.available)
                     {
                         return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
                     }
@@ -318,11 +336,33 @@ impl SystemRig {
             .get_computer_catalog(None)
             .await?
             .iter()
-            .any(|c| c.id == "local" && c.available))
+            .any(|c| c.registered && c.available))
     }
     pub fn computer_endpoint(&self) -> Result<(String, String)> {
+        let (url, _) = lankide_protocol::link::discover(&self.paths.socket)?;
+        let credentials = lankide_computer_daemon::read_credentials(self.computer_home.path())?
+            .ok_or("Computer is unpaired")?;
+        Ok((url, credentials.device_credential))
+    }
+    pub fn local_pairing_endpoint(&self) -> Result<(String, String)> {
         Ok(lankide_protocol::link::discover(&self.paths.socket)?)
     }
+    pub fn management(&self) -> &RuntimeManagementClient {
+        &self.client
+    }
+    pub fn computer_home(&self) -> &std::path::Path {
+        self.computer_home.path()
+    }
+    pub fn runtime_home(&self) -> &std::path::Path {
+        self.home.path()
+    }
+    pub fn start_paired_computer(&mut self) -> Result<()> {
+        self.start_computer()
+    }
+    pub async fn wait_computer_online(&self) -> Result<()> {
+        self.wait_for_computer().await
+    }
+
     pub fn runtime_socket(&self) -> &std::path::Path {
         &self.paths.socket
     }
@@ -400,6 +440,35 @@ impl SystemRig {
         .map_err(|_| "Runtime restart timed out")??;
         self.start_computer()?;
         self.wait_for_computer().await
+    }
+    pub fn stop_computer(&mut self) -> Result<()> {
+        if let Some(mut computer) = self.computer.take() {
+            computer.stop()?;
+        }
+        self.kill_computer_process()
+    }
+    pub async fn await_terminal_computer(&mut self) -> Result<String> {
+        timeout(self.config.timeout, async {
+            loop {
+                if self
+                    .computer
+                    .as_ref()
+                    .and_then(|c| c.thread.as_ref())
+                    .is_some_and(|t| t.is_finished())
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .map_err(|_| "Computer terminal stop timed out")?;
+        let mut computer = self.computer.take().ok_or("missing Computer")?;
+        let thread = computer.thread.take().ok_or("missing Computer thread")?;
+        let result = thread.join().map_err(|_| "Computer thread panicked")?;
+        Ok(result
+            .expect_err("revoked Computer must exit with an error")
+            .to_string())
     }
     pub async fn restart_computer(&mut self) -> Result<()> {
         if let Some(mut computer) = self.computer.take() {
@@ -524,6 +593,7 @@ impl<'a> Workspace<'a> {
     }
     pub fn agent(&self, name: &str) -> AgentBuilder<'a> {
         AgentBuilder {
+            computer_id: String::new(),
             rig: self.rig,
             workspace: self.id.clone(),
             name: name.into(),
@@ -730,12 +800,18 @@ impl<'a> Workspace<'a> {
 }
 
 pub struct AgentBuilder<'a> {
+    computer_id: String,
     rig: &'a SystemRig,
     workspace: String,
     name: String,
     script: Script,
 }
 impl<'a> AgentBuilder<'a> {
+    pub fn computer(mut self, computer_id: &str) -> Self {
+        self.computer_id = computer_id.into();
+        self
+    }
+
     pub fn harness(mut self, script: Script) -> Self {
         self.script = script;
         self
@@ -747,6 +823,7 @@ impl<'a> AgentBuilder<'a> {
             .create_agent(
                 &self.workspace,
                 AgentDraft {
+                    computer_id: self.computer_id,
                     id: self.name.clone(),
                     name: self.name.clone(),
                     model: "scripted".into(),

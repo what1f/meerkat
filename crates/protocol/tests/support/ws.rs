@@ -75,13 +75,25 @@ pub async fn connect_stream(
     mut frames: impl Stream<Item = lankide_protocol::ComputerFrame> + Unpin + Send + 'static,
 ) -> Result<Response<Messages>, Status> {
     let (url, secret) = link::discover(socket).map_err(|e| Status::unavailable(e.to_string()))?;
-    let mut link = link::connect(&url, &secret, lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES)
-        .await
-        .map_err(status)?;
     let hello = frames
         .next()
         .await
         .ok_or_else(|| Status::invalid_argument("missing_hello"))?;
+    let credential = match &hello.frame {
+        Some(lankide_protocol::computer_frame::Frame::Hello(hello))
+            if !hello.device_credential.is_empty() =>
+        {
+            hello.device_credential.as_str()
+        }
+        _ => &secret,
+    };
+    let mut link = link::connect(
+        &url,
+        credential,
+        lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES,
+    )
+    .await
+    .map_err(status)?;
     link.send(
         hello
             .try_into()

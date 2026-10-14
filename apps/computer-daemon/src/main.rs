@@ -23,13 +23,26 @@ async fn execute() -> Result<(), AppError> {
     let mut runtime_url = None;
     let mut link_secret_file = None;
     let mut instance_id = None;
+    let mut pairing = None;
     while let Some(argument) = arguments.next() {
-        if argument == "--version" {
+        if argument == "pair" {
+            let url = arguments
+                .next()
+                .ok_or(AppError::InvalidArgument("pair requires a URL"))?
+                .to_string_lossy()
+                .into_owned();
+            let code = arguments
+                .next()
+                .ok_or(AppError::InvalidArgument("pair requires a code"))?
+                .to_string_lossy()
+                .into_owned();
+            pairing = Some((url, code));
+        } else if argument == "--version" {
             println!("lankide-computer-daemon {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         } else if argument == "--help" {
             println!(
-                "Usage: lankide-computer-daemon [--home PATH] [--instance-id ID] [--runtime-url URL] [--link-secret-file PATH]"
+                "Usage: lankide-computer-daemon [pair RUNTIME_URL CODE] [--home PATH] [--instance-id ID] [--runtime-url URL] [--link-secret-file PATH]"
             );
             return Ok(());
         } else if argument == "--home" {
@@ -65,6 +78,10 @@ async fn execute() -> Result<(), AppError> {
         Some(home) => DaemonConfig::for_home(home)?,
         None => DaemonConfig::local_default()?,
     };
+    if let Some((url, code)) = pairing {
+        lankide_computer_daemon::pair(&config.paths, &url, &code).await?;
+        return Ok(());
+    }
     config.runtime_url = runtime_url;
     config.link_secret_file = link_secret_file;
     if let Some(path) = user_executable_path() {

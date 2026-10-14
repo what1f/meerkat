@@ -3,8 +3,8 @@ mod frames;
 pub use frames::*;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::{fmt, future::Future, marker::PhantomData, path::Path};
-use tokio::net::{TcpListener, TcpStream};
+use std::{fmt, marker::PhantomData, path::Path};
+use tokio::net::TcpStream;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
     tungstenite::{
@@ -24,6 +24,8 @@ pub enum CloseReason {
     EventSequenceRegression,
     MessageTooLarge,
     Unauthorized,
+    ComputerUnknown,
+    ComputerRevoked,
     Shutdown,
     Timeout,
 }
@@ -64,6 +66,10 @@ impl From<tungstenite::Error> for LinkError {
             Self::Closed(CloseReason::MessageTooLarge)
         } else if matches!(&e, tungstenite::Error::Http(response) if response.status() == 401) {
             Self::Closed(CloseReason::Unauthorized)
+        } else if matches!(&e, tungstenite::Error::Http(response) if response.status() == 403) {
+            Self::Closed(CloseReason::ComputerRevoked)
+        } else if matches!(&e, tungstenite::Error::Http(response) if response.status() == 404) {
+            Self::Closed(CloseReason::ComputerUnknown)
         } else {
             Self::WebSocket(e)
         }
@@ -220,92 +226,6 @@ impl Default for LinkSettings {
     }
 }
 
-/// Serve authenticated Computer links. Shutdown drops and joins every connection.
-pub async fn serve<P, F>(
-    listener: TcpListener,
-    secret: String,
-    peer: P,
-    config: crate::TransportConfig,
-    shutdown: F,
-) -> Result<(), LinkError>
-where
-    P: crate::ComputerPeer + Clone,
-    F: Future<Output = ()> + Send,
-{
-    serve_inner(
-        listener,
-        secret,
-        peer,
-        config,
-        LinkSettings::default(),
-        false,
-        shutdown,
-    )
-    .await
-}
-
-pub async fn serve_with_settings<P, F>(
-    listener: TcpListener,
-    secret: String,
-    peer: P,
-    config: crate::TransportConfig,
-    settings: LinkSettings,
-    shutdown: F,
-) -> Result<(), LinkError>
-where
-    P: crate::ComputerPeer + Clone,
-    F: Future<Output = ()> + Send,
-{
-    serve_inner(listener, secret, peer, config, settings, true, shutdown).await
-}
-
-async fn serve_inner<P, F>(
-    listener: TcpListener,
-    secret: String,
-    peer: P,
-    config: crate::TransportConfig,
-    settings: LinkSettings,
-    override_heartbeat: bool,
-    shutdown: F,
-) -> Result<(), LinkError>
-where
-    P: crate::ComputerPeer + Clone,
-    F: Future<Output = ()> + Send,
-{
-    let mut tasks = tokio::task::JoinSet::new();
-    tokio::pin!(shutdown);
-    loop {
-        tokio::select! {
-            _ = &mut shutdown => break,
-            result = tasks.join_next(), if !tasks.is_empty() => { let _ = result; }
-            accepted = listener.accept() => {
-                let (socket, _) = accepted?;
-                let secret = secret.clone(); let peer = peer.clone(); let settings = settings.clone();
-                tasks.spawn(async move {
-                    let upgraded = tokio::time::timeout(settings.handshake_timeout, tokio_tungstenite::accept_hdr_async_with_config(socket, move |request: &tungstenite::handshake::server::Request, response: tungstenite::handshake::server::Response| {
-                        if request.headers().get("authorization").and_then(|v| v.to_str().ok()) != Some(format!("Bearer {secret}").as_str()) {
-                            let mut denied = tungstenite::http::Response::new(Some("unauthorized".to_owned()));
-                            *denied.status_mut() = tungstenite::http::StatusCode::UNAUTHORIZED; return Err(denied);
-                        }
-                        Ok(response)
-                    }, Some(ws_config(config.max_message_bytes)))).await;
-                    if let Ok(Ok(socket)) = upgraded {
-                        let mut link = WebSocketLink::new(socket, config.max_message_bytes);
-                        match accept_link(&mut link, peer, config, settings.clone(), override_heartbeat).await {
-                            Ok(()) => { let _ = tokio::time::timeout(settings.handshake_timeout, link.close(CloseReason::Shutdown)).await; }
-                            Err(LinkError::Closed(reason)) => { let _ = tokio::time::timeout(settings.handshake_timeout, link.close(reason)).await; }
-                            Err(_) => {}
-                        }
-                    }
-                });
-            }
-        }
-    }
-    tasks.abort_all();
-    while tasks.join_next().await.is_some() {}
-    Ok(())
-}
-
 /// Serve an already authenticated HTTP upgrade using the existing link contract.
 pub(crate) async fn serve_upgraded<S, P>(
     socket: S,
@@ -384,7 +304,13 @@ async fn accept_link<
             Box::pin(tokio_stream::wrappers::ReceiverStream::new(receiver)),
         )
         .await
-        .map_err(|_| LinkError::Closed(CloseReason::InvalidFrame))?;
+        .map_err(|error| {
+            LinkError::Closed(match error.message() {
+                "computer_revoked" => CloseReason::ComputerRevoked,
+                "computer_unknown" => CloseReason::ComputerUnknown,
+                _ => CloseReason::InvalidFrame,
+            })
+        })?;
     let mut validator = crate::validation::ComputerFrameValidator::default();
     let mut first = true;
     let mut interval = settings
@@ -411,7 +337,11 @@ async fn accept_link<
             }
             frame = output.next() => {
                 let Some(frame) = frame else { break };
-                let mut frame = frame.map_err(|_| LinkError::Closed(CloseReason::InvalidFrame))?;
+                let mut frame = frame.map_err(|error| LinkError::Closed(match error.message() {
+                    "computer_revoked" => CloseReason::ComputerRevoked,
+                    "computer_unknown" => CloseReason::ComputerUnknown,
+                    _ => CloseReason::InvalidFrame,
+                }))?;
                 crate::validate_runtime_frame(&frame).map_err(|_| LinkError::Closed(CloseReason::InvalidFrame))?;
                 match (&frame.frame, first) {
                     (Some(crate::runtime_frame::Frame::Hello(hello)), true)

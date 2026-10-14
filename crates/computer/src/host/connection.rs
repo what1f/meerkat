@@ -43,7 +43,8 @@ pub(super) async fn run_loop(
                 *inner.connection.write().await = None;
                 inner.connected.store(false, Ordering::Release);
                 if let Err(error) = &result {
-                    if matches!(error, ComputerError::InvalidAssignment(_) | ComputerError::ProtocolVersionUnsupported) {
+                    if matches!(error, ComputerError::InvalidAssignment(_) | ComputerError::ProtocolVersionUnsupported | ComputerError::Link(LinkError::Closed(CloseReason::ComputerRevoked | CloseReason::ComputerUnknown))) {
+                        ComputerHandle::cancel_inner(&inner, "computer_link_rejected").await;
                         return result.map(|_| ());
                     }
                 }
@@ -72,7 +73,10 @@ pub(super) async fn run_loop(
 async fn run_connection(inner: Arc<Inner>) -> Result<Duration, ComputerError> {
     let (url, secret) = match &inner.link_endpoint {
         Some(endpoint) => endpoint.clone(),
-        None => lankide_protocol::link::discover(&inner.socket_path)?,
+        None => {
+            let (url, _) = lankide_protocol::link::discover(&inner.socket_path)?;
+            (url, inner.device_credential.clone())
+        }
     };
     let mut link = tokio::time::timeout(
         inner.config.reconnect.handshake_timeout,
@@ -158,7 +162,9 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, ComputerError> {
                         dispatch(inner.clone(), frame.into()).await?
                     }
                 }
-                Some(Err(_)) | None => return Ok(started.elapsed()),
+                Some(Err(error @ LinkError::Closed(CloseReason::ComputerRevoked | CloseReason::ComputerUnknown))) => return Err(error.into()),
+                Some(Err(_)) => return Ok(started.elapsed()),
+                None => return Ok(started.elapsed()),
             }
         }
     }
@@ -255,6 +261,7 @@ async fn make_hello(inner: &Inner) -> ComputerHello {
         .collect();
     ComputerHello {
         protocol_version: lankide_protocol::PROTOCOL_VERSION,
+        device_credential: inner.device_credential.clone(),
         computer_id: inner.config.computer_id.clone(),
         instance_id: inner.config.instance_id.clone(),
         computer_version: env!("CARGO_PKG_VERSION").into(),

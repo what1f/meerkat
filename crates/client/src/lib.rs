@@ -198,7 +198,7 @@ impl Default for AgentDraft {
             bio: String::new(),
             avatar: Avatar::Custom(String::new()),
             soul: String::new(),
-            computer_id: "local".into(),
+            computer_id: String::new(),
             harness_id: "pi".into(),
             model: String::new(),
             thinking_level: ThinkingLevel::High,
@@ -242,8 +242,15 @@ pub struct AgentOnboardingState {
     pub payload: Value,
     pub error: Option<ClientError>,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct ComputerOption {
+    pub registered: bool,
+    pub revoked_at: Option<i64>,
+    pub last_seen_at: Option<i64>,
+    pub paired_at: i64,
+    pub os: String,
+    pub version: String,
+    pub inventory: Vec<lankide_protocol::link::HarnessInfo>,
     pub id: String,
     pub name: String,
     pub available: bool,
@@ -459,6 +466,12 @@ pub trait ManagementClient: Send + Sync {
         &self,
     ) -> Result<Vec<ProviderCapabilityCatalogEntry>, ClientError> {
         Ok(Vec::new())
+    }
+    async fn create_pairing_code(&self) -> Result<PairingCode, ClientError> {
+        Err(ClientError::Protocol("pairing_unavailable".into()))
+    }
+    async fn revoke_computer(&self, _computer_id: &str) -> Result<(), ClientError> {
+        Err(ClientError::Protocol("revocation_unavailable".into()))
     }
     async fn get_computer_catalog(
         &self,
@@ -1067,8 +1080,19 @@ impl ManagementClient for RuntimeManagementClient {
                 .into_inner(),
         )
     }
-    async fn create_agent(&self, w: &str, d: AgentDraft) -> Result<Agent, ClientError> {
+    async fn create_agent(&self, w: &str, mut d: AgentDraft) -> Result<Agent, ClientError> {
         validate_agent_choice(&d.harness_id, &d.cli_path)?;
+        if d.computer_id.is_empty() {
+            let computers = self
+                .get_computer_catalog(None)
+                .await?
+                .into_iter()
+                .filter(|c| c.registered && c.revoked_at.is_none())
+                .collect::<Vec<_>>();
+            if let [computer] = computers.as_slice() {
+                d.computer_id = computer.id.clone();
+            }
+        }
         let expected = d.id.clone();
         expect_agent(
             w,
@@ -1288,6 +1312,31 @@ impl ManagementClient for RuntimeManagementClient {
             })
             .collect())
     }
+    async fn create_pairing_code(&self) -> Result<PairingCode, ClientError> {
+        let value = self
+            .client
+            .clone()
+            .create_pairing_code(catalog(self.request_id(), None))
+            .await
+            .map_err(map_status)?
+            .into_inner();
+        Ok(PairingCode {
+            code: value.code,
+            issued_at: value.issued_at,
+            expires_at: value.expires_at,
+        })
+    }
+    async fn revoke_computer(&self, computer_id: &str) -> Result<(), ClientError> {
+        self.client
+            .clone()
+            .revoke_computer(wire::RevokeComputerRequest {
+                request_id: self.request_id(),
+                computer_id: computer_id.into(),
+            })
+            .await
+            .map_err(map_status)?;
+        Ok(())
+    }
     async fn get_computer_catalog(
         &self,
         w: Option<&str>,
@@ -1302,6 +1351,13 @@ impl ManagementClient for RuntimeManagementClient {
             .computers
             .into_iter()
             .map(|c| ComputerOption {
+                registered: c.registered,
+                revoked_at: c.revoked_at,
+                last_seen_at: c.last_seen_at,
+                paired_at: c.paired_at,
+                os: c.os,
+                version: c.version,
+                inventory: c.harnesses.into_iter().map(Into::into).collect(),
                 id: c.computer_id,
                 name: c.display_name,
                 available: c.observed_state == wire::ObservedState::Running as i32,
@@ -1525,4 +1581,11 @@ impl ManagementClient for RuntimeManagementClient {
             inner: Box::pin(stream),
         })
     }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct PairingCode {
+    pub code: String,
+    pub issued_at: i64,
+    pub expires_at: i64,
 }

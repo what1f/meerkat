@@ -8,6 +8,7 @@ use lankide_runtime::{
     ProviderFactoryRegistry, RuntimeApplication, RuntimeConfig, RuntimePeerAdapter,
 };
 use lankide_storage::{DatabaseConfig, Storage, WorkspaceSpec};
+use sha2::Digest;
 use std::time::Duration;
 use tokio_stream::{StreamExt, wrappers::ReceiverStream};
 
@@ -91,11 +92,33 @@ async fn shutdown_releases_connected_computer_and_provider_before_database_reope
     .await
     .unwrap();
     application.start().await.unwrap();
+    lankide_storage::Storage::open(database.clone())
+        .unwrap()
+        .pair_computer(
+            &lankide_storage::ComputerRecord {
+                computer_id: "computer".into(),
+                display_name: "computer".into(),
+                credential_hash: sha2::Sha256::digest(b"fixture-computer")
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect(),
+                paired_at: 1,
+                revoked_at: None,
+                last_seen_at: None,
+                os: "test".into(),
+                version: "1".into(),
+                inventory_json: "[]".into(),
+            },
+            None,
+            600_000,
+        )
+        .unwrap();
     let peer = RuntimePeerAdapter::new(application.clone());
     let (sender, receiver) = tokio::sync::mpsc::channel(16);
     let mut frames = peer
         .connect_computer(
             ComputerHello {
+                device_credential: "fixture-computer".into(),
                 protocol_version: PROTOCOL_VERSION,
                 computer_id: "computer".into(),
                 instance_id: "instance".into(),

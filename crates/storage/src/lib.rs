@@ -5,6 +5,8 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, sync::Mutex};
 
+mod computer;
+pub use computer::ComputerRecord;
 mod agent;
 mod attempt;
 mod error;

@@ -178,6 +178,18 @@ impl Peer {
 
 #[tonic::async_trait]
 impl lankide_protocol::ComputerPeer for Peer {
+    async fn authorize_link(
+        &self,
+        credential: &str,
+        local_secret: &str,
+    ) -> Result<(), lankide_protocol::link::CloseReason> {
+        if credential == local_secret {
+            Ok(())
+        } else {
+            Err(lankide_protocol::link::CloseReason::Unauthorized)
+        }
+    }
+
     async fn connect_computer(
         &self,
         hello: ComputerHello,
@@ -356,6 +368,7 @@ async fn computer_e2e() {
             ..Default::default()
         },
     })
+    .with_device_credential(lankide_protocol::link::discover(&socket).unwrap().1)
     .with_capability_cli(&capability_cli)
     .with_execution_liveness(lankide_computer::ExecutionLiveness {
         cancel_grace: Duration::from_millis(150),

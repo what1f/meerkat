@@ -115,6 +115,18 @@ struct StoredResource {
 
 #[tonic::async_trait]
 impl lankide_protocol::ComputerPeer for TestPeer {
+    async fn authorize_link(
+        &self,
+        credential: &str,
+        local_secret: &str,
+    ) -> Result<(), lankide_protocol::link::CloseReason> {
+        if credential == local_secret {
+            Ok(())
+        } else {
+            Err(lankide_protocol::link::CloseReason::Unauthorized)
+        }
+    }
+
     async fn connect_computer(
         &self,
         hello: ComputerHello,
@@ -1147,6 +1159,7 @@ fn hello_frame() -> ComputerFrame {
 
 fn computer_hello() -> ComputerHello {
     ComputerHello {
+        device_credential: String::new(),
         protocol_version: PROTOCOL_VERSION,
         computer_id: "local".into(),
         instance_id: "computer_instance_1".into(),

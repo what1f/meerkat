@@ -366,10 +366,29 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         .await
         .map_err(AppError::Status)?;
 
+    Storage::open(DatabaseConfig::new(&paths.database))?.pair_computer(
+        &lankide_storage::ComputerRecord {
+            computer_id: "computer-a".into(),
+            display_name: "Computer A".into(),
+            credential_hash: Sha256::digest(b"fixture-computer-a")
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect(),
+            paired_at: 1,
+            revoked_at: None,
+            last_seen_at: None,
+            os: "test".into(),
+            version: "1".into(),
+            inventory_json: "[]".into(),
+        },
+        None,
+        600_000,
+    )?;
     let (computer_tx, computer_rx) = mpsc::channel(16);
     computer_tx
         .send(ComputerFrame {
             frame: Some(computer_frame::Frame::Hello(ComputerHello {
+                device_credential: "fixture-computer-a".into(),
                 protocol_version: PROTOCOL_VERSION,
                 computer_id: "computer-a".into(),
                 instance_id: "instance-a".into(),

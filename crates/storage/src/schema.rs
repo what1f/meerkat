@@ -28,7 +28,7 @@ fn configure(c: &Connection) -> Result<()> {
 
 fn migrate(c: &mut Connection) -> Result<()> {
     let v: i64 = c.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    if v > 18 {
+    if v > 19 {
         return Err(StorageError::Invalid(format!("unsupported schema {v}")));
     }
     if v == 0 {
@@ -164,8 +164,19 @@ fn migrate(c: &mut Connection) -> Result<()> {
         transaction.pragma_update(None, "user_version", 18)?;
         transaction.commit()?;
     }
+    let current: i64 = c.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if current == 18 {
+        let transaction = c.transaction()?;
+        transaction.execute_batch(MIGRATION_V19)?;
+        transaction.pragma_update(None, "user_version", 19)?;
+        transaction.commit()?;
+    }
     Ok(())
 }
+const MIGRATION_V19: &str = r#"
+CREATE TABLE computers(computer_id TEXT PRIMARY KEY,display_name TEXT NOT NULL,credential_hash TEXT NOT NULL UNIQUE,paired_at INTEGER NOT NULL,revoked_at INTEGER,last_seen_at INTEGER,os TEXT NOT NULL,version TEXT NOT NULL,inventory_json TEXT NOT NULL DEFAULT '[]',local_pair INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE pairing_codes(code_hash TEXT PRIMARY KEY,issued_at INTEGER NOT NULL,used_at INTEGER);
+"#;
 const MIGRATION_V17: &str = r#"
 CREATE TABLE chats_v17(chat_id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id TEXT NOT NULL,channel_id TEXT NOT NULL,provider_chat_id TEXT NOT NULL,receiving_agent_id TEXT NOT NULL DEFAULT '',name TEXT,first_message_id INTEGER,last_message_id INTEGER,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,FOREIGN KEY(workspace_id,channel_id)REFERENCES channels(workspace_id,channel_id),UNIQUE(workspace_id,channel_id,provider_chat_id,receiving_agent_id));
 INSERT INTO chats_v17(chat_id,workspace_id,channel_id,provider_chat_id,name,first_message_id,last_message_id,created_at,updated_at)

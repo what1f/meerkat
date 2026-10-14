@@ -21,6 +21,26 @@ impl RuntimePeerAdapter {
 
 #[tonic::async_trait]
 impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
+    async fn authorize_link(
+        &self,
+        credential: &str,
+        _local_secret: &str,
+    ) -> Result<(), lankide_protocol::link::CloseReason> {
+        if credential.is_empty() {
+            return Err(lankide_protocol::link::CloseReason::Unauthorized);
+        }
+        self.application.authenticate_computer(None, credential)
+    }
+    async fn pair_computer(
+        &self,
+        request: lankide_protocol::link::PairComputerRequest,
+        local_secret: &str,
+    ) -> Result<lankide_protocol::link::PairComputerResponse, Status> {
+        self.application
+            .pair_computer(request, local_secret)
+            .map_err(status)
+    }
+
     async fn link_rejected(
         &self,
         hello: ComputerHello,
@@ -40,11 +60,43 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
     ) -> Result<RuntimeFrameStream, Status> {
         let computer_id = hello.computer_id.clone();
         let instance_id = hello.instance_id.clone();
-        let (connection_id, output) = self
-            .application
-            .computer_broker()
-            .connect_tracked(hello)
-            .map_err(status)?;
+        let (connection_id, output) = {
+            let _guard = self
+                .application
+                .inner
+                .computer_registration
+                .lock()
+                .map_err(|_| Status::internal("registration unavailable"))?;
+            self.application
+                .authenticate_computer(Some(&computer_id), &hello.device_credential)
+                .map_err(|reason| Status::unauthenticated(reason.to_string()))?;
+            self.application
+                .runtime()
+                .map_err(status)?
+                .storage()
+                .observe_computer(
+                    &computer_id,
+                    application::now_millis(),
+                    Some(
+                        &serde_json::to_string(
+                            &hello
+                                .harnesses
+                                .iter()
+                                .cloned()
+                                .map(lankide_protocol::link::HarnessInfo::from)
+                                .collect::<Vec<_>>(),
+                        )
+                        .map_err(|_| Status::internal("inventory invalid"))?,
+                    ),
+                    Some(&hello.os),
+                    Some(&hello.computer_version),
+                )
+                .map_err(|error| status(error.into()))?;
+            self.application
+                .computer_broker()
+                .connect_tracked(hello)
+                .map_err(status)?
+        };
         self.application.set_computer_connected(true);
         let cleanup_broker = self.application.computer_broker();
         let cleanup_computer_id = computer_id.clone();
@@ -511,6 +563,23 @@ impl RuntimePeer for RuntimePeerAdapter {
         request: CatalogRequest,
     ) -> Result<ProviderCatalog, Status> {
         self.application.provider_catalog(request).map_err(status)
+    }
+    async fn create_pairing_code(&self, _request: CatalogRequest) -> Result<PairingCode, Status> {
+        self.application.create_pairing_code().map_err(status)
+    }
+    async fn revoke_computer(
+        &self,
+        request: RevokeComputerRequest,
+    ) -> Result<ComputerCatalog, Status> {
+        self.application
+            .revoke_computer(&request.computer_id)
+            .map_err(status)?;
+        self.application
+            .computer_catalog(CatalogRequest {
+                request_id: request.request_id,
+                workspace: None,
+            })
+            .map_err(status)
     }
     async fn get_computer_catalog(
         &self,

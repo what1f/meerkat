@@ -9,7 +9,6 @@ use std::sync::{
     atomic::{AtomicI64, AtomicU64, Ordering},
 };
 use tokio::sync::{mpsc, oneshot};
-use tokio_stream::wrappers::ReceiverStream;
 use tonic::Status;
 
 #[derive(Clone)]
@@ -30,6 +29,7 @@ struct BrokerInner {
 #[derive(Clone)]
 struct ComputerConnection {
     connection_id: u64,
+    revoked: Arc<AtomicBool>,
     instance_id: String,
     sender: mpsc::Sender<Result<RuntimeFrame, Status>>,
     harnesses: Vec<HarnessInfo>,
@@ -187,6 +187,23 @@ impl ComputerBroker {
         Ok(())
     }
 
+    pub fn revoke(&self, computer_id: &str) -> Result<(), RuntimeError> {
+        if let Some(connection) = self
+            .inner
+            .connections
+            .write()
+            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?
+            .remove(computer_id)
+        {
+            // The stream checks this flag before sending any queued business frame.
+            connection.revoked.store(true, Ordering::Release);
+            let _ = connection
+                .sender
+                .try_send(Err(Status::unauthenticated("computer_revoked")));
+        }
+        Ok(())
+    }
+
     pub fn connect(&self, hello: ComputerHello) -> Result<RuntimeFrameStream, RuntimeError> {
         self.connect_tracked(hello).map(|(_, stream)| stream)
     }
@@ -206,8 +223,10 @@ impl ComputerBroker {
             .next_connection_id
             .fetch_add(1, Ordering::Relaxed)
             .saturating_add(1);
+        let revoked = Arc::new(AtomicBool::new(false));
         let connection = ComputerConnection {
             connection_id,
+            revoked: revoked.clone(),
             instance_id: hello.instance_id.clone(),
             sender: sender.clone(),
             harnesses: hello.harnesses,
@@ -250,7 +269,14 @@ impl ComputerBroker {
                 .try_send(Ok(steer_frame(delivery)))
                 .map_err(|_| RuntimeError::Application("computer stream closed".into()))?;
         }
-        Ok((connection_id, Box::pin(ReceiverStream::new(receiver))))
+        Ok((
+            connection_id,
+            Box::pin(RegisteredComputerStream {
+                receiver,
+                revoked,
+                closed: false,
+            }),
+        ))
     }
 
     pub fn disconnect(&self, computer_id: &str, instance_id: &str) -> Result<(), RuntimeError> {
@@ -336,6 +362,31 @@ impl ComputerBroker {
         let Some(frame) = frame.frame else {
             return Ok(());
         };
+        match &frame {
+            computer_frame::Frame::Heartbeat(_) => {
+                self.storage()?
+                    .observe_computer(computer_id, now_millis(), None, None, None)?;
+            }
+            computer_frame::Frame::InventoryChanged(inventory) => {
+                let inventory = inventory
+                    .harnesses
+                    .iter()
+                    .cloned()
+                    .map(lankide_protocol::link::HarnessInfo::from)
+                    .collect::<Vec<_>>();
+                self.storage()?.observe_computer(
+                    computer_id,
+                    now_millis(),
+                    Some(
+                        &serde_json::to_string(&inventory)
+                            .map_err(|e| RuntimeError::Application(e.to_string()))?,
+                    ),
+                    None,
+                    None,
+                )?;
+            }
+            _ => {}
+        }
         match frame {
             computer_frame::Frame::AssignmentResult(result) => {
                 let execution = result.execution.as_ref().ok_or_else(|| {
@@ -1029,5 +1080,28 @@ fn execution_event_kind_name(kind: ExecutionEventKind) -> &'static str {
         ExecutionEventKind::Failed => "failed",
         ExecutionEventKind::Cancelled => "cancelled",
         ExecutionEventKind::Unspecified => "unspecified",
+    }
+}
+
+// Revocation wins over queued business frames, even when the output queue is full.
+struct RegisteredComputerStream {
+    receiver: mpsc::Receiver<Result<RuntimeFrame, Status>>,
+    revoked: Arc<AtomicBool>,
+    closed: bool,
+}
+impl tokio_stream::Stream for RegisteredComputerStream {
+    type Item = Result<RuntimeFrame, Status>;
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        if self.closed {
+            return std::task::Poll::Ready(None);
+        }
+        if self.revoked.load(Ordering::Acquire) {
+            self.closed = true;
+            return std::task::Poll::Ready(Some(Err(Status::unauthenticated("computer_revoked"))));
+        }
+        self.receiver.poll_recv(cx)
     }
 }

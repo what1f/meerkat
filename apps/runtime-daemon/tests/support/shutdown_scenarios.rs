@@ -84,10 +84,30 @@ async fn shutdown_with_computer_and_provider(
 ) -> Result<(), AppError> {
     let mut daemon = DaemonChild::spawn(paths)?;
     daemon.wait_ready()?;
+    use sha2::Digest;
+    Storage::open(DatabaseConfig::new(&paths.database))?.pair_computer(
+        &lankide_storage::ComputerRecord {
+            computer_id: "shutdown-computer".into(),
+            display_name: "Computer".into(),
+            credential_hash: sha2::Sha256::digest(b"fixture-shutdown")
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect(),
+            paired_at: 1,
+            revoked_at: None,
+            last_seen_at: None,
+            os: "test".into(),
+            version: "1".into(),
+            inventory_json: "[]".into(),
+        },
+        None,
+        600_000,
+    )?;
     let (sender, receiver) = mpsc::channel(16);
     sender
         .send(ComputerFrame {
             frame: Some(computer_frame::Frame::Hello(ComputerHello {
+                device_credential: "fixture-shutdown".into(),
                 protocol_version: PROTOCOL_VERSION,
                 computer_id: "shutdown-computer".into(),
                 instance_id: "shutdown-instance".into(),

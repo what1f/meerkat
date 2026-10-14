@@ -182,20 +182,54 @@ pub async fn run_with_harnesses(
 ) -> Result<(), AppError> {
     let run_id = unique_run_id();
     let _guard = InstanceGuard::acquire(&config.paths.run, &config.paths.instance_lock, &run_id)?;
+    let credentials = match read_credentials(&config.paths.home)? {
+        Some(credentials) => credentials,
+        None => {
+            let (url, secret) = if let Some(url) = &config.runtime_url {
+                let path = config
+                    .link_secret_file
+                    .clone()
+                    .unwrap_or_else(|| config.paths.run.join("computer-link.secret"));
+                (
+                    url.clone(),
+                    std::fs::read_to_string(path)?.trim().to_owned(),
+                )
+            } else {
+                tokio::time::timeout(
+                    read_reconnect(&config.paths.home)?.handshake_timeout,
+                    async {
+                        loop {
+                            if let Ok(endpoint) =
+                                lankide_protocol::link::discover(&config.paths.runtime_socket)
+                            {
+                                break endpoint;
+                            }
+                            tokio::time::sleep(Duration::from_millis(20)).await;
+                        }
+                    },
+                )
+                .await
+                .map_err(|_| AppError::InvalidArgument("runtime_unavailable"))?
+            };
+            pair_inner(&config.paths, &url, &secret, config.runtime_url.is_none()).await?
+        }
+    };
     let mut computer = Computer::new(ComputerConfig {
-        computer_id: "local".into(),
+        computer_id: credentials.computer_id,
         instance_id: config.instance_id.clone(),
         workspace_root: config.paths.workspaces.display().to_string(),
         reconnect: read_reconnect(&config.paths.home)?,
     })
+    .with_device_credential(credentials.device_credential.clone())
     .with_execution_liveness(config.execution_liveness);
-    if let Some(url) = &config.runtime_url {
-        let secret_file = config
-            .link_secret_file
-            .clone()
-            .unwrap_or_else(|| config.paths.run.join("computer-link.secret"));
-        let secret = std::fs::read_to_string(secret_file)?;
-        computer = computer.with_link_endpoint(url.clone(), secret.trim().to_owned());
+    if !credentials.local_discovery || config.runtime_url.is_some() {
+        computer = computer.with_link_endpoint(
+            config
+                .runtime_url
+                .clone()
+                .unwrap_or(credentials.runtime_url),
+            credentials.device_credential,
+        );
     }
     for registration in registrations {
         computer
@@ -317,4 +351,98 @@ impl From<serde_json::Error> for AppError {
     fn from(value: serde_json::Error) -> Self {
         Self::Json(value)
     }
+}
+
+#[derive(Clone, Debug, serde::Deserialize, Serialize)]
+pub struct DeviceCredentials {
+    pub computer_id: String,
+    pub device_credential: String,
+    pub runtime_url: String,
+    #[serde(default)]
+    pub local_discovery: bool,
+}
+
+pub fn read_credentials(home: &std::path::Path) -> Result<Option<DeviceCredentials>, AppError> {
+    match std::fs::read(home.join("computer-credentials.json")) {
+        Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes)?)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub async fn pair(
+    paths: &ComputerDaemonPaths,
+    runtime_url: &str,
+    code: &str,
+) -> Result<DeviceCredentials, AppError> {
+    paths.prepare()?;
+    let _guard = InstanceGuard::acquire(&paths.run, &paths.instance_lock, &unique_run_id())?;
+    if read_credentials(&paths.home)?.is_some() {
+        return Err(AppError::InvalidArgument("computer_already_paired"));
+    }
+    pair_inner(paths, runtime_url, code, false).await
+}
+
+async fn pair_inner(
+    paths: &ComputerDaemonPaths,
+    runtime_url: &str,
+    code: &str,
+    local_discovery: bool,
+) -> Result<DeviceCredentials, AppError> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let url = runtime_url
+        .trim_end_matches('/')
+        .replacen("ws://", "http://", 1)
+        .replacen("wss://", "https://", 1);
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| io::Error::other(e.to_string()))?
+        .post(format!("{url}/computers/pair"))
+        .json(&lankide_protocol::link::PairComputerRequest {
+            code: code.into(),
+            display_name: std::env::var("HOSTNAME").unwrap_or_else(|_| std::env::consts::OS.into()),
+            os: std::env::consts::OS.into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+        })
+        .send()
+        .await
+        .map_err(|e| io::Error::other(e.to_string()))?;
+    if !response.status().is_success() {
+        return Err(AppError::InvalidArgument("pairing_rejected"));
+    }
+    let paired: lankide_protocol::link::PairComputerResponse = response
+        .json()
+        .await
+        .map_err(|e| io::Error::other(e.to_string()))?;
+    let credentials = DeviceCredentials {
+        computer_id: paired.computer_id,
+        device_credential: paired.device_credential,
+        runtime_url: runtime_url
+            .trim_end_matches('/')
+            .replacen("http://", "ws://", 1)
+            .replacen("https://", "wss://", 1),
+        local_discovery,
+    };
+    let temporary = paths
+        .home
+        .join(format!(".computer-credentials-{}", unique_run_id()));
+    let result = (|| -> Result<(), AppError> {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&temporary)?;
+        file.write_all(&serde_json::to_vec(&credentials)?)?;
+        file.sync_all()?;
+        std::fs::rename(&temporary, paths.home.join("computer-credentials.json"))?;
+        std::fs::File::open(&paths.home)?.sync_all()?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(temporary);
+    }
+    result?;
+    Ok(credentials)
 }

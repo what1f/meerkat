@@ -17,6 +17,7 @@ fn hello(version: u32) -> ComputerFrame {
     ComputerFrame {
         protocol_version: version,
         frame: ComputerPayload::Hello(ComputerHello {
+            device_credential: String::new(),
             protocol_version: version,
             computer_id: "newer-computer".into(),
             instance_id: "first".into(),
@@ -31,9 +32,24 @@ fn hello(version: u32) -> ComputerFrame {
 #[tokio::test]
 async fn s9_1_newer_computer_gets_a_typed_rejection_visible_in_management() -> Result<()> {
     let rig = SystemRig::start(config()).await?;
-    let (url, secret) = rig.computer_endpoint()?;
+    use lankide_client::ManagementClient;
+    let (url, _) = rig.computer_endpoint()?;
+    let home = tempfile::tempdir()?;
+    let code = rig.management().create_pairing_code().await?;
+    let credentials = lankide_computer_daemon::pair(
+        &lankide_computer_daemon::ComputerDaemonPaths::for_home(home.path())?,
+        &url,
+        &code.code,
+    )
+    .await?;
+    let secret = credentials.device_credential.clone();
+    let mut newer = hello(PROTOCOL_VERSION + 1);
+    if let ComputerPayload::Hello(hello) = &mut newer.frame {
+        hello.computer_id = credentials.computer_id.clone();
+        hello.device_credential = secret.clone();
+    }
     let mut link = link::connect(&url, &secret, DEFAULT_MAX_MESSAGE_BYTES).await?;
-    link.send(hello(PROTOCOL_VERSION + 1)).await?;
+    link.send(newer.clone()).await?;
     let result = timeout(Duration::from_secs(3), link.receive())
         .await?
         .map_err(lankide_computer::ComputerError::from);
@@ -56,7 +72,7 @@ async fn s9_1_newer_computer_gets_a_typed_rejection_visible_in_management() -> R
     let rejected = catalog
         .computers
         .iter()
-        .find(|computer| computer.computer_id == "newer-computer")
+        .find(|computer| computer.computer_id == credentials.computer_id)
         .expect("rejected Computer in catalog");
     assert_eq!(
         rejected.observed_state,
@@ -65,7 +81,11 @@ async fn s9_1_newer_computer_gets_a_typed_rejection_visible_in_management() -> R
     assert_eq!(rejected.status_message, "protocol_version_unsupported");
     // A supported reconnect clears the rejection without changing storage.
     let mut compatible = link::connect(&url, &secret, DEFAULT_MAX_MESSAGE_BYTES).await?;
-    compatible.send(hello(PROTOCOL_VERSION)).await?;
+    newer.protocol_version = PROTOCOL_VERSION;
+    if let ComputerPayload::Hello(hello) = &mut newer.frame {
+        hello.protocol_version = PROTOCOL_VERSION;
+    }
+    compatible.send(newer).await?;
     assert!(matches!(
         timeout(Duration::from_secs(3), compatible.receive())
             .await??
@@ -82,7 +102,7 @@ async fn s9_1_newer_computer_gets_a_typed_rejection_visible_in_management() -> R
     let computer = catalog
         .computers
         .iter()
-        .find(|computer| computer.computer_id == "newer-computer")
+        .find(|computer| computer.computer_id == credentials.computer_id)
         .unwrap();
     assert_eq!(
         computer.observed_state,
@@ -141,7 +161,7 @@ async fn ws_rejects_unauthorized_and_invalid_connections_without_disrupting_a_co
     }
     assert!(matches!(
         link::connect(&url, "wrong-secret", DEFAULT_MAX_MESSAGE_BYTES).await,
-        Err(LinkError::Closed(CloseReason::Unauthorized))
+        Err(LinkError::Closed(CloseReason::ComputerUnknown))
     ));
     let rejected = tokio_tungstenite::connect_async(&url).await;
     assert!(

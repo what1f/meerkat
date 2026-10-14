@@ -543,22 +543,49 @@ impl RuntimeApplication {
 
     pub fn computer_catalog(&self, _: CatalogRequest) -> Result<ComputerCatalog, RuntimeError> {
         let broker = self.computer_broker();
-        let mut computers: Vec<_> = broker
-            .catalog()?
+        let online = broker.catalog()?;
+        let mut computers: Vec<_> = self
+            .runtime()?
+            .storage()
+            .registered_computers()?
             .into_iter()
-            .map(|value| ComputerCatalogItem {
-                computer_id: value.computer_id.clone(),
-                display_name: value.computer_id,
-                observed_state: ObservedState::Running as i32,
-                harnesses: value.harnesses,
-                status_message: String::new(),
+            .map(|record| {
+                let live = online
+                    .iter()
+                    .find(|value| value.computer_id == record.computer_id);
+                let inventory: Vec<lankide_protocol::link::HarnessInfo> =
+                    serde_json::from_str(&record.inventory_json)
+                        .map_err(|e| RuntimeError::Application(e.to_string()))?;
+                Ok(ComputerCatalogItem {
+                    computer_id: record.computer_id,
+                    display_name: record.display_name,
+                    observed_state: if record.revoked_at.is_some() {
+                        ObservedState::Stopped
+                    } else if live.is_some() {
+                        ObservedState::Running
+                    } else {
+                        ObservedState::Stopped
+                    } as i32,
+                    harnesses: inventory.into_iter().map(Into::into).collect(),
+                    status_message: String::new(),
+                    registered: true,
+                    revoked_at: record.revoked_at,
+                    last_seen_at: record.last_seen_at,
+                    paired_at: record.paired_at,
+                    os: record.os,
+                    version: record.version,
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, RuntimeError>>()?;
         for (computer_id, reason) in broker.rejected_links()? {
-            if computers
-                .iter()
-                .any(|value| value.computer_id == computer_id)
+            if let Some(computer) = computers
+                .iter_mut()
+                .find(|value| value.computer_id == computer_id)
             {
+                if computer.revoked_at.is_none() {
+                    computer.observed_state = ObservedState::Error as i32;
+                    computer.status_message = reason.to_string();
+                }
                 continue;
             }
             computers.push(ComputerCatalogItem {
@@ -567,6 +594,7 @@ impl RuntimeApplication {
                 observed_state: ObservedState::Error as i32,
                 harnesses: Vec::new(),
                 status_message: reason.to_string(),
+                ..Default::default()
             });
         }
         Ok(ComputerCatalog { computers })

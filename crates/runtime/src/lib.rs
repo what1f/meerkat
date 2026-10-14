@@ -12,6 +12,7 @@ mod error;
 mod execution;
 mod lifecycle;
 mod management;
+mod pairing;
 mod peer;
 mod prompt;
 mod provider_ops;

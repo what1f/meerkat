@@ -114,7 +114,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     let config = DatabaseConfig::new(&db_path);
 
     let storage = Storage::open(config.clone()).map_err(|error| error.to_string())?;
-    assert_eq!(storage.schema_version().unwrap(), 18);
+    assert_eq!(storage.schema_version().unwrap(), 19);
     assert_eq!(storage.sqlite_settings().unwrap().journal_mode, "wal");
     assert!(storage.sqlite_settings().unwrap().foreign_keys);
 
@@ -1752,6 +1752,8 @@ fn verify_v14_hard_delete_migration(root: &Path) -> Result<(), String> {
              ALTER TABLE agent_inbox_items DROP COLUMN failure_count;
              ALTER TABLE executions DROP COLUMN retry_policy_applied;
              DROP TABLE failure_notices;
+             DROP TABLE computers;
+             DROP TABLE pairing_codes;
              PRAGMA user_version=14;",
         )
         .map_err(|error| error.to_string())?;
@@ -1759,7 +1761,7 @@ fn verify_v14_hard_delete_migration(root: &Path) -> Result<(), String> {
 
     let migrated =
         Storage::open(DatabaseConfig::new(&database)).map_err(|error| error.to_string())?;
-    assert_eq!(migrated.schema_version().unwrap(), 18);
+    assert_eq!(migrated.schema_version().unwrap(), 19);
     assert!(migrated.agent_record(&workspace_id, &agent_id).is_err());
     assert_eq!(
         migrated.pending_agent_file_deletions("local").unwrap(),
@@ -2011,6 +2013,8 @@ fn legacy_direct_chat_keeps_its_history_and_ids_after_receiver_migration() {
              ALTER TABLE agent_inbox_items DROP COLUMN failure_count;
              ALTER TABLE executions DROP COLUMN retry_policy_applied;
              DROP TABLE failure_notices;
+             DROP TABLE computers;
+             DROP TABLE pairing_codes;
              PRAGMA user_version=15;").unwrap();
     // Production shape: all three Agents dispatched and tried to reply; only
     // Bruce's bot could send (5 sent, 8 failed, 13 failed).
@@ -2033,7 +2037,7 @@ fn legacy_direct_chat_keeps_its_history_and_ids_after_receiver_migration() {
     drop(fixture);
     verify_migration_sample(database.as_os_str());
     let storage = Storage::open(DatabaseConfig::new(&database)).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 18);
+    assert_eq!(storage.schema_version().unwrap(), 19);
     assert!(storage.sqlite_settings().unwrap().foreign_keys);
     for agent in [&clark, &diana] {
         assert!(
@@ -2264,7 +2268,7 @@ fn verify_migration_sample(sample: &std::ffi::OsStr) {
         .collect::<rusqlite::Result<Vec<_>>>().unwrap();
     drop(before);
     let storage = Storage::open(DatabaseConfig::new(&database)).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 18);
+    assert_eq!(storage.schema_version().unwrap(), 19);
     storage.close().unwrap();
     let after = rusqlite::Connection::open(database).unwrap();
     assert_eq!(
@@ -2390,12 +2394,14 @@ fn v17_database_migrates_and_preserves_queued_work() {
         ALTER TABLE agent_inbox_items DROP COLUMN failure_count;
         ALTER TABLE executions DROP COLUMN retry_policy_applied;
         DROP TABLE failure_notices;
+             DROP TABLE computers;
+             DROP TABLE pairing_codes;
         PRAGMA user_version=17;",
         )
         .unwrap();
     drop(fixture);
     let storage = Storage::open(config).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 18);
+    assert_eq!(storage.schema_version().unwrap(), 19);
     assert!(storage.agent_pause_reason(&w, &a).unwrap().is_none());
     let execution = storage
         .create_execution(&w, &a, "queued message", 3)
@@ -2404,4 +2410,100 @@ fn v17_database_migrates_and_preserves_queued_work() {
     assert_eq!(execution.inbox_item_ids.len(), 1);
     assert!(storage.pending_failure_notices(&w, &a).unwrap().is_empty());
     storage.close().unwrap();
+}
+
+#[test]
+fn v18_to_v19_registers_computers_without_losing_legacy_agents() {
+    let home = tempfile::tempdir().unwrap();
+    let config = DatabaseConfig::new(home.path().join("runtime.db"));
+    let storage = Storage::open(config.clone()).unwrap();
+    let workspace = WorkspaceId::new("team").unwrap();
+    let agent = AgentId::new("bruce").unwrap();
+    storage
+        .create_workspace(WorkspaceSpec {
+            id: workspace.clone(),
+            name: "Team".into(),
+            provider_id: ProviderId::new("fixture").unwrap(),
+            provider_config: json!({}),
+            provider_secret: json!({}),
+            active: true,
+            now: 1,
+        })
+        .unwrap();
+    storage
+        .create_agent(AgentSpec {
+            workspace_id: workspace.clone(),
+            id: agent.clone(),
+            name: "Bruce".into(),
+            now: 2,
+        })
+        .unwrap();
+    storage.close().unwrap();
+    // Downgrade only the new empty registration tables to the v18 layout.
+    let connection = rusqlite::Connection::open(&config.path).unwrap();
+    connection.execute_batch("DROP TABLE computers; DROP TABLE pairing_codes; UPDATE agents SET computer_id='local'; PRAGMA user_version=18;").unwrap();
+    drop(connection);
+    let storage = Storage::open(config.clone()).unwrap();
+    assert_eq!(storage.schema_version().unwrap(), 19);
+    assert_eq!(
+        storage.list_agent_records(&workspace).unwrap()[0].computer_id,
+        "local"
+    );
+    assert!(storage.registered_computers().unwrap().is_empty());
+    let device = lankide_storage::ComputerRecord {
+        computer_id: "paired-device".into(),
+        display_name: "Desk".into(),
+        credential_hash: "credential-hash".into(),
+        paired_at: 100,
+        revoked_at: None,
+        last_seen_at: None,
+        os: "macos".into(),
+        version: "1".into(),
+        inventory_json: "[]".into(),
+    };
+    storage.issue_pairing_code("code-hash", 90).unwrap();
+    let remote = lankide_storage::ComputerRecord {
+        computer_id: "remote".into(),
+        credential_hash: "remote-hash".into(),
+        ..device.clone()
+    };
+    storage
+        .pair_computer(&remote, Some("code-hash"), 600_000)
+        .unwrap();
+    assert!(
+        storage
+            .pair_computer(&remote, Some("code-hash"), 600_000)
+            .is_err()
+    );
+    assert_eq!(
+        storage.list_agent_records(&workspace).unwrap()[0].computer_id,
+        "local"
+    );
+    storage.pair_computer(&device, None, 600_000).unwrap();
+    assert_eq!(
+        storage.list_agent_records(&workspace).unwrap()[0].computer_id,
+        device.computer_id
+    );
+    storage
+        .observe_computer(
+            &device.computer_id,
+            101,
+            Some("[]"),
+            Some("macos"),
+            Some("2"),
+        )
+        .unwrap();
+    storage.revoke_computer(&device.computer_id, 102).unwrap();
+    storage.close().unwrap();
+    let reopened = Storage::open(config).unwrap();
+    let devices = reopened.registered_computers().unwrap();
+    let persisted = devices
+        .iter()
+        .find(|c| c.computer_id == device.computer_id)
+        .unwrap();
+    assert_eq!(persisted.last_seen_at, Some(101));
+    assert_eq!(persisted.revoked_at, Some(102));
+    assert_eq!(persisted.version, "2");
+    assert_eq!(reopened.list_agents(&workspace).unwrap()[0].name, "Bruce");
+    reopened.close().unwrap();
 }

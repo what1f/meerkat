@@ -181,6 +181,7 @@ pub struct Computer {
     output_records: OutputRecordPolicy,
     capability_cli: Option<PathBuf>,
     link_endpoint: Option<(String, String)>,
+    device_credential: String,
     config: ComputerConfig,
     harnesses: HashMap<String, RegisteredHarness>,
 }
@@ -189,6 +190,7 @@ impl Computer {
     pub fn new(config: ComputerConfig) -> Self {
         Self {
             link_endpoint: None,
+            device_credential: String::new(),
             config,
             liveness: ExecutionLiveness::default(),
             output_records: OutputRecordPolicy::default(),
@@ -215,7 +217,13 @@ impl Computer {
         self
     }
 
+    pub fn with_device_credential(mut self, credential: String) -> Self {
+        self.device_credential = credential;
+        self
+    }
+
     pub fn with_link_endpoint(mut self, url: String, secret: String) -> Self {
+        self.device_credential = secret.clone();
         self.link_endpoint = Some((url, secret));
         self
     }
@@ -326,6 +334,7 @@ impl Computer {
             root,
             socket_path,
             link_endpoint: self.link_endpoint,
+            device_credential: self.device_credential,
             state_path,
             factories,
             defaults,
@@ -465,6 +474,7 @@ struct Inner {
     root: PathBuf,
     socket_path: PathBuf,
     link_endpoint: Option<(String, String)>,
+    device_credential: String,
     state_path: PathBuf,
     factories: HashMap<String, Arc<dyn HarnessFactory>>,
     defaults: HashMap<String, NativeHarnessConfig>,

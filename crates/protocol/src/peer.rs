@@ -149,6 +149,15 @@ pub trait RuntimePeer: Send + Sync + 'static {
         Err(Status::unimplemented("get_provider_catalog"))
     }
 
+    async fn create_pairing_code(&self, _request: CatalogRequest) -> Result<PairingCode, Status> {
+        Err(Status::unimplemented("create_pairing_code"))
+    }
+    async fn revoke_computer(
+        &self,
+        _request: RevokeComputerRequest,
+    ) -> Result<ComputerCatalog, Status> {
+        Err(Status::unimplemented("revoke_computer"))
+    }
     async fn get_computer_catalog(
         &self,
         _request: CatalogRequest,
@@ -235,6 +244,21 @@ pub trait RuntimePeer: Send + Sync + 'static {
 /// Accept a validated Computer connection, independent of the management transport.
 #[tonic::async_trait]
 pub trait ComputerPeer: Send + Sync + 'static {
+    async fn authorize_link(
+        &self,
+        _credential: &str,
+        _local_secret: &str,
+    ) -> Result<(), crate::link::CloseReason> {
+        Err(crate::link::CloseReason::Unauthorized)
+    }
+    async fn pair_computer(
+        &self,
+        _request: crate::link::PairComputerRequest,
+        _local_secret: &str,
+    ) -> Result<crate::link::PairComputerResponse, Status> {
+        Err(Status::unimplemented("pair_computer"))
+    }
+
     async fn link_rejected(&self, _hello: ComputerHello, _reason: crate::link::CloseReason) {}
 
     async fn connect_computer(

@@ -192,12 +192,17 @@ where
     struct LinkSettings {
         #[serde(default = "default_link_listen")]
         computer_link_listen: String,
+        #[serde(default = "default_pairing_validity_ms")]
+        pairing_validity_ms: u64,
         #[serde(default = "default_token_lifetime_ms")]
         execution_token_lifetime_ms: u64,
         #[serde(default = "default_attempt_lease_ms")]
         attempt_lease_ms: u64,
         #[serde(default)]
         computer_link: lankide_protocol::link::LinkSettings,
+    }
+    fn default_pairing_validity_ms() -> u64 {
+        600_000
     }
     fn default_link_listen() -> String {
         "127.0.0.1:0".into()
@@ -212,6 +217,7 @@ where
         Ok(bytes) => serde_json::from_slice::<LinkSettings>(&bytes)?,
         Err(error) if error.kind() == io::ErrorKind::NotFound => LinkSettings {
             computer_link_listen: default_link_listen(),
+            pairing_validity_ms: default_pairing_validity_ms(),
             execution_token_lifetime_ms: default_token_lifetime_ms(),
             attempt_lease_ms: default_attempt_lease_ms(),
             computer_link: Default::default(),
@@ -224,6 +230,7 @@ where
     application
         .computer_broker()
         .set_attempt_lease(Duration::from_millis(settings.attempt_lease_ms))?;
+    application.set_pairing_validity(Duration::from_millis(settings.pairing_validity_ms))?;
     let address = settings.computer_link_listen;
     let listener = tokio::net::TcpListener::bind(&address).await?;
     let url = format!("ws://{}", listener.local_addr()?);

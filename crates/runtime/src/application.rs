@@ -25,10 +25,12 @@ const APP_STOPPED: u8 = 3;
 
 #[derive(Clone)]
 pub struct RuntimeApplication {
-    inner: Arc<ApplicationInner>,
+    pub(crate) inner: Arc<ApplicationInner>,
 }
 
-struct ApplicationInner {
+pub(crate) struct ApplicationInner {
+    pub(crate) pairing_validity_ms: AtomicI64,
+    pub(crate) computer_registration: StdMutex<()>,
     runtime: StdMutex<Option<Arc<Runtime>>>,
     factories: ProviderFactoryRegistry,
     state: AtomicU8,
@@ -127,6 +129,8 @@ impl RuntimeApplication {
         ));
         let application = Self {
             inner: Arc::new(ApplicationInner {
+                pairing_validity_ms: AtomicI64::new(600_000),
+                computer_registration: StdMutex::new(()),
                 runtime: StdMutex::new(Some(runtime)),
                 factories,
                 state: AtomicU8::new(APP_NEW),

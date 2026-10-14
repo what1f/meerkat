@@ -671,7 +671,7 @@ impl LankideApp {
                 bio,
                 avatar,
                 soul,
-                computer_id: "local".into(),
+                computer_id: String::new(),
                 harness_id,
                 model,
                 thinking_level,

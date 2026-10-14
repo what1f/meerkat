@@ -552,6 +552,8 @@ impl wire::RuntimePeer for Peer {
                 observed_state: wire::ObservedState::Running as i32,
                 harnesses: vec![],
                 status_message: String::new(),
+                registered: true,
+                ..Default::default()
             }],
         })
     }

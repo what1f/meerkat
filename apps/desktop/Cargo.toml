@@ -37,7 +37,7 @@ path = "src/main.rs"
 
 [package.metadata.lankide.e2e]
 command = "./apps/desktop/visual-e2e.sh"
-scenario = "Review the actual production window across the complete Workspace, Agent, onboarding, resource-image, light and dark scenario set; verify exact source/binary/baseline evidence and owned process cleanup. The bootstrap scenario also proves an unbundled Desktop with a private default home starts transient helpers when no owner runs, and reuses healthy owners without spawning helpers."
+scenario = "Review the actual production window across the complete Workspace, Agent, onboarding, resource-image, light and dark scenario set; verify exact source/binary/baseline evidence and owned process cleanup. The bootstrap scenario also proves an unbundled Desktop with a private default home starts transient helpers when no owner runs, and reuses healthy owners without spawning helpers. New Agent creation uses the sole registered non-revoked Computer through the ManagementClient without additional UI copy."
 prerequisites = "macOS window session; authorized live Provider accounts; four product binaries; completed human or Computer Use review via LANKIDE_VISUAL_REVIEW"
 classification = "visual-semantic"
 unattended = "no; requires actual-window review"

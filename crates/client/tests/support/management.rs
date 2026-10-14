@@ -590,9 +590,11 @@ impl ManagementClient for MockManagementClient {
     ) -> Result<Vec<ComputerOption>, ClientError> {
         drop(self.lock().await?);
         Ok(vec![ComputerOption {
+            registered: true,
             id: "local".into(),
             name: "Local Computer".into(),
             available: true,
+            ..ComputerOption::default()
         }])
     }
     async fn get_harness_catalog(

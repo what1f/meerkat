@@ -397,6 +397,25 @@ where
         ))
     }
 
+    async fn create_pairing_code(
+        &self,
+        request: Request<CatalogRequest>,
+    ) -> Result<Response<PairingCode>, Status> {
+        validate_catalog_request(request.get_ref())?;
+        Ok(Response::new(
+            self.peer.create_pairing_code(request.into_inner()).await?,
+        ))
+    }
+    async fn revoke_computer(
+        &self,
+        request: Request<RevokeComputerRequest>,
+    ) -> Result<Response<ComputerCatalog>, Status> {
+        validate_request_id(&request.get_ref().request_id)?;
+        require_text(&request.get_ref().computer_id, "computer_id")?;
+        Ok(Response::new(
+            self.peer.revoke_computer(request.into_inner()).await?,
+        ))
+    }
     async fn get_computer_catalog(
         &self,
         request: Request<CatalogRequest>,

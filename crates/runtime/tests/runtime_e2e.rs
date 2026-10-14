@@ -1166,6 +1166,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         .ok_or("attempt execution missing")?;
     let broker = runtime.new_computer_broker();
     let hello = ComputerHello {
+        device_credential: String::new(),
         protocol_version: PROTOCOL_VERSION,
         computer_id: "computer-attempt".into(),
         instance_id: "instance-stable".into(),
@@ -1669,6 +1670,30 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         database: DatabaseConfig::new(db),
         retry: Default::default(),
     };
+    let registration_storage = Storage::open(config.database.clone()).map_err(err)?;
+    for computer_id in ["computer-a", "computer-b", "computer-delete"] {
+        registration_storage
+            .pair_computer(
+                &lankide_storage::ComputerRecord {
+                    computer_id: computer_id.into(),
+                    display_name: computer_id.into(),
+                    credential_hash: Sha256::digest(format!("fixture-{computer_id}").as_bytes())
+                        .iter()
+                        .map(|b| format!("{b:02x}"))
+                        .collect(),
+                    paired_at: 1,
+                    revoked_at: None,
+                    last_seen_at: None,
+                    os: "test".into(),
+                    version: "1".into(),
+                    inventory_json: "[]".into(),
+                },
+                None,
+                600_000,
+            )
+            .map_err(err)?;
+    }
+    registration_storage.close().map_err(err)?;
     let application = RuntimeApplication::open(config.clone(), factories.clone())
         .await
         .map_err(err)?;
@@ -1689,6 +1714,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     let broker = application.computer_broker();
     let mut first_connection = broker
         .connect(ComputerHello {
+            device_credential: "fixture-computer-a".into(),
             protocol_version: PROTOCOL_VERSION,
             computer_id: "computer-a".into(),
             instance_id: "instance-1".into(),
@@ -1709,6 +1735,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     )?;
     let mut second_connection = broker
         .connect(ComputerHello {
+            device_credential: "fixture-computer-a".into(),
             protocol_version: PROTOCOL_VERSION,
             computer_id: "computer-a".into(),
             instance_id: "instance-2".into(),
@@ -1734,6 +1761,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "stale disconnect keeps reconnected Computer",
     )?;
     let same_instance = ComputerHello {
+        device_credential: String::new(),
         protocol_version: PROTOCOL_VERSION,
         computer_id: "computer-same-instance".into(),
         instance_id: "stable-instance".into(),
@@ -2392,6 +2420,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     computer_frames
         .send(ComputerFrame {
             frame: Some(computer_frame::Frame::Hello(ComputerHello {
+                device_credential: "fixture-computer-a".into(),
                 protocol_version: PROTOCOL_VERSION,
                 computer_id: "computer-a".into(),
                 instance_id: "instance-2".into(),
@@ -3034,6 +3063,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     delete_computer_frames
         .send(ComputerFrame {
             frame: Some(computer_frame::Frame::Hello(ComputerHello {
+                device_credential: "fixture-computer-delete".into(),
                 protocol_version: PROTOCOL_VERSION,
                 computer_id: "computer-delete".into(),
                 instance_id: "instance-delete".into(),
@@ -4416,6 +4446,7 @@ async fn configured_assignment_scenario() {
         let broker = app.computer_broker();
         let mut connection = broker
             .connect(ComputerHello {
+                device_credential: String::new(),
                 protocol_version: PROTOCOL_VERSION,
                 computer_id: "local".into(),
                 instance_id: "config-audit".into(),

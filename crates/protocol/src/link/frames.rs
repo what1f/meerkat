@@ -261,6 +261,8 @@ impl From<ComputerHeartbeat> for crate::wire::ComputerHeartbeat {
 }
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ComputerHello {
+    #[serde(default)]
+    pub device_credential: String,
     pub protocol_version: u32,
     pub computer_id: String,
     pub instance_id: String,
@@ -274,6 +276,7 @@ impl From<crate::wire::ComputerHello> for ComputerHello {
         Self {
             protocol_version: value.protocol_version,
             computer_id: value.computer_id,
+            device_credential: value.device_credential,
             instance_id: value.instance_id,
             computer_version: value.computer_version,
             os: value.os,
@@ -287,6 +290,7 @@ impl From<ComputerHello> for crate::wire::ComputerHello {
         Self {
             protocol_version: value.protocol_version,
             computer_id: value.computer_id,
+            device_credential: value.device_credential,
             instance_id: value.instance_id,
             computer_version: value.computer_version,
             os: value.os,
@@ -1146,4 +1150,17 @@ impl From<RuntimeFrame> for crate::wire::RuntimeFrame {
             }),
         }
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PairComputerRequest {
+    pub code: String,
+    pub display_name: String,
+    pub os: String,
+    pub version: String,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PairComputerResponse {
+    pub computer_id: String,
+    pub device_credential: String,
 }

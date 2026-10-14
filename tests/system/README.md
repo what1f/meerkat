@@ -160,3 +160,25 @@ The Computer reads `computer.json` with a `reconnect` object containing
 `healthy_duration` (60 seconds), and `handshake_timeout` (10 seconds).
 Durations use Serde's `{ "secs": 5, "nanos": 0 }` representation. Absent fields
 keep these production defaults. Each reconnect delay has 75%-125% jitter.
+
+Task 12 registration scenarios:
+
+```sh
+cargo test -p lankide-system-e2e --test pairing_e2e
+```
+
+Prefixes `s12_1_` through `s12_5_` select the five acceptance scenarios.
+`local_self_pairing_moves_legacy_agents_and_reuses_credentials` starts without
+credentials or a code, discovers the local Runtime, verifies legacy Agent
+placement through management, receives a reply, and reuses its credentials
+across a Runtime restart. The final scenario rejects the local pairing secret
+as a link credential and rejects a credential used with another device ID.
+
+`RigConfig::pairing_validity` sets `runtime.json`'s `pairing_validity_ms`
+(default 600000). The expiry scenario waits on the returned expiry timestamp
+with a bounded deadline. The Runtime stores code and device credential hashes.
+The Computer stores `computer-credentials.json` through a synced temporary file,
+atomic rename and directory sync, with mode 0600. Local devices rediscover the
+Runtime URL; paired remote devices use the stored URL. Revocation stops the
+real Computer daemon with `computer_revoked`, including a child process using a
+copied home.

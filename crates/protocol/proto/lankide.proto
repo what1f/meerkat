@@ -27,6 +27,8 @@ service RuntimeProtocol {
   rpc AdvanceAgentOnboarding(AdvanceAgentOnboardingRequest) returns (AgentOnboardingState);
   rpc GetProviderCatalog(CatalogRequest) returns (ProviderCatalog);
   rpc GetComputerCatalog(CatalogRequest) returns (ComputerCatalog);
+  rpc CreatePairingCode(CatalogRequest) returns (PairingCode);
+  rpc RevokeComputer(RevokeComputerRequest) returns (ComputerCatalog);
   rpc GetHarnessCatalog(CatalogRequest) returns (HarnessCatalog);
   rpc GetModelCatalog(ModelCatalogRequest) returns (ModelCatalog);
   rpc GetReactionCatalog(CatalogRequest) returns (ReactionCatalog);
@@ -108,6 +110,7 @@ message ComputerHello {
   string os = 5;
   string arch = 6;
   repeated HarnessInfo harnesses = 7;
+  string device_credential = 8;
 }
 
 message RuntimeHello {
@@ -598,7 +601,15 @@ message ComputerCatalogItem {
   ObservedState observed_state = 3;
   repeated HarnessInfo harnesses = 4;
   string status_message = 5;
+  bool registered = 6;
+  optional int64 revoked_at = 7;
+  optional int64 last_seen_at = 8;
+  int64 paired_at = 9;
+  string os = 10;
+  string version = 11;
 }
+message PairingCode { string code = 1; int64 issued_at = 2; int64 expires_at = 3; }
+message RevokeComputerRequest { string request_id = 1; string computer_id = 2; }
 message ComputerCatalog { repeated ComputerCatalogItem computers = 1; }
 
 message HarnessCatalogItem {

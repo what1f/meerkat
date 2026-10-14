@@ -3,7 +3,7 @@ use crate::{
     AgentRunContext, ComputerPeer, ExecutionRef, ResourceRequest, RuntimePeer, TransportConfig,
 };
 use bytes::Bytes;
-use http_body_util::Full;
+use http_body_util::{BodyExt, Full};
 use hyper::{Request, Response, StatusCode, body::Incoming, service::service_fn};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use std::{convert::Infallible, future::Future};
@@ -87,9 +87,16 @@ where
                         async move {
                             let response = if request.uri().path().starts_with("/resources/") {
                                 download(request, peer).await
+                            } else if request.uri().path() == "/computers/pair" {
+                                pair(request, peer, &secret, config.max_message_bytes).await
                             } else if request.uri().path() == "/" {
-                                if request.headers().get("authorization").and_then(|v| v.to_str().ok()) != Some(format!("Bearer {secret}").as_str()) {
-                                    empty(StatusCode::UNAUTHORIZED)
+                                let credential = request.headers().get("authorization").and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
+                                if let Err(reason) = peer.authorize_link(credential, &secret).await {
+                                    empty(match reason {
+                                        crate::link::CloseReason::ComputerRevoked => StatusCode::FORBIDDEN,
+                                        crate::link::CloseReason::ComputerUnknown => StatusCode::NOT_FOUND,
+                                        _ => StatusCode::UNAUTHORIZED,
+                                    })
                                 } else {
                                     let handshake = Request::builder().method(request.method()).uri(request.uri());
                                     let mut handshake = handshake.body(()).expect("HTTP request");
@@ -244,4 +251,35 @@ async fn download<P: RuntimePeer>(request: Request<Incoming>, peer: P) -> Respon
         .header("content-length", body.len())
         .body(Full::new(body))
         .expect("HTTP response")
+}
+
+async fn pair<P: ComputerPeer>(
+    request: Request<Incoming>,
+    peer: P,
+    secret: &str,
+    limit: usize,
+) -> Response<Body> {
+    if request.method() != hyper::Method::POST {
+        return empty(StatusCode::METHOD_NOT_ALLOWED);
+    }
+    let bytes = match http_body_util::Limited::new(request.into_body(), limit)
+        .collect()
+        .await
+    {
+        Ok(body) => body.to_bytes(),
+        Err(_) => return empty(StatusCode::PAYLOAD_TOO_LARGE),
+    };
+    let request = match serde_json::from_slice(&bytes) {
+        Ok(request) => request,
+        Err(_) => return empty(StatusCode::BAD_REQUEST),
+    };
+    match peer.pair_computer(request, secret).await {
+        Ok(value) => Response::builder()
+            .header("content-type", "application/json")
+            .body(Full::new(Bytes::from(
+                serde_json::to_vec(&value).expect("pair response"),
+            )))
+            .expect("HTTP response"),
+        Err(_) => empty(StatusCode::UNAUTHORIZED),
+    }
 }
