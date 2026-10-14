@@ -114,17 +114,34 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                                 let owner = application.clone();
                                 if owner
                                     .spawn_background(async move {
-                                        let result = application
-                                            .invoke_capability(CapabilityInvokeRequest {
-                                                context: Some(AgentRunContext {
-                                                    execution: call.execution.clone(),
-                                                    execution_token: call.execution_token,
-                                                }),
-                                                capability_name: call.tool_name.clone(),
-                                                arguments_json: call.arguments_json,
-                                                invocation_id: call.tool_call_id.clone(),
-                                            })
-                                            .await;
+                                        let placement_valid =
+                                            call.execution.as_ref().is_some_and(|execution| {
+                                                application.runtime().ok().is_some_and(|runtime| {
+                                                    runtime
+                                                        .storage()
+                                                        .execution_placement_matches(
+                                                            execution.execution_id,
+                                                            i64::from(execution.attempt),
+                                                            &computer_id,
+                                                        )
+                                                        .unwrap_or(false)
+                                                })
+                                            });
+                                        let result = if placement_valid {
+                                            application
+                                                .invoke_capability(CapabilityInvokeRequest {
+                                                    context: Some(AgentRunContext {
+                                                        execution: call.execution.clone(),
+                                                        execution_token: call.execution_token,
+                                                    }),
+                                                    capability_name: call.tool_name.clone(),
+                                                    arguments_json: call.arguments_json,
+                                                    invocation_id: call.tool_call_id.clone(),
+                                                })
+                                                .await
+                                        } else {
+                                            Err(RuntimeError::InvalidExecutionToken)
+                                        };
                                         let tool_result = match result {
                                             Ok(result) => ToolResult {
                                                 execution: call.execution,
@@ -733,6 +750,17 @@ fn status(error: RuntimeError) -> Status {
         RuntimeError::DuplicateAgent { .. } => Status::already_exists("Agent already exists."),
         RuntimeError::DuplicateProviderType(_) => {
             Status::already_exists("Provider is already available.")
+        }
+        RuntimeError::ComputerNotRegistered
+        | RuntimeError::ComputerRevoked
+        | RuntimeError::HarnessUnavailableOnComputer => {
+            let code = error.to_string();
+            let mut result = Status::failed_precondition("Check the request values and try again.");
+            result.metadata_mut().insert(
+                "lankide-error-code",
+                code.parse().expect("static error code"),
+            );
+            result
         }
         RuntimeError::InvalidCore(_) => {
             Status::invalid_argument("Check the request values and try again.")

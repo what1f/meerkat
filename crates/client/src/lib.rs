@@ -295,6 +295,9 @@ pub enum ClientError {
     AgentNotFound(String),
     DuplicateAgentId(String),
     InvalidAgentId,
+    ComputerNotRegistered,
+    ComputerRevoked,
+    HarnessUnavailableOnComputer,
     Validation(String),
     Provider(String),
     Unavailable(String),
@@ -309,6 +312,9 @@ impl std::fmt::Display for ClientError {
             Self::DuplicateWorkspaceId(v) => write!(f, "workspace id already exists: {v}"),
             Self::AgentNotFound(v) => write!(f, "agent not found: {v}"),
             Self::DuplicateAgentId(v) => write!(f, "agent id already exists: {v}"),
+            Self::ComputerNotRegistered => f.write_str("computer_not_registered"),
+            Self::ComputerRevoked => f.write_str("computer_revoked"),
+            Self::HarnessUnavailableOnComputer => f.write_str("harness_unavailable_on_computer"),
             Self::InvalidAgentId => write!(
                 f,
                 "agent id must use lowercase letters, numbers, and underscores"
@@ -572,6 +578,19 @@ fn aref(w: &str, a: &str) -> wire::AgentRef {
     }
 }
 fn map_status(s: tonic::Status) -> ClientError {
+    match s
+        .metadata()
+        .get("lankide-error-code")
+        .and_then(|v| v.to_str().ok())
+    {
+        Some("computer_not_registered") => return ClientError::ComputerNotRegistered,
+        Some("computer_revoked") => return ClientError::ComputerRevoked,
+        Some("harness_unavailable_on_computer") => {
+            return ClientError::HarnessUnavailableOnComputer;
+        }
+        _ => {}
+    }
+
     match s.code() {
         tonic::Code::InvalidArgument => ClientError::Validation(s.message().into()),
         tonic::Code::AlreadyExists => ClientError::Validation(s.message().into()),

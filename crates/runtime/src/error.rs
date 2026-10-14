@@ -35,6 +35,9 @@ pub enum RuntimeError {
     Application(String),
     ActionRequired(String),
     InvalidExecutionToken,
+    ComputerNotRegistered,
+    ComputerRevoked,
+    HarnessUnavailableOnComputer,
     ProviderMismatch {
         workspace_id: WorkspaceId,
         expected: ProviderId,
@@ -93,6 +96,11 @@ impl fmt::Display for RuntimeError {
             Self::RuntimeStillShared => formatter.write_str("runtime_still_shared"),
             Self::Application(error) => write!(formatter, "runtime_application: {error}"),
             Self::ActionRequired(message) => formatter.write_str(message),
+            Self::ComputerNotRegistered => formatter.write_str("computer_not_registered"),
+            Self::ComputerRevoked => formatter.write_str("computer_revoked"),
+            Self::HarnessUnavailableOnComputer => {
+                formatter.write_str("harness_unavailable_on_computer")
+            }
             Self::InvalidExecutionToken => formatter.write_str("runtime_invalid_execution_token"),
             Self::ProviderMismatch {
                 workspace_id,

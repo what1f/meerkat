@@ -50,7 +50,10 @@ pub(super) fn friendly_error(error: &ClientError, language: DesktopLanguage) -> 
                 )
                 .into()
         }
-        ClientError::Protocol(_) => language
+        ClientError::ComputerNotRegistered
+        | ClientError::ComputerRevoked
+        | ClientError::HarnessUnavailableOnComputer
+        | ClientError::Protocol(_) => language
             .text(
                 "暂时无法完成操作，请稍后重试。",
                 "Could not complete this action. Try again shortly.",

@@ -554,7 +554,7 @@ impl Storage {
                 )
             })
             .unwrap_or((1, None, None));
-        t.execute("INSERT INTO executions(workspace_id,agent_id,snapshot_id,state,trigger_summary,created_at,updated_at,attempt,token_hash,token_expires_at)VALUES(?1,?2,?3,'queued',?4,?5,?5,?6,?7,?8)",params![w.as_str(),a.as_str(),sid,summary,now,attempt,token_hash,token_expires_at])?;
+        t.execute("INSERT INTO executions(workspace_id,agent_id,snapshot_id,state,trigger_summary,created_at,updated_at,attempt,token_hash,token_expires_at,placement_computer_id,placement_generation)VALUES(?1,?2,?3,'queued',?4,?5,?5,?6,?7,?8,(SELECT computer_id FROM agents WHERE workspace_id=?1 AND agent_id=?2),(SELECT placement_generation FROM agents WHERE workspace_id=?1 AND agent_id=?2))",params![w.as_str(),a.as_str(),sid,summary,now,attempt,token_hash,token_expires_at])?;
         let eid = t.last_insert_rowid();
         t.execute("INSERT INTO execution_deliveries(execution_id,state,created_at)VALUES(?1,'pending',?2)",params![eid,now])?;
         let did = t.last_insert_rowid();
@@ -591,7 +591,7 @@ impl Storage {
         let row: Option<(String, String, i64, String, i64, String)> = self
             .conn()?
             .query_row(
-                "SELECT workspace_id,agent_id,attempt,token_hash,token_expires_at,state FROM executions WHERE execution_id=?1 AND attempt=?2 AND token_hash IS NOT NULL AND token_expires_at IS NOT NULL",
+                "SELECT e.workspace_id,e.agent_id,e.attempt,e.token_hash,e.token_expires_at,e.state FROM executions e JOIN agents a ON a.workspace_id=e.workspace_id AND a.agent_id=e.agent_id WHERE e.execution_id=?1 AND e.attempt=?2 AND e.token_hash IS NOT NULL AND e.token_expires_at IS NOT NULL AND e.placement_computer_id=a.computer_id AND e.placement_generation=a.placement_generation AND NOT EXISTS(SELECT 1 FROM computers c WHERE c.computer_id=e.placement_computer_id AND c.revoked_at IS NOT NULL)",
                 params![execution_id, attempt],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
             )
@@ -611,6 +611,30 @@ impl Storage {
         )
         .transpose()
     }
+    /// Verifies the assignment target against the frozen and current placement.
+    pub fn execution_computer_matches(
+        &self,
+        execution_id: i64,
+        attempt: i64,
+        computer_id: &str,
+    ) -> Result<bool> {
+        Ok(self.conn()?.query_row(
+            "SELECT EXISTS(SELECT 1 FROM executions e JOIN agents a ON a.workspace_id=e.workspace_id AND a.agent_id=e.agent_id WHERE e.execution_id=?1 AND e.attempt=?2 AND e.placement_computer_id=?3 AND a.computer_id=?3 AND e.placement_generation=a.placement_generation AND NOT EXISTS(SELECT 1 FROM computers c WHERE c.computer_id=?3 AND c.revoked_at IS NOT NULL))",
+            params![execution_id, attempt, computer_id], |r| r.get(0))?)
+    }
+
+    /// Checks the frozen placement before accepting any Computer-side mutation.
+    pub fn execution_placement_matches(
+        &self,
+        execution_id: i64,
+        attempt: i64,
+        computer_id: &str,
+    ) -> Result<bool> {
+        Ok(self.conn()?.query_row(
+            "SELECT EXISTS(SELECT 1 FROM executions e JOIN agents a ON a.workspace_id=e.workspace_id AND a.agent_id=e.agent_id JOIN execution_attempts t ON t.execution_id=e.execution_id AND t.attempt=e.attempt WHERE e.execution_id=?1 AND e.attempt=?2 AND t.computer_id=?3 AND e.placement_computer_id=t.computer_id AND e.placement_computer_id=a.computer_id AND e.placement_generation=a.placement_generation AND NOT EXISTS(SELECT 1 FROM computers c WHERE c.computer_id=?3 AND c.revoked_at IS NOT NULL))",
+            params![execution_id, attempt, computer_id], |r| r.get(0))?)
+    }
+
     pub fn mark_execution_running(&self, id: i64, now: i64) -> Result<bool> {
         Ok(self.conn()?.execute("UPDATE executions SET state='running',started_at=coalesce(started_at,?2),updated_at=?2 WHERE execution_id=?1 AND state IN('queued','assigning','recovering')",params![id,now])?==1)
     }

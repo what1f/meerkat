@@ -67,11 +67,7 @@ impl Runtime {
         {
             return Ok(ExecutionProgress::Idle);
         }
-        let execution_token = if agent.execution_token.is_empty() {
-            generate_execution_token()?
-        } else {
-            agent.execution_token.clone()
-        };
+        let execution_token = generate_execution_token()?;
         let provider_send_namespace = token_hash(&execution_token);
         let Some(created) = self.storage.create_execution_with_auth(
             workspace_id,
