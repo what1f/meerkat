@@ -252,6 +252,7 @@ fn session_request(
     native_session_id: Option<String>,
 ) -> SessionRequest {
     SessionRequest {
+        permission_policy: Default::default(),
         config: config.clone(),
         working_directory: cwd.to_path_buf(),
         system_prompt: "You are running a protocol test. Do not inspect files, the repository, memory, environment variables, or external services. Follow only the nonce and test-tool instructions in the user message.".to_owned(),
@@ -488,6 +489,7 @@ async fn codex_default_home_is_agent_local() {
         let session = timeout(
             Duration::from_secs(30),
             factory.start(SessionRequest {
+                permission_policy: Default::default(),
                 config: config.clone(),
                 working_directory: cwd.clone(),
                 system_prompt: String::new(),

@@ -220,7 +220,6 @@ impl HarnessFactory for ClaudeCodeHarness {
                     "stream-json",
                     "--verbose",
                     "--no-session-persistence",
-                    "--strict-mcp-config",
                     "--mcp-config",
                     r#"{"mcpServers":{}}"#,
                 ],
@@ -308,6 +307,10 @@ impl SessionPaths {
             &config_dir,
             source.as_deref(),
             &["settings.json", ".credentials.json", ".claude.json"],
+        )?;
+        lankide_harness::prepare_native_skills(
+            &request.working_directory,
+            &request.working_directory.join(".claude/skills"),
         )?;
         fs::create_dir_all(&artifact_dir).map_err(io_error("create Claude artifact dir"))?;
         Ok(Self {
@@ -514,14 +517,6 @@ impl Inner {
             .append(true)
             .open(&stderr_path)
             .map_err(io_error("open Claude stderr artifact"))?;
-        let allowed = self
-            .request
-            .tools
-            .iter()
-            .map(|tool| format!("mcp__lankide__{}", tool.name))
-            .chain(["Bash", "Read", "Write", "Edit", "Glob", "Grep"].map(str::to_owned))
-            .collect::<Vec<_>>()
-            .join(",");
         let mut command = Command::new(&self.request.config.cli_path);
         command
             .args([
@@ -535,16 +530,12 @@ impl Inner {
                 "--model",
                 self.request.config.model.model_id.as_str(),
                 "--permission-mode",
-                "dontAsk",
-                "--setting-sources",
-                "",
-                "--strict-mcp-config",
+                match self.request.permission_policy {
+                    lankide_harness::PermissionPolicy::FullAccess => "bypassPermissions",
+                },
                 "--mcp-config",
             ])
             .arg(&self.mcp_path);
-        if !allowed.is_empty() {
-            command.args(["--allowedTools", allowed.as_str()]);
-        }
         command.args(["--system-prompt", self.request.system_prompt.as_str()]);
         if self.request.config.thinking_level == "off" {
             command.env("CLAUDE_CODE_DISABLE_THINKING", "1");

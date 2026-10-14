@@ -126,6 +126,7 @@ async fn pi_e2e() -> Result<(), String> {
     }
 
     let base_request = SessionRequest {
+        permission_policy: Default::default(),
         config: config.clone(),
         working_directory: workspace.clone(),
         system_prompt: "Follow the user request. Use only the provided tools.".to_owned(),
@@ -185,6 +186,7 @@ async fn pi_e2e() -> Result<(), String> {
 
     let cancellable = factory
         .start(SessionRequest {
+            permission_policy: Default::default(),
             config,
             working_directory: workspace,
             system_prompt: "Follow the user request.".to_owned(),
@@ -275,6 +277,7 @@ async fn verify_scripted_fault_boundary(root: &Path) -> Result<(), String> {
     );
     let session = factory
         .start(SessionRequest {
+            permission_policy: Default::default(),
             config: HarnessConfig {
                 harness_id: "pi".to_owned(),
                 model: ModelRef::new(DEFAULT_MODEL, "DeepSeek V4 Flash"),
@@ -338,6 +341,7 @@ async fn verify_abort_without_response(root: &Path, pid_journal: &Path) -> Resul
         );
         let session = PiHarness::new()
             .start(SessionRequest {
+                permission_policy: Default::default(),
                 config: HarnessConfig {
                     harness_id: "pi".to_owned(),
                     model: ModelRef::new(DEFAULT_MODEL, "DeepSeek V4 Flash"),
@@ -589,4 +593,84 @@ async fn native_model_catalog() {
         "native directory: {} models; no model turn requested",
         models.len()
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "S7.3 requires Pi CLI, isolated model config, and LANKIDE_E2E_LIVE=1"]
+async fn s7_3_real_pi_uses_a_skill_authored_in_its_agent_home() -> Result<(), String> {
+    if std::env::var("LANKIDE_E2E_LIVE").as_deref() != Ok("1") {
+        return Err("set LANKIDE_E2E_LIVE=1 for the Pi live gate".into());
+    }
+    let prerequisite = run_prerequisite_probe(&ProbeConfig::from_environment(
+        GateSelection::HarnessLive,
+        true,
+    ));
+    if !prerequisite.is_green() {
+        return Err(format!(
+            "PREREQUISITE_MISSING\n{}",
+            prerequisite.render_text()
+        ));
+    }
+    let home = tempfile::tempdir().map_err(|error| error.to_string())?;
+    let agent = home.path().join("agent");
+    let config_dir = home.path().join("pi-config");
+    fs::create_dir_all(agent.join("skills/home-verification"))
+        .map_err(|error| error.to_string())?;
+    fs::create_dir_all(&config_dir).map_err(|error| error.to_string())?;
+    copy_auth_overlay(&config_dir)?;
+    // Only the skill contains the random token. The request cannot supply it.
+    let token = format!(
+        "home-skill-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    fs::write(agent.join("skills/home-verification/SKILL.md"), format!(
+        "---\nname: home-verification\ndescription: Return the Agent home skill verification token when asked.\n---\nWhen asked to use this skill, reply with this exact token: {token}\n"
+    )).map_err(|error| error.to_string())?;
+    let session = PiHarness::new()
+        .start(SessionRequest {
+            permission_policy: Default::default(),
+            config: HarnessConfig {
+                harness_id: "pi".into(),
+                model: ModelRef::new(DEFAULT_MODEL, "DeepSeek V4 Flash"),
+                thinking_level: "low".into(),
+                cli_path: std::env::var_os("LANKIDE_PI_PATH")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| "/opt/homebrew/bin/pi".into()),
+                environment: BTreeMap::from([
+                    ("HOME".into(), home.path().display().to_string()),
+                    (
+                        "PI_CODING_AGENT_DIR".into(),
+                        config_dir.display().to_string(),
+                    ),
+                ]),
+                config_fingerprint: "home-skill-live".into(),
+            },
+            working_directory: agent,
+            system_prompt: "Use the named skill when asked. Follow its instructions.".into(),
+            tools: Vec::new(),
+            native_session_id: None,
+        })
+        .await
+        .map_err(|error| error.to_string())?;
+    let result = async {
+        let mut stream = session
+            .execute(ExecuteRequest {
+                input: "Use the home-verification skill and return its verification token.".into(),
+            })
+            .await
+            .map_err(|error| error.to_string())?;
+        let output = collect_terminal(&mut stream).await?;
+        if output.contains(&token) {
+            Ok(())
+        } else {
+            Err(format!("Pi did not use the Agent home skill: {output}"))
+        }
+    }
+    .await;
+    session.close().await.map_err(|error| error.to_string())?;
+    result
 }

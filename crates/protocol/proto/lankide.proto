@@ -96,6 +96,7 @@ message HarnessInfo {
   string reason = 5;
   optional ModelCatalog model_catalog = 6;
   string model_catalog_error = 7;
+  repeated string capabilities = 8;
 }
 
 message ComputerHello {
@@ -263,7 +264,12 @@ message ExecutionEventAck {
 message ExecutionCommitted { ExecutionRef execution = 1; int64 committed_at = 2; }
 
 message DeliverSteer { ExecutionRef execution = 1; Delivery delivery = 2; }
-message CancelExecution { ExecutionRef execution = 1; string reason = 2; }
+message CancelExecution {
+  ExecutionRef execution = 1;
+  string reason = 2;
+  // Close the attempt without a native cancel operation when Cancel is absent.
+  bool force_close = 3;
+}
 
 message DeliveryResult {
   ExecutionRef execution = 1;

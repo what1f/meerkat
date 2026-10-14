@@ -94,6 +94,7 @@ pub async fn run(factory: &dyn HarnessFactory, adapter: &str) -> Result<()> {
             fs::write(config_dir.join(name), b"")?;
         }
         let request = SessionRequest {
+            permission_policy: Default::default(),
             config: HarnessConfig {
                 harness_id: adapter.into(),
                 model: ModelRef::new("configured-model", "Model"),

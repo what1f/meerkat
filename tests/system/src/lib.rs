@@ -44,6 +44,7 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 pub struct RigConfig {
     pub harness_executable: PathBuf,
     pub timeout: Duration,
+    pub harness_capabilities: Vec<String>,
 }
 impl Default for RigConfig {
     fn default() -> Self {
@@ -56,6 +57,9 @@ impl Default for RigConfig {
                 .expect("target directory")
                 .join("system-harness"),
             timeout: Duration::from_secs(15),
+            harness_capabilities: ["system_prompt", "streaming", "resume", "cancel", "tools"]
+                .map(str::to_owned)
+                .to_vec(),
         }
     }
 }
@@ -65,7 +69,12 @@ struct ComputerThread {
     thread: Option<std::thread::JoinHandle<Result<()>>>,
 }
 impl ComputerThread {
-    fn start(config: DaemonConfig, executable: PathBuf, journal: PathBuf) -> Self {
+    fn start(
+        config: DaemonConfig,
+        executable: PathBuf,
+        journal: PathBuf,
+        capabilities: Vec<String>,
+    ) -> Self {
         let (stop, stopped) = oneshot::channel();
         let thread = std::thread::spawn(move || {
             // Dropping this executor is a process-crash boundary: all Computer
@@ -74,7 +83,7 @@ impl ComputerThread {
             runtime.block_on(async move {
                 let registration = RegisteredHarness::new(ScriptedHarness::new(journal), HarnessConfig {
                     harness_id: "pi".into(), model: ModelRef::new("scripted", "scripted"), thinking_level: "low".into(),
-                    cli_path: executable, environment: BTreeMap::new(), config_fingerprint: "system-rig".into(),
+                    cli_path: executable, environment: BTreeMap::from([("LANKIDE_SYSTEM_CAPABILITIES".into(), serde_json::to_string(&capabilities)?)]), config_fingerprint: "system-rig".into(),
                 });
                 tokio::select! {
                     result = lankide_computer_daemon::run_with_harnesses(config, vec![registration]) => result.map_err(Into::into),
@@ -206,6 +215,7 @@ impl SystemRig {
             config,
             self.config.harness_executable.clone(),
             self.home.path().join("harness-pids.tsv"),
+            self.config.harness_capabilities.clone(),
         ));
         Ok(())
     }
@@ -512,6 +522,24 @@ impl<'a> AgentBuilder<'a> {
                     cli_path: self.rig.config.harness_executable.display().to_string(),
                     environment_variables: vec![
                         (
+                            "LANKIDE_SYSTEM_CONTROLS".into(),
+                            self.rig
+                                .home
+                                .path()
+                                .join(format!("controls-{}-{}.jsonl", self.workspace, self.name))
+                                .display()
+                                .to_string(),
+                        ),
+                        (
+                            "LANKIDE_SYSTEM_STEERS".into(),
+                            self.rig
+                                .home
+                                .path()
+                                .join(format!("steers-{}-{}.jsonl", self.workspace, self.name))
+                                .display()
+                                .to_string(),
+                        ),
+                        (
                             "LANKIDE_SYSTEM_SCRIPT".into(),
                             serde_json::to_string(&self.script)?,
                         ),
@@ -555,6 +583,44 @@ pub struct Execution {
     pub trigger_messages: Vec<String>,
 }
 impl Agent<'_> {
+    pub fn native_controls(&self) -> Result<Vec<serde_json::Value>> {
+        let path = self
+            .rig
+            .home
+            .path()
+            .join(format!("controls-{}-{}.jsonl", self.workspace, self.id));
+        let text = std::fs::read_to_string(path)?;
+        Ok(text
+            .lines()
+            .map(serde_json::from_str)
+            .collect::<std::result::Result<_, _>>()?)
+    }
+
+    pub async fn delete(&self) -> Result<()> {
+        Ok(self
+            .rig
+            .client
+            .delete_agent(&self.workspace, &self.id)
+            .await?)
+    }
+
+    pub fn received_steers(&self) -> Result<Vec<serde_json::Value>> {
+        let path = self
+            .rig
+            .home
+            .path()
+            .join(format!("steers-{}-{}.jsonl", self.workspace, self.id));
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error.into()),
+        };
+        Ok(text
+            .lines()
+            .map(serde_json::from_str)
+            .collect::<std::result::Result<_, _>>()?)
+    }
+
     pub async fn release_run(&self) -> Result<()> {
         std::fs::write(
             self.rig

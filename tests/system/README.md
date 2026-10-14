@@ -15,7 +15,7 @@ The `system` row in `tests/e2e-modules.tsv` also runs these scenarios in
 `./scripts/verify-all --gate hermetic` and `just test`.
 
 - S0.1: `mentioning_an_agent_replies_once_in_the_group_without_running_other_agents`
-- S0.2: `a_message_received_during_a_run_waits_for_the_next_run`
+- S0.2 / S7.1: `s7_1_a_message_received_without_steer_waits_for_the_next_run`
 - S0.3: `restarting_the_computer_during_a_run_delivers_the_reply_exactly_once`
 
 Pass a scenario name after `--test system_e2e` to run it alone.
@@ -62,3 +62,10 @@ marks the execution recovering (`crates/runtime/src/computer_broker.rs`), while
 reconciliation releases that execution. Storage correctly rejects the second
 active execution (`crates/storage/src/execution.rs`). This transient log does
 not block recovery. Task 0 makes no production change for it.
+
+Task 7 also verifies that a second message runs separately when Steer is absent.
+The native peer records controls on a reader thread, including steers received
+while a reply is held. `Agent::received_steers` observes that boundary journal.
+`RigConfig::harness_capabilities` configures the peer's declared inventory; the
+additional scenario removes Resume and Cancel, verifies fresh starts, then
+deletes a running Agent without sending an unsupported native cancel.

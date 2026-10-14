@@ -59,6 +59,11 @@ pub(super) async fn handle_steer(inner: &Inner, steer: lankide_protocol::Deliver
         .lock()
         .await
         .get(&key)
+        .filter(|active| {
+            active
+                .capabilities
+                .contains(&lankide_harness::HarnessCapability::Steer)
+        })
         .map(|active| active.session.clone());
     let result = match session {
         Some(session) => {
@@ -90,7 +95,12 @@ pub(super) async fn handle_steer(inner: &Inner, steer: lankide_protocol::Deliver
     .await;
 }
 
-pub(super) async fn handle_cancel(inner: &Inner, execution: Option<ExecutionRef>, reason: String) {
+pub(super) async fn handle_cancel(
+    inner: &Inner,
+    execution: Option<ExecutionRef>,
+    reason: String,
+    force_close: bool,
+) {
     let Some(execution) = execution else { return };
     let key = assignment_key(execution.execution_id, execution.attempt);
     if let Some(starting) = inner
@@ -104,10 +114,20 @@ pub(super) async fn handle_cancel(inner: &Inner, execution: Option<ExecutionRef>
     }
     let session = inner.active.lock().await.get_mut(&key).map(|active| {
         active.accepting_tool_results = false;
-        active.session.clone()
+        active.cancel_reason = Some(reason.clone());
+        (
+            active.session.clone(),
+            active
+                .capabilities
+                .contains(&lankide_harness::HarnessCapability::Cancel),
+        )
     });
-    if let Some(session) = session {
-        let _ = tokio::time::timeout(Duration::from_secs(2), session.cancel(reason)).await;
+    if let Some((session, can_cancel)) = session {
+        if can_cancel && !force_close {
+            let _ = tokio::time::timeout(Duration::from_secs(2), session.cancel(reason)).await;
+        } else {
+            let _ = session.close().await;
+        }
     }
 }
 

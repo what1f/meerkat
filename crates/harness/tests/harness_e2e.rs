@@ -432,6 +432,7 @@ fn session_request(
     native_session_id: Option<String>,
 ) -> SessionRequest {
     SessionRequest {
+        permission_policy: Default::default(),
         config: config.clone(),
         working_directory: work_root.to_owned(),
         system_prompt: "conformance system prompt".to_owned(),

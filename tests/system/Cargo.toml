@@ -32,7 +32,7 @@ bench = false
 
 [package.metadata.lankide.e2e]
 command = "cargo test -p lankide-system-e2e"
-scenario = "Mention one Agent in a group, queue a message during its run, and restart the Computer during a run; verify chat replies and execution isolation through both real daemons. Verify S4.1-S4.3: classify spawn and mid-turn failures, preserve original diagnostics in client details and Computer logs, and keep failures out of every chat."
+scenario = "Mention one Agent in a group, queue a message during its run, and restart the Computer during a run; verify chat replies and execution isolation through both real daemons. Verify S4.1-S4.3: classify spawn and mid-turn failures, preserve original diagnostics in client details and Computer logs, and keep failures out of every chat. Verify S7.1: a Harness without Steer queues the next message and records no native steer; absent Resume starts fresh and absent Cancel closes a running Agent during deletion."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

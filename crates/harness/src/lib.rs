@@ -8,12 +8,13 @@ mod catalog;
 mod config;
 pub use catalog::NativeCatalogProcess;
 mod types;
-pub use config::{prepare_config_overlay, user_config_directory};
+pub use config::{prepare_config_overlay, prepare_native_skills, user_config_directory};
 
 pub use types::{
     AgentEvent, AgentEventKind, AgentEventStream, CancelReceipt, CloseReceipt, ExecuteRequest,
     FailureCategory, HarnessAvailability, HarnessCapability, HarnessConfig, HarnessError,
     HarnessErrorCode, HarnessFactory, HarnessFailure, HarnessFuture, HarnessInfo, HarnessSession,
-    ModelRef, NativeModel, ProbeResult, SessionEntry, SessionHealth, SessionRequest, SteerReceipt,
-    ToolDefinition, ToolResultError, ToolResultReceipt, ToolResultRequest, ToolResultResource,
+    ModelRef, NativeModel, PermissionPolicy, ProbeResult, SessionEntry, SessionHealth,
+    SessionRequest, SteerReceipt, ToolDefinition, ToolResultError, ToolResultReceipt,
+    ToolResultRequest, ToolResultResource,
 };

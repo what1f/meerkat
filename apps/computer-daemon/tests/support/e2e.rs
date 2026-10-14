@@ -715,6 +715,7 @@ fn cancel(id: i64) -> RuntimeFrame {
     RuntimeFrame {
         frame: Some(runtime_frame::Frame::CancelExecution(
             lankide_protocol::CancelExecution {
+                force_close: false,
                 execution: Some(execution(id)),
                 reason: "cancel".into(),
             },
