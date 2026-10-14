@@ -103,6 +103,19 @@ pub struct HarnessConfig {
     pub config_fingerprint: String,
 }
 
+impl HarnessCapability {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::SystemPrompt => "system_prompt",
+            Self::Streaming => "streaming",
+            Self::Resume => "resume",
+            Self::Steer => "steer",
+            Self::Cancel => "cancel",
+            Self::Tools => "tools",
+        }
+    }
+}
+
 impl HarnessConfig {
     pub fn validate(&self) -> Result<(), HarnessError> {
         self.validate_executable()?;
@@ -148,8 +161,18 @@ fn validate_harness_id(value: &str) -> Result<(), HarnessError> {
     Ok(())
 }
 
+/// Native permission policy shared by all adapters.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionPolicy {
+    #[default]
+    FullAccess,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct SessionRequest {
+    #[serde(default)]
+    pub permission_policy: PermissionPolicy,
     pub config: HarnessConfig,
     pub working_directory: PathBuf,
     pub system_prompt: String,

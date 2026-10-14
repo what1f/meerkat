@@ -41,18 +41,28 @@ pub(super) async fn handle_delete_agent_files(
             .await
             .iter()
             .filter(|(_, active)| active.agent_key == key)
-            .map(|(execution, active)| (execution.clone(), active.session.clone()))
+            .map(|(execution, active)| {
+                (
+                    execution.clone(),
+                    active.session.clone(),
+                    active
+                        .capabilities
+                        .contains(&lankide_harness::HarnessCapability::Cancel),
+                )
+            })
             .collect::<Vec<_>>();
-        for (_, session) in &sessions {
-            let _ = tokio::time::timeout(
-                Duration::from_secs(2),
-                session.cancel("Agent was deleted".into()),
-            )
-            .await;
+        for (_, session, can_cancel) in &sessions {
+            if *can_cancel {
+                let _ = tokio::time::timeout(
+                    Duration::from_secs(2),
+                    session.cancel("Agent was deleted".into()),
+                )
+                .await;
+            }
             let _ = session.close().await;
         }
         let mut active = inner.active.lock().await;
-        for (execution, _) in sessions {
+        for (execution, _, _) in sessions {
             active.remove(&execution);
         }
         drop(active);
@@ -274,6 +284,11 @@ async fn prepare_assignment(
         .get(&wire_config.harness_id)
         .cloned()
         .ok_or_else(|| ComputerError::InvalidAssignment("harness_unavailable".into()))?;
+    let capabilities = inner
+        .probes
+        .get(&wire_config.harness_id)
+        .map(|probe| probe.capabilities.clone())
+        .unwrap_or_default();
     let directive = assign
         .session
         .as_ref()
@@ -380,8 +395,10 @@ async fn prepare_assignment(
     });
     let resume = SessionAction::try_from(directive.action).ok()
         == Some(SessionAction::ResumeOrStart)
-        && requested_native.is_some();
+        && requested_native.is_some()
+        && capabilities.contains(&lankide_harness::HarnessCapability::Resume);
     let request = SessionRequest {
+        permission_policy: Default::default(),
         config: native_config,
         working_directory: agent_home.clone(),
         system_prompt,
@@ -441,10 +458,12 @@ async fn prepare_assignment(
         key.clone(),
         ActiveExecution {
             agent_key,
+            capabilities,
             session: session.clone(),
             agent_home: agent_home.clone(),
             context: context.clone(),
             accepting_tool_results: true,
+            cancel_reason: None,
             last_event_sequence: 0,
         },
     );

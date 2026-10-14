@@ -347,10 +347,19 @@ impl ComputerHandle {
             .lock()
             .await
             .values()
-            .map(|active| active.session.clone())
+            .map(|active| {
+                (
+                    active.session.clone(),
+                    active
+                        .capabilities
+                        .contains(&lankide_harness::HarnessCapability::Cancel),
+                )
+            })
             .collect();
-        for session in sessions {
-            let _ = session.cancel(reason.to_owned()).await;
+        for (session, can_cancel) in sessions {
+            if can_cancel {
+                let _ = session.cancel(reason.to_owned()).await;
+            }
             let _ = session.close().await;
         }
         let tasks = std::mem::take(&mut *inner.assignment_tasks.lock().await);
@@ -374,10 +383,12 @@ pub struct ComputerStatus {
 
 struct ActiveExecution {
     agent_key: String,
+    capabilities: std::collections::BTreeSet<lankide_harness::HarnessCapability>,
     session: Arc<dyn HarnessSession>,
     agent_home: PathBuf,
     context: AgentRunContext,
     accepting_tool_results: bool,
+    cancel_reason: Option<String>,
     last_event_sequence: u64,
 }
 

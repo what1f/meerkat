@@ -45,7 +45,7 @@ async fn mentioning_an_agent_replies_once_in_the_group_without_running_other_age
 }
 
 #[tokio::test]
-async fn a_message_received_during_a_run_waits_for_the_next_run() -> Result<()> {
+async fn s7_1_a_message_received_without_steer_waits_for_the_next_run() -> Result<()> {
     let rig = SystemRig::start(config()).await?;
     let team = rig.workspace("team").await?;
     let bruce = team
@@ -76,6 +76,10 @@ async fn a_message_received_during_a_run_waits_for_the_next_run() -> Result<()> 
     assert_eq!(executions.len(), 2, "{executions:?}");
     assert_eq!(executions[0].trigger_messages, ["first"]);
     assert_eq!(executions[1].trigger_messages, ["second"]);
+    assert!(
+        bruce.received_steers()?.is_empty(),
+        "native Harness received a steer"
+    );
     assert!(
         executions
             .iter()
@@ -307,6 +311,65 @@ async fn direct_reactions_with_the_same_event_id_stay_in_the_receiving_bots_chat
             .harness_inputs()?
             .iter()
             .all(|input| !input.contains("Bruce secret") && !input.contains("Bruce reply"))
+    );
+    rig.close().await
+}
+
+#[tokio::test]
+async fn an_agent_without_resume_or_cancel_starts_fresh_and_can_be_deleted_during_a_run()
+-> Result<()> {
+    let rig = SystemRig::start(RigConfig {
+        harness_capabilities: ["system_prompt", "streaming", "tools"]
+            .map(str::to_owned)
+            .to_vec(),
+        ..config()
+    })
+    .await?;
+    let team = rig.workspace("team").await?;
+    let bruce = team
+        .agent("bruce")
+        .harness(Script::reply("hi"))
+        .create()
+        .await?;
+    team.mention(&bruce, "team-chat", "alice", "first").await?;
+    rig.settle().await?;
+    team.mention(&bruce, "team-chat", "alice", "second").await?;
+    rig.settle().await?;
+    let controls = bruce.native_controls()?;
+    let starts: Vec<_> = controls
+        .iter()
+        .filter(|command| command["op"] == "start")
+        .collect();
+    assert_eq!(starts.len(), 2, "{controls:?}");
+    assert!(controls.iter().all(|command| command["op"] != "resume"));
+    assert!(
+        starts
+            .iter()
+            .all(|command| command["native_session_id"].is_null())
+    );
+
+    let clark = team
+        .agent("clark")
+        .harness(Script::reply("held").held())
+        .create()
+        .await?;
+    team.mention(&clark, "team-chat", "alice", "work").await?;
+    clark.wait_until_running().await?;
+    clark.delete().await?;
+    assert!(team.outbound(&clark, "team-chat").is_empty());
+    let controls = clark.native_controls()?;
+    assert!(
+        controls.iter().all(|command| command["op"] != "cancel"),
+        "unsupported native cancel: {controls:?}"
+    );
+    let pid = controls[0]["pid"].as_u64().expect("native PID");
+    assert!(
+        !std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .output()?
+            .status
+            .success(),
+        "deleted Agent process is still running"
     );
     rig.close().await
 }

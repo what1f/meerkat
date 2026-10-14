@@ -73,3 +73,61 @@ pub fn user_config_directory(variable: &str, home_relative: &str) -> Option<Path
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(home_relative)))
 }
+
+/// Make Agent-authored skills available to a native project skill scanner.
+/// Link the directory so skills written during a run are visible on the next
+/// scan. Preserve an existing native directory and its entries when merging.
+pub fn prepare_native_skills(
+    agent_home: &Path,
+    native_directory: &Path,
+) -> Result<(), HarnessError> {
+    let prepare = || -> io::Result<()> {
+        let skills = agent_home.join("skills");
+        fs::create_dir_all(&skills)?;
+        let skills = skills.canonicalize()?;
+        fs::create_dir_all(native_directory.parent().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid native skills directory",
+            )
+        })?)?;
+        match fs::symlink_metadata(native_directory) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                link_directory(&skills, native_directory)?;
+            }
+            Ok(_) if native_directory.canonicalize()? == skills => {}
+            Ok(_) => {
+                for entry in fs::read_dir(&skills)? {
+                    let entry = entry?;
+                    if !entry.path().is_dir() {
+                        continue;
+                    }
+                    let destination = native_directory.join(entry.file_name());
+                    match fs::symlink_metadata(&destination) {
+                        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                            link_directory(&entry.path(), &destination)?;
+                        }
+                        Err(error) => return Err(error),
+                        Ok(_) => {}
+                    }
+                }
+            }
+            Err(error) => return Err(error),
+        }
+        Ok(())
+    };
+    prepare().map_err(|error| {
+        HarnessError::invalid_config(format!("Could not prepare native skills: {error}"))
+    })
+}
+
+fn link_directory(source: &Path, destination: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(source, destination)
+    }
+    #[cfg(windows)]
+    {
+        std::os::windows::fs::symlink_dir(source, destination)
+    }
+}

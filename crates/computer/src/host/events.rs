@@ -168,7 +168,7 @@ pub(super) async fn run_events(
             }
         }
     }
-    let terminal_event = terminal_event.unwrap_or_else(|| {
+    let mut terminal_event = terminal_event.unwrap_or_else(|| {
         synthetic_event(
             last_sequence + 1,
             AgentEventKind::Failed {
@@ -184,6 +184,15 @@ pub(super) async fn run_events(
             },
         )
     });
+    if let Some(reason) = inner
+        .active
+        .lock()
+        .await
+        .get(&key)
+        .and_then(|active| active.cancel_reason.clone())
+    {
+        terminal_event.kind = AgentEventKind::Cancelled { reason };
+    }
     let _ = session.close().await;
     // Persist and enqueue the terminal event before removing the execution
     // from the active inventory. Otherwise a heartbeat can report the attempt

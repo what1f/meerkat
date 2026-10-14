@@ -16,7 +16,7 @@ tokio-stream.workspace = true
 
 [package.metadata.lankide.e2e]
 command = "cargo test -p lankide-harness --features test-support --test harness_e2e"
-scenario = "Start, resume, execute, steer, inject an idempotent Tool Result, cancel, and close one Agent execution through a real child-process Harness contract. Carry structured Harness failures through the public execution contract."
+scenario = "Start, resume, execute, steer, inject an idempotent Tool Result, cancel, and close one Agent execution through a real child-process Harness contract. Carry structured Harness failures through the public execution contract. Use the default shared full-access permission policy in session requests."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
