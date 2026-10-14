@@ -543,7 +543,14 @@ impl Storage {
                 disposition: ExecutionEventDisposition::StaleAttempt,
             });
         };
-        if current_attempt != event.attempt
+        // Keep placement validation and event commit in the same transaction.
+        // A move or revoke can race the Runtime broker's initial frame check.
+        let placement_current: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM executions e JOIN agents a ON a.workspace_id=e.workspace_id AND a.agent_id=e.agent_id WHERE e.execution_id=?1 AND e.placement_computer_id=a.computer_id AND e.placement_generation=a.placement_generation AND NOT EXISTS(SELECT 1 FROM computers c WHERE c.computer_id=?2 AND c.revoked_at IS NOT NULL))",
+            params![event.execution_id, event.computer_id], |row| row.get(0),
+        )?;
+        if !placement_current
+            || current_attempt != event.attempt
             || computer_id != event.computer_id
             || instance_id != event.computer_instance_id
             || matches!(attempt_state.as_str(), "lost" | "rejected")
@@ -686,7 +693,7 @@ impl Storage {
     pub fn expire_execution_attempt_leases(&self, now: i64) -> Result<Vec<(i64, i64)>> {
         let mut connection = self.conn()?;
         let transaction = connection.transaction()?;
-        let mut statement = transaction.prepare("SELECT a.execution_id,a.attempt FROM execution_attempts a JOIN executions e USING(execution_id) WHERE e.attempt=a.attempt AND e.state IN('assigning','running','recovering') AND a.state IN('offered','accepted','running') AND a.lease_expires_at<=?1 ORDER BY a.execution_id")?;
+        let mut statement = transaction.prepare("SELECT a.execution_id,a.attempt FROM execution_attempts a JOIN executions e USING(execution_id) WHERE e.attempt=a.attempt AND e.state IN('assigning','running','recovering') AND a.state IN('offered','accepted','running') AND (a.lease_expires_at<=?1 OR EXISTS(SELECT 1 FROM agents p WHERE p.workspace_id=e.workspace_id AND p.agent_id=e.agent_id AND (p.computer_id!=e.placement_computer_id OR p.placement_generation!=e.placement_generation)) OR EXISTS(SELECT 1 FROM computers c WHERE c.computer_id=a.computer_id AND c.revoked_at IS NOT NULL)) ORDER BY a.execution_id")?;
         let expired = statement
             .query_map([now], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))

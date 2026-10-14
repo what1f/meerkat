@@ -22,6 +22,11 @@ pub enum Script {
     LinkReply {
         text: String,
     },
+    /// Emits a capability request and terminal result without waiting for a response.
+    /// Used to replay a Computer's buffered output after authorization changes.
+    BufferedReply {
+        text: String,
+    },
     FailSequence {
         texts: Vec<String>,
         reply: String,

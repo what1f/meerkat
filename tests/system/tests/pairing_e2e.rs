@@ -235,12 +235,43 @@ async fn local_self_pairing_moves_legacy_agents_and_reuses_credentials() -> Resu
         ..config()
     })
     .await?;
-    let team = rig.workspace("team").await?;
-    team.agent("bruce")
-        .computer("local")
-        .harness(Script::reply("hi"))
-        .create()
-        .await?;
+    rig.workspace("team").await?;
+    // Seed a pre-registration Agent through Storage. New management requests
+    // must no longer be able to create this legacy placement.
+    let storage = lankide_storage::Storage::open(lankide_storage::DatabaseConfig::new(
+        rig.runtime_home().join("runtime.db"),
+    ))?;
+    let workspace = lankide_core::WorkspaceId::new("team")?;
+    let agent = lankide_core::AgentId::new("bruce")?;
+    storage.create_agent(lankide_storage::AgentSpec {
+        workspace_id: workspace.clone(),
+        id: agent.clone(),
+        name: "bruce".into(),
+        now: 1,
+    })?;
+    let mut record = storage.agent_record(&workspace, &agent)?;
+    record.computer_id = "local".into();
+    record.harness_id = "pi".into();
+    record.model = "scripted".into();
+    record.thinking = "low".into();
+    record.cli_path = Some(env!("CARGO_BIN_EXE_system-harness").into());
+    record.env.insert(
+        "LANKIDE_SYSTEM_SCRIPT".into(),
+        serde_json::to_string(&Script::reply("hi"))?,
+    );
+    for (key, file) in [
+        ("LANKIDE_SYSTEM_CONTROLS", "controls-team-bruce.jsonl"),
+        ("LANKIDE_SYSTEM_INPUTS", "inputs-team-bruce.jsonl"),
+        ("LANKIDE_SYSTEM_STEERS", "steers-team-bruce.jsonl"),
+    ] {
+        record.env.insert(
+            key.into(),
+            rig.computer_home().join(file).display().to_string(),
+        );
+    }
+    record.provider_agent_config = serde_json::json!({"account":"bot-bruce"});
+    storage.update_agent_record(record)?;
+    storage.close()?;
     assert_eq!(
         rig.management()
             .get_agent("team", "bruce")
@@ -248,8 +279,7 @@ async fn local_self_pairing_moves_legacy_agents_and_reuses_credentials() -> Resu
             .computer_id,
         "local"
     );
-    rig.start_paired_computer()?;
-    rig.wait_computer_online().await?;
+    rig.restart_runtime().await?;
     let credentials = read_credentials(rig.computer_home())?.unwrap();
     assert!(credentials.local_discovery);
     assert_ne!(credentials.computer_id, "local");

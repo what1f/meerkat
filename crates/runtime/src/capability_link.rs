@@ -86,6 +86,24 @@ pub(crate) async fn respond(
             .context
             .as_ref()
             .ok_or_else(|| Status::unauthenticated("missing_execution_context"))?;
+        let execution = context
+            .execution
+            .as_ref()
+            .ok_or_else(|| Status::unauthenticated("missing_execution_context"))?;
+        let runtime = application.runtime().map_err(crate::peer::status)?;
+        if !runtime
+            .storage()
+            .execution_placement_matches(
+                execution.execution_id,
+                i64::from(execution.attempt),
+                &computer,
+            )
+            .map_err(|error| crate::peer::status(error.into()))?
+        {
+            return Err(crate::peer::status(
+                crate::RuntimeError::InvalidExecutionToken,
+            ));
+        }
         agent::dispatch(
             &RuntimePeerAdapter::new(application.clone()),
             &request.method,

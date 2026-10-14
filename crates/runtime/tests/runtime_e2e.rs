@@ -70,11 +70,19 @@ async fn runtime_e2e() {
     let collaboration_db = temp.path().join("collaboration.db");
     let socket = temp.path().join("runtime.sock");
     let result = tokio::time::timeout(Duration::from_secs(60), async {
-        scenario(&db).await?;
-        attempt_recovery_scenario(&attempt_db).await?;
-        pause_drain_scenario(&pause_db).await?;
-        collaboration_fencing_scenario(&collaboration_db).await?;
-        application_scenario(&application_db, &socket).await?;
+        scenario(&db).await.map_err(|e| format!("scenario: {e}"))?;
+        attempt_recovery_scenario(&attempt_db)
+            .await
+            .map_err(|e| format!("attempt_recovery_scenario: {e}"))?;
+        pause_drain_scenario(&pause_db)
+            .await
+            .map_err(|e| format!("pause_drain_scenario: {e}"))?;
+        collaboration_fencing_scenario(&collaboration_db)
+            .await
+            .map_err(|e| format!("collaboration_fencing_scenario: {e}"))?;
+        application_scenario(&application_db, &socket)
+            .await
+            .map_err(|e| format!("application_scenario: {e}"))?;
         clearing_environment_scenario().await;
         local_agent_settings_scenario().await;
         agent_avatar_scenario().await;
@@ -1129,6 +1137,15 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             now: 2,
         })
         .map_err(err)?;
+    let mut placement = runtime
+        .storage()
+        .agent_record(&workspace_id, &agent_id)
+        .map_err(err)?;
+    placement.computer_id = "computer-attempt".into();
+    runtime
+        .storage()
+        .update_agent_record(placement)
+        .map_err(err)?;
     runtime
         .storage()
         .ingest_event(IngestEvent {
@@ -1696,7 +1713,13 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
                     last_seen_at: None,
                     os: "test".into(),
                     version: "1".into(),
-                    inventory_json: "[]".into(),
+                    inventory_json: serde_json::to_string(&vec![
+                        lankide_protocol::link::HarnessInfo {
+                            harness_id: "fixture".into(),
+                            ..Default::default()
+                        },
+                    ])
+                    .unwrap(),
                 },
                 None,
                 600_000,
@@ -3087,7 +3110,12 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
                 computer_version: "test".into(),
                 os: "test".into(),
                 arch: "test".into(),
-                harnesses: Vec::new(),
+                harnesses: vec![lankide_protocol::HarnessInfo {
+                    harness_id: "fixture".into(),
+                    display_name: "Fixture".into(),
+                    availability: lankide_protocol::HarnessAvailability::Available as i32,
+                    ..Default::default()
+                }],
             })),
         })
         .await
@@ -4036,7 +4064,30 @@ async fn profile_application() -> (tempfile::TempDir, RuntimeApplication, Arc<Fa
         })
         .unwrap();
     let mut record = storage.agent_record(&w, &a).unwrap();
-    record.computer_id = "local".into();
+    storage
+        .pair_computer(
+            &lankide_storage::ComputerRecord {
+                computer_id: "profile-computer".into(),
+                display_name: "Profile Computer".into(),
+                credential_hash: "profile-credential-hash".into(),
+                paired_at: 1,
+                revoked_at: None,
+                last_seen_at: None,
+                os: "test".into(),
+                version: "1".into(),
+                inventory_json: serde_json::to_string(&["fixture", "pi", "codex"].map(|id| {
+                    lankide_protocol::link::HarnessInfo {
+                        harness_id: id.into(),
+                        ..Default::default()
+                    }
+                }))
+                .unwrap(),
+            },
+            None,
+            600_000,
+        )
+        .unwrap();
+    record.computer_id = "profile-computer".into();
     record.harness_id = "fixture".into();
     record.model = "fixture".into();
     record.thinking = "low".into();
@@ -4465,7 +4516,7 @@ async fn configured_assignment_scenario() {
             .connect(ComputerHello {
                 device_credential: String::new(),
                 protocol_version: PROTOCOL_VERSION,
-                computer_id: "local".into(),
+                computer_id: "profile-computer".into(),
                 instance_id: "config-audit".into(),
                 ..Default::default()
             })
@@ -4473,11 +4524,11 @@ async fn configured_assignment_scenario() {
         let _ = connection.next().await.unwrap().unwrap();
         broker
             .handle_frame(
-                "local",
+                "profile-computer",
                 "config-audit",
                 ComputerFrame {
                     frame: Some(computer_frame::Frame::Heartbeat(ComputerHeartbeat {
-                        computer_id: "local".into(),
+                        computer_id: "profile-computer".into(),
                         instance_id: "config-audit".into(),
                         sent_at: 0,
                         active_attempts: Vec::new(),

@@ -114,6 +114,14 @@ fn main() {
                         (text, *delay_ms)
                     }
                     Script::LinkReply { text } | Script::ReplyBeforeTerminal { text } => (text, 0),
+                    Script::BufferedReply { text } => {
+                        let release =
+                            std::env::var("LANKIDE_SYSTEM_RELEASE").expect("release gate");
+                        while !std::path::Path::new(&release).exists() {
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        (text, 0)
+                    }
                     Script::FailSequence { texts, reply } => {
                         let counter = format!(
                             "{}.count",
@@ -220,7 +228,10 @@ fn main() {
                         .split(']')
                         .next()
                         .expect("message");
-                    if matches!(script, Script::LinkReply { .. }) {
+                    if matches!(
+                        script,
+                        Script::LinkReply { .. } | Script::BufferedReply { .. }
+                    ) {
                         let call_id = format!("system-reply-{message}");
                         event(
                             &mut sequence,
@@ -230,6 +241,9 @@ fn main() {
                                 "reply_to":message.parse::<i64>().expect("message ID"), "force":true
                             }}),
                         );
+                        if matches!(script, Script::BufferedReply { .. }) {
+                            continue;
+                        }
                         let result = received
                             .recv_timeout(Duration::from_secs(10))
                             .expect("Tool result over Computer link");

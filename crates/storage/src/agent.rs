@@ -27,6 +27,7 @@ type StoredAgentRow = (
     String,
     String,
     String,
+    i64,
 );
 #[derive(Clone, Debug)]
 pub struct AgentSpec {
@@ -51,6 +52,8 @@ pub struct AgentRecord {
     pub avatar: Option<String>,
     pub soul: String,
     pub computer_id: String,
+    /// Storage-owned revision of the Computer/Harness placement.
+    pub placement_generation: i64,
     pub harness_id: String,
     pub model: String,
     pub thinking: String,
@@ -176,7 +179,7 @@ fn delete_agent_state(
 }
 
 fn load_agent_record(c: &Connection, w: &WorkspaceId, a: &AgentId) -> Result<AgentRecord> {
-    let row:StoredAgentRow=c.query_row("SELECT name,agent_id,created_at,updated_at,role,bio,avatar,soul,computer_id,harness_id,model,thinking,auto_reaction,cli_path,env_json,provider_agent_config_json,session_config_json,attention_json,provider_state_json FROM agents WHERE workspace_id=?1 AND agent_id=?2",params![w.as_str(),a.as_str()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?,r.get(11)?,r.get(12)?,r.get(13)?,r.get(14)?,r.get(15)?,r.get(16)?,r.get(17)?,r.get(18)?)))?;
+    let row:StoredAgentRow=c.query_row("SELECT name,agent_id,created_at,updated_at,role,bio,avatar,soul,computer_id,harness_id,model,thinking,auto_reaction,cli_path,env_json,provider_agent_config_json,session_config_json,attention_json,provider_state_json,placement_generation FROM agents WHERE workspace_id=?1 AND agent_id=?2",params![w.as_str(),a.as_str()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?,r.get(11)?,r.get(12)?,r.get(13)?,r.get(14)?,r.get(15)?,r.get(16)?,r.get(17)?,r.get(18)?,r.get(19)?)))?;
     Ok(AgentRecord {
         workspace_id: w.clone(),
         agent_id: aid(row.1)?,
@@ -188,6 +191,7 @@ fn load_agent_record(c: &Connection, w: &WorkspaceId, a: &AgentId) -> Result<Age
         avatar: row.6,
         soul: row.7,
         computer_id: row.8,
+        placement_generation: row.19,
         harness_id: row.9,
         model: row.10,
         thinking: row.11,

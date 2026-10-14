@@ -39,7 +39,7 @@ bench = false
 
 [package.metadata.lankide.e2e]
 command = "cargo test -p lankide-system-e2e"
-scenario = "Mention one Agent in a group, queue a message during its run, and restart the Computer during a run; verify chat replies and execution isolation through both real daemons over authenticated JSON/WS Computer links. Verify S4.1-S4.3: classify spawn and mid-turn failures, preserve original diagnostics in client details and Computer logs, and keep failures out of every chat. S1.1 routes a DM only to its receiving Agent, S1.2 isolates two bot conversations with the same person, and S1.3 preserves unmentioned group attention policies. Verify S7.1: a Harness without Steer queues the next message and records no native steer; absent Resume starts fresh and absent Cancel closes a running Agent during deletion. S5.1-S5.8 cover model repair, third-attempt recovery, five-attempt limits, repeated fingerprints, durable notice dedupe, localized private notices, Runtime restart during backoff, and owner resume of queued messages. Verify S12.1-S12.5 and local self-pairing, management-visible legacy Agent reassignment, persisted credential reuse, and rejection of local secrets and mismatched device IDs. Verify held-run re-adoption across repeated disconnects with new messages queued for the same Agent, one reply per batch, no overlapping executions, and no notices. Six ownership conflicts followed by a transient failure still complete without pause or notice. Close attempts that expired offline when their Computer returns and acknowledge abandoned terminal outboxes before queued work resumes."
+scenario = "Mention one Agent in a group, queue a message during its run, and restart the Computer during a run; verify chat replies and execution isolation through both real daemons over authenticated JSON/WS Computer links. Verify S4.1-S4.3: classify spawn and mid-turn failures, preserve original diagnostics in client details and Computer logs, and keep failures out of every chat. S1.1 routes a DM only to its receiving Agent, S1.2 isolates two bot conversations with the same person, and S1.3 preserves unmentioned group attention policies. Verify S7.1: a Harness without Steer queues the next message and records no native steer; absent Resume starts fresh and absent Cancel closes a running Agent during deletion. S5.1-S5.8 cover model repair, third-attempt recovery, five-attempt limits, repeated fingerprints, durable notice dedupe, localized private notices, Runtime restart during backoff, and owner resume of queued messages. Verify S12.1-S12.5 and local self-pairing, management-visible legacy Agent reassignment, persisted credential reuse, and rejection of local secrets and mismatched device IDs. Verify held-run re-adoption across repeated disconnects with new messages queued for the same Agent, one reply per batch, no overlapping executions, and no notices. Six ownership conflicts followed by a transient failure still complete without pause or notice. Close attempts that expired offline when their Computer returns and acknowledge abandoned terminal outboxes before queued work resumes. Verify S13.1-S13.4: typed placement errors, two independently paired Computers with separate homes, queued offline messages, and rejection of revoked Computer results; verify placement generation invalidates old tokens and events."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
@@ -94,6 +94,14 @@ status = "implemented"
 [package.metadata.lankide.e2e-additional.system-agent-proxy]
 command = "cargo test -p lankide-system-e2e --test agent_proxy_e2e"
 scenario = "Verify S15.1-S15.3 with the real lankide CLI and daemons on separate homes using only WS for Computer access: send content-file text with an attachment, read chat content, list and invoke capabilities, update a profile, transfer multi-frame resources, assert no Runtime address in recorded Harness environment, check owner-only socket permissions and removal, and reject wrong or finished credentials."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"
+
+[package.metadata.lankide.e2e-additional.system-placement]
+command = "cargo test -p lankide-system-e2e --test placement_e2e"
+scenario = "Verify S13.1-S13.4 through public management and real daemons: reject unknown or revoked Computers and missing Harnesses with typed errors, run two Agents only on their paired Computers, queue offline work until reconnect without failures or notices, and reject late revoked results. Invalidate capability tokens, HTTP resources, and Computer events after a placement change."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

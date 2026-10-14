@@ -114,7 +114,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     let config = DatabaseConfig::new(&db_path);
 
     let storage = Storage::open(config.clone()).map_err(|error| error.to_string())?;
-    assert_eq!(storage.schema_version().unwrap(), 19);
+    assert_eq!(storage.schema_version().unwrap(), 20);
     assert_eq!(storage.sqlite_settings().unwrap().journal_mode, "wal");
     assert!(storage.sqlite_settings().unwrap().foreign_keys);
 
@@ -1752,7 +1752,7 @@ fn verify_v14_hard_delete_migration(root: &Path) -> Result<(), String> {
              ALTER TABLE agent_inbox_items DROP COLUMN failure_count;
              ALTER TABLE executions DROP COLUMN retry_policy_applied;
              DROP TABLE failure_notices;
-             DROP TABLE computers;
+             DROP TRIGGER agent_placement_changed; ALTER TABLE agents DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_computer_id; DROP TABLE computers;
              DROP TABLE pairing_codes;
              PRAGMA user_version=14;",
         )
@@ -1761,7 +1761,7 @@ fn verify_v14_hard_delete_migration(root: &Path) -> Result<(), String> {
 
     let migrated =
         Storage::open(DatabaseConfig::new(&database)).map_err(|error| error.to_string())?;
-    assert_eq!(migrated.schema_version().unwrap(), 19);
+    assert_eq!(migrated.schema_version().unwrap(), 20);
     assert!(migrated.agent_record(&workspace_id, &agent_id).is_err());
     assert_eq!(
         migrated.pending_agent_file_deletions("local").unwrap(),
@@ -1839,6 +1839,7 @@ fn agent_record(
         avatar: Some("avatar.png".to_owned()),
         soul: "Be useful".to_owned(),
         computer_id: "local".to_owned(),
+        placement_generation: 1,
         harness_id: "codex".to_owned(),
         model: "gpt-5.6-luna".to_owned(),
         thinking: "low".to_owned(),
@@ -2013,7 +2014,7 @@ fn legacy_direct_chat_keeps_its_history_and_ids_after_receiver_migration() {
              ALTER TABLE agent_inbox_items DROP COLUMN failure_count;
              ALTER TABLE executions DROP COLUMN retry_policy_applied;
              DROP TABLE failure_notices;
-             DROP TABLE computers;
+             DROP TRIGGER agent_placement_changed; ALTER TABLE agents DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_computer_id; DROP TABLE computers;
              DROP TABLE pairing_codes;
              PRAGMA user_version=15;").unwrap();
     // Production shape: all three Agents dispatched and tried to reply; only
@@ -2037,7 +2038,7 @@ fn legacy_direct_chat_keeps_its_history_and_ids_after_receiver_migration() {
     drop(fixture);
     verify_migration_sample(database.as_os_str());
     let storage = Storage::open(DatabaseConfig::new(&database)).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 19);
+    assert_eq!(storage.schema_version().unwrap(), 20);
     assert!(storage.sqlite_settings().unwrap().foreign_keys);
     for agent in [&clark, &diana] {
         assert!(
@@ -2268,7 +2269,7 @@ fn verify_migration_sample(sample: &std::ffi::OsStr) {
         .collect::<rusqlite::Result<Vec<_>>>().unwrap();
     drop(before);
     let storage = Storage::open(DatabaseConfig::new(&database)).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 19);
+    assert_eq!(storage.schema_version().unwrap(), 20);
     storage.close().unwrap();
     let after = rusqlite::Connection::open(database).unwrap();
     assert_eq!(
@@ -2394,14 +2395,14 @@ fn v17_database_migrates_and_preserves_queued_work() {
         ALTER TABLE agent_inbox_items DROP COLUMN failure_count;
         ALTER TABLE executions DROP COLUMN retry_policy_applied;
         DROP TABLE failure_notices;
-             DROP TABLE computers;
+             DROP TRIGGER agent_placement_changed; ALTER TABLE agents DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_computer_id; DROP TABLE computers;
              DROP TABLE pairing_codes;
         PRAGMA user_version=17;",
         )
         .unwrap();
     drop(fixture);
     let storage = Storage::open(config).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 19);
+    assert_eq!(storage.schema_version().unwrap(), 20);
     assert!(storage.agent_pause_reason(&w, &a).unwrap().is_none());
     let execution = storage
         .create_execution(&w, &a, "queued message", 3)
@@ -2441,10 +2442,10 @@ fn v18_to_v19_registers_computers_without_losing_legacy_agents() {
     storage.close().unwrap();
     // Downgrade only the new empty registration tables to the v18 layout.
     let connection = rusqlite::Connection::open(&config.path).unwrap();
-    connection.execute_batch("DROP TABLE computers; DROP TABLE pairing_codes; UPDATE agents SET computer_id='local'; PRAGMA user_version=18;").unwrap();
+    connection.execute_batch("DROP TRIGGER agent_placement_changed; ALTER TABLE agents DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_computer_id; DROP TABLE computers; DROP TABLE pairing_codes; UPDATE agents SET computer_id='local'; PRAGMA user_version=18;").unwrap();
     drop(connection);
     let storage = Storage::open(config.clone()).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 19);
+    assert_eq!(storage.schema_version().unwrap(), 20);
     assert_eq!(
         storage.list_agent_records(&workspace).unwrap()[0].computer_id,
         "local"
@@ -2506,4 +2507,130 @@ fn v18_to_v19_registers_computers_without_losing_legacy_agents() {
     assert_eq!(persisted.version, "2");
     assert_eq!(reopened.list_agents(&workspace).unwrap()[0].name, "Bruce");
     reopened.close().unwrap();
+}
+
+#[test]
+fn placement_migration_preserves_queued_work_and_invalidates_old_authorizations() {
+    let home = tempfile::tempdir().unwrap();
+    let config = DatabaseConfig::new(home.path().join("runtime.db"));
+    let workspace = WorkspaceId::new("placement").unwrap();
+    let agent = AgentId::new("bruce").unwrap();
+    let provider = ProviderId::new("fixture").unwrap();
+    let storage = Storage::open(config.clone()).unwrap();
+    storage
+        .create_workspace(WorkspaceSpec {
+            id: workspace.clone(),
+            name: "Placement".into(),
+            provider_id: provider.clone(),
+            provider_config: json!({}),
+            provider_secret: json!({}),
+            active: true,
+            now: 1,
+        })
+        .unwrap();
+    let mut record = agent_record(&workspace, &agent, "bot-bruce", 2);
+    record.computer_id = "computer-a".into();
+    storage.upsert_agent_record(record).unwrap();
+    storage
+        .ingest_event(event(
+            &workspace,
+            &provider,
+            &ChannelId::new("group_chat").unwrap(),
+            "team",
+            "one",
+            "hello",
+            3,
+            vec![dispatch(&agent, DispatchReason::Mention, 3)],
+        ))
+        .unwrap();
+    storage.close().unwrap();
+    // Reconstruct the immediately preceding schema with its queued inbox intact.
+    let database = rusqlite::Connection::open(&config.path).unwrap();
+    database.execute_batch("DROP TRIGGER agent_placement_changed; ALTER TABLE agents DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_computer_id; PRAGMA user_version=19;").unwrap();
+    drop(database);
+    let storage = Storage::open(config.clone()).unwrap();
+    assert_eq!(storage.schema_version().unwrap(), 20);
+    assert_eq!(storage.inbox_items(&workspace, &agent).unwrap().len(), 1);
+    let run = storage
+        .create_execution_with_auth(
+            &workspace,
+            &agent,
+            "placement",
+            4,
+            ExecutionAuthSpec {
+                attempt: 1,
+                token_hash: "token-hash".into(),
+                expires_at: 1000,
+            },
+        )
+        .unwrap()
+        .unwrap();
+    assert!(
+        storage
+            .execution_auth_context(run.execution_id, 1)
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        storage
+            .execution_auth_context(run.execution_id, 2)
+            .unwrap()
+            .is_none()
+    );
+    let mut record = storage.agent_record(&workspace, &agent).unwrap();
+    record.model = "another-model".into();
+    storage.update_agent_record(record.clone()).unwrap();
+    assert!(
+        storage
+            .execution_auth_context(run.execution_id, 1)
+            .unwrap()
+            .is_some()
+    );
+    storage
+        .offer_execution_attempt(run.execution_id, 1, "computer-a", "instance-a", 1000, 5)
+        .unwrap();
+    storage
+        .accept_execution_attempt(run.execution_id, 1, true, 5)
+        .unwrap();
+    record.harness_id = "pi".into();
+    storage.update_agent_record(record.clone()).unwrap();
+    assert!(
+        storage
+            .execution_auth_context(run.execution_id, 1)
+            .unwrap()
+            .is_none()
+    );
+    let late = storage
+        .record_execution_event(RecordExecutionEvent {
+            execution_id: run.execution_id,
+            attempt: 1,
+            computer_id: "computer-a".into(),
+            computer_instance_id: "instance-a".into(),
+            sequence: 1,
+            kind: "completed".into(),
+            payload: br#"{"kind":"completed","final_output":"late"}"#.to_vec(),
+            occurred_at: 6,
+            now: 6,
+        })
+        .unwrap();
+    assert_eq!(late.disposition, ExecutionEventDisposition::StaleAttempt);
+    assert!(
+        storage
+            .execution(run.execution_id)
+            .unwrap()
+            .final_output
+            .is_none()
+    );
+    record.harness_id = "codex".into();
+    storage.update_agent_record(record).unwrap();
+    storage.close().unwrap();
+    let storage = Storage::open(config).unwrap();
+    assert!(
+        storage
+            .execution_auth_context(run.execution_id, 1)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(storage.inbox_items(&workspace, &agent).unwrap().len(), 1);
+    storage.close().unwrap();
 }

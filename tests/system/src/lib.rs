@@ -138,6 +138,14 @@ impl Drop for ComputerThread {
     }
 }
 
+/// A second independently paired daemon, with its own durable home.
+pub struct PairedComputer {
+    // Stop the daemon before removing its home (fields drop in declaration order).
+    _daemon: ComputerThread,
+    pub id: String,
+    pub home: TempDir,
+}
+
 pub struct SystemRig {
     // Homes stay alive until both daemons release their tasks.
     computer: Option<ComputerThread>,
@@ -356,6 +364,47 @@ impl SystemRig {
     pub fn runtime_home(&self) -> &std::path::Path {
         self.home.path()
     }
+    pub async fn add_computer(&self) -> Result<PairedComputer> {
+        let home = tempfile::tempdir()?;
+        let code = self.client.create_pairing_code().await?;
+        let (url, _) = self.local_pairing_endpoint()?;
+        let credentials = lankide_computer_daemon::pair(
+            &lankide_computer_daemon::ComputerDaemonPaths::for_home(home.path())?,
+            &url,
+            &code.code,
+        )
+        .await?;
+        let mut config = DaemonConfig::for_home(home.path())?;
+        config.runtime_url = Some(url);
+        config.paths.runtime_socket = self.paths.socket.clone();
+        let daemon = ComputerThread::start(
+            config,
+            self.config.harness_executable.clone(),
+            home.path().join("harness-pids.tsv"),
+            self.config.harness_capabilities.clone(),
+        );
+        timeout(self.config.timeout, async {
+            loop {
+                if self
+                    .client
+                    .get_computer_catalog(None)
+                    .await?
+                    .iter()
+                    .any(|c| c.id == credentials.computer_id && c.available)
+                {
+                    return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await??;
+        Ok(PairedComputer {
+            id: credentials.computer_id,
+            home,
+            _daemon: daemon,
+        })
+    }
+
     pub fn start_paired_computer(&mut self) -> Result<()> {
         self.start_computer()
     }

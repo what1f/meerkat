@@ -202,6 +202,26 @@ impl RuntimeApplication {
         })
     }
 
+    fn validate_placement(&self, agent: &AgentRecord) -> Result<(), RuntimeError> {
+        let computer = self
+            .runtime()?
+            .storage()
+            .registered_computers()?
+            .into_iter()
+            .find(|c| c.computer_id == agent.computer_id)
+            .ok_or(RuntimeError::ComputerNotRegistered)?;
+        if computer.revoked_at.is_some() {
+            return Err(RuntimeError::ComputerRevoked);
+        }
+        let inventory: Vec<lankide_protocol::link::HarnessInfo> =
+            serde_json::from_str(&computer.inventory_json)
+                .map_err(|e| RuntimeError::Application(e.to_string()))?;
+        if !inventory.iter().any(|h| h.harness_id == agent.harness_id) {
+            return Err(RuntimeError::HarnessUnavailableOnComputer);
+        }
+        Ok(())
+    }
+
     pub async fn create_agent(
         &self,
         request: CreateAgentRequest,
@@ -222,6 +242,7 @@ impl RuntimeApplication {
             avatar: None,
             soul: request.soul,
             computer_id: request.computer_id,
+            placement_generation: 1,
             harness_id: request.harness_id,
             model: request.model,
             thinking: request.thinking_level,
@@ -239,6 +260,7 @@ impl RuntimeApplication {
             created_at: now,
             updated_at: now,
         };
+        self.validate_placement(&candidate)?;
         let record = AgentLifecycle::new(self)
             .create(workspace, candidate, provider_agent_secrets)
             .await?;
@@ -303,6 +325,7 @@ impl RuntimeApplication {
         if let Some(value) = request.provider_agent_config_json {
             record.provider_agent_config = parse_json(&value)?;
         }
+        self.validate_placement(&record)?;
         let avatar_update = request
             .avatar
             .as_ref()

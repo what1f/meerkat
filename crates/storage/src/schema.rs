@@ -28,7 +28,7 @@ fn configure(c: &Connection) -> Result<()> {
 
 fn migrate(c: &mut Connection) -> Result<()> {
     let v: i64 = c.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    if v > 19 {
+    if v > 20 {
         return Err(StorageError::Invalid(format!("unsupported schema {v}")));
     }
     if v == 0 {
@@ -171,8 +171,26 @@ fn migrate(c: &mut Connection) -> Result<()> {
         transaction.pragma_update(None, "user_version", 19)?;
         transaction.commit()?;
     }
+    let current: i64 = c.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if current == 19 {
+        let transaction = c.transaction()?;
+        transaction.execute_batch(MIGRATION_V20)?;
+        transaction.pragma_update(None, "user_version", 20)?;
+        transaction.commit()?;
+    }
     Ok(())
 }
+const MIGRATION_V20: &str = r#"
+ALTER TABLE agents ADD COLUMN placement_generation INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE executions ADD COLUMN placement_generation INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE executions ADD COLUMN placement_computer_id TEXT NOT NULL DEFAULT '';
+CREATE TRIGGER agent_placement_changed AFTER UPDATE OF computer_id,harness_id ON agents
+WHEN OLD.computer_id != NEW.computer_id OR OLD.harness_id != NEW.harness_id
+BEGIN
+    UPDATE agents SET placement_generation=OLD.placement_generation+1
+    WHERE workspace_id=NEW.workspace_id AND agent_id=NEW.agent_id;
+END;
+"#;
 const MIGRATION_V19: &str = r#"
 CREATE TABLE computers(computer_id TEXT PRIMARY KEY,display_name TEXT NOT NULL,credential_hash TEXT NOT NULL UNIQUE,paired_at INTEGER NOT NULL,revoked_at INTEGER,last_seen_at INTEGER,os TEXT NOT NULL,version TEXT NOT NULL,inventory_json TEXT NOT NULL DEFAULT '[]',local_pair INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE pairing_codes(code_hash TEXT PRIMARY KEY,issued_at INTEGER NOT NULL,used_at INTEGER);

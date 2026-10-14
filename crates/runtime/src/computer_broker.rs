@@ -378,6 +378,45 @@ impl ComputerBroker {
         let Some(frame) = frame.frame else {
             return Ok(());
         };
+        let execution = match &frame {
+            computer_frame::Frame::AssignmentResult(v) => v.execution.as_ref(),
+            computer_frame::Frame::ExecutionEvent(v) => v.execution.as_ref(),
+            computer_frame::Frame::DeliveryResult(v) => v.execution.as_ref(),
+            computer_frame::Frame::ToolCall(v) => v.execution.as_ref(),
+            _ => None,
+        };
+        if let Some(execution) = execution
+            && !self.storage()?.execution_placement_matches(
+                execution.execution_id,
+                i64::from(execution.attempt),
+                computer_id,
+            )?
+        {
+            // A stale terminal outbox is discarded, never persisted or delivered.
+            if let computer_frame::Frame::ExecutionEvent(event) = &frame
+                && matches!(
+                    ExecutionEventKind::try_from(event.kind),
+                    Ok(ExecutionEventKind::Completed
+                        | ExecutionEventKind::Failed
+                        | ExecutionEventKind::Cancelled)
+                )
+            {
+                self.send_to(
+                    computer_id,
+                    instance_id,
+                    RuntimeFrame {
+                        frame: Some(runtime_frame::Frame::ExecutionCommitted(
+                            lankide_protocol::ExecutionCommitted {
+                                execution: event.execution.clone(),
+                                committed_at: now_millis(),
+                            },
+                        )),
+                    },
+                )
+                .await?;
+            }
+            return Err(RuntimeError::InvalidExecutionToken);
+        }
         match &frame {
             computer_frame::Frame::Heartbeat(_) => {
                 self.storage()?
@@ -689,6 +728,26 @@ impl ComputerBroker {
                 let storage = self.storage()?;
                 let mut active_agents = BTreeSet::new();
                 for (id, attempt) in &active {
+                    if !storage.execution_placement_matches(*id, *attempt, computer_id)? {
+                        self.send_to(
+                            computer_id,
+                            instance_id,
+                            RuntimeFrame {
+                                frame: Some(runtime_frame::Frame::CancelExecution(
+                                    lankide_protocol::CancelExecution {
+                                        execution: Some(ExecutionRef {
+                                            execution_id: *id,
+                                            attempt: *attempt as u32,
+                                        }),
+                                        reason: "Execution is no longer active".into(),
+                                        force_close: true,
+                                    },
+                                )),
+                            },
+                        )
+                        .await?;
+                        continue;
+                    }
                     if let Some(context) = storage.execution_auth_context(*id, *attempt)? {
                         active_agents.insert((
                             context.workspace_id.to_string(),
@@ -1088,6 +1147,25 @@ impl ComputerExecutor for BrokerComputerExecutor {
             }
             let execution = assignment.execution.as_ref().expect("validated execution");
             let offered_at = now_millis();
+            if !self
+                .broker
+                .storage()
+                .map_err(|e| ComputerError {
+                    code: e.to_string(),
+                })?
+                .execution_computer_matches(
+                    execution_id,
+                    i64::from(execution.attempt),
+                    &self.computer_id,
+                )
+                .map_err(|e| ComputerError {
+                    code: e.to_string(),
+                })?
+            {
+                return Err(ComputerError {
+                    code: "computer_placement_changed".into(),
+                });
+            }
             self.broker
                 .storage()
                 .map_err(|error| ComputerError {
