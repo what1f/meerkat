@@ -426,7 +426,7 @@ async fn drive_tool_turn(
                     }
                     return Ok(());
                 }
-                AgentEventKind::Failed { code, message } => {
+                AgentEventKind::Failed { code, message, .. } => {
                     return Err(format!("Pi tool turn failed: {code}: {message}"));
                 }
                 AgentEventKind::Cancelled { reason } => {
@@ -448,7 +448,7 @@ async fn collect_terminal(
         while let Some(event) = stream.next().await {
             match event.map_err(|error| error.to_string())?.kind {
                 AgentEventKind::Completed { final_output } => return Ok(final_output),
-                AgentEventKind::Failed { code, message } => {
+                AgentEventKind::Failed { code, message, .. } => {
                     return Err(format!("Pi turn failed: {code}: {message}"));
                 }
                 AgentEventKind::Cancelled { reason } => {
@@ -473,7 +473,7 @@ async fn wait_for_delta(stream: &mut lankide_harness::AgentEventStream) -> Resul
                 AgentEventKind::Completed { .. } => {
                     return Err("Pi long turn completed before steer/cancel".to_owned());
                 }
-                AgentEventKind::Failed { code, message } => {
+                AgentEventKind::Failed { code, message, .. } => {
                     return Err(format!("Pi long turn failed: {code}: {message}"));
                 }
                 _ => {}
@@ -493,7 +493,7 @@ async fn wait_for_cancelled(stream: &mut lankide_harness::AgentEventStream) -> R
                 AgentEventKind::Completed { .. } => {
                     return Err("Pi completed after cancel".to_owned());
                 }
-                AgentEventKind::Failed { code, message } => {
+                AgentEventKind::Failed { code, message, .. } => {
                     return Err(format!("Pi failed after cancel: {code}: {message}"));
                 }
                 _ => {}

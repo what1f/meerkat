@@ -114,7 +114,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     let config = DatabaseConfig::new(&db_path);
 
     let storage = Storage::open(config.clone()).map_err(|error| error.to_string())?;
-    assert_eq!(storage.schema_version().unwrap(), 15);
+    assert_eq!(storage.schema_version().unwrap(), 16);
     assert_eq!(storage.sqlite_settings().unwrap().journal_mode, "wal");
     assert!(storage.sqlite_settings().unwrap().foreign_keys);
 
@@ -1727,7 +1727,8 @@ fn verify_v14_hard_delete_migration(root: &Path) -> Result<(), String> {
     let legacy = rusqlite::Connection::open(&database).map_err(|error| error.to_string())?;
     legacy
         .execute_batch(
-            "ALTER TABLE agents ADD COLUMN deleted_at INTEGER;
+            "ALTER TABLE execution_attempts DROP COLUMN failure_json;
+             ALTER TABLE agents ADD COLUMN deleted_at INTEGER;
              DROP TABLE agent_file_deletions;
              CREATE TABLE agent_file_deletions(
                  workspace_id TEXT NOT NULL,
@@ -1749,7 +1750,7 @@ fn verify_v14_hard_delete_migration(root: &Path) -> Result<(), String> {
 
     let migrated =
         Storage::open(DatabaseConfig::new(&database)).map_err(|error| error.to_string())?;
-    assert_eq!(migrated.schema_version().unwrap(), 15);
+    assert_eq!(migrated.schema_version().unwrap(), 16);
     assert!(migrated.agent_record(&workspace_id, &agent_id).is_err());
     assert_eq!(
         migrated.pending_agent_file_deletions("local").unwrap(),

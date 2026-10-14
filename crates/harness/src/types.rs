@@ -234,6 +234,8 @@ pub enum AgentEventKind {
     Failed {
         code: String,
         message: String,
+        #[serde(default)]
+        failure: Option<HarnessFailure>,
     },
     Cancelled {
         reason: String,
@@ -303,16 +305,63 @@ pub enum HarnessErrorCode {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct HarnessFailure {
+    pub code: String,
+    pub category: FailureCategory,
+    pub retryable: bool,
+    pub detail: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureCategory {
+    Configuration,
+    Authentication,
+    RateLimit,
+    Transient,
+    Agent,
+    Cancelled,
+    Timeout,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct HarnessError {
     pub code: HarnessErrorCode,
     pub message: String,
+    pub failure: HarnessFailure,
 }
 
 impl HarnessError {
     pub fn new(code: HarnessErrorCode, message: impl Into<String>) -> Self {
+        let message = message.into();
+        let category = match code {
+            HarnessErrorCode::InvalidConfig | HarnessErrorCode::Unavailable => {
+                FailureCategory::Configuration
+            }
+            HarnessErrorCode::Timeout => FailureCategory::Timeout,
+            HarnessErrorCode::SpawnFailed
+            | HarnessErrorCode::StreamInterrupted
+            | HarnessErrorCode::Io => FailureCategory::Transient,
+            _ => FailureCategory::Agent,
+        };
         Self {
             code,
-            message: message.into(),
+            failure: HarnessFailure {
+                code: format!(
+                    "harness_{}",
+                    serde_json::to_value(code)
+                        .expect("error code")
+                        .as_str()
+                        .expect("error code string")
+                ),
+                category,
+                retryable: matches!(
+                    category,
+                    FailureCategory::Transient | FailureCategory::Timeout
+                ),
+                detail: message.clone(),
+            },
+            message,
         }
     }
 

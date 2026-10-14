@@ -24,6 +24,36 @@ use lifecycle::{
 };
 
 impl RuntimeApplication {
+    pub async fn get_execution_details(
+        &self,
+        request: lankide_protocol::GetExecutionDetailsRequest,
+    ) -> Result<lankide_protocol::ExecutionDetails, RuntimeError> {
+        let runtime = self.runtime()?;
+        let execution = runtime.storage().execution(request.execution_id)?;
+        let attempts = runtime
+            .storage()
+            .execution_attempts(request.execution_id)?
+            .into_iter()
+            .map(|attempt| {
+                Ok(lankide_protocol::ExecutionAttemptDetails {
+                    attempt: attempt.attempt as u32,
+                    computer_id: attempt.computer_id,
+                    state: attempt.state.as_str().into(),
+                    failure: attempt
+                        .failure
+                        .map(serde_json::from_value)
+                        .transpose()
+                        .map_err(|error| RuntimeError::Application(error.to_string()))?,
+                })
+            })
+            .collect::<Result<Vec<_>, RuntimeError>>()?;
+        Ok(lankide_protocol::ExecutionDetails {
+            execution_id: execution.execution_id,
+            state: execution.state.as_str().into(),
+            attempts,
+        })
+    }
+
     pub async fn list_workspaces(
         &self,
         request: ListWorkspacesRequest,

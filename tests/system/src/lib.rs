@@ -5,7 +5,7 @@
 mod provider;
 mod script;
 pub use provider::{Incoming, Outbound, OutboundKind};
-pub use script::Script;
+pub use script::{Script, scripted_failure};
 
 use lankide_client::{AgentDraft, ManagementClient, RuntimeManagementClient, WorkspaceDraft};
 use lankide_computer::RegisteredHarness;
@@ -227,6 +227,22 @@ impl SystemRig {
         })
         .await
         .map_err(|_| "Computer startup timed out")?
+    }
+    pub fn outbound(&self) -> Vec<Outbound> {
+        self.im.outbound.lock().expect("outbound").clone()
+    }
+    pub fn computer_failure_log(&self) -> Result<String> {
+        Ok(std::fs::read_to_string(
+            self.computer_home
+                .path()
+                .join("workspaces/attempt-failures.jsonl"),
+        )?)
+    }
+    pub async fn execution_details(
+        &self,
+        execution_id: i64,
+    ) -> Result<lankide_client::ExecutionDetails> {
+        Ok(self.client.get_execution_details(execution_id).await?)
     }
     pub async fn restart_computer(&mut self) -> Result<()> {
         if let Some(mut computer) = self.computer.take() {

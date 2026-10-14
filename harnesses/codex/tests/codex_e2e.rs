@@ -422,7 +422,7 @@ fn final_output(events: &[AgentEvent]) -> Option<&str> {
 
 fn require_successful_turn(events: &[AgentEvent]) -> Result<(), String> {
     for event in events {
-        if let AgentEventKind::Failed { code, message } = &event.kind {
+        if let AgentEventKind::Failed { code, message, .. } = &event.kind {
             return Err(format!("Codex turn failed ({code}): {message}"));
         }
     }

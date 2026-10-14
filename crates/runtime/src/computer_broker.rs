@@ -299,11 +299,18 @@ impl ComputerBroker {
                         now_millis(),
                     )?;
                 } else {
-                    self.storage()?.reject_execution_attempt(
+                    self.storage()?.reject_execution_attempt_with_failure(
                         execution_id,
                         i64::from(execution.attempt),
                         &result.error_code,
                         &result.error_message,
+                        result
+                            .failure
+                            .as_ref()
+                            .map(serde_json::to_value)
+                            .transpose()
+                            .map_err(|error| RuntimeError::Application(error.to_string()))?
+                            .as_ref(),
                         now_millis(),
                     )?;
                 }

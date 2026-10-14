@@ -70,7 +70,7 @@ fn main() {
                     Script::FailMidTurn { text } | Script::FailSpawn { text } => {
                         event(
                             &mut sequence,
-                            json!({"kind":"failed","code":"scripted_failure","message":text}),
+                            json!({"kind":"failed","code":"scripted_failure","message":text,"failure":lankide_system_e2e::scripted_failure(text)}),
                         );
                         continue;
                     }

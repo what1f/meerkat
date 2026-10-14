@@ -89,7 +89,9 @@ impl ScriptedHarness {
     fn spawn_failure(request: &SessionRequest) -> Option<HarnessError> {
         let script = request.config.environment.get("LANKIDE_SYSTEM_SCRIPT")?;
         if let Script::FailSpawn { text } = serde_json::from_str(script).ok()? {
-            Some(HarnessError::new(HarnessErrorCode::SpawnFailed, text))
+            let mut error = HarnessError::new(HarnessErrorCode::SpawnFailed, text.clone());
+            error.failure = scripted_failure(&text);
+            Some(error)
         } else {
             None
         }
@@ -115,5 +117,21 @@ impl HarnessFactory for ScriptedHarness {
         } else {
             self.process.resume(request)
         }
+    }
+}
+
+pub fn scripted_failure(text: &str) -> HarnessFailure {
+    let category = if text.contains("model not found") {
+        FailureCategory::Configuration
+    } else if text.contains("rate limit") {
+        FailureCategory::RateLimit
+    } else {
+        FailureCategory::Agent
+    };
+    HarnessFailure {
+        code: "scripted_failure".into(),
+        category,
+        retryable: category == FailureCategory::RateLimit,
+        detail: text.into(),
     }
 }

@@ -84,7 +84,7 @@ impl ClaudeCodeHarness {
         }
         let paths = SessionPaths::prepare(&request)?;
         if resume && !session_artifact_exists(&paths.config_dir, &native_session_id) {
-            return Err(HarnessError::new(
+            return Err(harness_error(
                 HarnessErrorCode::BindFailed,
                 "Claude Code session artifact is unavailable for resume",
             ));
@@ -228,9 +228,9 @@ impl HarnessFactory for ClaudeCodeHarness {
             let result = async {
                 process.send(json!({"type":"control_request","request_id":"catalog","request":{"subtype":"initialize"}})).await?;
                 let response = process.receive(|v| v["type"] == "control_response" && v["response"]["request_id"] == "catalog").await?;
-                let models = response.pointer("/response/response/models").and_then(Value::as_array).ok_or_else(|| HarnessError::new(HarnessErrorCode::InvalidEvent, "Claude Code did not return a model directory"))?;
+                let models = response.pointer("/response/response/models").and_then(Value::as_array).ok_or_else(|| harness_error(HarnessErrorCode::InvalidEvent, "Claude Code did not return a model directory"))?;
                 models.iter().map(|model| {
-                    let id = model["value"].as_str().filter(|v| !v.is_empty()).ok_or_else(|| HarnessError::new(HarnessErrorCode::InvalidEvent, "Claude Code returned a model without an ID"))?;
+                    let id = model["value"].as_str().filter(|v| !v.is_empty()).ok_or_else(|| harness_error(HarnessErrorCode::InvalidEvent, "Claude Code returned a model without an ID"))?;
                     Ok(lankide_harness::NativeModel { id: id.into(), name: model["displayName"].as_str().unwrap_or(id).into(), description: model["description"].as_str().unwrap_or_default().into(), thinking_levels: model["supportedEffortLevels"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect() })
                 }).collect()
             }.await;
@@ -327,7 +327,7 @@ impl HarnessSession for ClaudeCodeSession {
             if self.inner.closed.load(Ordering::Acquire)
                 || self.entry().health != SessionHealth::Healthy
             {
-                return Err(HarnessError::new(
+                return Err(harness_error(
                     HarnessErrorCode::InvalidState,
                     "Claude Code session is not healthy",
                 ));
@@ -336,7 +336,7 @@ impl HarnessSession for ClaudeCodeSession {
             {
                 let mut active = self.inner.active.lock().expect("active lock");
                 if active.is_some() {
-                    return Err(HarnessError::new(
+                    return Err(harness_error(
                         HarnessErrorCode::InvalidState,
                         "Claude Code session already has an active turn",
                     ));
@@ -366,7 +366,7 @@ impl HarnessSession for ClaudeCodeSession {
     fn steer<'a>(&'a self, delivery_id: String, input: String) -> HarnessFuture<'a, SteerReceipt> {
         Box::pin(async move {
             if self.inner.active.lock().expect("active lock").is_none() {
-                return Err(HarnessError::new(
+                return Err(harness_error(
                     HarnessErrorCode::InvalidState,
                     "Claude Code has no active turn",
                 ));
@@ -385,7 +385,7 @@ impl HarnessSession for ClaudeCodeSession {
     ) -> HarnessFuture<'a, ToolResultReceipt> {
         Box::pin(async move {
             let fingerprint = serde_json::to_string(&request).map_err(|error| {
-                HarnessError::new(HarnessErrorCode::InvalidConfig, error.to_string())
+                harness_error(HarnessErrorCode::InvalidConfig, error.to_string())
             })?;
             if let Some(previous) = self
                 .inner
@@ -401,7 +401,7 @@ impl HarnessSession for ClaudeCodeSession {
                         already_applied: true,
                     });
                 }
-                return Err(HarnessError::new(
+                return Err(harness_error(
                     HarnessErrorCode::InvalidState,
                     "conflicting Claude Code tool result",
                 ));
@@ -413,13 +413,13 @@ impl HarnessSession for ClaudeCodeSession {
                 .expect("pending lock")
                 .remove(&request.tool_call_id)
                 .ok_or_else(|| {
-                    HarnessError::new(
+                    harness_error(
                         HarnessErrorCode::InvalidState,
                         "Claude Code tool call was not observed",
                     )
                 })?;
             sender.send(request.clone()).map_err(|_| {
-                HarnessError::new(
+                harness_error(
                     HarnessErrorCode::StreamInterrupted,
                     "Claude Code MCP request ended",
                 )
@@ -449,7 +449,7 @@ impl HarnessSession for ClaudeCodeSession {
                 .expect("active lock")
                 .take()
                 .ok_or_else(|| {
-                    HarnessError::new(
+                    harness_error(
                         HarnessErrorCode::InvalidState,
                         "Claude Code has no active turn",
                     )
@@ -505,14 +505,14 @@ impl Inner {
         self.reap(false);
         let entry = self.entry.lock().expect("entry lock").clone();
         let is_resume = session_artifact_exists(&self.paths.config_dir, &entry.native_session_id);
+        let stderr_path = self
+            .paths
+            .artifact_dir
+            .join(format!("claude-{}.stderr.log", unique()));
         let stderr = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(
-                self.paths
-                    .artifact_dir
-                    .join(format!("claude-{}.stderr.log", unique())),
-            )
+            .open(&stderr_path)
             .map_err(io_error("open Claude stderr artifact"))?;
         let allowed = self
             .request
@@ -566,7 +566,7 @@ impl Inner {
             .stdout(Stdio::piped())
             .stderr(Stdio::from(stderr));
         let mut child = command.spawn().map_err(|error| {
-            HarnessError::new(
+            harness_error(
                 HarnessErrorCode::SpawnFailed,
                 format!("failed to spawn Claude Code CLI: {error}"),
             )
@@ -574,13 +574,13 @@ impl Inner {
         let pid = child.id();
         record_pid(self.pid_journal.as_deref(), "spawned", pid);
         let stdin = child.stdin.take().ok_or_else(|| {
-            HarnessError::new(
+            harness_error(
                 HarnessErrorCode::SpawnFailed,
                 "Claude Code stdin unavailable",
             )
         })?;
         let stdout = child.stdout.take().ok_or_else(|| {
-            HarnessError::new(
+            harness_error(
                 HarnessErrorCode::SpawnFailed,
                 "Claude Code stdout unavailable",
             )
@@ -591,7 +591,7 @@ impl Inner {
             self.reap(true);
             return Err(error);
         }
-        spawn_reader(Arc::downgrade(self), stdout, pid);
+        spawn_reader(Arc::downgrade(self), stdout, pid, stderr_path);
         Ok(())
     }
 
@@ -599,13 +599,13 @@ impl Inner {
         let message = json!({"type":"user","message":{"role":"user","content":[{"type":"text","text":input}]}});
         let mut guard = self.stdin.lock().expect("stdin lock");
         let stdin = guard.as_mut().ok_or_else(|| {
-            HarnessError::new(
+            harness_error(
                 HarnessErrorCode::InvalidState,
                 "Claude Code stdin is closed",
             )
         })?;
         serde_json::to_writer(&mut *stdin, &message).map_err(|error| {
-            HarnessError::new(HarnessErrorCode::Io, format!("write Claude input: {error}"))
+            harness_error(HarnessErrorCode::Io, format!("write Claude input: {error}"))
         })?;
         stdin
             .write_all(b"\n")
@@ -624,6 +624,7 @@ impl Inner {
             emit(
                 &mut execution,
                 AgentEventKind::Failed {
+                    failure: Some(error.failure.clone()),
                     code: format!("{:?}", error.code),
                     message: error.message,
                 },
@@ -672,7 +673,12 @@ fn spawn_tool_dispatch(inner: Weak<Inner>, calls: std_mpsc::Receiver<McpCall>) {
     });
 }
 
-fn spawn_reader(inner: Weak<Inner>, stdout: std::process::ChildStdout, _pid: u32) {
+fn spawn_reader(
+    inner: Weak<Inner>,
+    stdout: std::process::ChildStdout,
+    _pid: u32,
+    stderr_path: PathBuf,
+) {
     thread::spawn(move || {
         let mut saw_terminal = false;
         for line in BufReader::new(stdout).lines() {
@@ -681,7 +687,7 @@ fn spawn_reader(inner: Weak<Inner>, stdout: std::process::ChildStdout, _pid: u32
                 Ok(line) => match serde_json::from_str::<Value>(&line) {
                     Ok(value) => saw_terminal |= handle_event(&inner, value),
                     Err(error) => {
-                        inner.fail(HarnessError::new(
+                        inner.fail(harness_error(
                             HarnessErrorCode::InvalidEvent,
                             format!("invalid Claude stream-json event: {error}"),
                         ));
@@ -689,7 +695,7 @@ fn spawn_reader(inner: Weak<Inner>, stdout: std::process::ChildStdout, _pid: u32
                     }
                 },
                 Err(error) => {
-                    inner.fail(HarnessError::new(
+                    inner.fail(harness_error(
                         HarnessErrorCode::StreamInterrupted,
                         format!("Claude stdout failed: {error}"),
                     ));
@@ -699,9 +705,21 @@ fn spawn_reader(inner: Weak<Inner>, stdout: std::process::ChildStdout, _pid: u32
         }
         if let Some(inner) = inner.upgrade() {
             if !saw_terminal && inner.active.lock().expect("active lock").is_some() {
-                inner.fail(HarnessError::new(
+                inner.fail(harness_error(
                     HarnessErrorCode::StreamInterrupted,
-                    "Claude stdout ended before result",
+                    inner
+                        .child
+                        .lock()
+                        .expect("child lock")
+                        .as_mut()
+                        .map(|child| {
+                            process_exit_detail(
+                                &stderr_path,
+                                child,
+                                "Claude stdout ended before result",
+                            )
+                        })
+                        .unwrap_or_else(|| "Claude stdout ended before result".into()),
                 ));
             }
             inner.stdin.lock().expect("stdin lock").take();
@@ -721,7 +739,7 @@ fn handle_event(inner: &Arc<Inner>, value: Value) -> bool {
                 .and_then(Value::as_str)
                 .unwrap_or_default();
             if got != inner.entry.lock().expect("entry lock").native_session_id {
-                inner.fail(HarnessError::new(
+                inner.fail(harness_error(
                     HarnessErrorCode::BindFailed,
                     "Claude bound a different session",
                 ));
@@ -779,15 +797,44 @@ fn handle_event(inner: &Arc<Inner>, value: Value) -> bool {
                     emit(
                         &mut execution,
                         AgentEventKind::Failed {
+                            failure: None,
                             code: "BindFailed".to_owned(),
                             message: "Claude result used a different session".to_owned(),
                         },
                     );
                 } else if value.get("is_error").and_then(Value::as_bool) == Some(true) {
-                    let message = execution.final_output.clone();
+                    let errors = value
+                        .get("errors")
+                        .and_then(Value::as_array)
+                        .map(|errors| {
+                            errors
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        })
+                        .unwrap_or_default();
+                    let message = if !errors.is_empty() {
+                        errors
+                    } else if let Some(error) = value
+                        .pointer("/error/message")
+                        .and_then(Value::as_str)
+                        .or_else(|| value.get("error").and_then(Value::as_str))
+                    {
+                        error.to_owned()
+                    } else if !execution.final_output.is_empty() {
+                        execution.final_output.clone()
+                    } else {
+                        value
+                            .get("subtype")
+                            .and_then(Value::as_str)
+                            .unwrap_or("Claude Code execution failed")
+                            .to_owned()
+                    };
                     emit(
                         &mut execution,
                         AgentEventKind::Failed {
+                            failure: None,
                             code: value
                                 .get("api_error_status")
                                 .and_then(Value::as_str)
@@ -903,6 +950,7 @@ fn unique() -> u64 {
 }
 
 fn emit(execution: &mut Execution, kind: AgentEventKind) {
+    let kind = classified_event(kind);
     execution.sequence += 1;
     let _ = execution.sender.send(Ok(AgentEvent {
         sequence: execution.sequence,
@@ -911,7 +959,7 @@ fn emit(execution: &mut Execution, kind: AgentEventKind) {
 }
 
 fn io_error(context: &'static str) -> impl FnOnce(std::io::Error) -> HarnessError {
-    move |error| HarnessError::new(HarnessErrorCode::Io, format!("{context}: {error}"))
+    move |error| harness_error(HarnessErrorCode::Io, format!("{context}: {error}"))
 }
 
 fn record_pid(path: Option<&Path>, state: &str, pid: u32) {
@@ -919,5 +967,140 @@ fn record_pid(path: Option<&Path>, state: &str, pid: u32) {
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
         let line = format!("{state}\t{pid}\n");
         let _ = file.write_all(line.as_bytes());
+    }
+}
+
+fn classify_failure(code: String, detail: String) -> lankide_harness::HarnessFailure {
+    use lankide_harness::FailureCategory;
+    let text = detail.to_ascii_lowercase();
+    let category = if (text.contains("model")
+        && (text.contains("not found")
+            || text.contains("not available")
+            || text.contains("not supported")))
+        || [
+            "model not found",
+            "unknown model",
+            "invalid model",
+            "does not exist",
+            "no such file",
+            "not found (os error 2)",
+            "command not found",
+            "enoent",
+        ]
+        .iter()
+        .any(|value| text.contains(value))
+    {
+        FailureCategory::Configuration
+    } else if [
+        "unauthorized",
+        "authentication",
+        "authenticate",
+        "invalid bearer token",
+        "token expired",
+        "no api key",
+        "missing api key",
+        "invalid api key",
+        "invalid_api_key",
+        "api key not",
+        "not logged in",
+        "login required",
+        "401",
+        "forbidden",
+        "403",
+    ]
+    .iter()
+    .any(|value| text.contains(value))
+    {
+        FailureCategory::Authentication
+    } else if [
+        "rate limit",
+        "rate_limit",
+        "rate-limit",
+        "usage limit",
+        "usage_limit",
+        "resource_exhausted",
+        "exceeded your current quota",
+        "too many requests",
+        "429",
+        "quota exceeded",
+    ]
+    .iter()
+    .any(|value| text.contains(value))
+    {
+        FailureCategory::RateLimit
+    } else if text.contains("cancelled") || text.contains("canceled") || text.contains("aborted") {
+        FailureCategory::Cancelled
+    } else if text.contains("timeout") || text.contains("timed out") {
+        FailureCategory::Timeout
+    } else if [
+        "exited",
+        "exit status",
+        "process exit",
+        "stream",
+        "connection",
+        "503",
+        "502",
+        "temporarily unavailable",
+    ]
+    .iter()
+    .any(|value| text.contains(value))
+    {
+        FailureCategory::Transient
+    } else {
+        FailureCategory::Agent
+    };
+    lankide_harness::HarnessFailure {
+        code,
+        category,
+        retryable: matches!(
+            category,
+            FailureCategory::RateLimit | FailureCategory::Transient | FailureCategory::Timeout
+        ),
+        detail,
+    }
+}
+
+fn harness_error(code: HarnessErrorCode, message: impl Into<String>) -> HarnessError {
+    let mut error = HarnessError::new(code, message);
+    error.failure = classify_failure(error.failure.code.clone(), error.message.clone());
+    // Unknown transport and configuration failures keep the contract default.
+    if error.failure.category == lankide_harness::FailureCategory::Agent {
+        let default = HarnessError::new(code, error.message.clone());
+        error.failure.category = default.failure.category;
+        error.failure.retryable = default.failure.retryable;
+    }
+    error
+}
+
+fn classified_event(mut kind: AgentEventKind) -> AgentEventKind {
+    if let AgentEventKind::Failed {
+        code,
+        message,
+        failure,
+    } = &mut kind
+    {
+        if failure.is_none() {
+            *failure = Some(classify_failure(code.clone(), message.clone()));
+        }
+    }
+    kind
+}
+
+fn process_exit_detail(stderr_path: &Path, child: &mut Child, fallback: &str) -> String {
+    let status = child
+        .try_wait()
+        .ok()
+        .flatten()
+        .map(|status| status.to_string());
+    let stderr = std::fs::read_to_string(stderr_path).unwrap_or_default();
+    if stderr.trim().is_empty() {
+        status
+            .map(|status| format!("{fallback}; process exit: {status}"))
+            .unwrap_or_else(|| fallback.to_owned())
+    } else {
+        match status {
+            Some(status) => format!("{stderr}\nprocess exit: {status}"),
+            None => stderr,
+        }
     }
 }

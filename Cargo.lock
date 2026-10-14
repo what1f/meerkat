@@ -3753,6 +3753,7 @@ dependencies = [
  "lankide-core",
  "prost",
  "protoc-bin-vendored",
+ "serde",
  "serde_json",
  "sha2 0.11.0",
  "tempfile",

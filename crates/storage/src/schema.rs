@@ -28,7 +28,7 @@ fn configure(c: &Connection) -> Result<()> {
 
 fn migrate(c: &mut Connection) -> Result<()> {
     let v: i64 = c.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    if v > 15 {
+    if v > 16 {
         return Err(StorageError::Invalid(format!("unsupported schema {v}")));
     }
     if v == 0 {
@@ -133,6 +133,14 @@ fn migrate(c: &mut Connection) -> Result<()> {
         let transaction = c.transaction()?;
         transaction.execute_batch(MIGRATION_V15)?;
         transaction.pragma_update(None, "user_version", 15)?;
+        transaction.commit()?;
+    }
+    let current: i64 = c.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if current == 15 {
+        let transaction = c.transaction()?;
+        transaction
+            .execute_batch("ALTER TABLE execution_attempts ADD COLUMN failure_json TEXT;")?;
+        transaction.pragma_update(None, "user_version", 16)?;
         transaction.commit()?;
     }
     Ok(())

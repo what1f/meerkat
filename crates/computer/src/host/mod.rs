@@ -2,6 +2,7 @@ mod assignment;
 mod connection;
 mod control;
 mod events;
+mod failure;
 mod records;
 
 use self::connection::run_loop;

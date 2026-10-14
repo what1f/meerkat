@@ -103,6 +103,12 @@ pub(super) async fn handle_assignment(inner: Arc<Inner>, assign: AssignExecution
         .await
         .accepted_assignments
         .contains_key(&key);
+    let failure_agent_id = assign
+        .agent
+        .as_ref()
+        .and_then(|profile| profile.agent.as_ref())
+        .map(|agent| agent.agent_id.clone())
+        .unwrap_or_default();
     let mut cancel = None;
     let result = if let Some(agent_key) = agent_key.as_ref().filter(|_| !remembered) {
         let (cancel_tx, mut cancel_rx) = watch::channel(None);
@@ -145,10 +151,34 @@ pub(super) async fn handle_assignment(inner: Arc<Inner>, assign: AssignExecution
         }
     }
     if let Err(error) = result {
+        let failure = match &error {
+            ComputerError::Harness(error) => super::failure::attempt_failure(&error.failure),
+            _ => {
+                use lankide_harness::{FailureCategory, HarnessFailure};
+                let category = match &error {
+                    ComputerError::InvalidAssignment(code) if code == "assignment_cancelled" => {
+                        FailureCategory::Cancelled
+                    }
+                    ComputerError::Io(_)
+                    | ComputerError::Transport(_)
+                    | ComputerError::Rpc(_)
+                    | ComputerError::Resource(_) => FailureCategory::Transient,
+                    _ => FailureCategory::Configuration,
+                };
+                super::failure::attempt_failure(&HarnessFailure {
+                    code: error_code(&error).into(),
+                    category,
+                    retryable: category == FailureCategory::Transient,
+                    detail: error.to_string(),
+                })
+            }
+        };
+        super::failure::log_failure(&inner, &execution, &failure_agent_id, &failure);
         send_frame(
             &inner,
             ComputerFrame {
                 frame: Some(computer_frame::Frame::AssignmentResult(AssignmentResult {
+                    failure: Some(failure),
                     execution: Some(execution),
                     accepted: false,
                     error_code: error_code(&error).into(),
@@ -184,6 +214,7 @@ async fn prepare_assignment(
             &inner,
             ComputerFrame {
                 frame: Some(computer_frame::Frame::AssignmentResult(AssignmentResult {
+                    failure: None,
                     execution: Some(execution.clone()),
                     accepted: true,
                     error_code: String::new(),
@@ -421,6 +452,7 @@ async fn prepare_assignment(
         &inner,
         ComputerFrame {
             frame: Some(computer_frame::Frame::AssignmentResult(AssignmentResult {
+                failure: None,
                 execution: Some(execution.clone()),
                 accepted: true,
                 error_code: String::new(),
@@ -511,7 +543,7 @@ fn public_error(error: &ComputerError) -> String {
         ComputerError::InvalidAssignment(value) => value.clone(),
         ComputerError::PathOutsideAgentHome => "Content file is outside the Agent directory".into(),
         ComputerError::Resource(_) => "A required resource could not be prepared".into(),
-        ComputerError::Harness(_) => "The selected Harness could not start".into(),
+        ComputerError::Harness(error) => error.failure.detail.clone(),
         _ => "The execution could not be prepared".into(),
     }
 }

@@ -56,6 +56,7 @@ pub struct ExecutionAttemptView {
     pub last_event_sequence: u64,
     pub native_session_id: Option<String>,
     pub lease_expires_at: i64,
+    pub failure: Option<Value>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -137,9 +138,9 @@ fn load_execution_attempt(
     attempt: i64,
 ) -> Result<ExecutionAttemptView> {
     let row = connection.query_row(
-        "SELECT computer_id,computer_instance_id,state,last_event_sequence,native_session_id,lease_expires_at FROM execution_attempts WHERE execution_id=?1 AND attempt=?2",
+        "SELECT computer_id,computer_instance_id,state,last_event_sequence,native_session_id,lease_expires_at,failure_json FROM execution_attempts WHERE execution_id=?1 AND attempt=?2",
         params![execution_id, attempt],
-        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, i64>(3)?, row.get::<_, Option<String>>(4)?, row.get::<_, i64>(5)?)),
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, i64>(3)?, row.get::<_, Option<String>>(4)?, row.get::<_, i64>(5)?, row.get::<_, Option<String>>(6)?)),
     )?;
     Ok(ExecutionAttemptView {
         execution_id,
@@ -150,6 +151,12 @@ fn load_execution_attempt(
         last_event_sequence: row.3 as u64,
         native_session_id: row.4,
         lease_expires_at: row.5,
+        failure: row
+            .6
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()
+            .map_err(|error| StorageError::Invalid(error.to_string()))?,
     })
 }
 
@@ -385,6 +392,25 @@ impl Storage {
         error_message: &str,
         now: i64,
     ) -> Result<bool> {
+        self.reject_execution_attempt_with_failure(
+            execution_id,
+            attempt,
+            error_code,
+            error_message,
+            None,
+            now,
+        )
+    }
+
+    pub fn reject_execution_attempt_with_failure(
+        &self,
+        execution_id: i64,
+        attempt: i64,
+        error_code: &str,
+        error_message: &str,
+        failure: Option<&Value>,
+        now: i64,
+    ) -> Result<bool> {
         let mut connection = self.conn()?;
         let transaction = connection.transaction()?;
         let code = if error_code.trim().is_empty() {
@@ -393,8 +419,8 @@ impl Storage {
             error_code.trim()
         };
         let changed = transaction.execute(
-            "UPDATE execution_attempts SET state='rejected',error_code=?3,error_message=?4,finished_at=coalesce(finished_at,?5) WHERE execution_id=?1 AND attempt=?2 AND state='offered'",
-            params![execution_id, attempt, code, error_message, now],
+            "UPDATE execution_attempts SET state='rejected',error_code=?3,error_message=?4,failure_json=?6,finished_at=coalesce(finished_at,?5) WHERE execution_id=?1 AND attempt=?2 AND state='offered'",
+            params![execution_id, attempt, code, error_message, now, failure.map(Value::to_string)],
         )? == 1;
         if changed {
             // A rejected assignment is generally caused by a stable local
@@ -439,6 +465,20 @@ impl Storage {
         } else {
             self.fail_attempt(execution_id, attempt, "delivery_rejected", now)
         }
+    }
+
+    pub fn execution_attempts(&self, execution_id: i64) -> Result<Vec<ExecutionAttemptView>> {
+        let connection = self.conn()?;
+        let mut statement = connection.prepare(
+            "SELECT attempt FROM execution_attempts WHERE execution_id=?1 ORDER BY attempt",
+        )?;
+        let attempts = statement
+            .query_map([execution_id], |row| row.get::<_, i64>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        attempts
+            .into_iter()
+            .map(|attempt| load_execution_attempt(&connection, execution_id, attempt))
+            .collect()
     }
 
     pub fn execution_attempt(
@@ -551,6 +591,12 @@ impl Storage {
             "UPDATE execution_attempts SET last_event_sequence=?3,state=CASE WHEN ?4='started' THEN 'running' ELSE state END,native_session_id=CASE WHEN ?4='native_session_bound' THEN coalesce(json_extract(CAST(?5 AS TEXT),'$.native_session_id'),native_session_id) ELSE native_session_id END WHERE execution_id=?1 AND attempt=?2",
             params![event.execution_id, event.attempt, event.sequence as i64, event.kind, event.payload],
         )?;
+        if matches!(event.kind.as_str(), "failed" | "cancelled") {
+            let payload: Value = serde_json::from_slice(&event.payload).unwrap_or(Value::Null);
+            if let Some(failure) = payload.get("failure").filter(|value| value.is_object()) {
+                transaction.execute("UPDATE execution_attempts SET failure_json=?3,error_message=?4 WHERE execution_id=?1 AND attempt=?2", params![event.execution_id, event.attempt, failure.to_string(), failure.get("detail").and_then(Value::as_str)])?;
+            }
+        }
         let disposition = match event.kind.as_str() {
             "completed" => {
                 let output = event_final_output(&event.payload);
@@ -564,7 +610,7 @@ impl Storage {
                 ExecutionEventDisposition::Committed
             }
             "failed" => {
-                transaction.execute("UPDATE execution_attempts SET state='failed',error_code='computer_execution_failed',finished_at=?3 WHERE execution_id=?1 AND attempt=?2", params![event.execution_id, event.attempt, event.now])?;
+                transaction.execute("UPDATE execution_attempts SET state='failed',error_code=coalesce(json_extract(failure_json,'$.code'),'computer_execution_failed'),finished_at=?3 WHERE execution_id=?1 AND attempt=?2", params![event.execution_id, event.attempt, event.now])?;
                 abandon_execution(
                     &transaction,
                     event.execution_id,

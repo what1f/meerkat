@@ -12,8 +12,8 @@ pub use config::{prepare_config_overlay, user_config_directory};
 
 pub use types::{
     AgentEvent, AgentEventKind, AgentEventStream, CancelReceipt, CloseReceipt, ExecuteRequest,
-    HarnessAvailability, HarnessCapability, HarnessConfig, HarnessError, HarnessErrorCode,
-    HarnessFactory, HarnessFuture, HarnessInfo, HarnessSession, ModelRef, NativeModel, ProbeResult,
-    SessionEntry, SessionHealth, SessionRequest, SteerReceipt, ToolDefinition, ToolResultError,
-    ToolResultReceipt, ToolResultRequest, ToolResultResource,
+    FailureCategory, HarnessAvailability, HarnessCapability, HarnessConfig, HarnessError,
+    HarnessErrorCode, HarnessFactory, HarnessFailure, HarnessFuture, HarnessInfo, HarnessSession,
+    ModelRef, NativeModel, ProbeResult, SessionEntry, SessionHealth, SessionRequest, SteerReceipt,
+    ToolDefinition, ToolResultError, ToolResultReceipt, ToolResultRequest, ToolResultResource,
 };
