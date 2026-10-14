@@ -69,3 +69,20 @@ while a reply is held. `Agent::received_steers` observes that boundary journal.
 `RigConfig::harness_capabilities` configures the peer's declared inventory; the
 additional scenario removes Resume and Cancel, verifies fresh starts, then
 deletes a running Agent without sending an unsupported native cancel.
+
+Task 5 retry scenarios are in `tests/retry_policy_e2e.rs`. Run them with:
+
+```sh
+cargo test -p lankide-system-e2e --test retry_policy_e2e
+```
+
+They set `RuntimeConfig.retry` through the daemon's optional `retry-policy.json`
+in each private Runtime home. The file accepts `base_ms`, `max_ms`,
+`notice_dedupe_ms`, and `poll_ms`. Production defaults are 30000, 600000,
+900000, and 1000 milliseconds. All values must be positive; maximum backoff
+must be at least the base. Omitted fields use their production defaults.
+
+A Runtime restart in these scenarios opens the same database and reconnects
+management. The graceful shutdown frame also ends the Computer daemon, so the
+rig restarts that peer with its existing private home, as a service supervisor
+would. Assertions check saved attempt times and deduplicated chat notices.

@@ -127,6 +127,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
     let channel = ChannelId::new("chat").map_err(err)?;
     let config = RuntimeConfig {
         database: DatabaseConfig::new(db),
+        retry: Default::default(),
     };
     let mut runtime = Runtime::new(config.clone()).map_err(err)?;
     for (workspace, agent) in [(&workspace_a, &agent_a), (&workspace_b, &agent_b)] {
@@ -623,6 +624,18 @@ async fn scenario(db: &Path) -> Result<(), String> {
         "cancel cursor",
     )?;
 
+    // A cancelled batch is terminal. Only a new message starts another run.
+    state_a
+        .emit(message(
+            &channel,
+            "chat_a",
+            "after-cancel",
+            "new request",
+            &agent_a,
+            "human",
+        ))
+        .await?;
+    pull(&runtime, &workspace_a, 28).await?;
     state_a.push_send(SendMode::Unknown);
     let pending = runtime
         .execute_ready(
@@ -775,6 +788,7 @@ async fn pause_drain_scenario(db: &Path) -> Result<(), String> {
     let state = Arc::new(FakeState::default());
     let mut runtime = Runtime::new(RuntimeConfig {
         database: DatabaseConfig::new(db),
+        retry: Default::default(),
     })
     .map_err(err)?;
     runtime
@@ -897,6 +911,7 @@ async fn collaboration_fencing_scenario(db: &Path) -> Result<(), String> {
     let channel = ChannelId::new("chat").map_err(err)?;
     let mut runtime = Runtime::new(RuntimeConfig {
         database: DatabaseConfig::new(db),
+        retry: Default::default(),
     })
     .map_err(err)?;
     runtime
@@ -1088,6 +1103,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
     let channel_id = ChannelId::new("chat").map_err(err)?;
     let runtime = Runtime::new(RuntimeConfig {
         database: DatabaseConfig::new(db),
+        retry: Default::default(),
     })
     .map_err(err)?;
     runtime
@@ -1649,6 +1665,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .map_err(err)?;
     let config = RuntimeConfig {
         database: DatabaseConfig::new(db),
+        retry: Default::default(),
     };
     let application = RuntimeApplication::open(config.clone(), factories.clone())
         .await
@@ -1759,6 +1776,25 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     }
     state.emit(follow_chat).await?;
     let follow_storage = Storage::open(DatabaseConfig::new(db)).map_err(err)?;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if follow_storage
+                .find_message(
+                    &workspace_id,
+                    &channel_id,
+                    "application-steer-chat",
+                    "application-follow-chat",
+                )
+                .map_err(err)?
+                .is_some()
+            {
+                return Ok::<_, String>(());
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .map_err(|_| "follow chat was not ingested".to_string())??;
     follow_storage
         .set_chat_attention(
             &workspace_id,
@@ -3948,6 +3984,7 @@ async fn profile_application() -> (tempfile::TempDir, RuntimeApplication, Arc<Fa
     let app = RuntimeApplication::open(
         RuntimeConfig {
             database: DatabaseConfig::new(&db),
+            retry: Default::default(),
         },
         factories,
     )
@@ -4147,6 +4184,7 @@ async fn prompt_failure_recovery_scenario() {
     let temp = tempfile::tempdir().unwrap();
     let runtime = Runtime::new(RuntimeConfig {
         database: DatabaseConfig::new(temp.path().join("runtime.db")),
+        retry: Default::default(),
     })
     .unwrap();
     let w = WorkspaceId::new("prompt_workspace").unwrap();
@@ -4223,6 +4261,7 @@ async fn durable_ingress_retry_scenario() {
     let path = temp.path().join("runtime.db");
     let runtime = Runtime::new(RuntimeConfig {
         database: DatabaseConfig::new(&path),
+        retry: Default::default(),
     })
     .unwrap();
     let w = WorkspaceId::new("receipt_workspace").unwrap();

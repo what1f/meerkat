@@ -504,6 +504,7 @@ async fn run_workspace_agent_and_onboarding_dialog_workflows(cx: &mut TestAppCon
         .get_agent("example-team", "clark")
         .await
         .unwrap();
+    stored.pause_reason = Some("model not found".into());
     stored.avatar = lankide_client::Avatar::Path("resources/example-team/clark_avatar.png".into());
     race_client.update_agent(stored, None).await.unwrap();
     let agents = race_client.list_agents("example-team").await.unwrap();
@@ -528,6 +529,8 @@ async fn run_workspace_agent_and_onboarding_dialog_workflows(cx: &mut TestAppCon
         Root::new(frame, window, cx).bordered(false)
     });
     draw(cx);
+    assert!(cx.debug_bounds("agent-paused").is_some());
+    assert!(cx.debug_bounds("resume-agent-clark").is_some());
     assert_eq!(
         race_client.image_requests().await,
         vec![("example-team".into(), "clark".into())],
@@ -593,6 +596,18 @@ async fn run_workspace_agent_and_onboarding_dialog_workflows(cx: &mut TestAppCon
         cx.debug_bounds("application-notice").is_none(),
         "desired state alone cannot produce a success notice"
     );
+    click(cx, "nav-agents");
+    assert!(cx.debug_bounds("agent-paused").is_some());
+    click(cx, "resume-agent-clark");
+    assert!(
+        race_client
+            .get_agent("example-team", "clark")
+            .await
+            .unwrap()
+            .pause_reason
+            .is_none()
+    );
+    assert!(cx.debug_bounds("agent-paused").is_none());
 }
 #[::core::prelude::v1::test]
 fn workspace_agent_and_onboarding_dialog_workflows() {

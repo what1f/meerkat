@@ -178,6 +178,11 @@ where
     let application = RuntimeApplication::open(
         RuntimeConfig {
             database: DatabaseConfig::new(&paths.database),
+            retry: match fs::read(paths.home.join("retry-policy.json")) {
+                Ok(bytes) => serde_json::from_slice(&bytes)?,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Default::default(),
+                Err(error) => return Err(error.into()),
+            },
         },
         factories,
     )

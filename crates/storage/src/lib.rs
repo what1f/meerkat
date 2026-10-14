@@ -65,3 +65,6 @@ impl Store for Storage {
         &self.config
     }
 }
+
+mod retry;
+pub use retry::{FailureHistory, FailureNotice};

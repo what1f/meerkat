@@ -150,6 +150,8 @@ impl ThinkingLevel {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Agent {
+    #[serde(default)]
+    pub pause_reason: Option<String>,
     pub workspace_id: String,
     pub id: String,
     pub name: String,
@@ -407,6 +409,13 @@ pub trait ManagementClient: Send + Sync {
         agent: Agent,
         avatar: Option<AgentAvatarUpload>,
     ) -> Result<Agent, ClientError>;
+    async fn resume_agent(
+        &self,
+        _workspace_id: &str,
+        _agent_id: &str,
+    ) -> Result<Agent, ClientError> {
+        Err(ClientError::Protocol("Agent resume is unavailable".into()))
+    }
     async fn delete_agent(&self, workspace_id: &str, agent_id: &str) -> Result<(), ClientError> {
         let _ = (workspace_id, agent_id);
         Err(ClientError::Protocol(
@@ -623,6 +632,7 @@ fn from_agent(v: wire::Agent) -> Result<Agent, ClientError> {
         .unwrap_or_default()
         .to_owned();
     Ok(Agent {
+        pause_reason: v.pause_reason,
         workspace_id: r.workspace_id,
         id: r.agent_id,
         name: v.name.clone(),
@@ -1072,6 +1082,24 @@ impl ManagementClient for RuntimeManagementClient {
                 })
                 .await
                 .map_err(map_agent_status)?
+                .into_inner(),
+        )
+    }
+    async fn resume_agent(&self, workspace_id: &str, agent_id: &str) -> Result<Agent, ClientError> {
+        let mut client = self.client.clone();
+        expect_agent(
+            workspace_id,
+            Some(agent_id),
+            client
+                .resume_agent(wire::GetAgentRequest {
+                    request_id: self.request_id(),
+                    agent: Some(wire::AgentRef {
+                        workspace_id: workspace_id.into(),
+                        agent_id: agent_id.into(),
+                    }),
+                })
+                .await
+                .map_err(map_status)?
                 .into_inner(),
         )
     }

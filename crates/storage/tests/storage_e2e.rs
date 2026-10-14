@@ -114,7 +114,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     let config = DatabaseConfig::new(&db_path);
 
     let storage = Storage::open(config.clone()).map_err(|error| error.to_string())?;
-    assert_eq!(storage.schema_version().unwrap(), 17);
+    assert_eq!(storage.schema_version().unwrap(), 18);
     assert_eq!(storage.sqlite_settings().unwrap().journal_mode, "wal");
     assert!(storage.sqlite_settings().unwrap().foreign_keys);
 
@@ -1745,6 +1745,13 @@ fn verify_v14_hard_delete_migration(root: &Path) -> Result<(), String> {
                  WHERE workspace_id='legacy_workspace' AND agent_id='legacy_agent';
              INSERT INTO agent_file_deletions(workspace_id,agent_id,computer_id,created_at)
                  VALUES('legacy_workspace','legacy_agent','local',3);
+             ALTER TABLE agents DROP COLUMN pause_reason;
+             ALTER TABLE agents DROP COLUMN failure_fingerprint;
+             ALTER TABLE agents DROP COLUMN failure_streak;
+             ALTER TABLE agent_inbox_items DROP COLUMN retry_batch_id;
+             ALTER TABLE agent_inbox_items DROP COLUMN failure_count;
+             ALTER TABLE executions DROP COLUMN retry_policy_applied;
+             DROP TABLE failure_notices;
              PRAGMA user_version=14;",
         )
         .map_err(|error| error.to_string())?;
@@ -1752,7 +1759,7 @@ fn verify_v14_hard_delete_migration(root: &Path) -> Result<(), String> {
 
     let migrated =
         Storage::open(DatabaseConfig::new(&database)).map_err(|error| error.to_string())?;
-    assert_eq!(migrated.schema_version().unwrap(), 17);
+    assert_eq!(migrated.schema_version().unwrap(), 18);
     assert!(migrated.agent_record(&workspace_id, &agent_id).is_err());
     assert_eq!(
         migrated.pending_agent_file_deletions("local").unwrap(),
@@ -1997,7 +2004,14 @@ fn legacy_direct_chat_keeps_its_history_and_ids_after_receiver_migration() {
         INSERT INTO chats_v15 SELECT chat_id,workspace_id,channel_id,provider_chat_id,name,first_message_id,last_message_id,created_at,updated_at FROM chats;
         DROP TABLE chats; ALTER TABLE chats_v15 RENAME TO chats;
         ALTER TABLE execution_attempts DROP COLUMN failure_json;
-        PRAGMA user_version=15;").unwrap();
+        ALTER TABLE agents DROP COLUMN pause_reason;
+             ALTER TABLE agents DROP COLUMN failure_fingerprint;
+             ALTER TABLE agents DROP COLUMN failure_streak;
+             ALTER TABLE agent_inbox_items DROP COLUMN retry_batch_id;
+             ALTER TABLE agent_inbox_items DROP COLUMN failure_count;
+             ALTER TABLE executions DROP COLUMN retry_policy_applied;
+             DROP TABLE failure_notices;
+             PRAGMA user_version=15;").unwrap();
     // Production shape: all three Agents dispatched and tried to reply; only
     // Bruce's bot could send (5 sent, 8 failed, 13 failed).
     for (agent, count, state) in [
@@ -2019,7 +2033,7 @@ fn legacy_direct_chat_keeps_its_history_and_ids_after_receiver_migration() {
     drop(fixture);
     verify_migration_sample(database.as_os_str());
     let storage = Storage::open(DatabaseConfig::new(&database)).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 17);
+    assert_eq!(storage.schema_version().unwrap(), 18);
     assert!(storage.sqlite_settings().unwrap().foreign_keys);
     for agent in [&clark, &diana] {
         assert!(
@@ -2250,7 +2264,7 @@ fn verify_migration_sample(sample: &std::ffi::OsStr) {
         .collect::<rusqlite::Result<Vec<_>>>().unwrap();
     drop(before);
     let storage = Storage::open(DatabaseConfig::new(&database)).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 17);
+    assert_eq!(storage.schema_version().unwrap(), 18);
     storage.close().unwrap();
     let after = rusqlite::Connection::open(database).unwrap();
     assert_eq!(
@@ -2306,4 +2320,88 @@ fn verify_migration_sample(sample: &std::ffi::OsStr) {
             .unwrap(),
         0
     );
+}
+
+#[test]
+fn v17_database_migrates_and_preserves_queued_work() {
+    let home = tempfile::tempdir().unwrap();
+    let config = DatabaseConfig::new(home.path().join("runtime.db"));
+    let storage = Storage::open(config.clone()).unwrap();
+    let w = WorkspaceId::new("migration").unwrap();
+    let a = AgentId::new("bruce").unwrap();
+    let provider = ProviderId::new("im").unwrap();
+    let channel = ChannelId::new("chat").unwrap();
+    storage
+        .create_workspace(WorkspaceSpec {
+            id: w.clone(),
+            name: "Migration".into(),
+            provider_id: provider.clone(),
+            provider_config: json!({}),
+            provider_secret: json!({}),
+            active: true,
+            now: 1,
+        })
+        .unwrap();
+    storage
+        .create_agent(AgentSpec {
+            workspace_id: w.clone(),
+            id: a.clone(),
+            name: "Bruce".into(),
+            now: 1,
+        })
+        .unwrap();
+    storage
+        .ingest_event(IngestEvent {
+            receiving_agent_id: None,
+            workspace_id: w.clone(),
+            provider_id: provider,
+            channel_id: channel,
+            channel_name: "Chat".into(),
+            provider_chat_id: "alice".into(),
+            chat_name: "Alice".into(),
+            provider_event_id: Some("event".into()),
+            provider_message_id: "m1".into(),
+            message: MessageInput {
+                sender_kind: MessageAuthorType::Human,
+                sender_id: "alice".into(),
+                sender_name: "Alice".into(),
+                content: "hello".into(),
+                mentions: vec![],
+                reply_to_provider_message_id: None,
+                resources: vec![],
+                occurred_at: 2,
+            },
+            dispatch: vec![InboxDispatch {
+                agent_id: a.clone(),
+                trigger_reason: DispatchReason::DirectMessage,
+                available_at: 2,
+            }],
+            now: 2,
+        })
+        .unwrap();
+    storage.close().unwrap();
+    let fixture = rusqlite::Connection::open(&config.path).unwrap();
+    fixture
+        .execute_batch(
+            "ALTER TABLE agents DROP COLUMN pause_reason;
+        ALTER TABLE agents DROP COLUMN failure_fingerprint;
+        ALTER TABLE agents DROP COLUMN failure_streak;
+        ALTER TABLE agent_inbox_items DROP COLUMN retry_batch_id;
+        ALTER TABLE agent_inbox_items DROP COLUMN failure_count;
+        ALTER TABLE executions DROP COLUMN retry_policy_applied;
+        DROP TABLE failure_notices;
+        PRAGMA user_version=17;",
+        )
+        .unwrap();
+    drop(fixture);
+    let storage = Storage::open(config).unwrap();
+    assert_eq!(storage.schema_version().unwrap(), 18);
+    assert!(storage.agent_pause_reason(&w, &a).unwrap().is_none());
+    let execution = storage
+        .create_execution(&w, &a, "queued message", 3)
+        .unwrap()
+        .unwrap();
+    assert_eq!(execution.inbox_item_ids.len(), 1);
+    assert!(storage.pending_failure_notices(&w, &a).unwrap().is_empty());
+    storage.close().unwrap();
 }

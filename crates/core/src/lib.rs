@@ -37,3 +37,15 @@ pub fn is_canonical_tool_name(name: &str) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
+
+/// A short chat notice, selected from the triggering message's language.
+pub fn agent_failure_notice(trigger: &str) -> &'static str {
+    if trigger
+        .chars()
+        .any(|c| matches!(c as u32, 0x3400..=0x4dbf | 0x4e00..=0x9fff | 0x20000..=0x323af))
+    {
+        "我未能处理这条消息，请负责人在 Lankide 中检查。"
+    } else {
+        "I couldn’t handle this message; please ask my owner to check Lankide."
+    }
+}

@@ -112,6 +112,25 @@ fn main() {
                         }
                         (text, *delay_ms)
                     }
+                    Script::FailSequence { texts, reply } => {
+                        let counter = format!(
+                            "{}.count",
+                            std::env::var("LANKIDE_SYSTEM_INPUTS").expect("counter")
+                        );
+                        let n = std::fs::read_to_string(&counter)
+                            .ok()
+                            .and_then(|s| s.parse::<usize>().ok())
+                            .unwrap_or(0);
+                        std::fs::write(counter, (n + 1).to_string()).expect("counter write");
+                        if let Some(text) = texts.get(n) {
+                            event(
+                                &mut sequence,
+                                json!({"kind":"failed","code":"scripted_failure","message":text,"failure":lankide_system_e2e::scripted_failure(text)}),
+                            );
+                            continue;
+                        }
+                        (reply, 0)
+                    }
                     Script::FailMidTurn { text } | Script::FailSpawn { text } => {
                         event(
                             &mut sequence,

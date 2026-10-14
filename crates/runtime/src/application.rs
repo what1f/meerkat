@@ -452,7 +452,9 @@ impl RuntimeApplication {
         let Ok(runtime) = self.runtime() else {
             return;
         };
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(
+            runtime.config().retry.poll_ms.max(1),
+        ));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             if self.inner.shutting_down.load(Ordering::Acquire)
@@ -498,9 +500,7 @@ impl RuntimeApplication {
                 }
             };
             for agent in agents {
-                if !self.inner.broker.is_connected(&agent.computer_id) {
-                    continue;
-                }
+                let connected = self.inner.broker.is_connected(&agent.computer_id);
                 let task_key = format!("{}:{}", workspace_id, agent.agent_id);
                 let should_start = self
                     .inner
@@ -516,20 +516,48 @@ impl RuntimeApplication {
                 }
                 let executor = self.inner.broker.executor(agent.computer_id);
                 let execution_runtime = runtime.clone();
+                let execution_application = self.clone();
                 let execution_workspace = workspace_id.clone();
                 let execution_agent = agent.agent_id.clone();
                 let task = tokio::spawn(async move {
-                    if let Err(error) = execution_runtime
-                        .execute_ready(
-                            &execution_workspace,
-                            &execution_agent,
-                            &executor,
-                            now_millis(),
-                        )
-                        .await
-                    {
+                    let previous_pause = execution_runtime
+                        .storage()
+                        .agent_pause_reason(&execution_workspace, &execution_agent)
+                        .ok()
+                        .flatten();
+                    let result = if connected {
+                        execution_runtime
+                            .execute_ready(
+                                &execution_workspace,
+                                &execution_agent,
+                                &executor,
+                                now_millis(),
+                            )
+                            .await
+                    } else {
+                        execution_runtime
+                            .apply_pending_failure_policies(&execution_workspace, &execution_agent)
+                            .await
+                            .map(|_| ExecutionProgress::Idle)
+                    };
+                    let changed = matches!(&result,Ok(progress) if !matches!(progress,ExecutionProgress::Idle))
+                        || execution_runtime
+                            .storage()
+                            .agent_pause_reason(&execution_workspace, &execution_agent)
+                            .ok()
+                            .flatten()
+                            != previous_pause;
+                    if let Err(error) = result {
                         eprintln!(
                             "[runtime] workspace={execution_workspace} agent={execution_agent} execution failed: {error}"
+                        );
+                    }
+                    if changed {
+                        execution_application.emit_management(
+                            lankide_protocol::ManagementEventKind::AgentUpdated,
+                            &execution_workspace,
+                            Some(&execution_agent),
+                            now_millis(),
                         );
                     }
                     if let Err(error) = execution_runtime

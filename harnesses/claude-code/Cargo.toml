@@ -28,7 +28,7 @@ status = "implemented"
 
 [package.metadata.lankide.e2e-additional.harness-claude-code-hermetic]
 command = "cargo test -p lankide-harness-claude-code --test failures_e2e --test native_defaults_e2e"
-scenario = "Classify missing CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through the public native Harness API; retain original error text and stderr. Verify S7.2: bypassPermissions native launch without a tool allowlist or empty setting sources, Agent-home skills at the native project path, and preserved native project skills, settings, and Lankide MCP wiring."
+scenario = "Verify S7.2: bypassPermissions native launch without a tool allowlist or empty setting sources, Agent-home skills at the native project path, and preserved native project skills, settings, and Lankide MCP wiring. Classify missing or non-executable CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through the public native Harness API; retain original error text and stderr."
 prerequisites = "Python 3"
 classification = "hermetic"
 unattended = "yes"

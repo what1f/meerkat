@@ -28,7 +28,7 @@ status = "implemented"
 
 [package.metadata.lankide.e2e-additional.harness-pi-hermetic]
 command = "cargo test -p lankide-harness-pi --test output_record_e2e --test failures_e2e --test native_defaults_e2e"
-scenario = "Stream ten thousand Pi deltas through a configured native CLI, retain final events without streaming deltas, and rotate bounded output records. Classify missing CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through native process boundaries. Verify S7.2: full-access native launch, enabled skills/context/templates, Agent-home skills and newly authored skills reachable, and model catalog without native resource suppression."
+scenario = "Stream ten thousand Pi deltas through a configured native CLI, retain final events without streaming deltas, and rotate bounded output records. Verify S7.2: full-access native launch, enabled skills/context/templates, Agent-home skills and newly authored skills reachable, and model catalog without native resource suppression. Classify missing or non-executable CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through native process boundaries."
 prerequisites = "Python 3"
 classification = "hermetic"
 unattended = "yes"

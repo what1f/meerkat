@@ -93,6 +93,10 @@ fn delete_agent_state(
 ) -> Result<()> {
     let agent = params![workspace_id.as_str(), agent_id.as_str()];
     transaction.execute(
+        "DELETE FROM failure_notices WHERE workspace_id=?1 AND agent_id=?2",
+        agent,
+    )?;
+    transaction.execute(
         "DELETE FROM execution_delivery_items
          WHERE delivery_id IN (
              SELECT delivery_id FROM execution_deliveries WHERE execution_id IN (
