@@ -62,3 +62,38 @@ marks the execution recovering (`crates/runtime/src/computer_broker.rs`), while
 reconciliation releases that execution. Storage correctly rejects the second
 active execution (`crates/storage/src/execution.rs`). This transient log does
 not block recovery. Task 0 makes no production change for it.
+
+## Execution liveness (Task 6)
+
+Run S6.1–S6.4 with:
+
+```sh
+cargo test -p lankide-system-e2e --test execution_liveness_e2e
+```
+
+Each test name begins with `s6_1_`, `s6_2_`, `s6_3_`, or `s6_4_`.
+Append that prefix to run one scenario. The scenarios wait for saved events,
+terminal management details, chat replies, and process exit with bounded waits.
+S6.1 proves the next queued message runs; the failed message follows the existing
+Runtime requeue policy. S6.4 cancels through the management `CancelAttempt` RPC.
+Silent and child scripts ignore cancel to exercise forced cleanup. Progress
+scripts keep emitting events until the total budget expires.
+
+The rig writes the same `computer.json` file read by `DaemonConfig::for_home`
+and the production daemon. The file belongs in the Computer home. For example:
+
+```json
+{
+  "execution_liveness": {
+    "idle_timeout": { "secs": 600, "nanos": 0 },
+    "total_budget": { "secs": 7200, "nanos": 0 },
+    "cancel_grace": { "secs": 2, "nanos": 0 }
+  }
+}
+```
+
+Absent fields use these defaults. Restart the Computer to apply settings.
+The four scenarios use short limits in isolated homes. Native Harness sessions
+run in their own process groups; the Computer captures the group before cancel,
+waits the grace period, kills the group, and closes the session before reporting
+a timeout or cancellation.

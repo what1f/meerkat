@@ -78,6 +78,13 @@ pub trait RuntimePeer: Send + Sync + 'static {
         Err(Status::unimplemented("list_agents"))
     }
 
+    async fn cancel_attempt(
+        &self,
+        _request: CancelAttemptRequest,
+    ) -> Result<CancelAttemptResponse, Status> {
+        Err(Status::unimplemented("cancel_attempt"))
+    }
+
     async fn get_execution_details(
         &self,
         _request: GetExecutionDetailsRequest,

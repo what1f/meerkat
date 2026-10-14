@@ -517,6 +517,19 @@ impl RuntimeManagementClient {
             requests: Arc::new(AtomicU64::new(0)),
         })
     }
+    /// Request cancellation; execution details become terminal after cleanup.
+    pub async fn cancel_execution(&self, execution_id: i64) -> Result<(), ClientError> {
+        self.client
+            .clone()
+            .cancel_attempt(wire::CancelAttemptRequest {
+                request_id: self.request_id(),
+                execution_id,
+            })
+            .await
+            .map_err(map_status)?;
+        Ok(())
+    }
+
     fn request_id(&self) -> String {
         format!(
             "management-{}",

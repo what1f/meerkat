@@ -3,6 +3,7 @@ mod connection;
 mod control;
 mod events;
 mod failure;
+mod liveness;
 mod records;
 
 use self::connection::run_loop;
@@ -136,7 +137,26 @@ impl Default for OutputRecordPolicy {
     }
 }
 
+/// Limits for a single attempt, independent of connection heartbeats.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct ExecutionLiveness {
+    pub idle_timeout: Duration,
+    pub total_budget: Duration,
+    pub cancel_grace: Duration,
+}
+impl Default for ExecutionLiveness {
+    fn default() -> Self {
+        Self {
+            idle_timeout: Duration::from_secs(10 * 60),
+            total_budget: Duration::from_secs(2 * 60 * 60),
+            cancel_grace: Duration::from_secs(2),
+        }
+    }
+}
+
 pub struct Computer {
+    liveness: ExecutionLiveness,
     output_records: OutputRecordPolicy,
     capability_cli: Option<PathBuf>,
     config: ComputerConfig,
@@ -147,6 +167,7 @@ impl Computer {
     pub fn new(config: ComputerConfig) -> Self {
         Self {
             config,
+            liveness: ExecutionLiveness::default(),
             output_records: OutputRecordPolicy::default(),
             capability_cli: crate::capability_cli::discover(),
             harnesses: HashMap::new(),
@@ -163,6 +184,11 @@ impl Computer {
 
     pub fn with_capability_cli(mut self, path: impl Into<PathBuf>) -> Self {
         self.capability_cli = Some(path.into());
+        self
+    }
+
+    pub fn with_execution_liveness(mut self, policy: ExecutionLiveness) -> Self {
+        self.liveness = policy;
         self
     }
 
@@ -265,6 +291,7 @@ impl Computer {
         }
         let (stop_tx, stop_rx) = watch::channel(None);
         let inner = Arc::new(Inner {
+            liveness: self.liveness,
             config: self.config,
             output_records: self.output_records,
             capability_cli: self.capability_cli,
@@ -342,16 +369,18 @@ impl ComputerHandle {
         for starting in inner.starting.lock().await.values() {
             let _ = starting.cancel.send(Some(reason.to_owned()));
         }
-        let sessions: Vec<_> = inner
+        let cancellations: Vec<_> = inner
             .active
             .lock()
             .await
             .values()
-            .map(|active| active.session.clone())
+            .map(|active| {
+                active.cancel.send_replace(Some(reason.to_owned()));
+                active.terminated.clone()
+            })
             .collect();
-        for session in sessions {
-            let _ = session.cancel(reason.to_owned()).await;
-            let _ = session.close().await;
+        for terminated in cancellations {
+            liveness::wait_for_stop(terminated, inner.liveness.cancel_grace).await;
         }
         let tasks = std::mem::take(&mut *inner.assignment_tasks.lock().await);
         for mut task in tasks {
@@ -373,6 +402,9 @@ pub struct ComputerStatus {
 }
 
 struct ActiveExecution {
+    terminated: watch::Receiver<Option<lankide_harness::AgentEventKind>>,
+    cancel: watch::Sender<Option<String>>,
+    progress: watch::Sender<tokio::time::Instant>,
     agent_key: String,
     session: Arc<dyn HarnessSession>,
     agent_home: PathBuf,
@@ -387,6 +419,7 @@ struct StartingExecution {
 }
 
 struct Inner {
+    liveness: ExecutionLiveness,
     output_records: OutputRecordPolicy,
     capability_cli: Option<PathBuf>,
     config: ComputerConfig,

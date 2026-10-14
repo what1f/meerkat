@@ -642,6 +642,43 @@ impl ComputerBroker {
         Ok(())
     }
 
+    /// Management cancellation retains the pending attempt until the Computer
+    /// reports its terminal outcome after native process cleanup.
+    pub async fn request_cancellation(&self, execution_id: i64) -> Result<(), RuntimeError> {
+        let destination = self
+            .inner
+            .pending
+            .lock()
+            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?
+            .get(&execution_id)
+            .map(|pending| {
+                (
+                    pending.computer_id.clone(),
+                    pending.instance_id.clone(),
+                    pending.attempt,
+                )
+            });
+        if let Some((computer, instance, attempt)) = destination {
+            self.send_to(
+                &computer,
+                &instance,
+                RuntimeFrame {
+                    frame: Some(runtime_frame::Frame::CancelExecution(
+                        lankide_protocol::CancelExecution {
+                            execution: Some(ExecutionRef {
+                                execution_id,
+                                attempt: attempt as u32,
+                            }),
+                            reason: "Execution cancelled".into(),
+                        },
+                    )),
+                },
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
     pub fn cancel_execution(&self, execution_id: i64, reason: &str) -> Result<(), RuntimeError> {
         let pending = self
             .inner

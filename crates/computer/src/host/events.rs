@@ -29,12 +29,26 @@ pub(super) async fn run_events(
     agent_home: PathBuf,
     session: Arc<dyn HarnessSession>,
     mut stream: lankide_harness::AgentEventStream,
+    mut terminated: tokio::sync::watch::Receiver<Option<AgentEventKind>>,
 ) {
     let mut last_sequence = 0_u64;
     let mut stream_sequence = 0_u64;
     let mut corrections = 0_usize;
     let mut terminal_event = None;
-    while let Some(item) = stream.next().await {
+    loop {
+        let item = tokio::select! {
+            biased;
+            changed = terminated.changed() => {
+                if changed.is_ok() {
+                    terminal_event = terminated.borrow().clone().map(|kind| synthetic_event(last_sequence + 1, kind));
+                }
+                break;
+            }
+            item = stream.next() => match item { Some(item) => item, None => break },
+        };
+        if let Some(active) = inner.active.lock().await.get(&key) {
+            active.progress.send_replace(tokio::time::Instant::now());
+        }
         match item {
             Ok(mut event) if event.sequence > stream_sequence => {
                 stream_sequence = event.sequence;
@@ -166,6 +180,24 @@ pub(super) async fn run_events(
                 ));
                 break;
             }
+        }
+    }
+    if inner
+        .active
+        .lock()
+        .await
+        .get(&key)
+        .is_some_and(|active| active.cancel.borrow().is_some())
+    {
+        if terminated.borrow().is_none() {
+            let _ = terminated.changed().await;
+        }
+        if let Some(kind) = terminated.borrow().clone() {
+            let sequence = terminal_event
+                .as_ref()
+                .map(|event| event.sequence)
+                .unwrap_or(last_sequence + 1);
+            terminal_event = Some(synthetic_event(sequence, kind));
         }
     }
     let terminal_event = terminal_event.unwrap_or_else(|| {

@@ -37,3 +37,11 @@ prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
 status = "implemented"
+
+[package.metadata.lankide.e2e-additional.system-liveness]
+command = "cargo test -p lankide-system-e2e --test execution_liveness_e2e"
+scenario = "Verify S6.1-S6.4 through real daemons: idle timeout releases the next queued message, progress extends idle but not the total budget, timeout kills the Harness and its child, and management cancellation stops the process tree within grace plus one second."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"

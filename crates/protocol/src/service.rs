@@ -301,6 +301,18 @@ where
         ))
     }
 
+    async fn cancel_attempt(
+        &self,
+        request: Request<CancelAttemptRequest>,
+    ) -> Result<Response<CancelAttemptResponse>, Status> {
+        validate_request_id(&request.get_ref().request_id)?;
+        lankide_core::ExecutionId::new(request.get_ref().execution_id)
+            .map_err(|_| Status::invalid_argument("invalid_execution_id"))?;
+        Ok(Response::new(
+            self.peer.cancel_attempt(request.into_inner()).await?,
+        ))
+    }
+
     async fn get_execution_details(
         &self,
         request: Request<GetExecutionDetailsRequest>,

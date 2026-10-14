@@ -24,6 +24,18 @@ use lifecycle::{
 };
 
 impl RuntimeApplication {
+    pub async fn cancel_attempt(
+        &self,
+        request: lankide_protocol::CancelAttemptRequest,
+    ) -> Result<lankide_protocol::CancelAttemptResponse, RuntimeError> {
+        // Validate ownership/existence through storage before forwarding control.
+        self.runtime()?.storage().execution(request.execution_id)?;
+        self.computer_broker()
+            .request_cancellation(request.execution_id)
+            .await?;
+        Ok(lankide_protocol::CancelAttemptResponse {})
+    }
+
     pub async fn get_execution_details(
         &self,
         request: lankide_protocol::GetExecutionDetailsRequest,

@@ -3630,6 +3630,7 @@ dependencies = [
  "lankide-harness",
  "lankide-protocol",
  "prost",
+ "rustix 1.1.4",
  "serde",
  "serde_json",
  "sha2 0.11.0",

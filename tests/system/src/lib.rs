@@ -44,6 +44,7 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 pub struct RigConfig {
     pub harness_executable: PathBuf,
     pub timeout: Duration,
+    pub execution_liveness: lankide_computer::ExecutionLiveness,
 }
 impl Default for RigConfig {
     fn default() -> Self {
@@ -56,6 +57,7 @@ impl Default for RigConfig {
                 .expect("target directory")
                 .join("system-harness"),
             timeout: Duration::from_secs(15),
+            execution_liveness: Default::default(),
         }
     }
 }
@@ -199,6 +201,10 @@ impl SystemRig {
         Ok(())
     }
     fn start_computer(&mut self) -> Result<()> {
+        std::fs::write(
+            self.computer_home.path().join("computer.json"),
+            serde_json::to_vec(&json!({"execution_liveness": self.config.execution_liveness}))?,
+        )?;
         let mut config = DaemonConfig::for_home(self.computer_home.path())?;
         config.paths.prepare()?;
         config.paths.runtime_socket = self.paths.socket.clone();
@@ -244,6 +250,20 @@ impl SystemRig {
     ) -> Result<lankide_client::ExecutionDetails> {
         Ok(self.client.get_execution_details(execution_id).await?)
     }
+    pub async fn cancel_execution(&self, execution_id: i64) -> Result<()> {
+        self.client.cancel_execution(execution_id).await?;
+        Ok(())
+    }
+
+    pub fn harness_pids(&self) -> Result<Vec<u32>> {
+        Ok(
+            std::fs::read_to_string(self.home.path().join("harness-pids.tsv"))?
+                .lines()
+                .filter_map(|line| line.strip_prefix("spawned\t")?.parse().ok())
+                .collect(),
+        )
+    }
+
     pub async fn restart_computer(&mut self) -> Result<()> {
         if let Some(mut computer) = self.computer.take() {
             computer.stop()?;
@@ -555,6 +575,32 @@ pub struct Execution {
     pub trigger_messages: Vec<String>,
 }
 impl Agent<'_> {
+    pub async fn child_pid(&self) -> Result<u32> {
+        let path = lankide_computer::agent_directory(
+            &self.rig.computer_home.path().join("workspaces"),
+            &self.workspace,
+            &self.id,
+        )?
+        .join("system-child.pid");
+        timeout(self.rig.config.timeout, async {
+            loop {
+                if let Ok(pid) = std::fs::read_to_string(&path)
+                    && let Ok(pid) = pid.parse()
+                {
+                    return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(pid);
+                }
+                self.rig.check_daemons()?;
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .map_err(|_| "child did not start")?
+    }
+
+    pub async fn progress_sequence(&self) -> Result<i64> {
+        Ok(self.rig.database()?.query_row("SELECT coalesce(max(v.last_event_sequence),0) FROM execution_attempts v JOIN executions e USING(execution_id) WHERE e.workspace_id=?1 AND e.agent_id=?2", params![self.workspace, self.id], |row| row.get(0))?)
+    }
+
     pub async fn release_run(&self) -> Result<()> {
         std::fs::write(
             self.rig

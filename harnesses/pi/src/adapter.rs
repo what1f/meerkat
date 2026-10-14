@@ -140,6 +140,11 @@ impl PiHarness {
             command.args(["--session-id", session_id]);
         }
 
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
         let mut child = command.spawn().map_err(|error| {
             harness_error(
                 HarnessErrorCode::SpawnFailed,
@@ -714,6 +719,15 @@ impl Drop for Inner {
 }
 
 impl HarnessSession for PiSession {
+    fn process_group_id(&self) -> Option<u32> {
+        self.inner
+            .child
+            .lock()
+            .expect("child lock")
+            .as_ref()
+            .map(Child::id)
+    }
+
     fn entry(&self) -> SessionEntry {
         self.inner
             .entry

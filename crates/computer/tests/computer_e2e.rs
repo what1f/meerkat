@@ -350,7 +350,11 @@ async fn computer_e2e() {
             multiplier: 2,
         },
     })
-    .with_capability_cli(&capability_cli);
+    .with_capability_cli(&capability_cli)
+    .with_execution_liveness(lankide_computer::ExecutionLiveness {
+        cancel_grace: Duration::from_millis(150),
+        ..Default::default()
+    });
     for id in ["pi", "codex"] {
         let factory = ProcessHarnessFactory::new(
             NativeHarnessInfo::new(id, id).expect("harness info"),
@@ -613,8 +617,30 @@ async fn computer_e2e() {
         wait_delivery(&mut incoming_rx, 3).await;
         peer.send(cancel(3)).await;
         peer.send(cancel(5)).await;
-        collect_remaining_terminal(&peer, &mut incoming_rx, 3).await;
-        collect_remaining_terminal(&peer, &mut incoming_rx, 5).await;
+        // Parallel cancellation may publish either terminal first. Observe and
+        // acknowledge both without discarding the other attempt's outcome.
+        timeout(STEP, async {
+            let mut stopped = HashSet::new();
+            while stopped.len() < 2 {
+                let frame = incoming_rx.recv().await.expect("computer stream");
+                if let Some(computer_frame::Frame::ExecutionEvent(event)) = frame.frame {
+                    let id = event.execution.as_ref().expect("execution").execution_id;
+                    ack(&peer, &event).await;
+                    if [3, 5].contains(&id)
+                        && matches!(
+                            ExecutionEventKind::try_from(event.kind).unwrap(),
+                            ExecutionEventKind::Completed
+                                | ExecutionEventKind::Failed
+                                | ExecutionEventKind::Cancelled
+                        )
+                    {
+                        stopped.insert(id);
+                    }
+                }
+            }
+        })
+        .await
+        .expect("both cancelled attempts must stop");
 
         peer.send(runtime_assign(
             6,

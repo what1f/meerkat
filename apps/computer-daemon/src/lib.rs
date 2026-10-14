@@ -53,6 +53,7 @@ impl ComputerDaemonPaths {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DaemonConfig {
+    pub execution_liveness: lankide_computer::ExecutionLiveness,
     pub paths: ComputerDaemonPaths,
     pub instance_id: String,
     pub pi_cli: PathBuf,
@@ -64,6 +65,9 @@ pub struct DaemonConfig {
 impl DaemonConfig {
     pub fn local_default() -> Result<Self, AppError> {
         Ok(Self {
+            execution_liveness: read_execution_liveness(
+                &ComputerDaemonPaths::local_default()?.home,
+            )?,
             paths: ComputerDaemonPaths::local_default()?,
             instance_id: unique_run_id(),
             pi_cli: PathBuf::from("pi"),
@@ -74,8 +78,10 @@ impl DaemonConfig {
     }
 
     pub fn for_home(home: impl Into<PathBuf>) -> Result<Self, AppError> {
+        let paths = ComputerDaemonPaths::for_home(home)?;
         Ok(Self {
-            paths: ComputerDaemonPaths::for_home(home)?,
+            execution_liveness: read_execution_liveness(&paths.home)?,
+            paths,
             instance_id: unique_run_id(),
             pi_cli: PathBuf::from("pi"),
             codex_cli: PathBuf::from("codex"),
@@ -90,6 +96,22 @@ impl DaemonConfig {
         self.codex_cli = resolve_executable(&self.codex_cli, &path);
         self.claude_code_cli = resolve_executable(&self.claude_code_cli, &path);
         self.environment.insert("PATH".into(), path);
+    }
+}
+
+// Local Computer settings; absent fields retain production defaults.
+fn read_execution_liveness(
+    home: &std::path::Path,
+) -> Result<lankide_computer::ExecutionLiveness, AppError> {
+    #[derive(serde::Deserialize, Default)]
+    struct Settings {
+        #[serde(default)]
+        execution_liveness: lankide_computer::ExecutionLiveness,
+    }
+    match std::fs::read(home.join("computer.json")) {
+        Ok(bytes) => Ok(serde_json::from_slice::<Settings>(&bytes)?.execution_liveness),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Default::default()),
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -146,7 +168,8 @@ pub async fn run_with_harnesses(
         instance_id: config.instance_id.clone(),
         workspace_root: config.paths.workspaces.display().to_string(),
         reconnect: ReconnectPolicy::default(),
-    });
+    })
+    .with_execution_liveness(config.execution_liveness);
     for registration in registrations {
         computer
             .register_harness(registration)

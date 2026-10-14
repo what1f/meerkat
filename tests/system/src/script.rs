@@ -23,6 +23,9 @@ pub enum Script {
         text: String,
     },
     Hang,
+    HangOnce {
+        text: String,
+    },
     Progress {
         duration_ms: u64,
         interval_ms: u64,

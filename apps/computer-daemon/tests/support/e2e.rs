@@ -593,6 +593,10 @@ fn build_computer(
             maximum: Duration::from_millis(80),
             multiplier: 2,
         },
+    })
+    .with_execution_liveness(lankide_computer::ExecutionLiveness {
+        cancel_grace: Duration::from_millis(150),
+        ..Default::default()
     });
     for id in ["pi", "codex", "claude_code"] {
         let factory = ProcessHarnessFactory::new(

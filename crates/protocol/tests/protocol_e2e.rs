@@ -1139,13 +1139,17 @@ async fn reject_event_sequence_regression(path: &std::path::Path) {
 }
 
 async fn wait_for_socket(path: &std::path::Path) {
-    for _ in 0..100 {
-        if path.exists() {
-            return;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            // A socket pathname can exist before the listener is ready.
+            if connect_uds(path, CLIENT_LIMIT).await.is_ok() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    panic!("UDS was not created: {}", path.display());
+    })
+    .await
+    .unwrap_or_else(|_| panic!("UDS did not accept connections: {}", path.display()));
 }
 
 fn hello_frame() -> ComputerFrame {

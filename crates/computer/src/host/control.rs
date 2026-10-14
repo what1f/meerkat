@@ -9,7 +9,6 @@ use lankide_protocol::{
 };
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::time::Duration;
 use tokio::sync::mpsc;
 
 pub(super) fn prepare_tool_arguments(
@@ -102,12 +101,12 @@ pub(super) async fn handle_cancel(inner: &Inner, execution: Option<ExecutionRef>
     {
         let _ = starting.cancel.send(Some(reason.clone()));
     }
-    let session = inner.active.lock().await.get_mut(&key).map(|active| {
+    let cancel = inner.active.lock().await.get_mut(&key).map(|active| {
         active.accepting_tool_results = false;
-        active.session.clone()
+        active.cancel.clone()
     });
-    if let Some(session) = session {
-        let _ = tokio::time::timeout(Duration::from_secs(2), session.cancel(reason)).await;
+    if let Some(cancel) = cancel {
+        let _ = cancel.send(Some(reason));
     }
 }
 

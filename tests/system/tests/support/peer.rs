@@ -75,6 +75,13 @@ fn main() {
                         continue;
                     }
                     Script::Hang => continue,
+                    Script::HangOnce { text } => {
+                        if !std::path::Path::new("system-hung-once").exists() {
+                            std::fs::write("system-hung-once", b"hung").expect("hang marker");
+                            continue;
+                        }
+                        (text, 0)
+                    }
                     Script::Progress {
                         duration_ms,
                         interval_ms,
@@ -101,7 +108,8 @@ fn main() {
                             .expect("spawn child");
                         std::fs::write("system-child.pid", child.id().to_string())
                             .expect("child journal");
-                        (text, *delay_ms)
+                        let _ = (text, delay_ms);
+                        continue;
                     }
                     Script::Capability { arguments, text } => {
                         runtime
@@ -161,6 +169,11 @@ fn main() {
                     json!({"kind":"completed","final_output":"OK"}),
                 );
             }
+            Some("cancel")
+                if matches!(
+                    script,
+                    Script::Hang | Script::HangOnce { .. } | Script::SpawnChild { .. }
+                ) => {}
             Some("cancel") => event(
                 &mut sequence,
                 json!({"kind":"cancelled","reason":command["reason"]}),

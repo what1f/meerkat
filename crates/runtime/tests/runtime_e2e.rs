@@ -1757,6 +1757,25 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     }
     state.emit(follow_chat).await?;
     let follow_storage = Storage::open(DatabaseConfig::new(db)).map_err(err)?;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if follow_storage
+                .find_message(
+                    &workspace_id,
+                    &channel_id,
+                    "application-steer-chat",
+                    "application-follow-chat",
+                )
+                .map_err(err)?
+                .is_some()
+            {
+                return Ok::<_, String>(());
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .map_err(|_| "follow message acceptance timed out")??;
     follow_storage
         .set_chat_attention(
             &workspace_id,
@@ -1779,12 +1798,31 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         ))
         .await?;
     let verification_storage = Storage::open(DatabaseConfig::new(db)).map_err(err)?;
-    let waiting_message = verification_storage
-        .inbox_items(&workspace_id, &agent_id)
-        .map_err(err)?
-        .into_iter()
-        .max_by_key(|item| item.inbox_item_id)
-        .ok_or("waiting Inbox item missing")?;
+    let waiting_message = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(message_id) = verification_storage
+                .find_message(
+                    &workspace_id,
+                    &channel_id,
+                    "application-steer-chat",
+                    "application-steer-message",
+                )
+                .map_err(err)?
+            {
+                if let Some(item) = verification_storage
+                    .inbox_items(&workspace_id, &agent_id)
+                    .map_err(err)?
+                    .into_iter()
+                    .find(|item| item.source_id == message_id)
+                {
+                    return Ok::<_, String>(item);
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .map_err(|_| "queued message acceptance timed out")??;
     ensure(
         waiting_message.state == InboxState::Pending
             && waiting_message.claimed_execution_id.is_none(),

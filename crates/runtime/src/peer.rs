@@ -392,6 +392,16 @@ impl RuntimePeer for RuntimePeerAdapter {
     async fn list_agents(&self, request: ListAgentsRequest) -> Result<ListAgentsResponse, Status> {
         self.application.list_agents(request).await.map_err(status)
     }
+    async fn cancel_attempt(
+        &self,
+        request: lankide_protocol::CancelAttemptRequest,
+    ) -> Result<lankide_protocol::CancelAttemptResponse, Status> {
+        self.application
+            .cancel_attempt(request)
+            .await
+            .map_err(status)
+    }
+
     async fn get_execution_details(
         &self,
         request: GetExecutionDetailsRequest,

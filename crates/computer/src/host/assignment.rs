@@ -19,7 +19,6 @@ use prost::Message;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::watch;
 
 pub(super) async fn handle_delete_agent_files(
@@ -35,27 +34,20 @@ pub(super) async fn handle_delete_agent_files(
         if let Some(starting) = inner.starting.lock().await.get(&key) {
             let _ = starting.cancel.send(Some("Agent was deleted".into()));
         }
-        let sessions = inner
+        let cancellations = inner
             .active
             .lock()
             .await
-            .iter()
-            .filter(|(_, active)| active.agent_key == key)
-            .map(|(execution, active)| (execution.clone(), active.session.clone()))
+            .values()
+            .filter(|active| active.agent_key == key)
+            .map(|active| {
+                active.cancel.send_replace(Some("Agent was deleted".into()));
+                active.terminated.clone()
+            })
             .collect::<Vec<_>>();
-        for (_, session) in &sessions {
-            let _ = tokio::time::timeout(
-                Duration::from_secs(2),
-                session.cancel("Agent was deleted".into()),
-            )
-            .await;
-            let _ = session.close().await;
+        for terminated in cancellations {
+            super::liveness::wait_for_stop(terminated, inner.liveness.cancel_grace).await;
         }
-        let mut active = inner.active.lock().await;
-        for (execution, _) in sessions {
-            active.remove(&execution);
-        }
-        drop(active);
         let directory = agent_directory(&inner.root, &agent.workspace_id, &agent.agent_id)?;
         match std::fs::remove_dir_all(&directory) {
             Ok(()) => Ok(()),
@@ -437,9 +429,16 @@ async fn prepare_assignment(
         );
         state.save(&inner.state_path)?;
     }
+    let (cancel_tx, cancel_rx) = watch::channel(None);
+    let started = tokio::time::Instant::now();
+    let (progress_tx, progress_rx) = watch::channel(started);
+    let (terminated_tx, terminated_rx) = watch::channel(None);
     inner.active.lock().await.insert(
         key.clone(),
         ActiveExecution {
+            terminated: terminated_rx.clone(),
+            cancel: cancel_tx.clone(),
+            progress: progress_tx,
             agent_key,
             session: session.clone(),
             agent_home: agent_home.clone(),
@@ -448,6 +447,15 @@ async fn prepare_assignment(
             last_event_sequence: 0,
         },
     );
+    tokio::spawn(super::liveness::monitor(
+        inner.liveness.clone(),
+        started,
+        session.clone(),
+        progress_rx,
+        cancel_rx,
+        cancel_tx,
+        terminated_tx,
+    ));
     send_frame(
         &inner,
         ComputerFrame {
@@ -483,6 +491,7 @@ async fn prepare_assignment(
         agent_home,
         session,
         stream,
+        terminated_rx,
     ));
     Ok(())
 }

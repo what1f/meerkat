@@ -15,6 +15,7 @@ service RuntimeProtocol {
   rpc SetWorkspaceState(SetWorkspaceStateRequest) returns (Workspace);
   rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
   rpc GetAgent(GetAgentRequest) returns (Agent);
+  rpc CancelAttempt(CancelAttemptRequest) returns (CancelAttemptResponse);
   rpc GetExecutionDetails(GetExecutionDetailsRequest) returns (ExecutionDetails);
   rpc GetAgentAvatar(GetAgentAvatarRequest) returns (GetAgentAvatarResponse);
   rpc CreateAgent(CreateAgentRequest) returns (Agent);
@@ -211,6 +212,8 @@ message AttemptFailure {
   string detail = 5;
 }
 
+message CancelAttemptRequest { string request_id = 1; int64 execution_id = 2; }
+message CancelAttemptResponse {}
 message GetExecutionDetailsRequest { string request_id = 1; int64 execution_id = 2; }
 message ExecutionAttemptDetails {
   uint32 attempt = 1;

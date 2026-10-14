@@ -299,6 +299,11 @@ fn spawn_peer(
     if let Some(path) = working_directory {
         command.current_dir(path);
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
     let mut child = command.spawn().map_err(|error| {
         HarnessError::new(
             HarnessErrorCode::SpawnFailed,
@@ -480,6 +485,15 @@ impl Drop for ProcessSessionInner {
 }
 
 impl HarnessSession for ProcessHarnessSession {
+    fn process_group_id(&self) -> Option<u32> {
+        self.inner
+            .child
+            .lock()
+            .expect("child lock")
+            .as_ref()
+            .map(Child::id)
+    }
+
     fn entry(&self) -> SessionEntry {
         self.inner
             .entry
@@ -783,6 +797,8 @@ fn record_pid(path: Option<&Path>, action: &str, pid: u32) {
         return;
     };
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(file, "{action}\t{pid}");
+        // One append per record: independent sessions can reap concurrently.
+        let record = format!("{action}\t{pid}\n");
+        let _ = file.write_all(record.as_bytes());
     }
 }

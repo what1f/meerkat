@@ -395,6 +395,12 @@ pub trait HarnessFactory: Send + Sync {
 
 pub trait HarnessSession: Send + Sync {
     fn entry(&self) -> SessionEntry;
+    /// The isolated native process group, including tools spawned by the CLI.
+    /// Capture this before cancellation: an adapter may reap the parent early.
+    fn process_group_id(&self) -> Option<u32> {
+        None
+    }
+
     fn execute<'a>(&'a self, request: ExecuteRequest) -> HarnessFuture<'a, AgentEventStream>;
     fn steer<'a>(&'a self, delivery_id: String, input: String) -> HarnessFuture<'a, SteerReceipt>;
     fn tool_result<'a>(

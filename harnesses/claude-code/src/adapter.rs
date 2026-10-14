@@ -318,6 +318,15 @@ impl SessionPaths {
 }
 
 impl HarnessSession for ClaudeCodeSession {
+    fn process_group_id(&self) -> Option<u32> {
+        self.inner
+            .child
+            .lock()
+            .expect("child lock")
+            .as_ref()
+            .map(Child::id)
+    }
+
     fn entry(&self) -> SessionEntry {
         self.inner.entry.lock().expect("entry lock").clone()
     }
@@ -565,6 +574,11 @@ impl Inner {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::from(stderr));
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
         let mut child = command.spawn().map_err(|error| {
             harness_error(
                 HarnessErrorCode::SpawnFailed,
