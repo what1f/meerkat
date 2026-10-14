@@ -210,3 +210,64 @@ async fn a_reply_with_an_attachment_reaches_the_chat_with_the_file() {
         panic!("scenario task failed: {error}");
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn s2_1_direct_messages_and_reactions_identify_the_receiving_agent() {
+    let server = FeishuServer::start();
+    let services = Services::new("feishu");
+    let alpha = AgentId::new("alpha").unwrap();
+    let beta = AgentId::new("beta").unwrap();
+    services.agent(&alpha, "app_secret", "alpha-secret");
+    services.agent(&beta, "app_secret", "beta-secret");
+    let host = ProviderHost::new(
+        FeishuProvider::new(),
+        services.workspace.clone(),
+        json!({"api_endpoint":format!("{}/",server.http.endpoint),"task_system_enabled":false}),
+        services.host(),
+    )
+    .unwrap();
+    let host = std::sync::Arc::new(host);
+    let scenario_host = host.clone();
+    let server = std::sync::Arc::new(server);
+    let scenario_server = server.clone();
+    let outcome = tokio::spawn(async move {
+        let host = scenario_host;
+        let server = scenario_server;
+        host.init().await.unwrap();
+        for (agent, app) in [(&alpha, "cli_alpha"), (&beta, "cli_beta")] {
+            host.create_agent(agent.clone(), agent_spec(json!({"app_id":app}))).await.unwrap();
+        }
+        server.deliver("cli_beta", callback("dm-beta", json!({"message_id":"om_dm_beta","chat_id":"oc_dm_beta","chat_type":"p2p","create_time":"1000",
+            "message_type":"text","content":json!({"text":"only beta"}).to_string()})));
+        let (event, ack) = tokio::time::timeout(Duration::from_secs(30), host.next_event()).await.unwrap().unwrap().into_parts();
+        assert_eq!(event.receiving_agent_id, Some(beta.clone()));
+        assert_ne!(event.receiving_agent_id, Some(alpha.clone()));
+        assert_eq!(event.channel_id.as_str(), "private_chat");
+        assert_eq!(event.provider_chat_id, "oc_dm_beta");
+        let ProviderEventKind::Message(message) = event.kind else { panic!("expected DM") };
+        assert_eq!(message.content, "only beta");
+        ack.accept();
+        server.deliver("cli_beta", json!({"schema":"2.0","header":{"event_id":"dm-reaction","event_type":"im.message.reaction.created_v1","app_id":"cli_beta","tenant_key":"tenant"},
+            "event":{"message_id":"om_dm_beta","operator_type":"user","user_id":{"open_id":"ou_alice","union_id":"on_alice"},"reaction_type":{"emoji_type":"THUMBSUP"},"action_time":"2000"}}));
+        let (event, ack) = tokio::time::timeout(Duration::from_secs(30), host.next_event()).await.unwrap().unwrap().into_parts();
+        assert_eq!(event.receiving_agent_id, Some(beta.clone()));
+        assert_ne!(event.receiving_agent_id, Some(alpha));
+        assert_eq!(event.channel_id.as_str(), "private_chat");
+        assert_eq!(event.provider_chat_id, "oc_dm_beta");
+        let ProviderEventKind::Reaction(reaction) = event.kind else { panic!("expected DM reaction") };
+        assert_eq!(reaction.target_provider_message_id, "om_dm_beta");
+        ack.accept();
+        tokio::time::timeout(Duration::from_secs(30), async {
+            while server.acknowledgements() < 2 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }).await.expect("DM acknowledgements did not reach server");
+    }).await;
+    host.shutdown().await.unwrap();
+    if let Err(error) = outcome {
+        if error.is_panic() {
+            std::panic::resume_unwind(error.into_panic());
+        }
+        panic!("scenario task failed: {error}");
+    }
+}

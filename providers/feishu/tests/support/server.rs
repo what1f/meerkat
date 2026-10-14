@@ -60,6 +60,7 @@ struct State {
     next_message: usize,
     deliveries: Vec<Delivery>,
     parents: BTreeMap<String, String>,
+    messages: BTreeMap<(String, String), Value>,
 }
 pub struct FeishuServer {
     pub http: Server,
@@ -208,12 +209,25 @@ impl FeishuServer {
                     json!({"code":0,"tenant_access_token":format!("tenant-{}", request.json()["app_id"].as_str().unwrap()),"expire":7200}),
                 );
             }
-            assert_eq!(request.header("authorization"), "Bearer tenant-cli_beta");
+            let app = request.header("authorization");
+            let app = app.strip_prefix("Bearer tenant-").unwrap();
+            assert!(matches!(app, "cli_alpha" | "cli_beta"));
             let data = match (request.method.as_str(), path) {
                 ("GET", "/open-apis/bot/v3/info") => {
                     return Response::json(
-                        json!({"code":0,"bot":{"open_id":"ou_beta","app_name":"Bot B"}}),
+                        json!({"code":0,"bot":{"open_id":if app == "cli_alpha" { "ou_alpha" } else { "ou_beta" },"app_name":app}}),
                     );
+                }
+                ("GET", path)
+                    if path.starts_with("/open-apis/im/v1/messages/")
+                        && !path.contains("/resources/") =>
+                {
+                    let id = path.trim_start_matches("/open-apis/im/v1/messages/");
+                    state
+                        .messages
+                        .get(&(app.into(), id.into()))
+                        .expect("target belongs to receiving App")
+                        .clone()
                 }
                 ("GET", "/open-apis/contact/v3/users/ou_alice") => {
                     json!({"user":{"open_id":"ou_alice","union_id":"on_alice","name":"Alice"}})
@@ -270,16 +284,15 @@ impl FeishuServer {
     /// Deliver to an application account; direct-message callbacks use the same entry point.
     pub fn deliver(&self, app_id: &str, event: Value) {
         let mut state = self.state.lock().unwrap();
-        state.parents.insert(
-            event["event"]["message"]["message_id"]
-                .as_str()
-                .unwrap()
-                .into(),
-            event["event"]["message"]["chat_id"]
-                .as_str()
-                .unwrap()
-                .into(),
-        );
+        if let Some(message) = event["event"].get("message") {
+            let id = message["message_id"].as_str().unwrap();
+            state
+                .parents
+                .insert(id.into(), message["chat_id"].as_str().unwrap().into());
+            state
+                .messages
+                .insert((app_id.into(), id.into()), message.clone());
+        }
         state
             .events
             .entry(app_id.into())

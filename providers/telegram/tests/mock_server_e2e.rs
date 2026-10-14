@@ -230,3 +230,84 @@ async fn a_reply_with_an_attachment_reaches_the_chat_with_the_file() {
         panic!("scenario task failed: {error}");
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn s2_1_direct_messages_and_reactions_identify_the_receiving_agent() {
+    let server = TelegramServer::start();
+    let services = Services::new("telegram");
+    let alpha = AgentId::new("alpha").unwrap();
+    let beta = AgentId::new("beta").unwrap();
+    services.agent(&alpha, "bot_token", "201:local");
+    services.agent(&beta, "bot_token", "200:local");
+    services
+        .db
+        .put_secret(
+            &services.workspace,
+            "manager_bot_token",
+            lankide_storage::SecretValue::new("100:manager"),
+            1,
+        )
+        .unwrap();
+    let config =
+        json!({"api_endpoint":format!("{}/",server.http.endpoint),"poll_timeout_seconds":1});
+    let host = ProviderHost::new(
+        TelegramProvider::new(),
+        services.workspace.clone(),
+        config.clone(),
+        services.host(),
+    )
+    .unwrap();
+    host.create_workspace(WorkspaceSpec {
+        name: "Team".into(),
+        cover: None,
+        rules: String::new(),
+        provider_config: config,
+    })
+    .await
+    .unwrap();
+    let host = std::sync::Arc::new(host);
+    let scenario_host = host.clone();
+    let server = std::sync::Arc::new(server);
+    let scenario_server = server.clone();
+    let outcome = tokio::spawn(async move {
+        let host = scenario_host;
+        let server = scenario_server;
+        host.init().await.unwrap();
+        for (agent, username) in [(&alpha, "alpha_bot"), (&beta, "beta_bot")] {
+            host.create_agent(agent.clone(), agent_spec(json!({"bot_username":username}))).await.unwrap();
+        }
+        let mut chats = vec![];
+        // The same person and native message/update IDs are valid in both bot accounts.
+        for (agent, token, text) in [(&beta, "200:local", "only beta"), (&alpha, "201:local", "only alpha")] {
+            server.deliver(token, json!({"update_id":1,"message":{"message_id":8,"date":1,
+                "chat":{"id":300,"type":"private"},"from":{"id":300,"is_bot":false,"first_name":"Alice"},"text":text}}));
+            let (event, ack) = tokio::time::timeout(Duration::from_secs(30), host.next_event()).await.unwrap().unwrap().into_parts();
+            assert_eq!(event.receiving_agent_id, Some(agent.clone()));
+            assert_eq!(event.channel_id.as_str(), "private_chat");
+            chats.push(event.provider_chat_id);
+            let ProviderEventKind::Message(message) = event.kind else { panic!("expected DM") };
+            assert_eq!(message.content, text);
+            ack.accept();
+        }
+        assert_eq!(chats, ["300", "300"]);
+        for (agent, token) in [(&beta, "200:local"), (&alpha, "201:local")] {
+            server.deliver(token, json!({"update_id":2,"message_reaction":{"message_id":8,"date":2,
+                "chat":{"id":300,"type":"private"},"user":{"id":300,"is_bot":false,"first_name":"Alice"},
+                "old_reaction":[],"new_reaction":[{"type":"emoji","emoji":"👍"}]}}));
+            let (event, ack) = tokio::time::timeout(Duration::from_secs(30), host.next_event()).await.unwrap().unwrap().into_parts();
+            assert_eq!(event.receiving_agent_id, Some(agent.clone()));
+            assert_eq!(event.channel_id.as_str(), "private_chat");
+            assert_eq!(event.provider_chat_id, "300");
+            let ProviderEventKind::Reaction(reaction) = event.kind else { panic!("expected DM reaction") };
+            assert_eq!(reaction.target_provider_message_id, "8");
+            ack.accept();
+        }
+    }).await;
+    host.shutdown().await.unwrap();
+    if let Err(error) = outcome {
+        if error.is_panic() {
+            std::panic::resume_unwind(error.into_panic());
+        }
+        panic!("scenario task failed: {error}");
+    }
+}
