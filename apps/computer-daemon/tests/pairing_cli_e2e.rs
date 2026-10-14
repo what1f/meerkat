@@ -1,5 +1,5 @@
 //! Pair a remote private Computer home through the shipped command.
-use lankide_protocol::{CatalogRequest, DEFAULT_MAX_MESSAGE_BYTES, connect_uds};
+use lankide_protocol::{CatalogRequest, DEFAULT_MAX_MESSAGE_BYTES};
 use lankide_runtime_daemon::{RuntimePaths, ShutdownReason, run_daemon};
 use std::{os::unix::fs::PermissionsExt, time::Duration};
 use tokio::{sync::oneshot, time::timeout};
@@ -21,9 +21,19 @@ async fn pair_command_registers_a_device_and_stores_private_credentials()
         },
     ));
     let scenario = async {
-        let mut management = timeout(Duration::from_secs(5), async {
+        let management = timeout(Duration::from_secs(5), async {
             loop {
-                if let Ok(client) = connect_uds(&paths.socket, DEFAULT_MAX_MESSAGE_BYTES).await {
+                let client = lankide_client::http::HttpManagementTransport::local(
+                    &paths.socket,
+                    DEFAULT_MAX_MESSAGE_BYTES,
+                );
+                if client
+                    .list_workspaces(lankide_protocol::ListWorkspacesRequest {
+                        request_id: "pair-ready".into(),
+                    })
+                    .await
+                    .is_ok()
+                {
                     break client;
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;

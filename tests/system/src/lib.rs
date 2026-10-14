@@ -1015,7 +1015,7 @@ impl Agent<'_> {
         .map_err(|_| "Agent state wait timed out")?
     }
     pub async fn group_attention(&self, mode: lankide_protocol::AttentionMode) -> Result<()> {
-        let mut client = lankide_protocol::connect_uds_lazy(
+        let client = lankide_client::http::HttpManagementTransport::local(
             &self.rig.paths.socket,
             lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES,
         );

@@ -670,44 +670,64 @@ impl wire::RuntimePeer for Peer {
     }
 }
 
+#[tonic::async_trait]
+impl wire::ComputerPeer for Peer {
+    async fn connect_computer(
+        &self,
+        _: wire::ComputerHello,
+        _: wire::ComputerFrameStream,
+    ) -> Result<wire::RuntimeFrameStream, Status> {
+        Err(Status::unimplemented("unused"))
+    }
+}
+
 struct Fixture {
     _root: TempDir,
     socket: std::path::PathBuf,
     peer: Peer,
     stop: Option<oneshot::Sender<()>>,
-    task: tokio::task::JoinHandle<Result<(), wire::TransportError>>,
+    task: tokio::task::JoinHandle<Result<(), wire::link::LinkError>>,
 }
 impl Fixture {
     async fn start(root: TempDir) -> Result<Self, String> {
         let socket = root.path().join("runtime.sock");
         let peer = Peer::default();
         let (tx, rx) = oneshot::channel();
-        let server_socket = socket.clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|e| e.to_string())?;
+        let owner = wire::management::OwnerCredential::load_or_create(root.path())
+            .map_err(|e| e.to_string())?;
+        std::fs::write(
+            root.path().join(wire::management::URL_FILE),
+            format!(
+                "http://{}",
+                listener.local_addr().map_err(|e| e.to_string())?
+            ),
+        )
+        .map_err(|e| e.to_string())?;
         let server_peer = peer.clone();
         let task = tokio::spawn(async move {
-            wire::serve_uds(
-                server_socket,
+            wire::resources::serve_with_management(
+                listener,
+                "pairing-only".into(),
+                owner,
                 server_peer,
                 wire::TransportConfig::default(),
+                Default::default(),
                 async move {
                     let _ = rx.await;
                 },
             )
             .await
         });
-        for _ in 0..100 {
-            if socket.exists() {
-                return Ok(Self {
-                    _root: root,
-                    socket,
-                    peer,
-                    stop: Some(tx),
-                    task,
-                });
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(2)).await
-        }
-        Err("UDS did not become ready".into())
+        Ok(Self {
+            _root: root,
+            socket,
+            peer,
+            stop: Some(tx),
+            task,
+        })
     }
     async fn stop(mut self) -> Result<(), String> {
         drop(self.stop.take());
@@ -1006,6 +1026,21 @@ async fn runtime_scenario() -> Result<(), String> {
         "initial unavailable Runtime should be reported",
     )?;
     let fixture = Fixture::start(root).await?;
+    // A supported full-size upload must still fit after JSON/base64 encoding.
+    need(
+        client
+            .upload_workspace_image(
+                "image_team",
+                "cover.png",
+                "image/png",
+                vec![255; wire::MAX_WORKSPACE_IMAGE_BYTES],
+            )
+            .await
+            .map_err(|e| e.to_string())?
+            == 12,
+        "full-size image upload changed",
+    )?;
+
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
             if client.list_workspaces().await.is_ok() {

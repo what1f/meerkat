@@ -32,6 +32,7 @@ where
         config,
         crate::link::LinkSettings::default(),
         false,
+        None,
         shutdown,
     )
     .await
@@ -50,7 +51,37 @@ where
     P: RuntimePeer + ComputerPeer + Clone,
     F: Future<Output = ()> + Send,
 {
-    serve_inner(listener, secret, peer, config, settings, true, shutdown).await
+    serve_inner(
+        listener, secret, peer, config, settings, true, None, shutdown,
+    )
+    .await
+}
+
+/// Serve management, Computer links, and resources on the same TCP listener.
+pub async fn serve_with_management<P, F>(
+    listener: TcpListener,
+    secret: String,
+    owner: crate::management::OwnerCredential,
+    peer: P,
+    config: TransportConfig,
+    settings: crate::link::LinkSettings,
+    shutdown: F,
+) -> Result<(), crate::link::LinkError>
+where
+    P: RuntimePeer + ComputerPeer + Clone,
+    F: Future<Output = ()> + Send,
+{
+    serve_inner(
+        listener,
+        secret,
+        peer,
+        config,
+        settings,
+        true,
+        Some(owner),
+        shutdown,
+    )
+    .await
 }
 
 async fn serve_inner<P, F>(
@@ -60,6 +91,7 @@ async fn serve_inner<P, F>(
     config: TransportConfig,
     settings: crate::link::LinkSettings,
     override_heartbeat: bool,
+    owner: Option<crate::management::OwnerCredential>,
     shutdown: F,
 ) -> Result<(), crate::link::LinkError>
 where
@@ -74,6 +106,7 @@ where
             result = tasks.join_next(), if !tasks.is_empty() => { let _ = result; }
             accepted = listener.accept() => {
                 let (socket, _) = accepted?;
+                let owner = owner.clone();
                 let peer = peer.clone();
                 let secret = secret.clone();
                 let settings = settings.clone();
@@ -81,11 +114,39 @@ where
                     let (upgrades, mut upgraded) = tokio::sync::mpsc::channel(1);
                     let ws_peer = peer.clone();
                     let service = service_fn(move |mut request: Request<Incoming>| {
+                        let owner = owner.clone();
                         let peer = peer.clone();
                         let secret = secret.clone();
                         let upgrades = upgrades.clone();
                         async move {
-                            let response = if request.uri().path().starts_with("/resources/") {
+                            let response = if request.uri().path().starts_with(crate::management::PREFIX) {
+                                let credential = request.headers().get("authorization").and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
+                                if !owner.as_ref().is_some_and(|owner| owner.authorizes(credential)) {
+                                    crate::management_http::error(tonic::Status::unauthenticated("owner credential required"))
+                                } else if request.uri().path() == crate::management::EVENTS_PATH {
+                                    let subscription = request.headers().get("x-lankide-subscription").and_then(|v| v.to_str().ok()).and_then(|v| serde_json::from_str::<crate::management::ManagementSubscription>(v).ok());
+                                    match subscription {
+                                        None => crate::management_http::error(tonic::Status::invalid_argument("invalid event subscription")),
+                                        Some(subscription) => {
+                                            let service = crate::ValidatedRuntimeService::new(peer, config);
+                                            match service.subscribe_management_events(tonic::Request::new(subscription.into())).await {
+                                                Err(status) => crate::management_http::error(status),
+                                                Ok(events) => {
+                                                    let mut handshake = Request::builder().method(request.method()).uri(request.uri()).body(()).expect("HTTP request");
+                                                    *handshake.headers_mut() = request.headers().clone();
+                                                    match tokio_tungstenite::tungstenite::handshake::server::create_response(&handshake) {
+                                                        Ok(response) => {
+                                                            let _ = upgrades.send((hyper::upgrade::on(&mut request), Some(events.into_inner()))).await;
+                                                            response.map(|_| Full::new(Bytes::new()))
+                                                        }
+                                                        Err(_) => empty(StatusCode::BAD_REQUEST),
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else { crate::management_http::dispatch(request, peer, config).await }
+                            } else if request.uri().path().starts_with("/resources/") {
                                 download(request, peer).await
                             } else if request.uri().path() == "/computers/pair" {
                                 pair(request, peer, &secret, config.max_message_bytes).await
@@ -103,7 +164,7 @@ where
                                     *handshake.headers_mut() = request.headers().clone();
                                     match tokio_tungstenite::tungstenite::handshake::server::create_response(&handshake) {
                                         Ok(response) => {
-                                            let _ = upgrades.send(hyper::upgrade::on(&mut request)).await;
+                                            let _ = upgrades.send((hyper::upgrade::on(&mut request), None)).await;
                                             response.map(|_| Full::new(Bytes::new()))
                                         }
                                         Err(_) => empty(StatusCode::BAD_REQUEST),
@@ -119,9 +180,13 @@ where
                         .max_buf_size(32 * 1024)
                         .serve_connection(TokioIo::new(socket), service).with_upgrades();
                     if connection.await.is_ok()
-                        && let Ok(upgrade) = upgraded.try_recv()
+                        && let Ok((upgrade, events)) = upgraded.try_recv()
                         && let Ok(socket) = upgrade.await {
-                        crate::link::serve_upgraded(TokioIo::new(socket), ws_peer, config, settings, override_heartbeat).await;
+                        if let Some(events) = events {
+                            crate::management_http::serve_events(TokioIo::new(socket), events, config.max_message_bytes).await;
+                        } else {
+                            crate::link::serve_upgraded(TokioIo::new(socket), ws_peer, config, settings, override_heartbeat).await;
+                        }
                     }
                 });
             }

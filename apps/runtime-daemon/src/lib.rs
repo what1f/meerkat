@@ -155,16 +155,12 @@ where
             // A live lock owner is not sufficient: prove it serves management
             // before treating this launch as a successful no-op.
             tokio::time::timeout(Duration::from_secs(2), async {
-                let mut client =
-                    lankide_protocol::connect_uds(&paths.socket, DEFAULT_MAX_MESSAGE_BYTES)
-                        .await
-                        .map_err(AppError::Protocol)?;
+                use lankide_client::ManagementClient;
+                let client = lankide_client::RuntimeManagementClient::connect_lazy(&paths.socket);
                 client
-                    .list_workspaces(lankide_protocol::ListWorkspacesRequest {
-                        request_id: run_id.clone(),
-                    })
+                    .list_workspaces()
                     .await
-                    .map_err(AppError::Status)?;
+                    .map_err(|error| AppError::Io(io::Error::other(error.to_string())))?;
                 Ok::<_, AppError>(())
             })
             .await
@@ -235,10 +231,23 @@ where
     let listener = tokio::net::TcpListener::bind(&address).await?;
     let url = format!("ws://{}", listener.local_addr()?);
     let secret = lankide_protocol::link::publish(&paths.run, &url)?;
+    let owner = lankide_protocol::management::OwnerCredential::load_or_create(&paths.run)?;
+    let mut management_address = listener.local_addr()?;
+    if management_address.ip().is_unspecified() {
+        management_address.set_ip(match management_address {
+            std::net::SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
+            std::net::SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
+        });
+    }
+    fs::write(
+        paths.run.join(lankide_protocol::management::URL_FILE),
+        format!("http://{management_address}"),
+    )?;
     let (link_stop, link_stopped) = oneshot::channel();
-    let link_server = tokio::spawn(lankide_protocol::resources::serve_with_settings(
+    let link_server = tokio::spawn(lankide_protocol::resources::serve_with_management(
         listener,
         secret,
+        owner,
         RuntimePeerAdapter::new(application.clone()),
         TransportConfig::default(),
         settings.computer_link,
@@ -323,7 +332,11 @@ where
         .await
         .map_err(|_| AppError::Invariant("computer link server task failed"))?
         .map_err(|error| AppError::Io(io::Error::other(error.to_string())))?;
-    for name in ["computer-link.url", "computer-link.secret"] {
+    for name in [
+        "computer-link.url",
+        "computer-link.secret",
+        lankide_protocol::management::URL_FILE,
+    ] {
         let _ = fs::remove_file(paths.run.join(name));
     }
     application.finish_shutdown().await?;

@@ -6,7 +6,7 @@ use lankide_protocol::{
     ContentRequest, DEFAULT_MAX_MESSAGE_BYTES, DeleteAgentRequest, DeliveryResult, DesiredState,
     ExecutionEvent, ExecutionEventKind, ListWorkspacesRequest, PROTOCOL_VERSION, ResourceChunk,
     ResourceDescriptor, ResourceRequest, SetWorkspaceStateRequest, WorkspaceRef, computer_frame,
-    connect_uds, runtime_frame,
+    runtime_frame,
 };
 use lankide_provider::{
     AgentContext, ChannelDefaultAttention, ChannelDefinition, InitContext, Provider, ProviderError,
@@ -307,9 +307,10 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
             "management readiness waited for Provider startup",
         ));
     }
-    let mut management = connect_uds(&paths.socket, DEFAULT_MAX_MESSAGE_BYTES)
-        .await
-        .map_err(AppError::Protocol)?;
+    let management = lankide_client::http::HttpManagementTransport::local(
+        &paths.socket,
+        DEFAULT_MAX_MESSAGE_BYTES,
+    );
     let listed = management
         .list_workspaces(ListWorkspacesRequest {
             request_id: "daemon-list-1".into(),
@@ -326,9 +327,10 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
             "second daemon instance did not exit cleanly",
         ));
     }
-    let mut second_connection = connect_uds(&paths.socket, DEFAULT_MAX_MESSAGE_BYTES)
-        .await
-        .map_err(AppError::Protocol)?;
+    let second_connection = lankide_client::http::HttpManagementTransport::local(
+        &paths.socket,
+        DEFAULT_MAX_MESSAGE_BYTES,
+    );
     second_connection
         .list_workspaces(ListWorkspacesRequest {
             request_id: "daemon-list-after-second-instance".into(),
@@ -482,7 +484,10 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    let uploaded = management
+    let mut agent_client = lankide_protocol::connect_uds(&paths.socket, DEFAULT_MAX_MESSAGE_BYTES)
+        .await
+        .map_err(AppError::Protocol)?;
+    let uploaded = agent_client
         .upload_resource(tokio_stream::iter(vec![ResourceChunk {
             transfer_id: "daemon-upload".into(),
             resource_id: 0,
@@ -500,7 +505,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         .await
         .map_err(AppError::Status)?
         .into_inner();
-    let mut download = management
+    let mut download = agent_client
         .download_resource(ResourceRequest {
             resource_id: uploaded.resource_id,
             transfer_id: "daemon-download".into(),
@@ -516,7 +521,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     if downloaded != resource_bytes {
         return Err(AppError::Invariant("resource roundtrip mismatch"));
     }
-    let content = management
+    let content = agent_client
         .get_content(ContentRequest {
             context: Some(context),
             kind: ContentKind::Message as i32,
@@ -663,9 +668,10 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     storage.close()?;
     let mut restarted = DaemonChild::spawn(paths)?;
     restarted.wait_ready()?;
-    let mut restart_client = connect_uds(&paths.socket, DEFAULT_MAX_MESSAGE_BYTES)
-        .await
-        .map_err(AppError::Protocol)?;
+    let restart_client = lankide_client::http::HttpManagementTransport::local(
+        &paths.socket,
+        DEFAULT_MAX_MESSAGE_BYTES,
+    );
     if restart_client
         .list_workspaces(ListWorkspacesRequest {
             request_id: "daemon-list-restart".into(),

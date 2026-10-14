@@ -13,7 +13,7 @@ use lankide_protocol::{
     HarnessConfig, ListWorkspacesRequest, ManagementSubscription, PROTOCOL_VERSION, ResourceChunk,
     ResourceDescriptor, ResourceRequest, SendMessageRequest, SessionAction, SessionDirective,
     TransportConfig, UpdateAgentRequest, UpdateSelfProfileRequest, UpdateWorkspaceRequest,
-    WorkspaceRef, computer_frame, connect_uds, runtime_frame,
+    WorkspaceRef, computer_frame, runtime_frame,
 };
 use lankide_provider::{
     AgentContext, AgentRuntimeContext, AutoReactionContext, ChannelDefaultAttention,
@@ -1936,9 +1936,8 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     ensure(socket.exists(), "runtime UDS started")?;
-    let mut client = connect_uds(socket, DEFAULT_MAX_MESSAGE_BYTES)
-        .await
-        .map_err(err)?;
+    let client =
+        lankide_client::http::HttpManagementTransport::local(socket, DEFAULT_MAX_MESSAGE_BYTES);
     let listed = client
         .list_workspaces(ListWorkspacesRequest {
             request_id: "list-1".into(),
@@ -2260,7 +2259,10 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         }),
         execution_token: token.into(),
     };
-    let denied = client
+    let mut agent_client = lankide_protocol::connect_uds(socket, DEFAULT_MAX_MESSAGE_BYTES)
+        .await
+        .map_err(err)?;
+    let denied = agent_client
         .get_content(ContentRequest {
             context: Some(AgentRunContext {
                 execution: context.execution.clone(),
@@ -2277,7 +2279,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             && !denied.message().contains("must-not-leak"),
         "capability authorization is redacted",
     )?;
-    let content = client
+    let content = agent_client
         .get_content(ContentRequest {
             context: Some(context.clone()),
             kind: ContentKind::Message as i32,
@@ -2290,7 +2292,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         content.content_markdown == application_trigger,
         "content gateway",
     )?;
-    let profile = client
+    let profile = agent_client
         .get_self_profile(context.clone())
         .await
         .map_err(|error| format!("get self profile: {error}"))?
@@ -2301,7 +2303,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         }),
         "self profile was not derived from execution context",
     )?;
-    let profile = client
+    let profile = agent_client
         .update_self_profile(UpdateSelfProfileRequest {
             context: Some(context.clone()),
             role: Some("Runtime editor".into()),
@@ -2320,7 +2322,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         }),
         "historical content must be outside the short prompt preview",
     )?;
-    let historical = client
+    let historical = agent_client
         .get_content(ContentRequest {
             context: Some(context.clone()),
             kind: ContentKind::Message as i32,
@@ -2358,7 +2360,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         })
         .await
         .map_err(|error| format!("mid-execution config update: {error}"))?;
-    let listed_capabilities = client
+    let listed_capabilities = agent_client
         .list_capabilities(context.clone())
         .await
         .map_err(|error| format!("list capabilities: {error}"))?
@@ -2383,7 +2385,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         }),
         "frozen capability grant",
     )?;
-    let unread = client
+    let unread = agent_client
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(context.clone()),
             capability_name: "unread_current".into(),
@@ -2397,7 +2399,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         unread.success && unread.structured_content_json.contains("application-chat"),
         "unread current",
     )?;
-    let recall = client
+    let recall = agent_client
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(context.clone()),
             capability_name: "message_recall".into(),
@@ -2414,7 +2416,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
                 .is_some_and(|error| error.code == "message_not_found"),
         "recall unknown internal message result",
     )?;
-    let unauthorized = client
+    let unauthorized = agent_client
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(context.clone()),
             capability_name: "guessed".into(),
@@ -2432,7 +2434,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "unauthorized capability",
     )?;
     for _ in 0..2 {
-        let invoked = client
+        let invoked = agent_client
             .invoke_capability(CapabilityInvokeRequest {
                 context: Some(context.clone()),
                 capability_name: "echo".into(),
@@ -2554,7 +2556,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         matches!(tool_result.frame, Some(runtime_frame::Frame::ToolResult(result)) if result.success),
         "delayed tool result delivered after heartbeat",
     )?;
-    let provider_lookup = client
+    let provider_lookup = agent_client
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(context.clone()),
             capability_name: "runtime_lookup".into(),
@@ -2579,7 +2581,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    let uploaded = client
+    let uploaded = agent_client
         .upload_resource(tokio_stream::iter(vec![ResourceChunk {
             transfer_id: "upload-1".into(),
             resource_id: 0,
@@ -2597,7 +2599,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .await
         .map_err(|error| format!("upload resource: {error}"))?
         .into_inner();
-    let mut downloaded = client
+    let mut downloaded = agent_client
         .download_resource(ResourceRequest {
             resource_id: uploaded.resource_id,
             transfer_id: "download-1".into(),
@@ -2710,7 +2712,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     )?;
 
     state.push_send(SendMode::Sent("standard-tool-send".into()));
-    let standard_send = client
+    let standard_send = agent_client
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(context.clone()),
             capability_name: "message_send".into(),
@@ -2738,7 +2740,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .map_err(err)?["message_id"]
         .as_i64()
         .ok_or("standard send message id")?;
-    let unsupported_edit = client
+    let unsupported_edit = agent_client
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(context.clone()),
             capability_name: "message_edit".into(),
@@ -2800,7 +2802,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     }
     state.edit_supported.store(true, Ordering::SeqCst);
     for _ in 0..2 {
-        let edited = client
+        let edited = agent_client
             .invoke_capability(CapabilityInvokeRequest {
                 context: Some(context.clone()),
                 capability_name: "message_edit".into(),
@@ -2817,7 +2819,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         state.edit_calls.load(Ordering::SeqCst) == 2,
         "edit tool call idempotency",
     )?;
-    let unsupported_recall = client
+    let unsupported_recall = agent_client
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(context.clone()),
             capability_name: "message_recall".into(),
@@ -2835,7 +2837,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "recall unsupported result",
     )?;
     state.recall_failures.store(1, Ordering::SeqCst);
-    let failed_recall = client
+    let failed_recall = agent_client
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(context.clone()),
             capability_name: "message_recall".into(),
@@ -2854,7 +2856,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     )?;
     state.recall_supported.store(true, Ordering::SeqCst);
     for _ in 0..2 {
-        let recalled = client
+        let recalled = agent_client
             .invoke_capability(CapabilityInvokeRequest {
                 context: Some(context.clone()),
                 capability_name: "message_recall".into(),
@@ -2871,7 +2873,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "recall tool call idempotency",
     )?;
     state.push_send(SendMode::Sent("attachment-only-send".into()));
-    let attachment_only = client
+    let attachment_only = agent_client
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(context.clone()),
             capability_name: "message_send".into(),
@@ -2893,7 +2895,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .into_inner();
     ensure(attachment_only.success, "attachment-only standard send")?;
 
-    let attention = client
+    let attention = agent_client
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(context.clone()),
             capability_name: "attention_set".into(),
@@ -2948,7 +2950,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "muting one Chat suppresses its later dispatch",
     )?;
     muted_storage.close().map_err(err)?;
-    let frozen_messages = client
+    let frozen_messages = agent_client
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(context.clone()),
             capability_name: "chat_messages".into(),
@@ -2983,7 +2985,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         }),
         "chat_messages must return the full long message, including its tail",
     )?;
-    let guarded = client
+    let guarded = agent_client
         .send_message(SendMessageRequest {
             context: Some(context.clone()),
             channel_id: channel_id.to_string(),
@@ -3004,7 +3006,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
                 .is_some_and(|value| value.code == "new_messages"),
         "new messages guard",
     )?;
-    let refreshed_messages = client
+    let refreshed_messages = agent_client
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(context.clone()),
             capability_name: "chat_messages".into(),
@@ -3023,7 +3025,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "the message that triggered the send guard becomes readable in the same execution",
     )?;
     state.push_send(SendMode::Sent("application-provider-send".into()));
-    let forced = client
+    let forced = agent_client
         .send_message(SendMessageRequest {
             context: Some(context),
             channel_id: channel_id.to_string(),

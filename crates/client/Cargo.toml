@@ -8,6 +8,9 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+reqwest.workspace = true
+futures-util.workspace = true
+tokio-tungstenite.workspace = true
 sha2.workspace = true
 lankide-protocol = { path = "../protocol" }
 serde.workspace = true
@@ -22,7 +25,7 @@ tempfile.workspace = true
 
 [package.metadata.lankide.e2e]
 command = "cargo test -p lankide-client --test management_e2e"
-scenario = "Run the same Workspace, opaque Provider onboarding, Agent, local harness inventory, catalog, lifecycle, duplicate-identity conflict, event, isolation, and retry contract through a real UDS Runtime adapter and the product Mock adapter. Expose original per-attempt failure diagnostics through execution details. Forward management cancellation and observe its terminal diagnostics through the system liveness scenarios. Expose pause reasons and resume paused Agents through management. Expose pairing-code creation, revocation, registered/online/revoked catalog state, last seen and inventory; choose the sole registered non-revoked Computer when creating an Agent without placement. Surface typed computer_not_registered, computer_revoked, and harness_unavailable_on_computer management errors without changing user-facing copy."
+scenario = "Run the same Workspace, opaque Provider onboarding, Agent, local harness inventory, catalog, lifecycle, duplicate-identity conflict, event, isolation, and retry contract through owner-authenticated HTTP JSON and event WebSocket management and the test-only Mock adapter. Preserve full-size image uploads with base64 JSON encoding. Expose original per-attempt failure diagnostics through execution details. Forward management cancellation and observe its terminal diagnostics through the system liveness scenarios. Expose pause reasons and resume paused Agents through management. Expose pairing-code creation, revocation, registered/online/revoked catalog state, last seen and inventory; choose the sole registered non-revoked Computer when creating an Agent without placement. Surface typed computer_not_registered, computer_revoked, and harness_unavailable_on_computer management errors without changing user-facing copy."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

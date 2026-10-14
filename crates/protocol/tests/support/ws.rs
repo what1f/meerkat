@@ -27,11 +27,23 @@ where
     let url = format!("ws://{}", listener.local_addr()?);
     let secret = link::publish(socket.parent().expect("run directory"), &url)?;
     let (stop, stopped) = tokio::sync::oneshot::channel();
-    let ws = tokio::spawn(lankide_protocol::resources::serve(
+    let owner = lankide_protocol::management::OwnerCredential::load_or_create(
+        socket.parent().expect("run directory"),
+    )?;
+    std::fs::write(
+        socket
+            .parent()
+            .unwrap()
+            .join(lankide_protocol::management::URL_FILE),
+        url.replacen("ws://", "http://", 1),
+    )?;
+    let ws = tokio::spawn(lankide_protocol::resources::serve_with_management(
         listener,
         secret,
+        owner,
         peer.clone(),
         config,
+        Default::default(),
         async {
             let _ = stopped.await;
         },

@@ -41,6 +41,7 @@ name = "computer-daemon-e2e"
 path = "tests/support/runner.rs"
 
 [dev-dependencies]
+lankide-client = { path = "../../crates/client" }
 lankide-runtime = { path = "../../crates/runtime" }
 lankide-runtime-daemon = { path = "../runtime-daemon" }
 tempfile = { workspace = true }

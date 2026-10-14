@@ -60,8 +60,10 @@ async fn s9_1_newer_computer_gets_a_typed_rejection_visible_in_management() -> R
         ),
         "{result:?}"
     );
-    let mut management =
-        lankide_protocol::connect_uds(rig.runtime_socket(), DEFAULT_MAX_MESSAGE_BYTES).await?;
+    let management = lankide_client::http::HttpManagementTransport::local(
+        rig.runtime_socket(),
+        DEFAULT_MAX_MESSAGE_BYTES,
+    );
     let catalog = management
         .get_computer_catalog(lankide_protocol::CatalogRequest {
             request_id: "version-rejection".into(),

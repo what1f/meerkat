@@ -1,8 +1,9 @@
 #![forbid(unsafe_code)]
 
-//! Typed management boundary and production Runtime UDS client.
+//! Typed management boundary and production Runtime HTTP client.
 
 use lankide_protocol as wire;
+pub mod http;
 pub use lankide_protocol::{
     AttemptFailure, ExecutionAttemptDetails, ExecutionDetails, PROVIDER_CAPABILITY_TASK_SYSTEM,
 };
@@ -526,25 +527,33 @@ pub trait ManagementClient: Send + Sync {
 
 #[derive(Clone)]
 pub struct RuntimeManagementClient {
-    client: wire::RuntimeProtocolClient<tonic::transport::Channel>,
+    client: http::HttpManagementTransport,
     requests: Arc<AtomicU64>,
 }
 impl RuntimeManagementClient {
+    /// Discover the HTTP listener and owner credential in a shared local run directory.
+    pub fn connect_local_lazy(run: impl AsRef<Path>) -> Self {
+        Self::connect_lazy(run.as_ref().join("runtime.sock"))
+    }
+
+    pub async fn connect_local(run: impl AsRef<Path>) -> Result<Self, ClientError> {
+        Self::connect(run.as_ref().join("runtime.sock")).await
+    }
+
+    /// Compatibility locator: only the parent directory is used; no UDS is dialled.
     pub fn connect_lazy(path: impl AsRef<Path>) -> Self {
         Self {
-            client: wire::connect_uds_lazy(path, wire::DEFAULT_MAX_MESSAGE_BYTES),
+            client: http::HttpManagementTransport::local(path, wire::DEFAULT_MAX_MESSAGE_BYTES),
             requests: Arc::new(AtomicU64::new(0)),
         }
     }
 
     pub async fn connect(path: impl AsRef<Path>) -> Result<Self, ClientError> {
-        Ok(Self {
-            client: wire::connect_uds(path, wire::DEFAULT_MAX_MESSAGE_BYTES)
-                .await
-                .map_err(|e| ClientError::Transport(e.to_string()))?,
-            requests: Arc::new(AtomicU64::new(0)),
-        })
+        let client = Self::connect_lazy(path);
+        client.list_workspaces().await?;
+        Ok(client)
     }
+
     /// Request cancellation; execution details become terminal after cleanup.
     pub async fn cancel_execution(&self, execution_id: i64) -> Result<(), ClientError> {
         self.client
@@ -1142,7 +1151,7 @@ impl ManagementClient for RuntimeManagementClient {
         )
     }
     async fn resume_agent(&self, workspace_id: &str, agent_id: &str) -> Result<Agent, ClientError> {
-        let mut client = self.client.clone();
+        let client = self.client.clone();
         expect_agent(
             workspace_id,
             Some(agent_id),

@@ -33,7 +33,7 @@ impl DesktopBackend {
         )));
         let client = {
             let _guard = tokio.enter();
-            RuntimeManagementClient::connect_lazy(&socket)
+            RuntimeManagementClient::connect_local_lazy(socket.parent().unwrap_or(Path::new(".")))
         };
         let (startup_tx, startup_result) = tokio::sync::oneshot::channel();
 
@@ -89,8 +89,11 @@ impl DesktopBackend {
             &socket,
             configured_socket.is_none(),
         );
-        let client =
-            startup.and_then(|_| tokio.block_on(RuntimeManagementClient::connect(&socket)));
+        let client = startup.and_then(|_| {
+            tokio.block_on(RuntimeManagementClient::connect_local(
+                socket.parent().unwrap_or(Path::new(".")),
+            ))
+        });
 
         match client {
             Ok(client) => Self {
@@ -105,7 +108,9 @@ impl DesktopBackend {
                 // Computer can wait for a Runtime that becomes available later.
                 let client = {
                     let _guard = tokio.enter();
-                    RuntimeManagementClient::connect_lazy(&socket)
+                    RuntimeManagementClient::connect_local_lazy(
+                        socket.parent().unwrap_or(Path::new(".")),
+                    )
                 };
                 Self {
                     client: Arc::new(client),
@@ -145,7 +150,9 @@ fn start_services(
     manage_services: bool,
 ) -> Result<(), ClientError> {
     // Reuse a healthy owner before preparing or launching any local service.
-    let client = match runtime.block_on(RuntimeManagementClient::connect(socket)) {
+    let client = match runtime.block_on(RuntimeManagementClient::connect_local(
+        socket.parent().unwrap_or(Path::new(".")),
+    )) {
         Ok(client) => client,
         Err(_) if manage_services => {
             {
@@ -240,7 +247,9 @@ fn lankide_home() -> PathBuf {
 async fn connect_with_retry(socket: &Path) -> Result<RuntimeManagementClient, ClientError> {
     let mut last_error = ClientError::Unavailable("Lankide 尚未就绪".into());
     for _ in 0..50 {
-        match RuntimeManagementClient::connect(socket).await {
+        match RuntimeManagementClient::connect_local(socket.parent().unwrap_or(Path::new(".")))
+            .await
+        {
             Ok(client) => return Ok(client),
             Err(error) => last_error = error,
         }

@@ -3612,13 +3612,16 @@ dependencies = [
 name = "lankide-client"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "lankide-protocol",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
  "tokio",
  "tokio-stream",
+ "tokio-tungstenite",
  "tonic",
 ]
 
@@ -3645,6 +3648,7 @@ dependencies = [
 name = "lankide-computer-daemon"
 version = "0.1.0"
 dependencies = [
+ "lankide-client",
  "lankide-computer",
  "lankide-daemon-runtime",
  "lankide-harness",
@@ -3757,17 +3761,20 @@ dependencies = [
 name = "lankide-protocol"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "bytes",
  "futures-util",
  "http-body-util",
  "hyper",
  "hyper-util",
+ "lankide-client",
  "lankide-core",
  "prost",
  "protoc-bin-vendored",
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "subtle",
  "tempfile",
  "tokio",
  "tokio-stream",
@@ -3835,6 +3842,7 @@ name = "lankide-runtime"
 version = "0.1.0"
 dependencies = [
  "image",
+ "lankide-client",
  "lankide-core",
  "lankide-protocol",
  "lankide-provider",

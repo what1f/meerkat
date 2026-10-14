@@ -3,8 +3,8 @@
 //! Versioned wire contracts shared by Runtime, Computer, and clients.
 //!
 //! Computer links use JSON/WebSocket through [`link::ComputerLink`]. Computer
-//! resources use HTTP on the same listener. Management and legacy Agent
-//! capabilities use UDS/gRPC through [`RuntimePeer`].
+//! resources and management use HTTP on the same listener; management events use
+//! one WebSocket. Legacy Agent capabilities retain UDS/gRPC through [`RuntimePeer`].
 
 pub mod link;
 mod peer;
@@ -59,3 +59,6 @@ impl From<ResourceRef> for lankide_core::ResourceRef {
         }
     }
 }
+
+pub mod management;
+mod management_http;

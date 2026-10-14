@@ -834,9 +834,7 @@ async fn reject_empty_message(path: &std::path::Path) {
 }
 
 async fn exchange_management_and_cli(path: &std::path::Path) {
-    let mut client = connect_uds(path, CLIENT_LIMIT)
-        .await
-        .expect("management client");
+    let client = lankide_client::http::HttpManagementTransport::local(path, CLIENT_LIMIT);
     let onboarding_request = AdvanceAgentOnboardingRequest {
         request_id: "onboarding_1".into(),
         agent: Some(AgentRef {
@@ -987,7 +985,8 @@ async fn exchange_management_and_cli(path: &std::path::Path) {
     assert_eq!(listed.request_id, "list_1");
     assert_eq!(listed.workspaces, vec![resumed]);
 
-    let allowed = client
+    let mut cli = connect_uds(path, CLIENT_LIMIT).await.expect("Agent client");
+    let allowed = cli
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(run_context("execution_token_17")),
             capability_name: "reply".into(),
@@ -1000,7 +999,7 @@ async fn exchange_management_and_cli(path: &std::path::Path) {
     assert!(allowed.success);
     assert_eq!(allowed.content_markdown, "capability invoked");
 
-    let denied = client
+    let denied = cli
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(run_context("wrong_token")),
             capability_name: "reply".into(),

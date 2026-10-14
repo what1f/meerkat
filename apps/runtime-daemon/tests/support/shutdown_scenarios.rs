@@ -4,7 +4,7 @@ use super::daemon_e2e::DaemonChild;
 use lankide_core::{ProviderId, WorkspaceId};
 use lankide_protocol::{
     ComputerFrame, ComputerHello, DEFAULT_MAX_MESSAGE_BYTES, ListWorkspacesRequest,
-    PROTOCOL_VERSION, computer_frame, connect_uds, runtime_frame,
+    PROTOCOL_VERSION, computer_frame, runtime_frame,
 };
 use lankide_runtime_daemon::{AppError, RuntimePaths};
 use lankide_storage::{DatabaseConfig, Storage, WorkspaceSpec};
@@ -62,9 +62,10 @@ fn seed_workspace(paths: &RuntimePaths) -> Result<(), AppError> {
 }
 
 async fn assert_serving(paths: &RuntimePaths) -> Result<(), AppError> {
-    let mut client = connect_uds(&paths.socket, DEFAULT_MAX_MESSAGE_BYTES)
-        .await
-        .map_err(AppError::Protocol)?;
+    let client = lankide_client::http::HttpManagementTransport::local(
+        &paths.socket,
+        DEFAULT_MAX_MESSAGE_BYTES,
+    );
     let response = client
         .list_workspaces(ListWorkspacesRequest {
             request_id: "shutdown-scenario".into(),

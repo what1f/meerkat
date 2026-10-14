@@ -627,7 +627,11 @@ impl RuntimePeer for RuntimePeerAdapter {
         self.application
             .spawn_background(async move {
                 loop {
-                    let event = match receiver.recv().await {
+                    let received = tokio::select! {
+                        _ = sender.closed() => break,
+                        event = receiver.recv() => event,
+                    };
+                    let event = match received {
                         Ok(event) => event,
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
