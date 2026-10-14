@@ -383,6 +383,15 @@ impl RuntimePeer for RuntimePeerAdapter {
     async fn list_agents(&self, request: ListAgentsRequest) -> Result<ListAgentsResponse, Status> {
         self.application.list_agents(request).await.map_err(status)
     }
+    async fn get_execution_details(
+        &self,
+        request: GetExecutionDetailsRequest,
+    ) -> Result<ExecutionDetails, Status> {
+        self.application
+            .get_execution_details(request)
+            .await
+            .map_err(status)
+    }
     async fn get_agent(&self, request: GetAgentRequest) -> Result<Agent, Status> {
         self.application.get_agent(request).await.map_err(status)
     }

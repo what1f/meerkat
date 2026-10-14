@@ -576,6 +576,7 @@ async fn exchange_assignment_events_and_reconnect(path: &std::path::Path, peer: 
     first_tx
         .send(ComputerFrame {
             frame: Some(computer_frame::Frame::AssignmentResult(AssignmentResult {
+                failure: None,
                 execution: assign.execution.clone(),
                 accepted: true,
                 error_code: String::new(),

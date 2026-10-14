@@ -402,6 +402,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     computer_tx
         .send(ComputerFrame {
             frame: Some(computer_frame::Frame::AssignmentResult(AssignmentResult {
+                failure: None,
                 execution: Some(execution.clone()),
                 accepted: true,
                 error_code: String::new(),

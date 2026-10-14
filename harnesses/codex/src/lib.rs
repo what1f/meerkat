@@ -147,7 +147,7 @@ impl HarnessFactory for CodexHarness {
             let result = async {
                 process.send(json!({"id":1,"method":"initialize","params":{"clientInfo":{"name":"lankide-catalog","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}}})).await?;
                 let initialized = process.receive(|v| v["id"] == 1).await?;
-                if initialized.get("error").is_some() { return Err(HarnessError::new(HarnessErrorCode::InvalidEvent, "Codex model discovery initialization failed")); }
+                if initialized.get("error").is_some() { return Err(harness_error(HarnessErrorCode::InvalidEvent, "Codex model discovery initialization failed")); }
                 process.send(json!({"method":"initialized","params":{}})).await?;
                 let mut models = Vec::new();
                 let mut cursor: Option<String> = None;
@@ -155,10 +155,10 @@ impl HarnessFactory for CodexHarness {
                 for request_id in 2..102 {
                     process.send(json!({"id":request_id,"method":"model/list","params":{"limit":100,"cursor":cursor}})).await?;
                     let response = process.receive(|v| v["id"] == request_id).await?;
-                    let page = response.pointer("/result/data").and_then(Value::as_array).ok_or_else(|| HarnessError::new(HarnessErrorCode::InvalidEvent, "Codex did not return a model directory"))?;
+                    let page = response.pointer("/result/data").and_then(Value::as_array).ok_or_else(|| harness_error(HarnessErrorCode::InvalidEvent, "Codex did not return a model directory"))?;
                     for model in page {
                         if model["hidden"] == true { continue; }
-                        let id = model["model"].as_str().filter(|v| !v.is_empty()).ok_or_else(|| HarnessError::new(HarnessErrorCode::InvalidEvent, "Codex returned a model without an ID"))?;
+                        let id = model["model"].as_str().filter(|v| !v.is_empty()).ok_or_else(|| harness_error(HarnessErrorCode::InvalidEvent, "Codex returned a model without an ID"))?;
                         models.push(lankide_harness::NativeModel { id: id.into(), name: model["displayName"].as_str().unwrap_or(id).into(), description: model["description"].as_str().unwrap_or_default().into(), thinking_levels: model["supportedReasoningEfforts"].as_array().into_iter().flatten().filter_map(|v| v["reasoningEffort"].as_str()).map(str::to_owned).collect() });
                     }
                     cursor = response.pointer("/result/nextCursor").and_then(Value::as_str).map(str::to_owned);
@@ -168,7 +168,7 @@ impl HarnessFactory for CodexHarness {
                         _ => {}
                     }
                 }
-                Err(HarnessError::new(HarnessErrorCode::InvalidEvent, "Codex model directory pagination did not finish"))
+                Err(harness_error(HarnessErrorCode::InvalidEvent, "Codex model directory pagination did not finish"))
             }.await;
             process.close().await;
             result
@@ -204,6 +204,7 @@ struct CodexSession {
 }
 
 struct SessionInner {
+    stderr_path: PathBuf,
     thinking_level: String,
     entry: Mutex<SessionEntry>,
     stdin: Mutex<Option<ChildStdin>>,
@@ -247,6 +248,23 @@ impl CodexSession {
             lankide_harness::user_config_directory("CODEX_HOME", ".codex").as_deref(),
             &["auth.json", "config.toml"],
         )?;
+        let stderr_path = codex_home.join(format!(
+            "app-server-{}.stderr.log",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        let stderr = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&stderr_path)
+            .map_err(|error| {
+                harness_error(
+                    HarnessErrorCode::Io,
+                    format!("open Codex stderr artifact: {error}"),
+                )
+            })?;
         let mut command = Command::new(&request.config.cli_path);
         command
             .args(["app-server", "--listen", "stdio://"])
@@ -255,22 +273,23 @@ impl CodexSession {
             .current_dir(&request.working_directory)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(Stdio::from(stderr));
         let mut child = command.spawn().map_err(|error| {
-            HarnessError::new(
+            harness_error(
                 HarnessErrorCode::SpawnFailed,
                 format!("failed to spawn Codex app-server: {error}"),
             )
         })?;
         let stdin = child.stdin.take().ok_or_else(|| {
-            HarnessError::new(HarnessErrorCode::SpawnFailed, "Codex stdin unavailable")
+            harness_error(HarnessErrorCode::SpawnFailed, "Codex stdin unavailable")
         })?;
         let stdout = child.stdout.take().ok_or_else(|| {
-            HarnessError::new(HarnessErrorCode::SpawnFailed, "Codex stdout unavailable")
+            harness_error(HarnessErrorCode::SpawnFailed, "Codex stdout unavailable")
         })?;
         let pid = child.id();
         record_pid(pid_journal.as_deref(), "spawned", pid);
         let inner = Arc::new(SessionInner {
+            stderr_path,
             thinking_level: request.config.thinking_level.clone(),
             entry: Mutex::new(SessionEntry {
                 harness_id: HARNESS_ID.to_owned(),
@@ -371,14 +390,14 @@ impl CodexSession {
                 != Some(RUNTIME_PERMISSION_PROFILE)
         {
             inner.reap(true);
-            return Err(HarnessError::new(
+            return Err(harness_error(
                 HarnessErrorCode::BindFailed,
                 "Codex did not activate the Lankide Agent permission profile",
             ));
         }
         let native_session_id = nested_string(&result, &["thread", "id"])
             .ok_or_else(|| {
-                HarnessError::new(
+                harness_error(
                     HarnessErrorCode::BindFailed,
                     format!("Codex {method} returned no thread ID"),
                 )
@@ -386,7 +405,7 @@ impl CodexSession {
             .to_owned();
         if resume && request.native_session_id.as_deref() != Some(&native_session_id) {
             inner.reap(true);
-            return Err(HarnessError::new(
+            return Err(harness_error(
                 HarnessErrorCode::BindFailed,
                 "Codex resumed a different thread",
             ));
@@ -410,7 +429,7 @@ impl HarnessSession for CodexSession {
         Box::pin(async move {
             let health = self.inner.entry.lock().expect("entry lock").health;
             if health != SessionHealth::Healthy {
-                return Err(HarnessError::new(
+                return Err(harness_error(
                     HarnessErrorCode::InvalidState,
                     "Codex session is not healthy",
                 ));
@@ -419,7 +438,7 @@ impl HarnessSession for CodexSession {
             {
                 let mut active = self.inner.execution.lock().expect("execution lock");
                 if active.is_some() {
-                    return Err(HarnessError::new(
+                    return Err(harness_error(
                         HarnessErrorCode::InvalidState,
                         "Codex session already has an active turn",
                     ));
@@ -501,7 +520,7 @@ impl HarnessSession for CodexSession {
     ) -> HarnessFuture<'a, ToolResultReceipt> {
         Box::pin(async move {
             let fingerprint = serde_json::to_string(&request).map_err(|error| {
-                HarnessError::new(HarnessErrorCode::InvalidConfig, error.to_string())
+                harness_error(HarnessErrorCode::InvalidConfig, error.to_string())
             })?;
             if let Some(previous) = self
                 .inner
@@ -517,7 +536,7 @@ impl HarnessSession for CodexSession {
                         already_applied: true,
                     });
                 }
-                return Err(HarnessError::new(
+                return Err(harness_error(
                     HarnessErrorCode::InvalidState,
                     "conflicting result for an applied Codex tool call",
                 ));
@@ -529,7 +548,7 @@ impl HarnessSession for CodexSession {
                 .expect("tool calls lock")
                 .remove(&request.tool_call_id)
                 .ok_or_else(|| {
-                    HarnessError::new(
+                    harness_error(
                         HarnessErrorCode::InvalidState,
                         "Codex tool call was not observed",
                     )
@@ -626,7 +645,7 @@ impl SessionInner {
         }
         match timeout(RPC_TIMEOUT, receiver).await {
             Ok(Ok(response)) => response,
-            Ok(Err(_)) => Err(HarnessError::new(
+            Ok(Err(_)) => Err(harness_error(
                 HarnessErrorCode::StreamInterrupted,
                 "Codex RPC stream ended",
             )),
@@ -635,7 +654,7 @@ impl SessionInner {
                     .lock()
                     .expect("pending RPC lock")
                     .remove(&key);
-                Err(HarnessError::new(
+                Err(harness_error(
                     HarnessErrorCode::Timeout,
                     "Codex RPC timed out",
                 ))
@@ -650,16 +669,16 @@ impl SessionInner {
     fn write(&self, value: Value) -> Result<(), HarnessError> {
         let mut guard = self.stdin.lock().expect("stdin lock");
         let stdin = guard.as_mut().ok_or_else(|| {
-            HarnessError::new(HarnessErrorCode::InvalidState, "Codex session is closed")
+            harness_error(HarnessErrorCode::InvalidState, "Codex session is closed")
         })?;
         serde_json::to_writer(&mut *stdin, &value).map_err(|error| {
-            HarnessError::new(HarnessErrorCode::Io, format!("write Codex RPC: {error}"))
+            harness_error(HarnessErrorCode::Io, format!("write Codex RPC: {error}"))
         })?;
         stdin.write_all(b"\n").map_err(|error| {
-            HarnessError::new(HarnessErrorCode::Io, format!("write Codex RPC: {error}"))
+            harness_error(HarnessErrorCode::Io, format!("write Codex RPC: {error}"))
         })?;
         stdin.flush().map_err(|error| {
-            HarnessError::new(HarnessErrorCode::Io, format!("flush Codex RPC: {error}"))
+            harness_error(HarnessErrorCode::Io, format!("flush Codex RPC: {error}"))
         })
     }
 
@@ -677,7 +696,7 @@ impl SessionInner {
             .as_ref()
             .and_then(|state| state.turn_id.clone())
             .ok_or_else(|| {
-                HarnessError::new(HarnessErrorCode::InvalidState, "Codex has no active turn")
+                harness_error(HarnessErrorCode::InvalidState, "Codex has no active turn")
             })?;
         Ok((thread_id, turn_id))
     }
@@ -687,6 +706,7 @@ impl SessionInner {
             emit(
                 &mut active,
                 AgentEventKind::Failed {
+                    failure: Some(error.failure.clone()),
                     code: format!("{:?}", error.code),
                     message: error.message,
                 },
@@ -723,13 +743,13 @@ fn spawn_reader(inner: Weak<SessionInner>, stdout: std::process::ChildStdout) {
             match line {
                 Ok(line) => match serde_json::from_str::<Value>(&line) {
                     Ok(message) => dispatch_message(&inner, message),
-                    Err(error) => inner.fail_execution(HarnessError::new(
+                    Err(error) => inner.fail_execution(harness_error(
                         HarnessErrorCode::InvalidEvent,
                         format!("invalid Codex app-server event: {error}"),
                     )),
                 },
                 Err(error) => {
-                    inner.fail_execution(HarnessError::new(
+                    inner.fail_execution(harness_error(
                         HarnessErrorCode::StreamInterrupted,
                         format!("Codex stdout failed: {error}"),
                     ));
@@ -738,15 +758,24 @@ fn spawn_reader(inner: Weak<SessionInner>, stdout: std::process::ChildStdout) {
             }
         }
         if let Some(inner) = inner.upgrade() {
-            inner.fail_execution(HarnessError::new(
+            let detail = inner
+                .child
+                .lock()
+                .expect("child lock")
+                .as_mut()
+                .map(|child| {
+                    process_exit_detail(&inner.stderr_path, child, "Codex app-server closed stdout")
+                })
+                .unwrap_or_else(|| "Codex app-server closed stdout".into());
+            inner.fail_execution(harness_error(
                 HarnessErrorCode::StreamInterrupted,
-                "Codex app-server closed stdout",
+                detail.clone(),
             ));
             let pending = std::mem::take(&mut *inner.pending_rpc.lock().expect("pending RPC lock"));
             for (_, sender) in pending {
-                let _ = sender.send(Err(HarnessError::new(
+                let _ = sender.send(Err(harness_error(
                     HarnessErrorCode::StreamInterrupted,
-                    "Codex app-server closed stdout",
+                    detail.clone(),
                 )));
             }
         }
@@ -763,7 +792,7 @@ fn dispatch_message(inner: &Arc<SessionInner>, message: Value) {
             .remove(&key)
         {
             let response = if let Some(error) = message.get("error") {
-                Err(HarnessError::new(
+                Err(harness_error(
                     HarnessErrorCode::InvalidEvent,
                     format!("Codex RPC error: {}", error),
                 ))
@@ -998,6 +1027,7 @@ fn finish_turn(inner: &Arc<SessionInner>, params: &Value) {
             emit(
                 &mut active,
                 AgentEventKind::Failed {
+                    failure: None,
                     code: "codex_turn_failed".to_owned(),
                     message,
                 },
@@ -1013,6 +1043,7 @@ fn with_execution(inner: &Arc<SessionInner>, operation: impl FnOnce(&mut Executi
 }
 
 fn emit(active: &mut ExecutionState, kind: AgentEventKind) {
+    let kind = classified_event(kind);
     active.sequence += 1;
     let _ = active.sender.send(Ok(AgentEvent {
         sequence: active.sequence,
@@ -1046,5 +1077,140 @@ fn record_pid(path: Option<&Path>, state: &str, pid: u32) {
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
         let line = format!("{state}\t{pid}\n");
         let _ = file.write_all(line.as_bytes());
+    }
+}
+
+fn classify_failure(code: String, detail: String) -> lankide_harness::HarnessFailure {
+    use lankide_harness::FailureCategory;
+    let text = detail.to_ascii_lowercase();
+    let category = if (text.contains("model")
+        && (text.contains("not found")
+            || text.contains("not available")
+            || text.contains("not supported")))
+        || [
+            "model not found",
+            "unknown model",
+            "invalid model",
+            "does not exist",
+            "no such file",
+            "not found (os error 2)",
+            "command not found",
+            "enoent",
+        ]
+        .iter()
+        .any(|value| text.contains(value))
+    {
+        FailureCategory::Configuration
+    } else if [
+        "unauthorized",
+        "authentication",
+        "authenticate",
+        "invalid bearer token",
+        "token expired",
+        "no api key",
+        "missing api key",
+        "invalid api key",
+        "invalid_api_key",
+        "api key not",
+        "not logged in",
+        "login required",
+        "401",
+        "forbidden",
+        "403",
+    ]
+    .iter()
+    .any(|value| text.contains(value))
+    {
+        FailureCategory::Authentication
+    } else if [
+        "rate limit",
+        "rate_limit",
+        "rate-limit",
+        "usage limit",
+        "usage_limit",
+        "resource_exhausted",
+        "exceeded your current quota",
+        "too many requests",
+        "429",
+        "quota exceeded",
+    ]
+    .iter()
+    .any(|value| text.contains(value))
+    {
+        FailureCategory::RateLimit
+    } else if text.contains("cancelled") || text.contains("canceled") || text.contains("aborted") {
+        FailureCategory::Cancelled
+    } else if text.contains("timeout") || text.contains("timed out") {
+        FailureCategory::Timeout
+    } else if [
+        "exited",
+        "exit status",
+        "process exit",
+        "stream",
+        "connection",
+        "503",
+        "502",
+        "temporarily unavailable",
+    ]
+    .iter()
+    .any(|value| text.contains(value))
+    {
+        FailureCategory::Transient
+    } else {
+        FailureCategory::Agent
+    };
+    lankide_harness::HarnessFailure {
+        code,
+        category,
+        retryable: matches!(
+            category,
+            FailureCategory::RateLimit | FailureCategory::Transient | FailureCategory::Timeout
+        ),
+        detail,
+    }
+}
+
+fn harness_error(code: HarnessErrorCode, message: impl Into<String>) -> HarnessError {
+    let mut error = HarnessError::new(code, message);
+    error.failure = classify_failure(error.failure.code.clone(), error.message.clone());
+    // Unknown transport and configuration failures keep the contract default.
+    if error.failure.category == lankide_harness::FailureCategory::Agent {
+        let default = HarnessError::new(code, error.message.clone());
+        error.failure.category = default.failure.category;
+        error.failure.retryable = default.failure.retryable;
+    }
+    error
+}
+
+fn classified_event(mut kind: AgentEventKind) -> AgentEventKind {
+    if let AgentEventKind::Failed {
+        code,
+        message,
+        failure,
+    } = &mut kind
+    {
+        if failure.is_none() {
+            *failure = Some(classify_failure(code.clone(), message.clone()));
+        }
+    }
+    kind
+}
+
+fn process_exit_detail(stderr_path: &Path, child: &mut Child, fallback: &str) -> String {
+    let status = child
+        .try_wait()
+        .ok()
+        .flatten()
+        .map(|status| status.to_string());
+    let stderr = std::fs::read_to_string(stderr_path).unwrap_or_default();
+    if stderr.trim().is_empty() {
+        status
+            .map(|status| format!("{fallback}; process exit: {status}"))
+            .unwrap_or_else(|| fallback.to_owned())
+    } else {
+        match status {
+            Some(status) => format!("{stderr}\nprocess exit: {status}"),
+            None => stderr,
+        }
     }
 }

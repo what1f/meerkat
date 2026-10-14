@@ -45,6 +45,7 @@ pub(super) async fn run_events(
                         terminal_event = Some(synthetic_event(
                             last_sequence + 1,
                             AgentEventKind::Failed {
+                                failure: None,
                                 code: "completion_protocol".into(),
                                 message: "Agent did not finish this run correctly".into(),
                             },
@@ -67,6 +68,7 @@ pub(super) async fn run_events(
                             terminal_event = Some(synthetic_event(
                                 last_sequence + 1,
                                 AgentEventKind::Failed {
+                                    failure: Some(error.failure.clone()),
                                     code: format!("{:?}", error.code).to_lowercase(),
                                     message: error.message,
                                 },
@@ -146,6 +148,7 @@ pub(super) async fn run_events(
                 terminal_event = Some(synthetic_event(
                     last_sequence + 1,
                     AgentEventKind::Failed {
+                        failure: None,
                         code: "invalid_sequence".into(),
                         message: "Harness event sequence was not monotonic".into(),
                     },
@@ -156,6 +159,7 @@ pub(super) async fn run_events(
                 terminal_event = Some(synthetic_event(
                     last_sequence + 1,
                     AgentEventKind::Failed {
+                        failure: Some(error.failure.clone()),
                         code: format!("{:?}", error.code).to_lowercase(),
                         message: error.message,
                     },
@@ -168,6 +172,13 @@ pub(super) async fn run_events(
         synthetic_event(
             last_sequence + 1,
             AgentEventKind::Failed {
+                failure: Some(
+                    lankide_harness::HarnessError::new(
+                        lankide_harness::HarnessErrorCode::StreamInterrupted,
+                        "Harness stream ended before a terminal event",
+                    )
+                    .failure,
+                ),
                 code: "stream_interrupted".into(),
                 message: "Harness stream ended before a terminal event".into(),
             },
@@ -216,7 +227,50 @@ async fn emit_event(
     execution: &ExecutionRef,
     event: &AgentEvent,
 ) -> std::io::Result<()> {
-    let (kind, payload) = protocol_event(event);
+    let (kind, mut payload) = protocol_event(event);
+    let failure = match &event.kind {
+        AgentEventKind::Failed {
+            failure: Some(failure),
+            ..
+        } => Some(super::failure::attempt_failure(failure)),
+        AgentEventKind::Failed { code, message, .. } => Some(super::failure::attempt_failure(
+            &lankide_harness::HarnessFailure {
+                code: code.clone(),
+                category: lankide_harness::FailureCategory::Agent,
+                retryable: false,
+                detail: message.clone(),
+            },
+        )),
+        AgentEventKind::Cancelled { reason } => Some(super::failure::attempt_failure(
+            &lankide_harness::HarnessFailure {
+                code: "harness_cancelled".into(),
+                category: lankide_harness::FailureCategory::Cancelled,
+                retryable: false,
+                detail: reason.clone(),
+            },
+        )),
+        _ => None,
+    };
+    if let Some(failure) = failure {
+        let agent_id = inner
+            .active
+            .lock()
+            .await
+            .get(key)
+            .map(|active| {
+                active
+                    .agent_key
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or_default()
+                    .to_owned()
+            })
+            .unwrap_or_default();
+        super::failure::log_failure(inner, execution, &agent_id, &failure);
+        let mut value: serde_json::Value = serde_json::from_slice(&payload)?;
+        value["failure"] = serde_json::to_value(&failure)?;
+        payload = serde_json::to_vec(&value)?;
+    }
     let event = ExecutionEvent {
         execution: Some(execution.clone()),
         sequence: event.sequence,

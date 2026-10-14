@@ -24,7 +24,7 @@ tempfile.workspace = true
 
 [package.metadata.lankide.e2e]
 command = "cargo test -p lankide-computer --features test-support --test computer_e2e --test output_record_e2e"
-scenario = "Run a real UDS Computer peer through parallel assignments, session recovery, steer, resource and Tool routing, expand real message content files locally with failure short-circuiting, replay, cancellation, forced process cleanup, and startup expiration of output records while preserving native sessions."
+scenario = "Run a real UDS Computer peer through parallel assignments, session recovery, steer, resource and Tool routing, expand real message content files locally with failure short-circuiting, replay, cancellation, forced process cleanup, and startup expiration of output records while preserving native sessions. Report structured attempt failures and log original diagnostics with execution, attempt, Agent, and Computer IDs."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

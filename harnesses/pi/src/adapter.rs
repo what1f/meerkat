@@ -141,18 +141,20 @@ impl PiHarness {
         }
 
         let mut child = command.spawn().map_err(|error| {
-            HarnessError::new(
+            harness_error(
                 HarnessErrorCode::SpawnFailed,
                 format!("failed to spawn Pi CLI: {error}"),
             )
         })?;
         record_pid(paths.pid_journal.as_deref(), "spawned", child.id());
-        let mut stdin = child.stdin.take().ok_or_else(|| {
-            HarnessError::new(HarnessErrorCode::SpawnFailed, "Pi stdin unavailable")
-        })?;
-        let stdout = child.stdout.take().ok_or_else(|| {
-            HarnessError::new(HarnessErrorCode::SpawnFailed, "Pi stdout unavailable")
-        })?;
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| harness_error(HarnessErrorCode::SpawnFailed, "Pi stdin unavailable"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| harness_error(HarnessErrorCode::SpawnFailed, "Pi stdout unavailable"))?;
         let (line_sender, line_receiver) = std_mpsc::channel();
         let rpc_artifact = paths.rpc_artifact.clone();
         thread::spawn(move || read_jsonl(stdout, line_sender, &rpc_artifact, record_limit));
@@ -164,8 +166,9 @@ impl PiHarness {
         let state = match wait_for_state(&line_receiver) {
             Ok(state) => state,
             Err(error) => {
+                let detail = process_exit_detail(&paths.stderr_path, &mut child, &error.message);
                 reap(&mut child, paths.pid_journal.as_deref(), true);
-                return Err(error);
+                return Err(harness_error(error.code, detail));
             }
         };
         let native_session_id = state
@@ -174,7 +177,7 @@ impl PiHarness {
             .filter(|value| !value.is_empty())
             .ok_or_else(|| {
                 reap(&mut child, paths.pid_journal.as_deref(), true);
-                HarnessError::new(
+                harness_error(
                     HarnessErrorCode::BindFailed,
                     "Pi get_state omitted sessionId",
                 )
@@ -182,7 +185,7 @@ impl PiHarness {
             .to_owned();
         if resume && request.native_session_id.as_deref() != Some(native_session_id.as_str()) {
             reap(&mut child, paths.pid_journal.as_deref(), true);
-            return Err(HarnessError::new(
+            return Err(harness_error(
                 HarnessErrorCode::BindFailed,
                 "Pi resumed a different native session",
             ));
@@ -202,6 +205,7 @@ impl PiHarness {
             responses: Mutex::new(HashMap::new()),
             command_id: AtomicU64::new(1),
             native_names: names,
+            stderr_path: paths.stderr_path,
             pid_journal: paths.pid_journal,
         });
         dispatch(Arc::downgrade(&inner), line_receiver);
@@ -294,7 +298,7 @@ impl HarnessFactory for PiHarness {
                         .pointer("/data/models")
                         .and_then(Value::as_array)
                         .ok_or_else(|| {
-                            HarnessError::new(
+                            harness_error(
                                 HarnessErrorCode::InvalidEvent,
                                 "Pi did not return a model directory",
                             )
@@ -304,7 +308,7 @@ impl HarnessFactory for PiHarness {
                         .map(|model| {
                             let id = model["id"].as_str().filter(|v| !v.is_empty()).ok_or_else(
                                 || {
-                                    HarnessError::new(
+                                    harness_error(
                                         HarnessErrorCode::InvalidEvent,
                                         "Pi returned a model without an ID",
                                     )
@@ -314,7 +318,7 @@ impl HarnessFactory for PiHarness {
                                 .as_str()
                                 .filter(|v| !v.is_empty())
                                 .ok_or_else(|| {
-                                    HarnessError::new(
+                                    harness_error(
                                         HarnessErrorCode::InvalidEvent,
                                         "Pi returned a model without a provider",
                                     )
@@ -465,7 +469,7 @@ fn write_extension(
         })
         .collect::<Vec<_>>();
     let definitions = serde_json::to_string(&definitions).map_err(|error| {
-        HarnessError::new(
+        harness_error(
             HarnessErrorCode::InvalidConfig,
             format!("encode Pi tools: {error}"),
         )
@@ -511,7 +515,7 @@ fn validate_session_file(
         .map(|entry| entry.path())
         .collect::<Vec<_>>();
     if matches.len() != 1 {
-        return Err(HarnessError::new(
+        return Err(harness_error(
             HarnessErrorCode::BindFailed,
             format!("Pi session artifact count is {}, expected 1", matches.len()),
         ));
@@ -524,13 +528,11 @@ fn validate_session_file(
         .transpose()
         .map_err(io_error("read Pi session header"))?
         .and_then(|line| serde_json::from_str(&line).ok())
-        .ok_or_else(|| {
-            HarnessError::new(HarnessErrorCode::BindFailed, "invalid Pi session header")
-        })?;
+        .ok_or_else(|| harness_error(HarnessErrorCode::BindFailed, "invalid Pi session header"))?;
     if header.get("type").and_then(Value::as_str) != Some("session")
         || header.get("id").and_then(Value::as_str) != Some(session_id)
     {
-        return Err(HarnessError::new(
+        return Err(harness_error(
             HarnessErrorCode::BindFailed,
             "Pi session header does not match native session id",
         ));
@@ -540,7 +542,7 @@ fn validate_session_file(
         let requested =
             fs::canonicalize(working_directory).map_err(io_error("resolve requested Pi cwd"))?;
         if stored != requested {
-            return Err(HarnessError::new(
+            return Err(harness_error(
                 HarnessErrorCode::BindFailed,
                 "Pi session belongs to another working directory",
             ));
@@ -558,15 +560,15 @@ fn wait_for_state(
             .recv_timeout(deadline.saturating_duration_since(Instant::now()))
             .map_err(|error| match error {
                 std_mpsc::RecvTimeoutError::Timeout => {
-                    HarnessError::new(HarnessErrorCode::Timeout, "Pi get_state timeout")
+                    harness_error(HarnessErrorCode::Timeout, "Pi get_state timeout")
                 }
                 std_mpsc::RecvTimeoutError::Disconnected => {
-                    HarnessError::new(HarnessErrorCode::BindFailed, "Pi exited before get_state")
+                    harness_error(HarnessErrorCode::BindFailed, "Pi exited before get_state")
                 }
             })?
             .map_err(io_error("read Pi bind event"))?;
         let value: Value = serde_json::from_str(&line).map_err(|error| {
-            HarnessError::new(
+            harness_error(
                 HarnessErrorCode::BindFailed,
                 format!("invalid Pi bind event: {error}"),
             )
@@ -577,7 +579,7 @@ fn wait_for_state(
             if value.get("success").and_then(Value::as_bool) == Some(true) {
                 return Ok(value);
             }
-            return Err(HarnessError::new(
+            return Err(harness_error(
                 HarnessErrorCode::BindFailed,
                 value
                     .get("error")
@@ -593,6 +595,7 @@ struct PiSession {
 }
 
 struct Inner {
+    stderr_path: PathBuf,
     entry: Mutex<SessionEntry>,
     stdin: Mutex<Option<ChildStdin>>,
     child: Mutex<Option<Child>>,
@@ -625,9 +628,9 @@ impl Inner {
 
     fn write(&self, value: &Value) -> Result<(), HarnessError> {
         let mut guard = self.stdin.lock().expect("Pi stdin mutex poisoned");
-        let stdin = guard.as_mut().ok_or_else(|| {
-            HarnessError::new(HarnessErrorCode::InvalidState, "Pi stdin is closed")
-        })?;
+        let stdin = guard
+            .as_mut()
+            .ok_or_else(|| harness_error(HarnessErrorCode::InvalidState, "Pi stdin is closed"))?;
         write_line(stdin, value)
     }
 
@@ -658,9 +661,9 @@ impl Inner {
                 .remove(&id);
             match error {
                 std_mpsc::RecvTimeoutError::Timeout => {
-                    HarnessError::new(HarnessErrorCode::Timeout, "Pi command response timeout")
+                    harness_error(HarnessErrorCode::Timeout, "Pi command response timeout")
                 }
-                std_mpsc::RecvTimeoutError::Disconnected => HarnessError::new(
+                std_mpsc::RecvTimeoutError::Disconnected => harness_error(
                     HarnessErrorCode::StreamInterrupted,
                     "Pi command response channel closed",
                 ),
@@ -727,7 +730,7 @@ impl HarnessSession for PiSession {
                 .lock()
                 .expect("Pi command mutex poisoned");
             if self.inner.health() != SessionHealth::Healthy {
-                return Err(HarnessError::new(
+                return Err(harness_error(
                     HarnessErrorCode::InvalidState,
                     "Pi session is not healthy",
                 ));
@@ -736,7 +739,7 @@ impl HarnessSession for PiSession {
             {
                 let mut active = self.inner.active.lock().expect("Pi active mutex poisoned");
                 if active.is_some() {
-                    return Err(HarnessError::new(
+                    return Err(harness_error(
                         HarnessErrorCode::InvalidState,
                         "Pi execution is already active",
                     ));
@@ -792,13 +795,13 @@ impl HarnessSession for PiSession {
                 .expect("Pi command mutex poisoned");
             let active_guard = self.inner.active.lock().expect("Pi active mutex poisoned");
             let active = active_guard.as_ref().ok_or_else(|| {
-                HarnessError::new(
+                harness_error(
                     HarnessErrorCode::InvalidState,
                     "steer requires an active Pi execution",
                 )
             })?;
             if active.cancelling.is_some() {
-                return Err(HarnessError::new(
+                return Err(harness_error(
                     HarnessErrorCode::InvalidState,
                     "Pi cancellation is in progress",
                 ));
@@ -826,13 +829,13 @@ impl HarnessSession for PiSession {
                 .expect("Pi command mutex poisoned");
             let mut active_guard = self.inner.active.lock().expect("Pi active mutex poisoned");
             let active = active_guard.as_mut().ok_or_else(|| {
-                HarnessError::new(
+                harness_error(
                     HarnessErrorCode::InvalidState,
                     "tool result requires an active Pi execution",
                 )
             })?;
             if !active.observed_tools.contains(&request.tool_call_id) {
-                return Err(HarnessError::new(
+                return Err(harness_error(
                     HarnessErrorCode::InvalidState,
                     "Pi tool call was not observed",
                 ));
@@ -844,7 +847,7 @@ impl HarnessSession for PiSession {
                         already_applied: true,
                     });
                 }
-                return Err(HarnessError::new(
+                return Err(harness_error(
                     HarnessErrorCode::InvalidState,
                     "conflicting Pi tool result",
                 ));
@@ -876,7 +879,7 @@ impl HarnessSession for PiSession {
             }
             let mut active_guard = self.inner.active.lock().expect("Pi active mutex poisoned");
             let active = active_guard.as_mut().ok_or_else(|| {
-                HarnessError::new(
+                harness_error(
                     HarnessErrorCode::InvalidState,
                     "cancel requires an active Pi execution",
                 )
@@ -967,7 +970,7 @@ fn inject_tool_result(
     request: &ToolResultRequest,
 ) -> Result<(), HarnessError> {
     let encoded = serde_json::to_string(request).map_err(|error| {
-        HarnessError::new(
+        harness_error(
             HarnessErrorCode::Io,
             format!("encode Pi tool result: {error}"),
         )
@@ -989,7 +992,7 @@ fn dispatch(weak: Weak<Inner>, lines: std_mpsc::Receiver<Result<String, std::io:
                 Ok(line) => dispatch_line(&inner, &line),
                 Err(error) => fail(
                     &inner,
-                    HarnessError::new(
+                    harness_error(
                         HarnessErrorCode::StreamInterrupted,
                         format!("Pi stdout failed: {error}"),
                     ),
@@ -1004,9 +1007,21 @@ fn dispatch(weak: Weak<Inner>, lines: std_mpsc::Receiver<Result<String, std::io:
         {
             fail(
                 &inner,
-                HarnessError::new(
+                harness_error(
                     HarnessErrorCode::StreamInterrupted,
-                    "Pi RPC ended before a terminal event",
+                    inner
+                        .child
+                        .lock()
+                        .expect("child lock")
+                        .as_mut()
+                        .map(|child| {
+                            process_exit_detail(
+                                &inner.stderr_path,
+                                child,
+                                "Pi RPC ended before a terminal event",
+                            )
+                        })
+                        .unwrap_or_else(|| "Pi RPC ended before a terminal event".into()),
                 ),
             );
         }
@@ -1019,7 +1034,7 @@ fn dispatch_line(inner: &Inner, line: &str) {
         Err(error) => {
             fail(
                 inner,
-                HarnessError::new(
+                harness_error(
                     HarnessErrorCode::InvalidEvent,
                     format!("invalid Pi RPC event: {error}"),
                 ),
@@ -1043,7 +1058,7 @@ fn dispatch_line(inner: &Inner, line: &str) {
                 let result = if value.get("success").and_then(Value::as_bool) == Some(true) {
                     Ok(())
                 } else {
-                    Err(HarnessError::new(
+                    Err(harness_error(
                         HarnessErrorCode::InvalidState,
                         value
                             .get("error")
@@ -1060,7 +1075,7 @@ fn dispatch_line(inner: &Inner, line: &str) {
         {
             fail(
                 inner,
-                HarnessError::new(
+                harness_error(
                     HarnessErrorCode::InvalidState,
                     value
                         .get("error")
@@ -1102,7 +1117,7 @@ fn dispatch_line(inner: &Inner, line: &str) {
                 drop(active_guard);
                 fail(
                     inner,
-                    HarnessError::new(HarnessErrorCode::InvalidEvent, "Pi tool call id is empty"),
+                    harness_error(HarnessErrorCode::InvalidEvent, "Pi tool call id is empty"),
                 );
                 return;
             }
@@ -1152,6 +1167,7 @@ fn dispatch_line(inner: &Inner, line: &str) {
                 AgentEventKind::Cancelled { reason }
             } else if matches!(failed, Some("error" | "aborted")) {
                 AgentEventKind::Failed {
+                    failure: None,
                     code: failed.unwrap_or("error").to_owned(),
                     message: last_error(&value)
                         .unwrap_or("Pi execution failed")
@@ -1162,6 +1178,7 @@ fn dispatch_line(inner: &Inner, line: &str) {
                     final_output: output,
                 }
             };
+            let kind = classified_event(kind);
             let sequence = active.next_sequence;
             let sender = active.sender.clone();
             let was_cancelled = matches!(kind, AgentEventKind::Cancelled { .. });
@@ -1233,7 +1250,7 @@ fn tool_ui_request(inner: &Inner, value: &Value) {
     else {
         fail(
             inner,
-            HarnessError::new(HarnessErrorCode::InvalidEvent, "invalid Pi tool UI request"),
+            harness_error(HarnessErrorCode::InvalidEvent, "invalid Pi tool UI request"),
         );
         return;
     };
@@ -1245,7 +1262,7 @@ fn tool_ui_request(inner: &Inner, value: &Value) {
         drop(active_guard);
         fail(
             inner,
-            HarnessError::new(
+            harness_error(
                 HarnessErrorCode::InvalidEvent,
                 "Pi tool UI request preceded ToolStarted",
             ),
@@ -1428,7 +1445,7 @@ fn shorten_strings(value: &mut Value, limit: usize) {
 
 fn write_line(stdin: &mut ChildStdin, value: &Value) -> Result<(), HarnessError> {
     serde_json::to_writer(&mut *stdin, value).map_err(|error| {
-        HarnessError::new(
+        harness_error(
             HarnessErrorCode::Io,
             format!("encode Pi RPC command: {error}"),
         )
@@ -1459,12 +1476,147 @@ fn record_pid(path: Option<&Path>, action: &str, pid: u32) {
 }
 
 fn io_error(context: &'static str) -> impl FnOnce(std::io::Error) -> HarnessError {
-    move |error| HarnessError::new(HarnessErrorCode::Io, format!("{context}: {error}"))
+    move |error| harness_error(HarnessErrorCode::Io, format!("{context}: {error}"))
 }
 
 fn stream_dropped() -> HarnessError {
-    HarnessError::new(
+    harness_error(
         HarnessErrorCode::InvalidState,
         "Pi event stream was dropped",
     )
+}
+
+fn classify_failure(code: String, detail: String) -> lankide_harness::HarnessFailure {
+    use lankide_harness::FailureCategory;
+    let text = detail.to_ascii_lowercase();
+    let category = if (text.contains("model")
+        && (text.contains("not found")
+            || text.contains("not available")
+            || text.contains("not supported")))
+        || [
+            "model not found",
+            "unknown model",
+            "invalid model",
+            "does not exist",
+            "no such file",
+            "not found (os error 2)",
+            "command not found",
+            "enoent",
+        ]
+        .iter()
+        .any(|value| text.contains(value))
+    {
+        FailureCategory::Configuration
+    } else if [
+        "unauthorized",
+        "authentication",
+        "authenticate",
+        "invalid bearer token",
+        "token expired",
+        "no api key",
+        "missing api key",
+        "invalid api key",
+        "invalid_api_key",
+        "api key not",
+        "not logged in",
+        "login required",
+        "401",
+        "forbidden",
+        "403",
+    ]
+    .iter()
+    .any(|value| text.contains(value))
+    {
+        FailureCategory::Authentication
+    } else if [
+        "rate limit",
+        "rate_limit",
+        "rate-limit",
+        "usage limit",
+        "usage_limit",
+        "resource_exhausted",
+        "exceeded your current quota",
+        "too many requests",
+        "429",
+        "quota exceeded",
+    ]
+    .iter()
+    .any(|value| text.contains(value))
+    {
+        FailureCategory::RateLimit
+    } else if text.contains("cancelled") || text.contains("canceled") || text.contains("aborted") {
+        FailureCategory::Cancelled
+    } else if text.contains("timeout") || text.contains("timed out") {
+        FailureCategory::Timeout
+    } else if [
+        "exited",
+        "exit status",
+        "process exit",
+        "stream",
+        "connection",
+        "503",
+        "502",
+        "temporarily unavailable",
+    ]
+    .iter()
+    .any(|value| text.contains(value))
+    {
+        FailureCategory::Transient
+    } else {
+        FailureCategory::Agent
+    };
+    lankide_harness::HarnessFailure {
+        code,
+        category,
+        retryable: matches!(
+            category,
+            FailureCategory::RateLimit | FailureCategory::Transient | FailureCategory::Timeout
+        ),
+        detail,
+    }
+}
+
+fn harness_error(code: HarnessErrorCode, message: impl Into<String>) -> HarnessError {
+    let mut error = HarnessError::new(code, message);
+    error.failure = classify_failure(error.failure.code.clone(), error.message.clone());
+    // Unknown transport and configuration failures keep the contract default.
+    if error.failure.category == lankide_harness::FailureCategory::Agent {
+        let default = HarnessError::new(code, error.message.clone());
+        error.failure.category = default.failure.category;
+        error.failure.retryable = default.failure.retryable;
+    }
+    error
+}
+
+fn classified_event(mut kind: AgentEventKind) -> AgentEventKind {
+    if let AgentEventKind::Failed {
+        code,
+        message,
+        failure,
+    } = &mut kind
+    {
+        if failure.is_none() {
+            *failure = Some(classify_failure(code.clone(), message.clone()));
+        }
+    }
+    kind
+}
+
+fn process_exit_detail(stderr_path: &Path, child: &mut Child, fallback: &str) -> String {
+    let status = child
+        .try_wait()
+        .ok()
+        .flatten()
+        .map(|status| status.to_string());
+    let stderr = std::fs::read_to_string(stderr_path).unwrap_or_default();
+    if stderr.trim().is_empty() {
+        status
+            .map(|status| format!("{fallback}; process exit: {status}"))
+            .unwrap_or_else(|| fallback.to_owned())
+    } else {
+        match status {
+            Some(status) => format!("{stderr}\nprocess exit: {status}"),
+            None => stderr,
+        }
+    }
 }

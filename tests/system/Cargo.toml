@@ -32,7 +32,7 @@ bench = false
 
 [package.metadata.lankide.e2e]
 command = "cargo test -p lankide-system-e2e"
-scenario = "Mention one Agent in a group, queue a message during its run, and restart the Computer during a run; verify chat replies and execution isolation through both real daemons."
+scenario = "Mention one Agent in a group, queue a message during its run, and restart the Computer during a run; verify chat replies and execution isolation through both real daemons. Verify S4.1-S4.3: classify spawn and mid-turn failures, preserve original diagnostics in client details and Computer logs, and keep failures out of every chat."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

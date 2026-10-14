@@ -15,6 +15,7 @@ service RuntimeProtocol {
   rpc SetWorkspaceState(SetWorkspaceStateRequest) returns (Workspace);
   rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
   rpc GetAgent(GetAgentRequest) returns (Agent);
+  rpc GetExecutionDetails(GetExecutionDetailsRequest) returns (ExecutionDetails);
   rpc GetAgentAvatar(GetAgentAvatarRequest) returns (GetAgentAvatarResponse);
   rpc CreateAgent(CreateAgentRequest) returns (Agent);
   rpc UpdateAgent(UpdateAgentRequest) returns (Agent);
@@ -202,11 +203,33 @@ message AssignExecution {
   int64 created_at = 12;
 }
 
+message AttemptFailure {
+  string code = 1;
+  string category = 2;
+  bool retryable = 3;
+  string fingerprint = 4;
+  string detail = 5;
+}
+
+message GetExecutionDetailsRequest { string request_id = 1; int64 execution_id = 2; }
+message ExecutionAttemptDetails {
+  uint32 attempt = 1;
+  string computer_id = 2;
+  string state = 3;
+  AttemptFailure failure = 4;
+}
+message ExecutionDetails {
+  int64 execution_id = 1;
+  string state = 2;
+  repeated ExecutionAttemptDetails attempts = 3;
+}
+
 message AssignmentResult {
   ExecutionRef execution = 1;
   bool accepted = 2;
   string error_code = 3;
   string error_message = 4;
+  AttemptFailure failure = 5;
 }
 
 enum ExecutionEventKind {

@@ -3,7 +3,9 @@
 //! Typed management boundary and production Runtime UDS client.
 
 use lankide_protocol as wire;
-pub use lankide_protocol::PROVIDER_CAPABILITY_TASK_SYSTEM;
+pub use lankide_protocol::{
+    AttemptFailure, ExecutionAttemptDetails, ExecutionDetails, PROVIDER_CAPABILITY_TASK_SYSTEM,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -386,6 +388,14 @@ pub trait ManagementClient: Send + Sync {
         state: WorkspaceStatus,
     ) -> Result<Workspace, ClientError>;
     async fn list_agents(&self, workspace_id: &str) -> Result<Vec<Agent>, ClientError>;
+    async fn get_execution_details(
+        &self,
+        _execution_id: i64,
+    ) -> Result<ExecutionDetails, ClientError> {
+        Err(ClientError::Unavailable(
+            "execution details are unavailable".into(),
+        ))
+    }
     async fn get_agent(&self, workspace_id: &str, agent_id: &str) -> Result<Agent, ClientError>;
     async fn create_agent(
         &self,
@@ -997,6 +1007,27 @@ impl ManagementClient for RuntimeManagementClient {
             .into_iter()
             .map(|agent| expect_agent(w, None, agent))
             .collect()
+    }
+    async fn get_execution_details(
+        &self,
+        execution_id: i64,
+    ) -> Result<ExecutionDetails, ClientError> {
+        let details = self
+            .client
+            .clone()
+            .get_execution_details(wire::GetExecutionDetailsRequest {
+                request_id: self.request_id(),
+                execution_id,
+            })
+            .await
+            .map_err(map_status)?
+            .into_inner();
+        if details.execution_id != execution_id {
+            return Err(ClientError::Protocol(
+                "execution details response execution_id mismatch".into(),
+            ));
+        }
+        Ok(details)
     }
     async fn get_agent(&self, w: &str, a: &str) -> Result<Agent, ClientError> {
         expect_agent(

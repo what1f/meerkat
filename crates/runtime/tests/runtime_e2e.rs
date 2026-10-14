@@ -1210,6 +1210,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             "instance-stable",
             ComputerFrame {
                 frame: Some(computer_frame::Frame::AssignmentResult(AssignmentResult {
+                    failure: None,
                     execution: Some(execution.clone()),
                     accepted: true,
                     error_code: String::new(),
