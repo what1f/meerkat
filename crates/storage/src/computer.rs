@@ -4,6 +4,7 @@ use rusqlite::{OptionalExtension, params};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ComputerRecord {
     pub computer_id: String,
+    pub is_local: bool,
     pub display_name: String,
     pub credential_hash: String,
     pub paired_at: i64,
@@ -38,18 +39,19 @@ impl Storage {
                 return Err(StorageError::Invalid("pairing_code_invalid".into()));
             }
         }
-        transaction.execute("INSERT INTO computers(computer_id,display_name,credential_hash,paired_at,os,version,inventory_json) VALUES(?1,?2,?3,?4,?5,?6,?7)", params![computer.computer_id,computer.display_name,computer.credential_hash,computer.paired_at,computer.os,computer.version,computer.inventory_json])?;
+        transaction.execute("INSERT INTO computers(computer_id,display_name,credential_hash,paired_at,os,version,inventory_json,is_local) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", params![computer.computer_id,computer.display_name,computer.credential_hash,computer.paired_at,computer.os,computer.version,computer.inventory_json,computer.is_local])?;
         transaction.commit()?;
         Ok(())
     }
 
     pub fn registered_computers(&self) -> Result<Vec<ComputerRecord>> {
         let connection = self.read_conn()?;
-        let mut statement = connection.prepare("SELECT computer_id,display_name,credential_hash,paired_at,revoked_at,last_seen_at,os,version,inventory_json FROM computers ORDER BY paired_at,computer_id")?;
+        let mut statement = connection.prepare("SELECT computer_id,display_name,credential_hash,paired_at,revoked_at,last_seen_at,os,version,inventory_json,is_local FROM computers ORDER BY paired_at,computer_id")?;
         Ok(statement
             .query_map([], |r| {
                 Ok(ComputerRecord {
                     computer_id: r.get(0)?,
+                    is_local: r.get(9)?,
                     display_name: r.get(1)?,
                     credential_hash: r.get(2)?,
                     paired_at: r.get(3)?,
@@ -67,18 +69,46 @@ impl Storage {
         let connection = self.conn()?;
         let exists = connection
             .query_row(
-                "SELECT computer_id FROM computers WHERE computer_id=?1",
+                "SELECT is_local FROM computers WHERE computer_id=?1",
                 [computer_id],
-                |r| r.get::<_, String>(0),
+                |r| r.get::<_, bool>(0),
             )
             .optional()?;
         if exists.is_none() {
             return Err(StorageError::Invalid("computer_unknown".into()));
         }
+        if exists == Some(true) {
+            return Err(StorageError::Invalid(
+                "local_computer_cannot_be_removed".into(),
+            ));
+        }
+        let assigned: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM agents WHERE computer_id=?1)",
+            [computer_id],
+            |r| r.get(0),
+        )?;
+        if assigned {
+            return Err(StorageError::Invalid("computer_has_assigned_agents".into()));
+        }
         connection.execute(
             "UPDATE computers SET revoked_at=COALESCE(revoked_at,?2) WHERE computer_id=?1",
             params![computer_id, now],
         )?;
+        Ok(())
+    }
+
+    pub fn rename_computer(&self, computer_id: &str, name: &str) -> Result<()> {
+        let name = name.trim();
+        if name.is_empty() || name.chars().count() > 80 {
+            return Err(StorageError::Invalid("computer_name_invalid".into()));
+        }
+        let changed = self.conn()?.execute(
+            "UPDATE computers SET display_name=?2 WHERE computer_id=?1 AND revoked_at IS NULL",
+            params![computer_id, name],
+        )?;
+        if changed != 1 {
+            return Err(StorageError::Invalid("computer_unknown".into()));
+        }
         Ok(())
     }
 

@@ -19,14 +19,10 @@ fn config() -> RigConfig {
 #[tokio::test]
 async fn s13_1_placement_requires_registered_non_revoked_computer_and_reported_harness()
 -> Result<()> {
-    let mut rig = SystemRig::start(config()).await?;
+    let rig = SystemRig::start(config()).await?;
     let team = rig.workspace("team").await?;
-    let computer = rig
-        .management()
-        .get_computer_catalog(None)
-        .await?
-        .remove(0)
-        .id;
+    let remote = rig.add_computer().await?;
+    let computer = remote.id.clone();
     let draft = AgentDraft {
         id: "bruce".into(),
         name: "Bruce".into(),
@@ -47,6 +43,7 @@ async fn s13_1_placement_requires_registered_non_revoked_computer_and_reported_h
     ));
     let agent = team
         .agent("bruce")
+        .computer(&computer)
         .harness(Script::reply("hi"))
         .create()
         .await?;
@@ -64,6 +61,14 @@ async fn s13_1_placement_requires_registered_non_revoked_computer_and_reported_h
         Err(ClientError::HarnessUnavailableOnComputer)
     ));
     assert_eq!(agent.view().await?.computer_id, original.computer_id);
+    assert!(
+        rig.management().revoke_computer(&computer).await.is_err(),
+        "must move assigned Agents before removing their Computer"
+    );
+    let destination = rig.add_computer().await?;
+    let mut moved = original.clone();
+    moved.computer_id = destination.id.clone();
+    rig.management().update_agent(moved, None).await?;
     rig.management().revoke_computer(&computer).await?;
     let revoked = AgentDraft {
         id: "clark".into(),
@@ -81,10 +86,14 @@ async fn s13_1_placement_requires_registered_non_revoked_computer_and_reported_h
         Err(ClientError::ComputerRevoked)
     ));
     assert!(
-        rig.await_terminal_computer()
+        rig.management()
+            .get_computer_catalog(None)
             .await?
-            .contains("computer_revoked")
+            .iter()
+            .any(|c| c.id == remote.id && c.revoked_at.is_some() && !c.available)
     );
+    drop(remote);
+    drop(destination);
     rig.close().await
 }
 
@@ -169,17 +178,22 @@ async fn s13_3_offline_message_stays_queued_and_runs_after_reconnect() -> Result
 }
 
 #[tokio::test]
-async fn s13_4_revoked_computer_cannot_deliver_a_late_result() -> Result<()> {
-    let mut rig = SystemRig::start(RigConfig {
+async fn s13_4_assigned_computer_removal_is_refused_and_its_result_is_preserved() -> Result<()> {
+    let rig = SystemRig::start(RigConfig {
         network_proxy: true,
         ..config()
     })
     .await?;
+    let device = lankide_computer_daemon::read_credentials(rig.computer_home())?.unwrap();
     let team = rig.workspace("team").await?;
     let agent = team
         .agent("bruce")
-        .harness(Script::BufferedReply {
+        .computer(&device.computer_id)
+        .harness(Script::Reply {
             text: "late".into(),
+            held: true,
+            delay_ms: 0,
+            deltas: vec![],
         })
         .create()
         .await?;
@@ -195,41 +209,29 @@ async fn s13_4_revoked_computer_cannot_deliver_a_late_result() -> Result<()> {
     let computer = agent.view().await?.computer_id;
     rig.proxy.as_ref().unwrap().pause();
     agent.release_run().await?;
-    // The finished result is durable on the Computer but has not reached Runtime.
+    assert!(matches!(
+        rig.management().revoke_computer(&computer).await,
+        Err(ClientError::ComputerHasAssignedAgents)
+    ));
+    rig.proxy.as_ref().unwrap().restore();
+    rig.settle().await?;
+    let team = rig.existing_workspace("team");
+    let agent = team.existing_agent("bruce");
     timeout(Duration::from_secs(5), async {
-        loop {
-            let state = rig.computer_state()?;
-            if state["pending_events"]
-                .as_object()
-                .unwrap()
-                .values()
-                .any(|events| {
-                    events.as_object().unwrap().values().any(|e| {
-                        e["kind"] == lankide_protocol::ExecutionEventKind::Completed as i32
-                    })
-                })
-            {
-                return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
-            }
+        while team.dm_transcript(&agent, "alice") != ["hello", "late"] {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
-    .await??;
-    rig.management().revoke_computer(&computer).await?;
-    rig.proxy.as_ref().unwrap().restore();
-    // Wait for the observable terminal link rejection and lease outcome.
+    .await?;
+    assert_eq!(team.dm_transcript(&agent, "alice"), ["hello", "late"]);
+    assert_eq!(agent.executions().await?[0].output.as_deref(), Some("OK"));
     assert!(
-        rig.await_terminal_computer()
+        agent
+            .executions()
             .await?
-            .contains("computer_revoked")
+            .iter()
+            .all(|r| r.state == "succeeded")
     );
-    let team = rig.existing_workspace("team");
-    let agent = team.existing_agent("bruce");
-    agent
-        .wait_for(|runs, _| runs.iter().all(|r| r.state == "failed"))
-        .await?;
-    assert_eq!(team.dm_transcript(&agent, "alice"), ["hello"]);
-    assert!(agent.executions().await?.iter().all(|r| r.output.is_none()));
     rig.close().await
 }
 

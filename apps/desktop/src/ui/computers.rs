@@ -1,5 +1,5 @@
 use super::*;
-use gpui_component::text::TextView;
+use gpui_component::text::{TextView, TextViewStyle};
 use std::path::Path;
 
 /// A device glyph with a presence badge in its corner. Offline Computers dim
@@ -61,7 +61,14 @@ impl ComputerChoice {
             .items_center()
             .gap(px(10.))
             .child(computer_glyph(self.theme, self.available, 22., surface))
-            .child(self.name.clone())
+            .child(
+                div()
+                    .debug_selector({
+                        let name = self.name.clone();
+                        move || format!("computer-choice-name-{name}")
+                    })
+                    .child(self.name.clone()),
+            )
     }
 }
 impl SelectItem for ComputerChoice {
@@ -84,6 +91,9 @@ impl SelectItem for ComputerChoice {
 
 impl LankideApp {
     pub(super) fn subscribe_computers(&mut self, cx: &mut Context<Self>) {
+        if self.computer_events_task.is_some() {
+            return;
+        }
         let client = self.client.clone();
         self.computer_events_task = Some(cx.spawn(async move |this, cx| {
             loop {
@@ -142,7 +152,7 @@ impl LankideApp {
             let request = self.pairing_request;
             cx.spawn(async move |this, cx| {
                 cx.background_executor()
-                    .timer(Duration::from_millis(1600))
+                    .timer(Duration::from_millis(1200))
                     .await;
                 let _ = this.update(cx, |this, cx| {
                     if this.pairing_active(request) {
@@ -153,6 +163,7 @@ impl LankideApp {
             })
             .detach();
         }
+        self.computer_choices_changed = true;
         self.computers = catalog
             .into_iter()
             .filter(|computer| computer.registered && computer.revoked_at.is_none())
@@ -255,7 +266,9 @@ impl LankideApp {
             if let Some(id) = selected {
                 select.set_selected_value(&id, window, cx);
             }
+            cx.notify();
         });
+        window.refresh();
     }
 
     pub(super) fn reload_computers(
@@ -264,6 +277,7 @@ impl LankideApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.subscribe_computers(cx);
         self.computer_request += 1;
         let request = self.computer_request;
         let client = self.client.clone();
@@ -314,7 +328,7 @@ impl LankideApp {
         let client = self.client.clone();
         cx.spawn(async move |this, cx| {
             let result = async {
-                let access = client.get_remote_access().await?;
+                let access = client.enable_remote_access().await?;
                 let catalog = client.get_computer_catalog(None).await?;
                 let code = if access.address.is_some() {
                     Some(client.create_pairing_code().await?)
@@ -352,6 +366,35 @@ impl LankideApp {
         })
         .detach();
         cx.notify();
+    }
+
+    fn mark_pairing_copied(&mut self, cx: &mut Context<Self>) {
+        self.pairing_copied = true;
+        let request = self.pairing_request;
+        self.notify_dialog_changed(cx);
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(1600))
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.pairing_active(request) {
+                    this.pairing_copied = false;
+                    this.notify_dialog_changed(cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn edit_pairing_address(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let address = self.pairing_address.clone().unwrap_or_default();
+        self.pairing_address_input
+            .update(cx, |input, cx| input.set_value(address, window, cx));
+        self.pairing_editing = true;
+        self.pairing_waiting_hint = false;
+        self.pairing_hint_task = None;
+        self.error = None;
+        self.notify_dialog_changed(cx);
     }
 
     fn pairing_active(&self, request: u64) -> bool {
@@ -405,6 +448,145 @@ impl LankideApp {
         self.notify_dialog_changed(cx);
     }
 
+    fn rename_computer(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(computer) = self.computers.iter().find(|c| c.id == id) else {
+            return;
+        };
+        let name = computer.name.clone();
+        self.computer_name_input.update(cx, |input, cx| {
+            input.set_value(name, window, cx);
+            input.focus(window, cx);
+        });
+        self.computer_renaming = Some(id);
+        self.error = None;
+        cx.notify();
+    }
+
+    pub(super) fn save_computer_name(&mut self, cx: &mut Context<Self>) {
+        if self.computer_rename_saving {
+            return;
+        }
+        let Some(id) = self.computer_renaming.clone() else {
+            return;
+        };
+        let name = self.computer_name_input.read(cx).value().trim().to_owned();
+        self.computer_rename_saving = true;
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            let result = client.rename_computer(&id, &name).await;
+            let _ = this.update(cx, |this, cx| {
+                this.computer_rename_saving = false;
+                match result {
+                    Ok(()) => {
+                        this.computer_renaming = None;
+                        this.error = None;
+                    }
+                    Err(error) => this.error = Some(UiMessage::client(error)),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn remove_computer(&mut self, id: String, cx: &mut Context<Self>) {
+        if self.busy.is_some() {
+            return;
+        }
+        self.busy = Some(BusyOperation::RemoveComputer);
+        self.error = None;
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            let result = client.revoke_computer(&id).await;
+            let _ = this.update(cx, |this, cx| {
+                this.busy = None;
+                match result {
+                    Ok(()) => this.modal = None,
+                    Err(error) => this.error = Some(UiMessage::client(error)),
+                }
+                this.notify_dialog_changed(cx);
+            });
+        })
+        .detach();
+        self.notify_dialog_changed(cx);
+    }
+
+    pub(super) fn remove_computer_dialog(
+        &self,
+        dialog: gpui_component::dialog::Dialog,
+        app: Entity<Self>,
+        id: String,
+        _window: &mut Window,
+    ) -> gpui_component::dialog::Dialog {
+        let language = self.language;
+        let busy = self.busy == Some(BusyOperation::RemoveComputer);
+        let theme = self.theme();
+        let error = self.error.as_ref().map(|message| message.text(language));
+        let name = self
+            .computers
+            .iter()
+            .find(|c| c.id == id)
+            .map(|c| c.name.clone())
+            .unwrap_or_default();
+        let title = language
+            .text("移除 {name}？", "Remove {name}?")
+            .replace("{name}", &name);
+        let cancel_app = app.clone();
+        DesktopDialog::from(dialog)
+            .w(px(440.))
+            .h(px(if error.is_some() { 270. } else { 200. }))
+            .overlay(true)
+            .overlay_closable(!busy)
+            .on_cancel(move |_, _, cx| {
+                cancel_app.update(cx, |this, cx| {
+                    if !busy {
+                        this.modal = None;
+                        this.error = None;
+                        cx.notify();
+                    }
+                });
+                !busy
+            })
+            .content(move |content, window, _| {
+                let id = id.clone();
+                content
+                    .child(DesktopDialogHeader::new(title.clone()).closable(!busy))
+                    .child(
+                        div().px(px(22.)).text_color(theme.text_secondary).child(
+                            language.text("再次连接需要重新配对。", "Pair again to reconnect."),
+                        ),
+                    )
+                    .when_some(error.clone(), |content, error| {
+                        content.child(
+                            div()
+                                .debug_selector(|| "computer-remove-error".into())
+                                .px(px(22.))
+                                .child(DesktopBanner::error(theme, error)),
+                        )
+                    })
+                    .child(
+                        DesktopDialogFooter::new()
+                            .child(desktop_dialog_cancel(
+                                "cancel-remove-computer",
+                                language.text("取消", "Cancel"),
+                            ))
+                            .child(desktop_dialog_button(
+                                "confirm-remove-computer",
+                                DesktopButton::primary_loading(
+                                    "confirm-remove-computer",
+                                    language.text("移除", "Remove"),
+                                    busy,
+                                )
+                                .on_click(
+                                    window.listener_for(&app, move |this, _, _, cx| {
+                                        this.remove_computer(id.clone(), cx)
+                                    }),
+                                ),
+                            )),
+                    )
+            })
+    }
+
     pub(super) fn computer_settings(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme();
         let local = self.local_computer_id.as_deref();
@@ -431,12 +613,21 @@ impl LankideApp {
                 section.child(desktop_settings_group(theme).children(
                     self.computers.iter().enumerate().map(|(index, computer)| {
                         let id = computer.id.clone();
+                        let group: SharedString = format!("computer-row-{id}").into();
+                        let rename_id = id.clone();
+                        let remove_id = id.clone();
+                        let app = cx.entity();
+                        let language = self.language;
+                        let removable = local != Some(id.as_str());
+                        let editing = self.computer_renaming.as_deref() == Some(id.as_str());
                         let state = if computer.available {
                             "online"
                         } else {
                             "offline"
                         };
                         div()
+                            .id(SharedString::from(format!("computer-row-{id}")))
+                            .group(group.clone())
                             .debug_selector({
                                 let id = id.clone();
                                 move || format!("computer-{id}")
@@ -455,11 +646,42 @@ impl LankideApp {
                                 div()
                                     .flex_1()
                                     .min_w_0()
-                                    .truncate()
-                                    .when(!computer.available, |name| {
-                                        name.text_color(theme.text_secondary)
+                                    .when(editing, |name| {
+                                        name.child(
+                                            div()
+                                                .debug_selector(|| "computer-name-input".into())
+                                                .on_key_down(cx.listener(
+                                                    |this, event: &KeyDownEvent, _, cx| {
+                                                        if event.keystroke.key == "escape"
+                                                            && !this.computer_rename_saving
+                                                        {
+                                                            this.computer_renaming = None;
+                                                            this.error = None;
+                                                            cx.stop_propagation();
+                                                            cx.notify();
+                                                        }
+                                                    },
+                                                ))
+                                                .child(
+                                                    DesktopInput::new(&self.computer_name_input)
+                                                        .disabled(self.computer_rename_saving),
+                                                ),
+                                        )
                                     })
-                                    .child(computer.name.clone()),
+                                    .when(!editing, |name| {
+                                        name.child(
+                                            div()
+                                                .truncate()
+                                                .when(!computer.available, |name| {
+                                                    name.text_color(theme.text_secondary)
+                                                })
+                                                .debug_selector({
+                                                    let name = computer.name.clone();
+                                                    move || format!("computer-name-{name}")
+                                                })
+                                                .child(computer.name.clone()),
+                                        )
+                                    }),
                             )
                             .when(local == Some(computer.id.as_str()), |row| {
                                 row.child(
@@ -467,6 +689,69 @@ impl LankideApp {
                                         .text_size(px(12.))
                                         .text_color(theme.text_tertiary)
                                         .child(self.tr("本机", "This computer")),
+                                )
+                            })
+                            .when(!editing, |row| {
+                                row.child(
+                                    div()
+                                        .invisible()
+                                        .group_hover(group, |button| button.visible())
+                                        .child(
+                                            DesktopButton::icon(SharedString::from(format!(
+                                                "computer-menu-{}",
+                                                computer.id
+                                            )))
+                                            .debug_selector({
+                                                let id = computer.id.clone();
+                                                move || format!("computer-menu-{id}")
+                                            })
+                                            .tooltip(language.text("更多", "More"))
+                                            .child(muted_themed_icon(
+                                                "icons/lucide/ellipsis.svg",
+                                                16.,
+                                                theme,
+                                            ))
+                                            .dropdown_menu(move |menu, window, _| {
+                                                let target = app.clone();
+                                                let rename_id = rename_id.clone();
+                                                let menu = menu.item(
+                                                    PopupMenuItem::new(
+                                                        language.text("重命名", "Rename"),
+                                                    )
+                                                    .on_click(window.listener_for(
+                                                        &target,
+                                                        move |this, _, window, cx| {
+                                                            this.rename_computer(
+                                                                rename_id.clone(),
+                                                                window,
+                                                                cx,
+                                                            )
+                                                        },
+                                                    )),
+                                                );
+                                                if !removable {
+                                                    return menu;
+                                                }
+                                                let target = app.clone();
+                                                let remove_id = remove_id.clone();
+                                                menu.item(
+                                                    PopupMenuItem::new(
+                                                        language.text("移除", "Remove"),
+                                                    )
+                                                    .on_click(window.listener_for(
+                                                        &target,
+                                                        move |this, _, _, cx| {
+                                                            this.error = None;
+                                                            this.modal =
+                                                                Some(Modal::RemoveComputer(
+                                                                    remove_id.clone(),
+                                                                ));
+                                                            cx.notify();
+                                                        },
+                                                    )),
+                                                )
+                                            }),
+                                        ),
                                 )
                             })
                     }),
@@ -482,13 +767,15 @@ impl LankideApp {
         _window: &mut Window,
     ) -> gpui_component::dialog::Dialog {
         let language = self.language;
-        let command = self.pairing_code.as_ref().and_then(|code| {
-            Some(format!(
-                "lankide-computer-daemon pair wss://{} {} --cert-sha256 {}",
-                self.pairing_address.as_ref()?,
-                code.code,
-                self.pairing_pin.as_ref()?
-            ))
+        // Shown one argument per line so long values never wrap mid-token;
+        // copied as a single line.
+        let command_lines = self.pairing_code.as_ref().and_then(|code| {
+            Some([
+                "lankide-computer-daemon pair".to_owned(),
+                format!("wss://{}", self.pairing_address.as_ref()?),
+                code.code.clone(),
+                format!("--cert-sha256 {}", self.pairing_pin.as_ref()?),
+            ])
         });
         let editing = self.pairing_editing;
         let loading = self.pairing_loading;
@@ -502,7 +789,7 @@ impl LankideApp {
         let edit_app = app.clone();
         let copy_app = app.clone();
         DesktopDialog::from(dialog)
-            .width(px(560.))
+            .width(px(660.))
             .overlay(true)
             .on_cancel(move |_, window, cx| {
                 app.update(cx, |this, cx| {
@@ -514,7 +801,6 @@ impl LankideApp {
                 true
             })
             .content(move |content, _, _| {
-                let command_for_copy = command.clone();
                 let enable_app = enable_app.clone();
                 let edit_app = edit_app.clone();
                 let copy_app = copy_app.clone();
@@ -525,7 +811,7 @@ impl LankideApp {
                     .child(
                         div()
                             .px(px(22.))
-                            .pb(px(8.))
+                            .pb(px(22.))
                             .flex()
                             .flex_col()
                             .gap(px(14.))
@@ -537,154 +823,183 @@ impl LankideApp {
                                         .child(DesktopInput::mono_large(&address_input)),
                                 )
                             })
-                            .when(!editing && connected.is_none(), |body| {
-                                body.when_some(command.clone(), |body, command| {
-                                    body.child(
-                                        div()
-                                            .debug_selector(|| "pairing-command".into())
-                                            .w_full()
-                                            .p(px(16.))
-                                            .rounded(px(10.))
-                                            .bg(rgb(0x18212f))
-                                            .text_color(rgb(0xf0f4fa))
-                                            .text_size(px(12.))
-                                            .line_height(px(21.))
-                                            .font_family(desktop_ui::FONT_MONO)
-                                            .child(
-                                                TextView::html(
-                                                    "pairing-command-text",
-                                                    format!("<p>{command}</p>"),
-                                                )
-                                                .selectable(true),
-                                            ),
+                            .when(!editing, |body| {
+                                body.when_some(command_lines.clone(), |body, lines| {
+                                    body.child(div().text_color(theme.text_secondary).child(
+                                        language.text(
+                                            "在要添加的电脑上运行",
+                                            "Run this on the computer you want to add",
+                                        ),
+                                    ))
+                                    .child(pairing_command_block(
+                                        lines,
+                                        copied,
+                                        theme,
+                                        language,
+                                        copy_app.clone(),
+                                    ))
+                                    .child(
+                                        pairing_status_row(
+                                            connected.clone(),
+                                            waiting_hint,
+                                            theme,
+                                            language,
+                                            edit_app.clone(),
+                                        ),
                                     )
                                 })
-                                .child(
-                                    div()
-                                        .text_size(px(12.))
-                                        .text_color(theme.text_secondary)
-                                        .child(
-                                            language.text("等待连接…", "Waiting for connection…"),
-                                        ),
-                                )
                             })
-                            .when(waiting_hint && !editing && connected.is_none() && command.is_some(), |body| {
-                                body.child(div()
-                                    .debug_selector(|| "pairing-waiting-hint".into())
-                                    .text_size(px(12.))
-                                    .text_color(theme.text_secondary)
-                                    .child(language.text(
-                                        "没有连上？确认对方能访问这个地址，并在本机防火墙中允许 Lankide 接收连接。",
-                                        "Not connecting? Make sure the other computer can reach this address and that this Mac's firewall allows Lankide to accept connections.",
-                                    )))
-                            })
-                            .when_some(connected.clone(), |body, name| {
+                            .when(editing, |body| {
                                 body.child(
-                                    div()
-                                        .debug_selector(|| "pairing-connected".into())
-                                        .py(px(12.))
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(8.))
-                                        .child(computer_glyph(theme, true, 22., theme.elevated))
-                                        .child(name),
+                                    div().flex().justify_end().child(desktop_dialog_button(
+                                        "enable-computer-access",
+                                        DesktopButton::primary_loading(
+                                            "enable-computer-access",
+                                            language.text("保存", "Save"),
+                                            loading,
+                                        )
+                                        .disabled(loading)
+                                        .on_click(
+                                            move |_, window, cx| {
+                                                enable_app.update(cx, |this, cx| {
+                                                    this.enable_remote_computers(window, cx)
+                                                })
+                                            },
+                                        ),
+                                    )),
                                 )
                             })
                             .when_some(error.clone(), |body, error| {
                                 body.child(DesktopBanner::error(theme, error))
                             }),
                     )
-                    .child(
-                        DesktopDialogFooter::new()
-                            .compact()
-                            .when(!editing && connected.is_none(), |footer| {
-                                footer
-                                    .child(
-                                        div().flex_1().child(
-                                            DesktopButton::ghost(
-                                                "change-pairing-address",
-                                                language.text("更改地址", "Change address"),
-                                            )
-                                            .on_click(
-                                                move |_, window, cx| {
-                                                    edit_app.update(cx, |this, cx| {
-                                                        let address = this
-                                                            .pairing_address
-                                                            .clone()
-                                                            .unwrap_or_default();
-                                                        this.pairing_address_input.update(
-                                                            cx,
-                                                            |input, cx| {
-                                                                input.set_value(address, window, cx)
-                                                            },
-                                                        );
-                                                        this.pairing_editing = true;
-                                                        this.pairing_waiting_hint = false;
-                                                        this.pairing_hint_task = None;
-                                                        this.error = None;
-                                                        this.notify_dialog_changed(cx);
-                                                    })
-                                                },
-                                            ),
-                                        ),
-                                    )
-                                    .child(desktop_dialog_button(
-                                        "copy-pairing-command",
-                                        DesktopButton::primary(
-                                            "copy-pairing-command",
-                                            language.text(
-                                                if copied { "已复制" } else { "复制命令" },
-                                                if copied { "Copied" } else { "Copy command" },
-                                            ),
-                                        )
-                                        .disabled(command_for_copy.is_none())
-                                        .on_click(
-                                            move |_, _, cx| {
-                                                if let Some(command) = command_for_copy.clone() {
-                                                    cx.write_to_clipboard(
-                                                        ClipboardItem::new_string(command),
-                                                    );
-                                                    copy_app.update(cx, |this, cx| {
-                                                        this.pairing_copied = true;
-                                                        let request = this.pairing_request;
-                                                        this.notify_dialog_changed(cx);
-                                                        cx.spawn(async move |this, cx| {
-                                                            cx.background_executor()
-                                                                .timer(Duration::from_millis(1600))
-                                                                .await;
-                                                            let _ = this.update(cx, |this, cx| {
-                                                                if this.pairing_active(request) {
-                                                                    this.pairing_copied = false;
-                                                                    this.notify_dialog_changed(cx);
-                                                                }
-                                                            });
-                                                        })
-                                                        .detach();
-                                                    });
-                                                }
-                                            },
-                                        ),
-                                    ))
-                            })
-                            .when(editing, |footer| {
-                                footer.child(desktop_dialog_button(
-                                    "enable-computer-access",
-                                    DesktopButton::primary_loading(
-                                        "enable-computer-access",
-                                        language.text("启用", "Enable"),
-                                        loading,
-                                    )
-                                    .disabled(loading)
-                                    .on_click(
-                                        move |_, window, cx| {
-                                            enable_app.update(cx, |this, cx| {
-                                                this.enable_remote_computers(window, cx)
-                                            })
-                                        },
-                                    ),
-                                ))
-                            }),
-                    )
             })
     }
+}
+
+fn pairing_command_block(
+    lines: [String; 4],
+    copied: bool,
+    theme: DesktopTheme,
+    language: DesktopLanguage,
+    app: Entity<LankideApp>,
+) -> Div {
+    let html = lines
+        .iter()
+        .enumerate()
+        .map(|(index, line)| {
+            let indent = if index == 0 { "" } else { "&nbsp;&nbsp;" };
+            let tail = if index + 1 == lines.len() { "" } else { " \\" };
+            format!("<p>{indent}{line}{tail}</p>")
+        })
+        .collect::<String>();
+    let command = lines.join(" ");
+    let icon = if copied {
+        "icons/lucide/check.svg"
+    } else {
+        "icons/lucide/copy.svg"
+    };
+    div()
+        .debug_selector(|| "pairing-command".into())
+        .relative()
+        .w_full()
+        .p(px(14.))
+        .rounded(px(desktop_ui::RADIUS_CONTROL))
+        .bg(theme.raised)
+        .border_1()
+        .border_color(theme.border)
+        .text_color(theme.text)
+        .text_size(px(12.))
+        .line_height(px(20.))
+        .font_family(desktop_ui::FONT_MONO)
+        .child(
+            TextView::html("pairing-command-text", html)
+                .style(TextViewStyle::default().paragraph_gap(gpui::rems(0.)))
+                .selectable(true),
+        )
+        .child(
+            div().absolute().top(px(6.)).right(px(6.)).child(
+                DesktopButton::icon("copy-pairing-command")
+                    .debug_selector(|| "copy-pairing-command".into())
+                    .tooltip(language.text("复制", "Copy"))
+                    .child(muted_themed_icon(icon, 14., theme))
+                    .on_click(move |_, _, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(command.clone()));
+                        app.update(cx, |this, cx| this.mark_pairing_copied(cx));
+                    }),
+            ),
+        )
+}
+
+fn pairing_status_row(
+    connected: Option<String>,
+    waiting_hint: bool,
+    theme: DesktopTheme,
+    language: DesktopLanguage,
+    app: Entity<LankideApp>,
+) -> Div {
+    let waiting = connected.is_none();
+    let status = connected.unwrap_or_else(|| {
+        if waiting_hint {
+            language
+                .text(
+                    "连不上？检查网络和防火墙",
+                    "Not connecting? Check network and firewall",
+                )
+                .into()
+        } else {
+            language.text("等待连接", "Waiting for connection").into()
+        }
+    });
+    let dot = div()
+        .size(px(6.))
+        .rounded_full()
+        .bg(if waiting {
+            theme.text_tertiary
+        } else {
+            theme.success
+        })
+        .with_animation(
+            "pairing-waiting-dot",
+            Animation::new(Duration::from_secs(2)).repeat(),
+            move |dot, t| {
+                let pulse = 0.4 + 0.6 * (std::f32::consts::PI * t).sin().powi(2);
+                dot.opacity(if waiting { pulse } else { 1. })
+            },
+        );
+    let change_address = div()
+        .id("change-pairing-address")
+        .role(gpui::Role::Button)
+        .debug_selector(|| "change-pairing-address".into())
+        .cursor_pointer()
+        .text_color(theme.text_secondary)
+        .hover(|button| button.text_color(theme.text))
+        .child(language.text("更改地址", "Change address"))
+        .on_click(move |_, window, cx| {
+            app.update(cx, |this, cx| this.edit_pairing_address(window, cx))
+        });
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .text_size(px(12.))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .text_color(theme.text_tertiary)
+                .child(dot)
+                .child(
+                    div()
+                        .when(!waiting, |status| {
+                            status.debug_selector(|| "pairing-connected".into())
+                        })
+                        .when(waiting && waiting_hint, |status| {
+                            status.debug_selector(|| "pairing-waiting-hint".into())
+                        })
+                        .child(status),
+                ),
+        )
+        .child(change_address)
 }

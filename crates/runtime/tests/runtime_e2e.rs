@@ -1576,6 +1576,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         storage
             .pair_computer(
                 &lankide_storage::ComputerRecord {
+                    is_local: false,
                     computer_id: computer_id.into(),
                     display_name: computer_id.into(),
                     credential_hash: Sha256::digest(format!("fixture-{computer_id}").as_bytes())
@@ -4193,6 +4194,7 @@ async fn profile_application() -> (tempfile::TempDir, RuntimeApplication, Arc<Fa
     storage
         .pair_computer(
             &lankide_storage::ComputerRecord {
+                is_local: false,
                 computer_id: "profile-computer".into(),
                 display_name: "Profile Computer".into(),
                 credential_hash: "profile-credential-hash".into(),

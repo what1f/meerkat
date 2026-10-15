@@ -237,7 +237,7 @@ fn main() {
                             assert_eq!(
                                 result["request"]["error"]["code"],
                                 if *rpc_error {
-                                    "internal"
+                                    "invalid_request"
                                 } else {
                                     "provider_tool_failed"
                                 },

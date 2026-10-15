@@ -50,6 +50,21 @@ pub(super) fn friendly_error(error: &ClientError, language: DesktopLanguage) -> 
                 )
                 .into()
         }
+        ClientError::ComputerHasAssignedAgents => language
+            .text(
+                "请先将这台电脑上的 Agent 移到其他电脑。",
+                "Move this computer’s Agents to another computer first.",
+            )
+            .into(),
+        ClientError::LocalComputerCannotBeRemoved => language
+            .text("无法移除本机。", "This computer cannot be removed.")
+            .into(),
+        ClientError::ComputerNameInvalid => language
+            .text(
+                "请输入 1–80 个字符的名称。",
+                "Enter a name with 1–80 characters.",
+            )
+            .into(),
         ClientError::ComputerNotRegistered
         | ClientError::ComputerRevoked
         | ClientError::HarnessUnavailableOnComputer

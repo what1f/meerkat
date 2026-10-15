@@ -613,6 +613,10 @@ database_methods! {
         let a = a.to_owned();
     ] (&w, &a, now);
     true retry_execution_conflict(id: i64, retry_at: i64) -> () [] (id, retry_at);
+    true rename_computer(computer_id: &str, name: &str) -> () [
+        let computer_id = computer_id.to_owned();
+        let name = name.to_owned();
+    ] (&computer_id, &name);
     true revoke_computer(
         computer_id: &str,
         now: i64,

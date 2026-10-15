@@ -173,7 +173,7 @@ where
                                 let credential = request.headers().get("authorization").and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
                                 if !owner.as_ref().is_some_and(|owner| owner.authorizes(credential)) {
                                     crate::management_http::error(crate::Status::unauthenticated("owner credential required"))
-                                } else if matches!(request.uri().path(), "/api/v1/get_remote_access" | "/api/v1/set_remote_access") {
+                                } else if matches!(request.uri().path(), "/api/v1/get_remote_access" | "/api/v1/set_remote_access" | "/api/v1/enable_remote_access") {
                                     remote_access(request, remote, config.max_message_bytes).await
                                 } else if request.uri().path() == crate::management::EVENTS_PATH {
                                     let subscription = request.headers().get("x-lankide-subscription").and_then(|v| v.to_str().ok()).and_then(|v| serde_json::from_str::<crate::management::ManagementSubscription>(v).ok());
@@ -412,8 +412,11 @@ async fn remote_access(
     if request.method() != hyper::Method::POST {
         return empty(StatusCode::METHOD_NOT_ALLOWED);
     }
+    let enable = request.uri().path().ends_with("enable_remote_access");
     let set = request.uri().path().ends_with("set_remote_access");
-    let result = if set {
+    let result = if enable {
+        remote.enable().await
+    } else if set {
         match http_body_util::Limited::new(request.into_body(), limit)
             .collect()
             .await

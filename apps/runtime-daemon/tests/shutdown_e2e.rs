@@ -96,6 +96,7 @@ async fn shutdown_releases_connected_computer_and_provider_before_database_reope
         .unwrap()
         .pair_computer(
             &lankide_storage::ComputerRecord {
+                is_local: false,
                 computer_id: "computer".into(),
                 display_name: "computer".into(),
                 credential_hash: sha2::Sha256::digest(b"fixture-computer")

@@ -298,6 +298,9 @@ pub enum ClientError {
     InvalidAgentId,
     ComputerNotRegistered,
     ComputerRevoked,
+    ComputerHasAssignedAgents,
+    LocalComputerCannotBeRemoved,
+    ComputerNameInvalid,
     HarnessUnavailableOnComputer,
     Validation(String),
     Provider(String),
@@ -314,6 +317,9 @@ impl std::fmt::Display for ClientError {
             Self::AgentNotFound(v) => write!(f, "agent not found: {v}"),
             Self::DuplicateAgentId(v) => write!(f, "agent id already exists: {v}"),
             Self::ComputerNotRegistered => f.write_str("computer_not_registered"),
+            Self::ComputerHasAssignedAgents => f.write_str("computer_has_assigned_agents"),
+            Self::LocalComputerCannotBeRemoved => f.write_str("local_computer_cannot_be_removed"),
+            Self::ComputerNameInvalid => f.write_str("computer_name_invalid"),
             Self::ComputerRevoked => f.write_str("computer_revoked"),
             Self::HarnessUnavailableOnComputer => f.write_str("harness_unavailable_on_computer"),
             Self::InvalidAgentId => write!(
@@ -474,6 +480,9 @@ pub trait ManagementClient: Send + Sync {
     ) -> Result<Vec<ProviderCapabilityCatalogEntry>, ClientError> {
         Ok(Vec::new())
     }
+    async fn enable_remote_access(&self) -> Result<wire::RemoteAccess, ClientError> {
+        Err(ClientError::Protocol("remote_access_unavailable".into()))
+    }
     async fn get_remote_access(&self) -> Result<wire::RemoteAccess, ClientError> {
         Err(ClientError::Protocol("remote_access_unavailable".into()))
     }
@@ -485,6 +494,9 @@ pub trait ManagementClient: Send + Sync {
     }
     async fn create_pairing_code(&self) -> Result<PairingCode, ClientError> {
         Err(ClientError::Protocol("pairing_unavailable".into()))
+    }
+    async fn rename_computer(&self, _computer_id: &str, _name: &str) -> Result<(), ClientError> {
+        Err(ClientError::Protocol("rename_unavailable".into()))
     }
     async fn revoke_computer(&self, _computer_id: &str) -> Result<(), ClientError> {
         Err(ClientError::Protocol("revocation_unavailable".into()))
@@ -589,6 +601,11 @@ fn aref(w: &str, a: &str) -> wire::AgentRef {
 fn map_status(s: lankide_protocol::Status) -> ClientError {
     match s.detail() {
         Some("computer_not_registered") => return ClientError::ComputerNotRegistered,
+        Some("computer_has_assigned_agents") => return ClientError::ComputerHasAssignedAgents,
+        Some("local_computer_cannot_be_removed") => {
+            return ClientError::LocalComputerCannotBeRemoved;
+        }
+        Some("computer_name_invalid") => return ClientError::ComputerNameInvalid,
         Some("computer_revoked") => return ClientError::ComputerRevoked,
         Some("harness_unavailable_on_computer") => {
             return ClientError::HarnessUnavailableOnComputer;
@@ -1336,6 +1353,9 @@ impl ManagementClient for RuntimeManagementClient {
             })
             .collect())
     }
+    async fn enable_remote_access(&self) -> Result<wire::RemoteAccess, ClientError> {
+        self.client.enable_remote_access().await.map_err(map_status)
+    }
     async fn get_remote_access(&self) -> Result<wire::RemoteAccess, ClientError> {
         self.client.get_remote_access().await.map_err(map_status)
     }
@@ -1361,6 +1381,18 @@ impl ManagementClient for RuntimeManagementClient {
             issued_at: value.issued_at,
             expires_at: value.expires_at,
         })
+    }
+    async fn rename_computer(&self, computer_id: &str, name: &str) -> Result<(), ClientError> {
+        self.client
+            .clone()
+            .rename_computer(wire::RenameComputerRequest {
+                request_id: self.request_id(),
+                computer_id: computer_id.into(),
+                name: name.into(),
+            })
+            .await
+            .map_err(map_status)?;
+        Ok(())
     }
     async fn revoke_computer(&self, computer_id: &str) -> Result<(), ClientError> {
         self.client

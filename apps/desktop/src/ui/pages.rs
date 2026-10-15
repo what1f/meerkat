@@ -11,16 +11,12 @@ impl LankideApp {
                     .id("nav-agents")
                     .debug_selector(|| "nav-agents".into())
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.computer_events_task = None;
                         this.page = Page::Agents;
                         cx.notify();
                     }))
                     .child(
                         SidebarItem::new("nav-agents-item", self.tr("成员", "Members"), theme)
                             .leading_element(themed_icon("icons/lucide/users.svg", 16., theme))
-                            .when(self.workspace_loaded, |item| {
-                                item.trailing(self.agents.len().to_string())
-                            })
                             .selected(self.page == Page::Agents),
                     ),
             )

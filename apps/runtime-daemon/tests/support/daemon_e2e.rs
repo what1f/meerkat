@@ -189,6 +189,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     registered_computer::register(&storage, &["fixture-computer"])?;
     storage.pair_computer(
         &lankide_storage::ComputerRecord {
+            is_local: false,
             computer_id: "computer-a".into(),
             display_name: "Computer A".into(),
             credential_hash: Sha256::digest(b"fixture-computer-a")

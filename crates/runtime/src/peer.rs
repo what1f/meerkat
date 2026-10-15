@@ -575,6 +575,22 @@ impl RuntimePeer for RuntimePeerAdapter {
     async fn create_pairing_code(&self, _request: CatalogRequest) -> Result<PairingCode, Status> {
         self.application.create_pairing_code().await.map_err(status)
     }
+    async fn rename_computer(
+        &self,
+        request: RenameComputerRequest,
+    ) -> Result<ComputerCatalog, Status> {
+        self.application
+            .rename_computer(&request.computer_id, &request.name)
+            .await
+            .map_err(status)?;
+        self.application
+            .computer_catalog(CatalogRequest {
+                request_id: request.request_id,
+                workspace: None,
+            })
+            .await
+            .map_err(status)
+    }
     async fn revoke_computer(
         &self,
         request: RevokeComputerRequest,
@@ -757,6 +773,18 @@ pub(crate) fn status(error: RuntimeError) -> Status {
         RuntimeError::DuplicateAgent { .. } => Status::already_exists("Agent already exists."),
         RuntimeError::DuplicateProviderType(_) => {
             Status::already_exists("Provider is already available.")
+        }
+        RuntimeError::ComputerHasAssignedAgents => {
+            Status::failed_precondition("Move this computer's Agents to another computer first.")
+                .with_detail(Some("computer_has_assigned_agents".into()))
+        }
+        RuntimeError::LocalComputerCannotBeRemoved => {
+            Status::failed_precondition("This computer cannot be removed.")
+                .with_detail(Some("local_computer_cannot_be_removed".into()))
+        }
+        RuntimeError::ComputerNameInvalid => {
+            Status::invalid_argument("Enter a name with 1 to 80 characters.")
+                .with_detail(Some("computer_name_invalid".into()))
         }
         RuntimeError::ComputerNotRegistered
         | RuntimeError::ComputerRevoked
