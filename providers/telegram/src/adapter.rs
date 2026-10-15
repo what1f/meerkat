@@ -1173,11 +1173,7 @@ async fn normalized_event_to_provider(
                 .iter()
                 .filter_map(|value| AgentId::new(value.clone()).ok())
                 .collect();
-            let receiving_agent_id = if message.channel_id == "private_chat" {
-                receiving_agent(context, &message.account_id).await?
-            } else {
-                None
-            };
+            let receiving_agent_id = receiving_agent(context, &message.account_id).await?;
             Ok(ProviderEvent {
                 receiving_agent_id,
                 channel_id: channel(&message.channel_id),

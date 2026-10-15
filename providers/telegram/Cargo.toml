@@ -24,7 +24,7 @@ tempfile.workspace = true
 
 [package.metadata.lankide.e2e]
 command = "LANKIDE_E2E_LIVE=1 cargo test -p lankide-provider-telegram --test telegram_e2e -- --ignored --nocapture"
-scenario = "Run one complete Telegram Provider scenario covering public mention, normalization, and acknowledgement contracts together with real Manager/Agent verification, update reads, send, reply, attachment, reaction, and recall in an isolated test chat. Resolve the receiving Agent from the receiving bot for private messages and reactions."
+scenario = "Run one complete Telegram Provider scenario covering public mention, normalization, and acknowledgement contracts together with real Manager/Agent verification, update reads, send, reply, attachment, reaction, and recall in an isolated test chat. Resolve the receiving Agent from the receiving bot for private messages and reactions. Preserve the receiving bot identity on group messages for per-Agent conversation access."
 prerequisites = "Existing Manager and Agent Bots; explicitly configured isolated test chat; exclusive access to the test account"
 classification = "live"
 unattended = "yes after live opt-in and preflight"
@@ -32,7 +32,7 @@ status = "implemented"
 
 [package.metadata.lankide.e2e-additional.provider-telegram-hermetic]
 command = "cargo test -p lankide-provider-telegram --test mock_server_e2e"
-scenario = "S2.1 binds two bot accounts to separate Agents and verifies direct messages and reactions identify the receiving Agent. The same Telegram person and native IDs produce separate events with identical chat IDs and distinct receiving Agents. Separate S2.2 group-mention and S2.3 attachment-reply scenarios: Run the real Telegram Provider lifecycle against a loopback IM server; deliver a group mention of bot B, download an attachment, reply with its exact bytes in the same chat and parent, react, recall, and shut down. Skip permanently failed and malformed events so the next message arrives; recover temporary IM outages without duplicate delivery, cap retry delays without discarding transient events, and deliver three concurrent Agents' messages and reactions once each in the same chat under the correct sender."
+scenario = "S2.1 binds two bot accounts to separate Agents and verifies direct messages and reactions identify the receiving Agent. The same Telegram person and native IDs produce separate events with identical chat IDs and distinct receiving Agents. Separate S2.2 group-mention and S2.3 attachment-reply scenarios: Run the real Telegram Provider lifecycle against a loopback IM server; deliver a group mention of bot B, download an attachment, reply with its exact bytes in the same chat and parent, react, recall, and shut down. Skip permanently failed and malformed events so the next message arrives; recover temporary IM outages without duplicate delivery, cap retry delays without discarding transient events, and deliver three concurrent Agents' messages and reactions once each in the same chat under the correct sender. Preserve the receiving bot identity on group messages for per-Agent conversation access."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

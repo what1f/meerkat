@@ -169,6 +169,7 @@ fn delete_agent_state(
         "agent_inbox_items",
         "agent_chat_cursors",
         "agent_chat_attention",
+        "chat_receivers",
         "agent_named_secrets",
     ] {
         transaction.execute(

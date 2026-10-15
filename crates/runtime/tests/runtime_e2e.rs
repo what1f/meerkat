@@ -1109,7 +1109,7 @@ async fn collaboration_fencing_scenario(db: &Path) -> Result<(), String> {
         .snapshot_id;
     let history = runtime
         .storage()
-        .snapshot_chat_messages(snapshot_id, &channel, "team_chat", None, 50)
+        .snapshot_chat_messages(snapshot_id, &channel, "team_chat", None, 50, 100)
         .map_err(err)?;
     ensure(
         history
@@ -2491,7 +2491,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
                 .is_some_and(|error| error.code == "message_not_found"),
         "recall unknown internal message result",
     )?;
-    // An Agent asked to post in a conversation outside its task learns why and stops.
+    // An Agent cannot post in an unknown conversation.
     let outside = agent_client
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(context.clone()),
@@ -2512,7 +2512,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             && outside.error.is_some_and(|error| {
                 error.code == "invalid_request" && !error.retryable && !error.message.is_empty()
             }),
-        "send outside task conversations is explained, not retried",
+        "send to an inaccessible conversation is explained, not retried",
     )?;
     let unauthorized = agent_client
         .invoke_capability(CapabilityInvokeRequest {
@@ -4775,4 +4775,291 @@ fn scenario_runtime(config: RuntimeConfig) -> Result<Runtime, lankide_runtime::R
     let runtime = Runtime::new(config)?;
     registered_computer::register(runtime.storage(), &["fixture-computer", "computer-attempt"])?;
     Ok(runtime)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dm_task_can_read_and_post_to_received_group() {
+    let (temp, app, state) = profile_application().await;
+    let storage = Storage::open(DatabaseConfig::new(temp.path().join("runtime.db"))).unwrap();
+    let workspace = WorkspaceId::new("profile_workspace").unwrap();
+    let agent = AgentId::new("profile_agent").unwrap();
+    let channel = ChannelId::new("chat").unwrap();
+    let owner_dm = IngestEvent {
+        receiving_agent_id: Some(agent.clone()),
+        workspace_id: workspace.clone(),
+        provider_id: ProviderId::new("fixture").unwrap(),
+        channel_id: channel.clone(),
+        channel_name: "Chat".into(),
+        provider_chat_id: "owner-dm".into(),
+        chat_name: "Owner".into(),
+        provider_event_id: Some("owner-request".into()),
+        provider_message_id: "owner-request".into(),
+        message: MessageInput {
+            sender_kind: lankide_core::MessageAuthorType::Human,
+            sender_id: "owner".into(),
+            sender_name: "Owner".into(),
+            content: "Go to the group and @Diana".into(),
+            mentions: vec![],
+            reply_to_provider_message_id: None,
+            resources: vec![],
+            occurred_at: 3,
+        },
+        dispatch: vec![InboxDispatch {
+            agent_id: agent.clone(),
+            available_at: 3,
+            trigger_reason: DispatchReason::Mention,
+        }],
+        now: 3,
+    };
+    storage.ingest_event(owner_dm.clone()).unwrap();
+    let token = "group-access-token";
+    let execution = storage
+        .create_execution_with_auth(
+            &workspace,
+            &agent,
+            "owner DM",
+            4,
+            ExecutionAuthSpec {
+                attempt: 1,
+                token_hash: Sha256::digest(token.as_bytes())
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect(),
+                expires_at: i64::MAX,
+            },
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(execution.snapshot.chats.len(), 1);
+    assert_eq!(
+        execution.snapshot.chats[0].chat.provider_chat_id,
+        "owner-dm"
+    );
+    let frozen = json!({"computer_id":"profile-computer", "harness_id":"fixture", "model":"fixture", "thinking_level":"low", "trigger_reason":"owner DM", "chats":[]}).to_string();
+    storage
+        .freeze_attempt_authorization(AttemptAuthorization {
+            execution_id: execution.execution_id,
+            attempt: 1,
+            context_fingerprint: Sha256::digest(frozen.as_bytes())
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect(),
+            context_json: frozen,
+            capabilities: ["chat_messages", "message_send"]
+                .map(|name| AttemptCapability {
+                    name: name.into(),
+                    display_name: name.into(),
+                    description: name.into(),
+                    kind: lankide_protocol::CapabilityKind::Tool as i32,
+                    input_schema_json: "{}".into(),
+                    output_schema_json: "{}".into(),
+                })
+                .to_vec(),
+        })
+        .unwrap();
+    storage
+        .mark_execution_running(execution.execution_id, 4)
+        .unwrap();
+    storage
+        .offer_execution_attempt(
+            execution.execution_id,
+            1,
+            "profile-computer",
+            "group-test",
+            i64::MAX,
+            4,
+        )
+        .unwrap();
+    storage
+        .accept_execution_attempt(execution.execution_id, 1, true, 4)
+        .unwrap();
+    let context = AgentRunContext {
+        execution: Some(ExecutionRef {
+            execution_id: execution.execution_id,
+            attempt: 1,
+        }),
+        execution_token: token.into(),
+    };
+    let sink = state.sink.lock().unwrap().clone().unwrap();
+    let emit_group = |chat: &str, id: &str, receiver: AgentId| {
+        let mut event = message(&channel, chat, id, id, &agent, "owner");
+        event.receiving_agent_id = Some(receiver);
+        if let ProviderEventKind::Message(message) = &mut event.kind {
+            message.mentioned_agent_ids.clear();
+        }
+        event
+    };
+    sink.emit(emit_group("team-group", "group-history", agent.clone()))
+        .await
+        .unwrap();
+    // The Provider's acknowledgement means the event and access grant are durable.
+    let invoke = |name: &str, id: &str, arguments: Value| CapabilityInvokeRequest {
+        context: Some(context.clone()),
+        capability_name: name.into(),
+        invocation_id: id.into(),
+        arguments_json: arguments.to_string(),
+    };
+    let send_args = json!({"channel_id":"chat", "chat_id":"team-group", "content":"@Diana hello"});
+    let unread = app
+        .invoke_capability(invoke("message_send", "before-read", send_args.clone()))
+        .await
+        .unwrap();
+    assert!(!unread.success);
+    assert!(
+        unread
+            .error
+            .is_some_and(|error| !error.retryable && error.message.contains("chat_messages")),
+        "an unread member conversation must explain how to read it"
+    );
+    let mut forced_unread_args = send_args.clone();
+    forced_unread_args["force"] = json!(true);
+    let unread = app
+        .invoke_capability(invoke(
+            "message_send",
+            "force-before-read",
+            forced_unread_args,
+        ))
+        .await
+        .unwrap();
+    assert!(
+        !unread.success
+            && unread
+                .error
+                .is_some_and(|error| !error.retryable && error.message.contains("chat_messages"))
+    );
+    let read_args = json!({"channel_id":"chat", "chat_id":"team-group"});
+    let read = app
+        .invoke_capability(invoke("chat_messages", "read-group", read_args.clone()))
+        .await
+        .unwrap();
+    assert!(
+        read.success && read.structured_content_json.contains("group-history"),
+        "DM task must read its received group: {read:?}"
+    );
+    state.push_send(SendMode::Sent("group-post".into()));
+    assert!(
+        app.invoke_capability(invoke("message_send", "post-group", send_args.clone()))
+            .await
+            .unwrap()
+            .success
+    );
+    sink.emit(emit_group("team-group", "new-group-message", agent.clone()))
+        .await
+        .unwrap();
+    let blocked = app
+        .invoke_capability(invoke("message_send", "stale-post", send_args.clone()))
+        .await
+        .unwrap();
+    assert!(
+        !blocked.success
+            && blocked
+                .error
+                .is_some_and(|error| error.code == "new_messages")
+    );
+    let read = app
+        .invoke_capability(invoke("chat_messages", "reread-group", read_args))
+        .await
+        .unwrap();
+    assert!(read.success && read.structured_content_json.contains("new-group-message"));
+    state.push_send(SendMode::Sent("group-post-after-read".into()));
+    assert!(
+        app.invoke_capability(invoke("message_send", "post-after-read", send_args))
+            .await
+            .unwrap()
+            .success
+    );
+    // Reading an older page must not acknowledge newer messages in that group.
+    sink.emit(emit_group("history-group", "older-note", agent.clone()))
+        .await
+        .unwrap();
+    sink.emit(emit_group("history-group", "latest-note", agent.clone()))
+        .await
+        .unwrap();
+    let latest = storage
+        .find_message(&workspace, &channel, "history-group", "latest-note")
+        .unwrap()
+        .unwrap();
+    let page = app.invoke_capability(invoke("chat_messages", "older-page", json!({"channel_id":"chat", "chat_id":"history-group", "before_message_id":latest, "limit":1}))).await.unwrap();
+    assert!(
+        page.success
+            && page.structured_content_json.contains("older-note")
+            && !page.structured_content_json.contains("latest-note")
+    );
+    let stale = app
+        .invoke_capability(invoke(
+            "message_send",
+            "older-page-post",
+            json!({"channel_id":"chat", "chat_id":"history-group", "content":"outdated"}),
+        ))
+        .await
+        .unwrap();
+    assert!(
+        !stale.success
+            && stale
+                .error
+                .is_some_and(|error| error.code == "new_messages")
+    );
+    // A known group received by another Agent must not grant this Agent access.
+    app.create_agent(CreateAgentRequest {
+        request_id: "other-member".into(),
+        agent: Some(AgentRef {
+            workspace_id: workspace.to_string(),
+            agent_id: "other_agent".into(),
+        }),
+        name: "Other".into(),
+        computer_id: "profile-computer".into(),
+        harness_id: "fixture".into(),
+        model: "fixture".into(),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    sink.emit(emit_group(
+        "private-group",
+        "private-history",
+        AgentId::new("other_agent").unwrap(),
+    ))
+    .await
+    .unwrap();
+    for name in ["chat_messages", "message_send"] {
+        let result = app
+            .invoke_capability(invoke(
+                name,
+                &format!("forbidden-{name}"),
+                json!({"channel_id":"chat", "chat_id":"private-group", "content":"forbidden"}),
+            ))
+            .await
+            .unwrap();
+        assert!(!result.success && result.error.is_some_and(|error| !error.retryable));
+    }
+    // An existing DM outside the task is readable only by its receiving Agent,
+    // even when another Agent's DM has the same native chat and message IDs.
+    let mut own_dm = owner_dm;
+    own_dm.provider_chat_id = "shared-dm-id".into();
+    own_dm.provider_message_id = "shared-native-id".into();
+    own_dm.provider_event_id = Some("own-dm-event".into());
+    own_dm.message.content = "own DM history".into();
+    own_dm.dispatch.clear();
+    storage.ingest_event(own_dm.clone()).unwrap();
+    own_dm.receiving_agent_id = Some(AgentId::new("other_agent").unwrap());
+    own_dm.provider_event_id = Some("other-dm-event".into());
+    own_dm.message.content = "other Agent private history".into();
+    storage.ingest_event(own_dm).unwrap();
+    let own_dm = app
+        .invoke_capability(invoke(
+            "chat_messages",
+            "read-own-dm",
+            json!({"channel_id":"chat", "chat_id":"shared-dm-id"}),
+        ))
+        .await
+        .unwrap();
+    assert!(
+        own_dm.success
+            && own_dm.structured_content_json.contains("own DM history")
+            && !own_dm
+                .structured_content_json
+                .contains("other Agent private history")
+    );
+    app.shutdown().await.unwrap();
+    storage.close().unwrap();
 }

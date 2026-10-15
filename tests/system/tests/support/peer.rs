@@ -237,12 +237,18 @@ fn main() {
                             assert_eq!(
                                 result["request"]["error"]["code"],
                                 if *rpc_error {
-                                    "internal"
+                                    "invalid_request"
                                 } else {
                                     "provider_tool_failed"
                                 },
                                 "{result}"
                             );
+                            if *rpc_error {
+                                assert_eq!(
+                                    result["request"]["error"]["retryable"], false,
+                                    "{result}"
+                                );
+                            }
                             event(
                                 &mut sequence,
                                 json!({"kind":"tool_finished", "tool_call_id":"failed-im", "success":false,"output":null}),

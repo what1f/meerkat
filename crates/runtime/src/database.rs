@@ -658,16 +658,23 @@ database_methods! {
         let error_code = error_code.map(ToOwned::to_owned);
     ] (&workspace_id, status, error_code.as_deref(), now);
     false snapshot(snapshot_id: i64) -> SnapshotView [] (snapshot_id);
-    false snapshot_chat_messages(
+    true record_chat_receiver(workspace: &WorkspaceId, agent: &AgentId, channel: &ChannelId, chat: &str) -> () [
+        let workspace=workspace.clone(); let agent=agent.clone(); let channel=channel.clone(); let chat=chat.to_owned();
+    ] (&workspace, &agent, &channel, &chat);
+    false agent_can_access_chat(workspace: &WorkspaceId, agent: &AgentId, channel: &ChannelId, chat: &str) -> bool [
+        let workspace=workspace.clone(); let agent=agent.clone(); let channel=channel.clone(); let chat=chat.to_owned();
+    ] (&workspace, &agent, &channel, &chat);
+    true snapshot_chat_messages(
         snapshot_id: i64,
         channel_id: &ChannelId,
         provider_chat_id: &str,
         before_message_id: Option<i64>,
         limit: usize,
+        now: i64,
     ) -> Vec<MessageView> [
         let channel_id = channel_id.to_owned();
         let provider_chat_id = provider_chat_id.to_owned();
-    ] (snapshot_id, &channel_id, &provider_chat_id, before_message_id, limit);
+    ] (snapshot_id, &channel_id, &provider_chat_id, before_message_id, limit, now);
     false snapshot_contains_message(
         snapshot_id: i64,
         channel_id: &ChannelId,
