@@ -159,12 +159,24 @@ impl<T: Transport + ?Sized> Transport for Arc<T> {
     }
 }
 
+/// Pooled connections belong to the runtime that opened them, so every
+/// request runs on one process-wide runtime that is never dropped.
+static HTTP_RUNTIME: std::sync::LazyLock<tokio::runtime::Runtime> =
+    std::sync::LazyLock::new(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .thread_name("lankide-feishu-http")
+            .enable_all()
+            .build()
+            .expect("HTTP runtime starts")
+    });
+
 /// Production HTTP transport used by the Provider adapter.
 ///
 /// The wire client intentionally remains synchronous so a local peer can be
 /// used without an async runtime.  This boundary owns the small bridge to the
-/// workspace's async `reqwest` client and runs each request on a short-lived
-/// runtime thread with idle pooling disabled; Provider methods call it from `spawn_blocking`.
+/// workspace's async `reqwest` client and runs each request on a shared
+/// runtime; Provider methods call it from `spawn_blocking`.
 #[derive(Clone)]
 pub struct ReqwestTransport {
     client: reqwest::Client,
@@ -180,8 +192,6 @@ impl Default for ReqwestTransport {
     fn default() -> Self {
         Self {
             client: reqwest::Client::builder()
-                // Idle connections cannot outlive their request runtime.
-                .pool_max_idle_per_host(0)
                 .timeout(Duration::from_secs(30))
                 .build()
                 .expect("reqwest default client configuration is valid"),
@@ -198,12 +208,9 @@ impl ReqwestTransport {
 impl Transport for ReqwestTransport {
     fn execute(&self, request: Request) -> Result<Response, TransportError> {
         let client = self.client.clone();
-        std::thread::spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|error| TransportError::Failed(error.to_string()))?;
-            runtime.block_on(async move {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        HTTP_RUNTIME.spawn(async move {
+            let result = async move {
                 let method = match request.method {
                     Method::Get => reqwest::Method::GET,
                     Method::Post => reqwest::Method::POST,
@@ -250,10 +257,13 @@ impl Transport for ReqwestTransport {
                     headers,
                     body,
                 })
-            })
-        })
-        .join()
-        .map_err(|_| TransportError::Failed("HTTP transport thread panicked".to_owned()))?
+            }
+            .await;
+            let _ = sender.send(result);
+        });
+        receiver
+            .recv()
+            .map_err(|_| TransportError::Failed("HTTP transport stopped".to_owned()))?
     }
 }
 
