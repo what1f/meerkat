@@ -24,7 +24,6 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::runtime::Handle;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinHandle;
 
@@ -157,8 +156,11 @@ impl TelegramProvider {
         }
     }
 
-    fn remove_state(&self, workspace_id: &str) {
-        if let Ok(mut states) = self.workspaces.lock() {
+    async fn remove_state(&self, workspace_id: &str) {
+        let removed = {
+            let Ok(mut states) = self.workspaces.lock() else {
+                return;
+            };
             let keys = states
                 .keys()
                 .filter(|key| {
@@ -167,23 +169,24 @@ impl TelegramProvider {
                 })
                 .cloned()
                 .collect::<Vec<_>>();
-            for key in keys {
-                if let Some(state) = states.remove(&key)
-                    && let Some(task) = state.event_task
-                {
-                    task.abort();
-                }
+            keys.into_iter()
+                .filter_map(|key| states.remove(&key))
+                .collect::<Vec<_>>()
+        };
+        for state in removed {
+            if let Some(task) = state.event_task {
+                task.abort();
+                let _ = task.await;
             }
         }
     }
-
-    fn remove_agent_state(&self, workspace_id: &str, agent_id: &lankide_core::AgentId) {
-        let key = agent_state_key(workspace_id, agent_id.as_str());
-        if let Ok(mut states) = self.workspaces.lock()
-            && let Some(state) = states.remove(&key)
-            && let Some(task) = state.event_task
-        {
+    async fn remove_agent_state(&self, workspace_id: &str, agent_id: &AgentId) {
+        let removed = self.workspaces.lock().ok().and_then(|mut states| {
+            states.remove(&agent_state_key(workspace_id, agent_id.as_str()))
+        });
+        if let Some(task) = removed.and_then(|state| state.event_task) {
             task.abort();
+            let _ = task.await;
         }
     }
 }
@@ -213,12 +216,9 @@ async fn persist_manager_bot(
             field: "manager_bot_token",
         })?
         .with_domain(api_endpoint(&context.new_provider_config)?);
-    let manager = tokio::task::spawn_blocking(move || client.verify_credentials())
+    let manager = client
+        .verify_credentials()
         .await
-        .map_err(|_| ProviderError::External {
-            operation: "telegram_verify_manager_bot",
-            retryable: true,
-        })?
         .map_err(|_| ProviderError::InvalidInput {
             field: "manager_bot_token",
         })?;
@@ -441,15 +441,15 @@ impl Provider for TelegramProvider {
                 return Err(ProviderError::InvalidInput { field: "content" });
             }
             let primary_caption = html.clone();
-            let sent = match tokio::task::spawn_blocking(move || {
+            let sent = match (async move {
                 let mut primary = None;
                 if !html.trim().is_empty() && attachments.is_empty() {
-                    primary = Some(client.send_message(chat_id, &html, reply_to)?);
+                    primary = Some(client.send_message(chat_id, &html, reply_to).await?);
                 } else if !html.trim().is_empty() && !attachments.is_empty() {
                     // Keep the internal message identity attached to the text
                     // receipt; subsequent files are part of the same send
                     // operation and failures are reported as Unknown.
-                    primary = Some(client.send_message(chat_id, &html, reply_to)?);
+                    primary = Some(client.send_message(chat_id, &html, reply_to).await?);
                 }
                 for (index, attachment) in attachments.into_iter().enumerate() {
                     let caption = if index == 0 && primary.is_none() {
@@ -458,21 +458,25 @@ impl Provider for TelegramProvider {
                         ""
                     };
                     let sent_attachment = if attachment.kind == "image" {
-                        client.send_photo(
-                            chat_id,
-                            &attachment.bytes,
-                            &attachment.file_name,
-                            caption,
-                            reply_to,
-                        )?
+                        client
+                            .send_photo(
+                                chat_id,
+                                &attachment.bytes,
+                                &attachment.file_name,
+                                caption,
+                                reply_to,
+                            )
+                            .await?
                     } else {
-                        client.send_document(
-                            chat_id,
-                            &attachment.bytes,
-                            &attachment.file_name,
-                            caption,
-                            reply_to,
-                        )?
+                        client
+                            .send_document(
+                                chat_id,
+                                &attachment.bytes,
+                                &attachment.file_name,
+                                caption,
+                                reply_to,
+                            )
+                            .await?
                     };
                     primary.get_or_insert(sent_attachment);
                 }
@@ -482,11 +486,11 @@ impl Provider for TelegramProvider {
             })
             .await
             {
-                Ok(Ok(sent)) => sent,
-                Ok(Err(error)) if is_unknown_send_error(&error) => {
+                Ok(sent) => sent,
+                Err(error) if is_unknown_send_error(&error) => {
                     return Ok(SendMessageResult::unknown());
                 }
-                Ok(Err(_)) | Err(_) => {
+                Err(_) => {
                     return Err(ProviderError::External {
                         operation: "telegram_send_message",
                         retryable: false,
@@ -509,12 +513,9 @@ impl Provider for TelegramProvider {
                     field: "provider_message_id",
                 }
             })?;
-            tokio::task::spawn_blocking(move || client.delete_message(chat_id, message_id))
+            client
+                .delete_message(chat_id, message_id)
                 .await
-                .map_err(|_| ProviderError::External {
-                    operation: "telegram_recall_message",
-                    retryable: true,
-                })?
                 .map_err(|_| ProviderError::External {
                     operation: "telegram_recall_message",
                     retryable: false,
@@ -540,18 +541,13 @@ impl Provider for TelegramProvider {
             if html.trim().is_empty() {
                 return Err(ProviderError::InvalidInput { field: "content" });
             }
-            tokio::task::spawn_blocking(move || {
-                client.edit_message_text(chat_id, message_id, &html)
-            })
-            .await
-            .map_err(|_| ProviderError::External {
-                operation: "telegram_edit_message",
-                retryable: true,
-            })?
-            .map_err(|_| ProviderError::External {
-                operation: "telegram_edit_message",
-                retryable: false,
-            })
+            client
+                .edit_message_text(chat_id, message_id, &html)
+                .await
+                .map_err(|_| ProviderError::External {
+                    operation: "telegram_edit_message",
+                    retryable: false,
+                })
         })
     }
 
@@ -589,18 +585,13 @@ impl Provider for TelegramProvider {
                 });
             }
             let emoji = context.auto_reaction.clone();
-            tokio::task::spawn_blocking(move || {
-                client.set_message_reaction(chat_id, target, Some(&emoji))
-            })
-            .await
-            .map_err(|_| ProviderError::External {
-                operation: "telegram_auto_reaction",
-                retryable: true,
-            })?
-            .map_err(|_| ProviderError::External {
-                operation: "telegram_auto_reaction",
-                retryable: false,
-            })
+            client
+                .set_message_reaction(chat_id, target, Some(&emoji))
+                .await
+                .map_err(|_| ProviderError::External {
+                    operation: "telegram_auto_reaction",
+                    retryable: false,
+                })
         })
     }
 
@@ -651,12 +642,9 @@ impl Provider for TelegramProvider {
                     .with_domain(endpoint.clone()),
             );
             let verify_client = client.clone();
-            let bot = tokio::task::spawn_blocking(move || verify_client.verify_credentials())
+            let bot = verify_client
+                .verify_credentials()
                 .await
-                .map_err(|_| ProviderError::External {
-                    operation: "telegram_verify_agent",
-                    retryable: true,
-                })?
                 .map_err(|_| ProviderError::InvalidInput { field: "bot_token" })?;
             let mut provider_state = context.storage().agent_state(&context.agent_id).await?;
             let already_bound_to_this_bot = provider_state
@@ -721,20 +709,16 @@ impl Provider for TelegramProvider {
                 )
             {
                 let profile_client = client.clone();
-                tokio::task::spawn_blocking(move || {
+                (async move {
                     if !name.trim().is_empty() {
-                        profile_client.set_my_name(&name)?;
+                        profile_client.set_my_name(&name).await?;
                     }
                     if !description.trim().is_empty() {
-                        profile_client.set_my_description(&description)?;
+                        profile_client.set_my_description(&description).await?;
                     }
                     Ok::<_, crate::http::ClientError>(())
                 })
                 .await
-                .map_err(|_| ProviderError::External {
-                    operation: "telegram_create_agent",
-                    retryable: true,
-                })?
                 .map_err(|_| ProviderError::External {
                     operation: "telegram_create_agent",
                     retryable: false,
@@ -800,7 +784,8 @@ impl Provider for TelegramProvider {
 
     fn delete_agent<'a>(&'a self, context: AgentContext) -> ProviderFuture<'a, ()> {
         Box::pin(async move {
-            self.remove_agent_state(&context.workspace_id.to_string(), &context.agent_id);
+            self.remove_agent_state(&context.workspace_id.to_string(), &context.agent_id)
+                .await;
             let _identity_guard = self.identity_lock.lock().await;
             let (workspace_state, mut directory) = crate::identity::load(context.storage()).await?;
             directory.remove_agent(&context.agent_id);
@@ -814,10 +799,11 @@ impl Provider for TelegramProvider {
         action: String,
         opaque_payload: Value,
     ) -> ProviderFuture<'a, lankide_provider::ProviderOnboarding> {
-        Box::pin(crate::onboarding::agent_onboarding(
+        Box::pin(crate::onboarding::agent_onboarding_with_transport(
             context,
             action,
             opaque_payload,
+            self.transport.clone(),
         ))
     }
 
@@ -833,23 +819,21 @@ impl Provider for TelegramProvider {
             if name.trim().is_empty() && description.trim().is_empty() && avatar_bytes.is_none() {
                 return Ok(());
             }
-            tokio::task::spawn_blocking(move || {
+            (async move {
                 if !name.trim().is_empty() {
-                    client.set_my_name(&name)?;
+                    client.set_my_name(&name).await?;
                 }
                 if !description.trim().is_empty() {
-                    client.set_my_description(&description)?;
+                    client.set_my_description(&description).await?;
                 }
                 if let Some(bytes) = avatar_bytes.as_deref() {
-                    client.set_my_profile_photo(bytes, &avatar_file_name)?;
+                    client
+                        .set_my_profile_photo(bytes, &avatar_file_name)
+                        .await?;
                 }
                 Ok::<(), crate::http::ClientError>(())
             })
             .await
-            .map_err(|_| ProviderError::External {
-                operation: "telegram_update_profile",
-                retryable: true,
-            })?
             .map_err(|_| ProviderError::External {
                 operation: "telegram_update_profile",
                 retryable: false,
@@ -860,7 +844,7 @@ impl Provider for TelegramProvider {
     fn shutdown<'a>(&'a self, context: InitContext) -> ProviderFuture<'a, ()> {
         Box::pin(async move {
             let workspace_id = context.workspace_id().to_string();
-            self.remove_state(&workspace_id);
+            self.remove_state(&workspace_id).await;
             if let Ok(mut contexts) = self.contexts.lock() {
                 contexts.remove(&workspace_id);
             }
@@ -925,6 +909,68 @@ async fn normalization_config(
     Ok(directory.normalization_config(bot))
 }
 
+struct EventRetry {
+    initial: Duration,
+    maximum: Duration,
+}
+impl EventRetry {
+    fn configured(context: &InitContext) -> Self {
+        let config = context.workspace_config();
+        Self {
+            initial: Duration::from_millis(
+                config
+                    .get("event_retry_initial_ms")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(250)
+                    .max(1),
+            ),
+            maximum: Duration::from_millis(
+                config
+                    .get("event_retry_max_ms")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(30_000)
+                    .max(1),
+            ),
+        }
+    }
+    fn delay(&self, failures: u64) -> Duration {
+        self.initial
+            .saturating_mul(2u32.saturating_pow(failures.saturating_sub(1).min(31) as u32))
+            .min(self.maximum)
+    }
+}
+
+#[derive(Debug)]
+struct EventError {
+    reason: String,
+    retryable: bool,
+    retry_after: Option<Duration>,
+}
+impl From<crate::http::ClientError> for EventError {
+    fn from(error: crate::http::ClientError) -> Self {
+        Self {
+            retryable: error.is_retryable(),
+            retry_after: error.retry_after(),
+            reason: error.to_string(),
+        }
+    }
+}
+impl From<ProviderError> for EventError {
+    fn from(error: ProviderError) -> Self {
+        Self {
+            retryable: matches!(
+                error,
+                ProviderError::External {
+                    retryable: true,
+                    ..
+                } | ProviderError::Timeout { .. }
+                    | ProviderError::EventSinkClosed
+            ),
+            reason: format!("{error:?}"),
+            retry_after: None,
+        }
+    }
+}
 fn spawn_poller(
     context: InitContext,
     client: SharedClient,
@@ -932,76 +978,115 @@ fn spawn_poller(
     normalization: NormalizationConfig,
     offset_key: String,
 ) -> JoinHandle<()> {
-    tokio::task::spawn_blocking(move || {
-        let handle = Handle::current();
+    tokio::spawn(async move {
+        let retry = EventRetry::configured(&context);
         let mut poller = Poller::new(client, normalization).with_request(request);
-        let mut retry_delay = Duration::from_millis(250);
-        while !context.shutdown_signal().is_shutdown() {
-            let batch = match poller.poll_once() {
-                Ok(Some(batch)) => batch,
-                Ok(None) => break,
-                Err(error) => {
-                    context.logger().log(
-                        lankide_provider::LogLevel::Warn,
-                        &format!(
-                            "Telegram polling failed; retrying ({})",
-                            poll_error_kind(&error)
-                        ),
-                    );
-                    let shutdown = context.shutdown_signal();
-                    handle.block_on(async {
-                        tokio::select! {
-                            _ = shutdown.cancelled() => {},
-                            _ = tokio::time::sleep(retry_delay) => {},
-                        }
-                    });
-                    retry_delay = (retry_delay * 2).min(Duration::from_secs(30));
-                    continue;
-                }
-            };
-            retry_delay = Duration::from_millis(250);
-            let mut accepted = true;
-            for event in batch.events.clone() {
-                let provider_event =
-                    match normalized_event_to_provider(&context, poller.client(), &handle, event) {
-                        Ok(event) => event,
-                        Err(error) => {
-                            context.logger().log(
-                                lankide_provider::LogLevel::Warn,
-                                &format!("Telegram event conversion failed: {error}"),
-                            );
-                            accepted = false;
+        let mut poll_failures = 0;
+        loop {
+            let batch = tokio::select! {
+                _ = context.shutdown_signal().cancelled() => break,
+                result = poller.poll_once() => match result {
+                    Ok(Some(batch)) => batch,
+                    Ok(None) => break,
+                    Err(error) => {
+                        let crate::polling::PollError::Client(client_error) = &error else {
+                            context.logger().log(lankide_provider::LogLevel::Warn, &format!("Telegram polling stopped: {error}"));
+                            break;
+                        };
+                        if !client_error.is_retryable() {
+                            context.logger().log(lankide_provider::LogLevel::Warn, &format!("Telegram polling stopped: {error}"));
                             break;
                         }
-                    };
-                if handle
-                    .block_on(context.event_sink().emit(provider_event))
-                    .is_err()
-                {
-                    accepted = false;
-                    break;
+                        poll_failures += 1;
+                        let delay = retry.delay(poll_failures).max(client_error.retry_after().unwrap_or_default());
+                        context.logger().log(lankide_provider::LogLevel::Warn, &format!("Telegram polling failed; retry in {}ms: {error}", delay.as_millis()));
+                        tokio::select! { _ = context.shutdown_signal().cancelled() => break, _ = tokio::time::sleep(delay) => {} }
+                        continue;
+                    }
                 }
-            }
-            if !accepted {
-                std::thread::sleep(Duration::from_millis(100));
-                continue;
-            }
-            let next_offset = batch.next_offset.to_string().into_bytes();
-            if handle
-                .block_on(context.storage().put(&offset_key, next_offset))
-                .is_err()
-            {
+            };
+            poll_failures = 0;
+            for reason in &batch.skipped {
                 context.logger().log(
                     lankide_provider::LogLevel::Warn,
-                    "Telegram poll offset persistence failed; retrying",
+                    &format!("Telegram event skipped: {reason}"),
                 );
-                handle.block_on(async {
-                    tokio::select! {
-                        _ = context.shutdown_signal().cancelled() => {},
-                        _ = tokio::time::sleep(Duration::from_millis(250)) => {},
+            }
+            for event in &batch.events {
+                let mut failures = 0;
+                // Keep the accepted prefix of this batch; a later failure must
+                // never replay earlier deliveries.
+                let mut converted = None;
+                loop {
+                    let result: Result<(), EventError> = async {
+                        if converted.is_none() {
+                            converted = Some(
+                                normalized_event_to_provider(
+                                    &context,
+                                    poller.client(),
+                                    event.clone(),
+                                )
+                                .await?,
+                            );
+                        }
+                        context
+                            .event_sink()
+                            .emit(converted.as_ref().unwrap().clone())
+                            .await
+                            .map_err(EventError::from)
                     }
-                });
+                    .await;
+                    match result {
+                        Ok(()) => break,
+                        Err(error) => {
+                            failures += 1;
+                            if !error.retryable {
+                                context.logger().log(
+                                    lankide_provider::LogLevel::Warn,
+                                    &format!("Telegram event skipped: {}", error.reason),
+                                );
+                                break;
+                            }
+                            let delay = retry
+                                .delay(failures)
+                                .max(error.retry_after.unwrap_or_default());
+                            context.logger().log(
+                                lankide_provider::LogLevel::Warn,
+                                &format!(
+                                    "Telegram event acceptance failed; retry in {}ms: {}",
+                                    delay.as_millis(),
+                                    error.reason
+                                ),
+                            );
+                            tokio::select! { _ = context.shutdown_signal().cancelled() => return, _ = tokio::time::sleep(delay) => {} }
+                        }
+                    }
+                }
+            }
+            if batch.next_offset == batch.offset {
                 continue;
+            }
+            let mut failures = 0;
+            loop {
+                let result = tokio::select! {
+                    _ = context.shutdown_signal().cancelled() => return,
+                    result = context.storage().put(&offset_key, batch.next_offset.to_string().into_bytes()) => result,
+                };
+                match result {
+                    Ok(()) => break,
+                    Err(error) => {
+                        failures += 1;
+                        let delay = retry.delay(failures);
+                        context.logger().log(
+                            lankide_provider::LogLevel::Warn,
+                            &format!(
+                                "Telegram poll offset persistence failed; retry in {}ms: {error}",
+                                delay.as_millis()
+                            ),
+                        );
+                        tokio::select! { _ = context.shutdown_signal().cancelled() => return, _ = tokio::time::sleep(delay) => {} }
+                    }
+                }
             }
             if let Err(error) = poller.acknowledge(&batch) {
                 context.logger().log(
@@ -1015,16 +1100,13 @@ fn spawn_poller(
     })
 }
 
-fn receiving_agent(
+async fn receiving_agent(
     context: &InitContext,
-    handle: &Handle,
     account_id: &str,
-) -> Result<Option<AgentId>, crate::http::ClientError> {
-    let (_, directory) = handle
-        .block_on(crate::identity::load(context.storage()))
-        .map_err(|_| {
-            crate::http::ClientError::InvalidInput("Telegram account identity is invalid".into())
-        })?;
+) -> Result<Option<AgentId>, EventError> {
+    let (_, directory) = crate::identity::load(context.storage())
+        .await
+        .map_err(EventError::from)?;
     let mut receivers = directory
         .agents
         .iter()
@@ -1038,36 +1120,29 @@ fn receiving_agent(
     })
 }
 
-fn normalized_event_to_provider(
+async fn normalized_event_to_provider(
     context: &InitContext,
     client: &SharedClient,
-    handle: &Handle,
     event: NormalizedEvent,
-) -> Result<ProviderEvent, crate::http::ClientError> {
+) -> Result<ProviderEvent, EventError> {
     match event {
         NormalizedEvent::Message(mut message) => {
             let sender = resolved_sender(
                 context,
-                handle,
                 &message.sender.kind,
                 &message.sender.sender_id,
                 &message.sender.display_name,
-            )?;
+            )
+            .await?;
             for mention in &message.mentions {
                 if mention.agent_id.is_some() || mention.external_user_id == 0 {
                     continue;
                 }
-                let person = handle
-                    .block_on(
-                        context
-                            .storage()
-                            .get_or_create_person(&mention.external_user_id.to_string()),
-                    )
-                    .map_err(|_| {
-                        crate::http::ClientError::InvalidInput(
-                            "Telegram mentioned identity is invalid".to_owned(),
-                        )
-                    })?;
+                let person = context
+                    .storage()
+                    .get_or_create_person(&mention.external_user_id.to_string())
+                    .await
+                    .map_err(EventError::from)?;
                 if let (Some(external_marker), Some(person_marker)) = (
                     markdown_mention(&mention.display_name, &mention.external_user_id.to_string()),
                     markdown_mention(&mention.display_name, person.person_id.as_str()),
@@ -1078,9 +1153,9 @@ fn normalized_event_to_provider(
             let provider_data = serde_json::to_value(&message).unwrap_or(Value::Null);
             let mut attachments = Vec::with_capacity(message.attachments.len());
             for attachment in &message.attachments {
-                let downloaded = client.download_file(&attachment.file_id)?;
-                let resource = handle
-                    .block_on(context.save_resource(ResourceUpload {
+                let downloaded = client.download_file(&attachment.file_id).await?;
+                let resource = context
+                    .save_resource(ResourceUpload {
                         file_name: attachment.name.clone(),
                         media_type: if downloaded.content_type.trim().is_empty() {
                             attachment.content_type.clone()
@@ -1088,12 +1163,9 @@ fn normalized_event_to_provider(
                             downloaded.content_type
                         },
                         bytes: downloaded.data,
-                    }))
-                    .map_err(|_| {
-                        crate::http::ClientError::InvalidInput(
-                            "Telegram attachment save failed".to_owned(),
-                        )
-                    })?;
+                    })
+                    .await
+                    .map_err(EventError::from)?;
                 attachments.push(resource);
             }
             let mentioned_agent_ids = message
@@ -1102,7 +1174,7 @@ fn normalized_event_to_provider(
                 .filter_map(|value| AgentId::new(value.clone()).ok())
                 .collect();
             let receiving_agent_id = if message.channel_id == "private_chat" {
-                receiving_agent(context, handle, &message.account_id)?
+                receiving_agent(context, &message.account_id).await?
             } else {
                 None
             };
@@ -1125,14 +1197,14 @@ fn normalized_event_to_provider(
             let provider_data = serde_json::to_value(&reaction).unwrap_or(Value::Null);
             let sender = resolved_sender(
                 context,
-                handle,
                 &reaction.sender.kind,
                 &reaction.sender.sender_id,
                 &reaction.sender.display_name,
-            )?;
+            )
+            .await?;
             let action = reaction.action;
             let receiving_agent_id = if reaction.channel_id == "private_chat" {
-                receiving_agent(context, handle, &reaction.account_id)?
+                receiving_agent(context, &reaction.account_id).await?
             } else {
                 None
             };
@@ -1174,21 +1246,20 @@ fn sender(kind: &SenderKind, id: &str, name: &str) -> EventSender {
     }
 }
 
-fn resolved_sender(
+async fn resolved_sender(
     context: &InitContext,
-    handle: &Handle,
     kind: &SenderKind,
     id: &str,
     name: &str,
-) -> Result<EventSender, crate::http::ClientError> {
+) -> Result<EventSender, EventError> {
     if *kind != SenderKind::Human {
         return Ok(sender(kind, id, name));
     }
-    let person = handle
-        .block_on(context.storage().get_or_create_person(id.trim()))
-        .map_err(|_| {
-            crate::http::ClientError::InvalidInput("Telegram sender identity is invalid".to_owned())
-        })?;
+    let person = context
+        .storage()
+        .get_or_create_person(id.trim())
+        .await
+        .map_err(EventError::from)?;
     Ok(sender(kind, person.person_id.as_str(), name))
 }
 
@@ -1297,15 +1368,6 @@ fn is_unknown_send_error(error: &crate::http::ClientError) -> bool {
             | crate::http::ClientError::MissingField { .. }
             | crate::http::ClientError::HttpStatus { status: 500.., .. }
     )
-}
-
-fn poll_error_kind(error: &crate::polling::PollError) -> &'static str {
-    match error {
-        crate::polling::PollError::Client(_) => "client error",
-        crate::polling::PollError::Normalize(_) => "normalization error",
-        crate::polling::PollError::OffsetRegression { .. } => "offset regression",
-        crate::polling::PollError::BatchOffsetMismatch { .. } => "batch offset mismatch",
-    }
 }
 
 /// Base URL of a public or locally hosted Telegram Bot API server.

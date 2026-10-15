@@ -1,10 +1,11 @@
+use crate::Transport;
 use crate::{Credentials, PollRequest, ReqwestTransport, TelegramClient};
 use lankide_provider::{
     AgentOnboardingContext, ProviderError, ProviderOnboarding, ProviderOnboardingStatus,
     SecretValue,
 };
 use serde_json::{Value, json};
-use std::time::Duration;
+use std::sync::Arc;
 
 fn is_stale_managed_bot_candidate(error: &crate::ClientError) -> bool {
     match error {
@@ -119,6 +120,21 @@ pub async fn agent_onboarding(
     action: String,
     supplied_payload: Value,
 ) -> Result<ProviderOnboarding, ProviderError> {
+    agent_onboarding_with_transport(
+        context,
+        action,
+        supplied_payload,
+        Arc::new(ReqwestTransport::new()),
+    )
+    .await
+}
+
+pub(crate) async fn agent_onboarding_with_transport(
+    context: AgentOnboardingContext,
+    action: String,
+    supplied_payload: Value,
+    transport: Arc<dyn Transport>,
+) -> Result<ProviderOnboarding, ProviderError> {
     if context
         .provider_agent_config
         .get("mode")
@@ -167,17 +183,16 @@ pub async fn agent_onboarding(
         let token = manager_token.clone();
         let username_for_start = username.clone();
         let display_name = context.name.clone();
-        let registration = tokio::task::spawn_blocking(move || {
+        let registration = (async move {
             let client = TelegramClient::new(
-                ReqwestTransport::new(),
+                transport.clone(),
                 Credentials::new(manager_account_id, token),
             )?
             .with_domain(endpoint);
-            let manager = client.verify_credentials()?;
+            let manager = client.verify_credentials().await?;
             client.managed_bot_registration(&manager, &username_for_start, &display_name)
         })
         .await
-        .map_err(|_| external("telegram_registration_start"))?
         .map_err(|_| external("telegram_registration_start"))?;
         let value = onboarding(
             "create_bot",
@@ -225,9 +240,9 @@ pub async fn agent_onboarding(
     let manager_username_for_poll = manager_username;
     let username_for_poll = username.clone();
     let display_name = context.name.clone();
-    let poll = tokio::task::spawn_blocking(move || {
+    let poll = (async move {
         let client = TelegramClient::new(
-            ReqwestTransport::with_timeout(Duration::from_secs(10)),
+            transport.clone(),
             Credentials::new(manager_account_id, token),
         )?
         .with_domain(endpoint);
@@ -238,13 +253,13 @@ pub async fn agent_onboarding(
                 &display_name,
             )?
         } else {
-            let manager = client.verify_credentials()?;
+            let manager = client.verify_credentials().await?;
             client.managed_bot_registration(&manager, &username_for_poll, &display_name)?
         };
         let mut request = PollRequest::managed_bot();
         request.offset = offset;
         request.timeout_seconds = 1;
-        let updates = client.get_updates(&request)?;
+        let updates = client.get_updates(&request).await?;
         let next_offset = updates
             .iter()
             .map(|update| update.update_id + 1)
@@ -258,7 +273,7 @@ pub async fn agent_onboarding(
             if !registration.matches(&managed.bot) {
                 continue;
             }
-            match client.managed_bot_credential(update) {
+            match client.managed_bot_credential(update).await {
                 Ok(value) => {
                     credential = Some(value);
                     break;
@@ -273,7 +288,6 @@ pub async fn agent_onboarding(
         Ok::<_, crate::ClientError>((credential, next_offset))
     })
     .await
-    .map_err(|_| external("telegram_registration_poll"))?
     .map_err(|_| external("telegram_registration_poll"))?;
 
     if let Some(credential) = poll.0 {

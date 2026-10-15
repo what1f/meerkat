@@ -349,18 +349,13 @@ pub(crate) async fn person_open_id(
             .to_owned();
         let external_id = person.external_id.clone();
         let lookup_client = client.clone();
-        let user = tokio::task::spawn_blocking(move || {
-            lookup_client.get_user_by_id(&external_id, &id_type, auth)
-        })
-        .await
-        .map_err(|_| ProviderError::External {
-            operation: "resolve_feishu_person_identity",
-            retryable: true,
-        })?
-        .map_err(|_| ProviderError::External {
-            operation: "resolve_feishu_person_identity",
-            retryable: true,
-        })?;
+        let user = lookup_client
+            .get_user_by_id(&external_id, &id_type, auth)
+            .await
+            .map_err(|_| ProviderError::External {
+                operation: "resolve_feishu_person_identity",
+                retryable: true,
+            })?;
         if user.open_id.trim().is_empty() {
             return Err(ProviderError::NotFound {
                 entity: "person_identity",

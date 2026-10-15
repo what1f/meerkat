@@ -12,6 +12,7 @@ pub struct PollBatch {
     pub updates: Vec<Update>,
     pub events: Vec<NormalizedEvent>,
     pub next_offset: i64,
+    pub skipped: Vec<String>,
 }
 
 impl PollBatch {
@@ -21,7 +22,7 @@ impl PollBatch {
 }
 
 /// `poll_once` never advances the offset.  Call `acknowledge` only after the
-/// Runtime has durably accepted every normalized event in the batch.  A
+/// Runtime has durably accepted or deliberately skipped every event in the batch.  A
 /// process restart or failed ingestion therefore replays the update instead
 /// of silently dropping it.
 pub struct Poller<T> {
@@ -50,35 +51,45 @@ impl<T: Transport> Poller<T> {
     pub fn stop(&mut self) {
         self.stopped = true;
     }
-    pub fn poll_once(&mut self) -> Result<Option<PollBatch>, PollError> {
+    pub async fn poll_once(&mut self) -> Result<Option<PollBatch>, PollError> {
         if self.stopped {
             return Ok(None);
         }
-        let updates = self
+        let values = self
             .client
-            .get_updates(&self.request)
+            .get_update_values(&self.request)
+            .await
             .map_err(PollError::Client)?;
-        if updates.is_empty() {
-            return Ok(Some(PollBatch {
-                offset: self.request.offset,
-                updates,
-                events: Vec::new(),
-                next_offset: self.request.offset,
-            }));
-        }
+        let mut updates = Vec::new();
         let mut events = Vec::new();
+        let mut skipped = Vec::new();
         let mut next_offset = self.request.offset;
-        for update in &updates {
-            let normalized =
-                normalize_update(update, &self.normalization).map_err(PollError::Normalize)?;
-            events.extend(normalized);
-            next_offset = next_offset.max(update.update_id.saturating_add(1));
+        for value in values {
+            if let Some(id) = value.get("update_id").and_then(serde_json::Value::as_i64) {
+                next_offset = next_offset.max(id.saturating_add(1));
+            }
+            let update = match Update::from_json(
+                &serde_json::to_vec(&value)
+                    .map_err(|error| PollError::Client(ClientError::Encode(error.to_string())))?,
+            ) {
+                Ok(update) => update,
+                Err(error) => {
+                    skipped.push(error.to_string());
+                    continue;
+                }
+            };
+            match normalize_update(&update, &self.normalization) {
+                Ok(normalized) => events.extend(normalized),
+                Err(error) => skipped.push(format!("update {}: {error}", update.update_id)),
+            }
+            updates.push(update);
         }
         Ok(Some(PollBatch {
             offset: self.request.offset,
             updates,
             events,
             next_offset,
+            skipped,
         }))
     }
     pub fn acknowledge(&mut self, batch: &PollBatch) -> Result<(), PollError> {

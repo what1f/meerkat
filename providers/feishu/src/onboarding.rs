@@ -96,11 +96,10 @@ pub(crate) async fn agent_onboarding_with_transport(
         return poll_permissions(context, payload, transport).await;
     }
     if action == "start" {
-        let registration =
-            tokio::task::spawn_blocking(|| FeishuRegistrar::new(ReqwestTransport::new()).start())
-                .await
-                .map_err(|_| external("feishu_registration_start"))?
-                .map_err(|_| external("feishu_registration_start"))?;
+        let registration = FeishuRegistrar::new(transport.clone())
+            .start()
+            .await
+            .map_err(|_| external("feishu_registration_start"))?;
         return Ok(onboarding(
             "create_app",
             ProviderOnboardingStatus::ActionRequired,
@@ -119,12 +118,10 @@ pub(crate) async fn agent_onboarding_with_transport(
             field: "device_code",
         })?
         .to_owned();
-    let result = tokio::task::spawn_blocking(move || {
-        FeishuRegistrar::new(ReqwestTransport::new()).poll(&device_code)
-    })
-    .await
-    .map_err(|_| external("feishu_registration_poll"))?
-    .map_err(|_| external("feishu_registration_poll"))?;
+    let result = FeishuRegistrar::new(transport.clone())
+        .poll(&device_code)
+        .await
+        .map_err(|_| external("feishu_registration_poll"))?;
     match result {
         RegistrationPoll::Pending { .. } => Ok(onboarding(
             "create_app",
@@ -198,23 +195,26 @@ async fn poll_permissions(
     let domain = configured_domain(&context)?;
     let inspected_app_id = app_id.clone();
     let inspected_creator_open_id = creator_open_id.clone();
-    let result = tokio::task::spawn_blocking(move || {
+    let result = (async move {
         let client = FeishuClient::new(transport, Credentials::app(inspected_app_id, app_secret))?
             .with_domain(domain);
-        let capabilities = client.published_capabilities(Auth::Tenant)?;
+        let capabilities = client.published_capabilities(Auth::Tenant).await?;
         if !contains_standard_capabilities(&capabilities.tenant_scopes, &capabilities.events) {
             return Ok::<_, crate::ClientError>(None);
         }
-        let bot = client.bot_info(Auth::Tenant)?;
+        let bot = client.bot_info(Auth::Tenant).await?;
         let creator = if inspected_creator_open_id.trim().is_empty() {
             None
         } else {
-            Some(client.get_user(&inspected_creator_open_id, Auth::Tenant)?)
+            Some(
+                client
+                    .get_user(&inspected_creator_open_id, Auth::Tenant)
+                    .await?,
+            )
         };
         Ok(Some((bot.open_id, creator)))
     })
-    .await
-    .map_err(|_| external("feishu_authorization_inspection"))?;
+    .await;
     match result {
         Ok(Some((bot_open_id, creator))) => {
             let creator_person_id = if let Some(creator) = creator {
@@ -307,16 +307,16 @@ async fn existing_agent_onboarding(
     let inspected_domain = domain.clone();
     let inspected_transport = transport.clone();
     let inspected_app_secret = app_secret.clone();
-    let capabilities = tokio::task::spawn_blocking(move || {
+    let capabilities = (async move {
         FeishuClient::new(
             inspected_transport,
             Credentials::app(inspected_app_id, inspected_app_secret),
         )?
         .with_domain(inspected_domain)
         .published_capabilities(Auth::Tenant)
+        .await
     })
     .await
-    .map_err(|_| external("feishu_authorization_inspection"))?
     .map_err(|_| external("feishu_authorization_inspection"))?;
     let (missing_scopes, missing_events) =
         standard_capability_gaps(&capabilities.tenant_scopes, &capabilities.events);
@@ -371,13 +371,14 @@ async fn existing_agent_onboarding(
                 .collect::<Vec<_>>();
             let update_app_id = app_id.clone();
             let update_domain = domain.clone();
-            let update = tokio::task::spawn_blocking(move || {
+            let update = (async move {
                 FeishuClient::new(transport, Credentials::app(update_app_id, app_secret))?
                     .with_domain(update_domain)
                     .update_authorization(&missing_scopes, &missing_events, Auth::Tenant)
+                    .await
             })
             .await;
-            if !matches!(update, Ok(Ok(_))) {
+            if !matches!(update, Ok(_)) {
                 let link = authorization_url(&domain, &app_id)
                     .map_err(|_| external("feishu_authorization_link"))?;
                 state["verification_uri"] = Value::String(link);

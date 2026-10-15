@@ -62,7 +62,7 @@ impl<T: Transport> Registrar<T> {
         }
     }
 
-    pub fn start(&self) -> Result<Registration, ClientError> {
+    pub async fn start(&self) -> Result<Registration, ClientError> {
         #[derive(Deserialize)]
         struct Response {
             #[serde(default)]
@@ -78,12 +78,14 @@ impl<T: Transport> Registrar<T> {
             #[serde(default, rename = "expire_in")]
             expires_in: u64,
         }
-        let (status, response): (u16, Response) = self.post(&[
-            ("action", "begin"),
-            ("archetype", "PersonalAgent"),
-            ("auth_method", "client_secret"),
-            ("request_user_info", "open_id tenant_brand"),
-        ])?;
+        let (status, response): (u16, Response) = self
+            .post(&[
+                ("action", "begin"),
+                ("archetype", "PersonalAgent"),
+                ("auth_method", "client_secret"),
+                ("request_user_info", "open_id tenant_brand"),
+            ])
+            .await?;
         if !(200..300).contains(&status) {
             return Err(ClientError::HttpStatus {
                 status,
@@ -122,7 +124,7 @@ impl<T: Transport> Registrar<T> {
         })
     }
 
-    pub fn poll(&self, device_code: &str) -> Result<RegistrationPoll, ClientError> {
+    pub async fn poll(&self, device_code: &str) -> Result<RegistrationPoll, ClientError> {
         #[derive(Default, Deserialize)]
         struct UserInfo {
             #[serde(default)]
@@ -144,8 +146,9 @@ impl<T: Transport> Registrar<T> {
         if device_code.trim().is_empty() {
             return Err(ClientError::InvalidInput("device code is required".into()));
         }
-        let (status, response): (u16, Response) =
-            self.post(&[("action", "poll"), ("device_code", device_code)])?;
+        let (status, response): (u16, Response) = self
+            .post(&[("action", "poll"), ("device_code", device_code)])
+            .await?;
         if !(200..300).contains(&status) && response.error.is_empty() {
             return Err(ClientError::HttpStatus {
                 status,
@@ -175,7 +178,7 @@ impl<T: Transport> Registrar<T> {
         }
     }
 
-    fn post<R: for<'de> Deserialize<'de>>(
+    async fn post<R: for<'de> Deserialize<'de>>(
         &self,
         fields: &[(&str, &str)],
     ) -> Result<(u16, R), ClientError> {
@@ -190,13 +193,16 @@ impl<T: Transport> Registrar<T> {
             })
             .collect::<Vec<_>>()
             .join("&");
-        let response = self.transport.execute(
-            Request::new(
-                Method::Post,
-                format!("{}{}", self.accounts_base, REGISTRATION_PATH),
+        let response = self
+            .transport
+            .execute(
+                Request::new(
+                    Method::Post,
+                    format!("{}{}", self.accounts_base, REGISTRATION_PATH),
+                )
+                .body(body, "application/x-www-form-urlencoded"),
             )
-            .body(body, "application/x-www-form-urlencoded"),
-        )?;
+            .await?;
         Ok((response.status, response.json()?))
     }
 }

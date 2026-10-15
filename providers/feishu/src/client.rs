@@ -302,18 +302,20 @@ impl<T: Transport> Client<T> {
         &self.credentials
     }
 
-    pub fn verify_credentials(&self) -> Result<String, ClientError> {
-        self.obtain_tenant_token(true)
+    pub async fn verify_credentials(&self) -> Result<String, ClientError> {
+        self.obtain_tenant_token(true).await
     }
 
-    pub fn tenant_token(&self) -> Result<String, ClientError> {
-        self.obtain_tenant_token(false)
+    pub async fn tenant_token(&self) -> Result<String, ClientError> {
+        self.obtain_tenant_token(false).await
     }
 
-    pub fn bot_info(&self, auth: Auth) -> Result<BotRecord, ClientError> {
+    pub async fn bot_info(&self, auth: Auth) -> Result<BotRecord, ClientError> {
         let operation = "get Feishu bot info";
-        let request = self.authorized_request(Method::Get, "/open-apis/bot/v3/info", &[], auth)?;
-        let response = self.execute_authorized(request, auth)?;
+        let request = self
+            .authorized_request(Method::Get, "/open-apis/bot/v3/info", &[], auth)
+            .await?;
+        let response = self.execute_authorized(request, auth).await?;
         crate::http::validate_success(&response, operation)?;
         let envelope = response
             .json::<BotInfoEnvelope>()
@@ -348,7 +350,10 @@ impl<T: Transport> Client<T> {
         Ok(bot)
     }
 
-    pub fn published_capabilities(&self, auth: Auth) -> Result<PublishedCapabilities, ClientError> {
+    pub async fn published_capabilities(
+        &self,
+        auth: Auth,
+    ) -> Result<PublishedCapabilities, ClientError> {
         let path = format!(
             "/open-apis/application/v6/applications/{}/app_versions",
             encode_path_segment(self.credentials.app_id.trim())
@@ -357,14 +362,16 @@ impl<T: Transport> Client<T> {
             ("lang".to_owned(), "zh_cn".to_owned()),
             ("page_size".to_owned(), "20".to_owned()),
         ];
-        let response: ApiResponse<AppVersionPage> = self.json_request(
-            Method::Get,
-            &path,
-            &query,
-            None::<&Value>,
-            auth,
-            "inspect Feishu application versions",
-        )?;
+        let response: ApiResponse<AppVersionPage> = self
+            .json_request(
+                Method::Get,
+                &path,
+                &query,
+                None::<&Value>,
+                auth,
+                "inspect Feishu application versions",
+            )
+            .await?;
         let mut items = response.data.unwrap_or_default().items;
         items.retain(|item| item.status == 1 && item.publish_time.is_some());
         let Some(item) = items.into_iter().next() else {
@@ -388,7 +395,7 @@ impl<T: Transport> Client<T> {
         })
     }
 
-    pub fn send_message(
+    pub async fn send_message(
         &self,
         message: &SendMessage,
         auth: Auth,
@@ -417,14 +424,16 @@ impl<T: Transport> Client<T> {
             "receive_id_type".to_owned(),
             message.receive_id_type.trim().to_owned(),
         )];
-        let response: ApiResponse<MessageResult> = self.json_request(
-            Method::Post,
-            "/open-apis/im/v1/messages",
-            &query,
-            Some(&body),
-            auth,
-            "send Feishu message",
-        )?;
+        let response: ApiResponse<MessageResult> = self
+            .json_request(
+                Method::Post,
+                "/open-apis/im/v1/messages",
+                &query,
+                Some(&body),
+                auth,
+                "send Feishu message",
+            )
+            .await?;
         let result = response.data.ok_or_else(|| ClientError::MissingField {
             operation: "send Feishu message".to_owned(),
             field: "data".to_owned(),
@@ -441,7 +450,7 @@ impl<T: Transport> Client<T> {
         })
     }
 
-    pub fn reply_message(
+    pub async fn reply_message(
         &self,
         message: &ReplyMessage,
         auth: Auth,
@@ -467,14 +476,16 @@ impl<T: Transport> Client<T> {
             "/open-apis/im/v1/messages/{}/reply",
             encode_path_segment(message.message_id.trim())
         );
-        let response: ApiResponse<MessageResult> = self.json_request(
-            Method::Post,
-            &path,
-            &[],
-            Some(&body),
-            auth,
-            "reply to Feishu message",
-        )?;
+        let response: ApiResponse<MessageResult> = self
+            .json_request(
+                Method::Post,
+                &path,
+                &[],
+                Some(&body),
+                auth,
+                "reply to Feishu message",
+            )
+            .await?;
         let result = response.data.ok_or_else(|| ClientError::MissingField {
             operation: "reply to Feishu message".to_owned(),
             field: "data".to_owned(),
@@ -491,27 +502,34 @@ impl<T: Transport> Client<T> {
         })
     }
 
-    pub fn recall_message(&self, message_id: &str, auth: Auth) -> Result<(), ClientError> {
+    pub async fn recall_message(&self, message_id: &str, auth: Auth) -> Result<(), ClientError> {
         let path = format!(
             "/open-apis/im/v1/messages/{}",
             encode_path_segment(message_id.trim())
         );
         self.empty_request(Method::Delete, &path, &[], auth, "recall Feishu message")
+            .await
     }
 
-    pub fn get_message(&self, message_id: &str, auth: Auth) -> Result<MessageRecord, ClientError> {
+    pub async fn get_message(
+        &self,
+        message_id: &str,
+        auth: Auth,
+    ) -> Result<MessageRecord, ClientError> {
         let path = format!(
             "/open-apis/im/v1/messages/{}",
             encode_path_segment(message_id.trim())
         );
-        let response: ApiResponse<MessageRecord> = self.json_request(
-            Method::Get,
-            &path,
-            &[],
-            None::<&Value>,
-            auth,
-            "get Feishu message",
-        )?;
+        let response: ApiResponse<MessageRecord> = self
+            .json_request(
+                Method::Get,
+                &path,
+                &[],
+                None::<&Value>,
+                auth,
+                "get Feishu message",
+            )
+            .await?;
         let mut message = response.data.ok_or_else(|| ClientError::MissingField {
             operation: "get Feishu message".to_owned(),
             field: "data".to_owned(),
@@ -530,7 +548,7 @@ impl<T: Transport> Client<T> {
         Ok(message)
     }
 
-    pub fn list_messages(
+    pub async fn list_messages(
         &self,
         container_id: &str,
         container_id_type: &str,
@@ -570,14 +588,16 @@ impl<T: Transport> Client<T> {
         if let Some(token) = page_token.filter(|value| !value.trim().is_empty()) {
             query.push(("page_token".to_owned(), token.trim().to_owned()));
         }
-        let response: ApiResponse<MessagePageResponse> = self.json_request(
-            Method::Get,
-            "/open-apis/im/v1/messages",
-            &query,
-            None::<&Value>,
-            auth,
-            "list Feishu messages",
-        )?;
+        let response: ApiResponse<MessagePageResponse> = self
+            .json_request(
+                Method::Get,
+                "/open-apis/im/v1/messages",
+                &query,
+                None::<&Value>,
+                auth,
+                "list Feishu messages",
+            )
+            .await?;
         let page = response.data.unwrap_or_default();
         Ok(Page {
             items: page.items,
@@ -586,7 +606,7 @@ impl<T: Transport> Client<T> {
         })
     }
 
-    pub fn upload_image(
+    pub async fn upload_image(
         &self,
         data: &[u8],
         file_name: &str,
@@ -606,9 +626,10 @@ impl<T: Transport> Client<T> {
             "image/*",
         )?;
         let request = self
-            .authorized_request(Method::Post, "/open-apis/im/v1/images", &[], auth)?
+            .authorized_request(Method::Post, "/open-apis/im/v1/images", &[], auth)
+            .await?
             .body(body, content_type);
-        let response = self.execute_authorized(request, auth)?;
+        let response = self.execute_authorized(request, auth).await?;
         let envelope: ApiResponse<ImageResult> =
             parse_api_response(&response, "upload Feishu image")?;
         let key = envelope
@@ -624,7 +645,7 @@ impl<T: Transport> Client<T> {
         Ok(UploadedResource { key })
     }
 
-    pub fn upload_file(
+    pub async fn upload_file(
         &self,
         data: &[u8],
         file_name: &str,
@@ -648,9 +669,10 @@ impl<T: Transport> Client<T> {
         let (body, content_type) =
             multipart(&fields, "file", file_name, data, "application/octet-stream")?;
         let request = self
-            .authorized_request(Method::Post, "/open-apis/im/v1/files", &[], auth)?
+            .authorized_request(Method::Post, "/open-apis/im/v1/files", &[], auth)
+            .await?
             .body(body, content_type);
-        let response = self.execute_authorized(request, auth)?;
+        let response = self.execute_authorized(request, auth).await?;
         let envelope: ApiResponse<FileResult> =
             parse_api_response(&response, "upload Feishu file")?;
         let key = envelope
@@ -666,7 +688,7 @@ impl<T: Transport> Client<T> {
         Ok(UploadedResource { key })
     }
 
-    pub fn download_image(
+    pub async fn download_image(
         &self,
         image_key: &str,
         auth: Auth,
@@ -676,9 +698,10 @@ impl<T: Transport> Client<T> {
             encode_path_segment(image_key.trim())
         );
         self.download(&path, &[], auth, "download Feishu image")
+            .await
     }
 
-    pub fn download_message_resource(
+    pub async fn download_message_resource(
         &self,
         message_id: &str,
         file_key: &str,
@@ -692,16 +715,20 @@ impl<T: Transport> Client<T> {
         );
         let query = [("type".to_owned(), resource_type.trim().to_owned())];
         self.download(&path, &query, auth, "download Feishu message resource")
+            .await
     }
 
-    pub fn download_public_url(&self, url: &str) -> Result<DownloadedResource, ClientError> {
+    pub async fn download_public_url(&self, url: &str) -> Result<DownloadedResource, ClientError> {
         let url = url.trim();
         if !url.starts_with("https://") {
             return Err(ClientError::InvalidInput(
                 "Feishu resource URL must use HTTPS".to_owned(),
             ));
         }
-        let response = self.transport.execute(Request::new(Method::Get, url))?;
+        let response = self
+            .transport
+            .execute(Request::new(Method::Get, url))
+            .await?;
         if !(200..300).contains(&response.status) {
             return Err(ClientError::HttpStatus {
                 status: response.status,
@@ -723,7 +750,7 @@ impl<T: Transport> Client<T> {
         })
     }
 
-    pub fn add_reaction(
+    pub async fn add_reaction(
         &self,
         message_id: &str,
         emoji: &str,
@@ -734,14 +761,16 @@ impl<T: Transport> Client<T> {
             encode_path_segment(message_id.trim())
         );
         let body = json!({ "reaction_type": { "emoji_type": emoji.trim() } });
-        let response: ApiResponse<ReactionResult> = self.json_request(
-            Method::Post,
-            &path,
-            &[],
-            Some(&body),
-            auth,
-            "add Feishu reaction",
-        )?;
+        let response: ApiResponse<ReactionResult> = self
+            .json_request(
+                Method::Post,
+                &path,
+                &[],
+                Some(&body),
+                auth,
+                "add Feishu reaction",
+            )
+            .await?;
         let id = response
             .data
             .map(|value| value.reaction_id)
@@ -755,7 +784,7 @@ impl<T: Transport> Client<T> {
         Ok(id)
     }
 
-    pub fn remove_reaction(
+    pub async fn remove_reaction(
         &self,
         message_id: &str,
         reaction_id: &str,
@@ -767,9 +796,10 @@ impl<T: Transport> Client<T> {
             encode_path_segment(reaction_id.trim())
         );
         self.empty_request(Method::Delete, &path, &[], auth, "remove Feishu reaction")
+            .await
     }
 
-    pub fn list_reactions(
+    pub async fn list_reactions(
         &self,
         message_id: &str,
         page_token: Option<&str>,
@@ -790,14 +820,16 @@ impl<T: Transport> Client<T> {
         if let Some(token) = page_token.filter(|value| !value.trim().is_empty()) {
             query.push(("page_token".to_owned(), token.trim().to_owned()));
         }
-        let response: ApiResponse<ReactionPage> = self.json_request(
-            Method::Get,
-            &path,
-            &query,
-            None::<&Value>,
-            auth,
-            "list Feishu reactions",
-        )?;
+        let response: ApiResponse<ReactionPage> = self
+            .json_request(
+                Method::Get,
+                &path,
+                &query,
+                None::<&Value>,
+                auth,
+                "list Feishu reactions",
+            )
+            .await?;
         let page = response.data.unwrap_or_default();
         Ok(Page {
             items: page
@@ -815,30 +847,32 @@ impl<T: Transport> Client<T> {
         })
     }
 
-    pub fn get_chat(&self, chat_id: &str, auth: Auth) -> Result<ChatRecord, ClientError> {
+    pub async fn get_chat(&self, chat_id: &str, auth: Auth) -> Result<ChatRecord, ClientError> {
         let path = format!(
             "/open-apis/im/v1/chats/{}",
             encode_path_segment(chat_id.trim())
         );
-        let response: ApiResponse<ChatRecord> = self.json_request(
-            Method::Get,
-            &path,
-            &[],
-            None::<&Value>,
-            auth,
-            "get Feishu chat",
-        )?;
+        let response: ApiResponse<ChatRecord> = self
+            .json_request(
+                Method::Get,
+                &path,
+                &[],
+                None::<&Value>,
+                auth,
+                "get Feishu chat",
+            )
+            .await?;
         response.data.ok_or_else(|| ClientError::MissingField {
             operation: "get Feishu chat".to_owned(),
             field: "data".to_owned(),
         })
     }
 
-    pub fn get_user(&self, open_id: &str, auth: Auth) -> Result<UserRecord, ClientError> {
-        self.get_user_by_id(open_id, "open_id", auth)
+    pub async fn get_user(&self, open_id: &str, auth: Auth) -> Result<UserRecord, ClientError> {
+        self.get_user_by_id(open_id, "open_id", auth).await
     }
 
-    pub fn get_user_by_id(
+    pub async fn get_user_by_id(
         &self,
         user_id: &str,
         user_id_type: &str,
@@ -852,14 +886,16 @@ impl<T: Transport> Client<T> {
             "user_id_type".to_owned(),
             normalized_user_id_type(user_id_type),
         )];
-        let response: ApiResponse<UserRecordEnvelope> = self.json_request(
-            Method::Get,
-            &path,
-            &query,
-            None::<&Value>,
-            auth,
-            "get Feishu user",
-        )?;
+        let response: ApiResponse<UserRecordEnvelope> = self
+            .json_request(
+                Method::Get,
+                &path,
+                &query,
+                None::<&Value>,
+                auth,
+                "get Feishu user",
+            )
+            .await?;
         response
             .data
             .map(|value| value.user)
@@ -869,7 +905,11 @@ impl<T: Transport> Client<T> {
             })
     }
 
-    pub fn subscribe_task_events(&self, user_id_type: &str, auth: Auth) -> Result<(), ClientError> {
+    pub async fn subscribe_task_events(
+        &self,
+        user_id_type: &str,
+        auth: Auth,
+    ) -> Result<(), ClientError> {
         let query = [(
             "user_id_type".to_owned(),
             normalized_user_id_type(user_id_type),
@@ -881,22 +921,25 @@ impl<T: Transport> Client<T> {
             auth,
             "subscribe Feishu task events",
         )
+        .await
     }
 
-    pub fn list_tasks(
+    pub async fn list_tasks(
         &self,
         request: &ListRequest,
         auth: Auth,
     ) -> Result<Page<TaskRecord>, ClientError> {
         let query = request.query();
-        let response: ApiResponse<TaskPageResponse> = self.json_request(
-            Method::Get,
-            TASKS_PATH,
-            &query,
-            None::<&Value>,
-            auth,
-            "list Feishu tasks",
-        )?;
+        let response: ApiResponse<TaskPageResponse> = self
+            .json_request(
+                Method::Get,
+                TASKS_PATH,
+                &query,
+                None::<&Value>,
+                auth,
+                "list Feishu tasks",
+            )
+            .await?;
         let page = response.data.unwrap_or_default();
         Ok(Page {
             items: page.items,
@@ -905,7 +948,7 @@ impl<T: Transport> Client<T> {
         })
     }
 
-    pub fn get_task(
+    pub async fn get_task(
         &self,
         task_guid: &str,
         user_id_type: &str,
@@ -916,14 +959,16 @@ impl<T: Transport> Client<T> {
             "user_id_type".to_owned(),
             normalized_user_id_type(user_id_type),
         )];
-        let response: ApiResponse<TaskResult> = self.json_request(
-            Method::Get,
-            &path,
-            &query,
-            None::<&Value>,
-            auth,
-            "get Feishu task",
-        )?;
+        let response: ApiResponse<TaskResult> = self
+            .json_request(
+                Method::Get,
+                &path,
+                &query,
+                None::<&Value>,
+                auth,
+                "get Feishu task",
+            )
+            .await?;
         response
             .data
             .and_then(|value| value.task)
@@ -933,7 +978,7 @@ impl<T: Transport> Client<T> {
             })
     }
 
-    pub fn create_task(
+    pub async fn create_task(
         &self,
         task: &CreateTask,
         user_id_type: &str,
@@ -944,14 +989,16 @@ impl<T: Transport> Client<T> {
             normalized_user_id_type(user_id_type),
         )];
         let body = task.to_json();
-        let response: ApiResponse<TaskResult> = self.json_request(
-            Method::Post,
-            TASKS_PATH,
-            &query,
-            Some(&body),
-            auth,
-            "create Feishu task",
-        )?;
+        let response: ApiResponse<TaskResult> = self
+            .json_request(
+                Method::Post,
+                TASKS_PATH,
+                &query,
+                Some(&body),
+                auth,
+                "create Feishu task",
+            )
+            .await?;
         response
             .data
             .and_then(|value| value.task)
@@ -961,7 +1008,7 @@ impl<T: Transport> Client<T> {
             })
     }
 
-    pub fn update_task(
+    pub async fn update_task(
         &self,
         task_guid: &str,
         patch: &TaskPatch,
@@ -969,7 +1016,7 @@ impl<T: Transport> Client<T> {
         auth: Auth,
     ) -> Result<TaskRecord, ClientError> {
         if patch.is_empty() {
-            return self.get_task(task_guid, user_id_type, auth);
+            return self.get_task(task_guid, user_id_type, auth).await;
         }
         let path = format!("{TASKS_PATH}/{}", encode_path_segment(task_guid.trim()));
         let query = [(
@@ -977,14 +1024,16 @@ impl<T: Transport> Client<T> {
             normalized_user_id_type(user_id_type),
         )];
         let body = patch.to_json();
-        let response: ApiResponse<TaskResult> = self.json_request(
-            Method::Patch,
-            &path,
-            &query,
-            Some(&body),
-            auth,
-            "update Feishu task",
-        )?;
+        let response: ApiResponse<TaskResult> = self
+            .json_request(
+                Method::Patch,
+                &path,
+                &query,
+                Some(&body),
+                auth,
+                "update Feishu task",
+            )
+            .await?;
         response
             .data
             .and_then(|value| value.task)
@@ -994,7 +1043,7 @@ impl<T: Transport> Client<T> {
             })
     }
 
-    pub fn delete_task(
+    pub async fn delete_task(
         &self,
         task_guid: &str,
         user_id_type: &str,
@@ -1006,9 +1055,10 @@ impl<T: Transport> Client<T> {
             normalized_user_id_type(user_id_type),
         )];
         self.empty_request(Method::Delete, &path, &query, auth, "delete Feishu task")
+            .await
     }
 
-    pub fn add_task_members(
+    pub async fn add_task_members(
         &self,
         task_guid: &str,
         members: &[TaskMemberInput],
@@ -1033,14 +1083,16 @@ impl<T: Transport> Client<T> {
             normalized_user_id_type(user_id_type),
         )];
         let body = json!({ "members": values });
-        let response: ApiResponse<TaskResult> = self.json_request(
-            Method::Post,
-            &path,
-            &query,
-            Some(&body),
-            auth,
-            "add Feishu task members",
-        )?;
+        let response: ApiResponse<TaskResult> = self
+            .json_request(
+                Method::Post,
+                &path,
+                &query,
+                Some(&body),
+                auth,
+                "add Feishu task members",
+            )
+            .await?;
         response
             .data
             .and_then(|value| value.task)
@@ -1050,7 +1102,7 @@ impl<T: Transport> Client<T> {
             })
     }
 
-    pub fn remove_task_members(
+    pub async fn remove_task_members(
         &self,
         task_guid: &str,
         members: &[TaskMemberInput],
@@ -1075,14 +1127,16 @@ impl<T: Transport> Client<T> {
             normalized_user_id_type(user_id_type),
         )];
         let body = json!({ "members": values });
-        let response: ApiResponse<TaskResult> = self.json_request(
-            Method::Post,
-            &path,
-            &query,
-            Some(&body),
-            auth,
-            "remove Feishu task members",
-        )?;
+        let response: ApiResponse<TaskResult> = self
+            .json_request(
+                Method::Post,
+                &path,
+                &query,
+                Some(&body),
+                auth,
+                "remove Feishu task members",
+            )
+            .await?;
         response
             .data
             .and_then(|value| value.task)
@@ -1092,7 +1146,7 @@ impl<T: Transport> Client<T> {
             })
     }
 
-    pub fn create_task_comment(
+    pub async fn create_task_comment(
         &self,
         comment: &Comment,
         user_id_type: &str,
@@ -1103,14 +1157,16 @@ impl<T: Transport> Client<T> {
             normalized_user_id_type(user_id_type),
         )];
         let body = comment.to_json();
-        let response: ApiResponse<TaskCommentResult> = self.json_request(
-            Method::Post,
-            COMMENTS_PATH,
-            &query,
-            Some(&body),
-            auth,
-            "create Feishu task comment",
-        )?;
+        let response: ApiResponse<TaskCommentResult> = self
+            .json_request(
+                Method::Post,
+                COMMENTS_PATH,
+                &query,
+                Some(&body),
+                auth,
+                "create Feishu task comment",
+            )
+            .await?;
         response
             .data
             .and_then(|value| value.comment)
@@ -1122,7 +1178,7 @@ impl<T: Transport> Client<T> {
             })
     }
 
-    pub fn list_task_comments(
+    pub async fn list_task_comments(
         &self,
         task_guid: &str,
         page_token: Option<&str>,
@@ -1142,14 +1198,16 @@ impl<T: Transport> Client<T> {
         if let Some(token) = page_token.filter(|value| !value.trim().is_empty()) {
             query.push(("page_token".to_owned(), token.trim().to_owned()));
         }
-        let response: ApiResponse<TaskCommentPageResponse> = self.json_request(
-            Method::Get,
-            COMMENTS_PATH,
-            &query,
-            None::<&Value>,
-            auth,
-            "list Feishu task comments",
-        )?;
+        let response: ApiResponse<TaskCommentPageResponse> = self
+            .json_request(
+                Method::Get,
+                COMMENTS_PATH,
+                &query,
+                None::<&Value>,
+                auth,
+                "list Feishu task comments",
+            )
+            .await?;
         let page = response.data.unwrap_or_default();
         Ok(Page {
             items: page.items,
@@ -1158,7 +1216,7 @@ impl<T: Transport> Client<T> {
         })
     }
 
-    pub fn list_tasklists(
+    pub async fn list_tasklists(
         &self,
         page_token: Option<&str>,
         page_size: usize,
@@ -1178,14 +1236,16 @@ impl<T: Transport> Client<T> {
         if let Some(token) = page_token.filter(|value| !value.trim().is_empty()) {
             query.push(("page_token".to_owned(), token.trim().to_owned()));
         }
-        let response: ApiResponse<TasklistPageResponse> = self.json_request(
-            Method::Get,
-            TASKLISTS_PATH,
-            &query,
-            None::<&Value>,
-            auth,
-            "list Feishu tasklists",
-        )?;
+        let response: ApiResponse<TasklistPageResponse> = self
+            .json_request(
+                Method::Get,
+                TASKLISTS_PATH,
+                &query,
+                None::<&Value>,
+                auth,
+                "list Feishu tasklists",
+            )
+            .await?;
         let page = response.data.unwrap_or_default();
         Ok(Page {
             items: page.items,
@@ -1194,7 +1254,7 @@ impl<T: Transport> Client<T> {
         })
     }
 
-    pub fn get_tasklist(
+    pub async fn get_tasklist(
         &self,
         tasklist_guid: &str,
         user_id_type: &str,
@@ -1208,14 +1268,16 @@ impl<T: Transport> Client<T> {
             "user_id_type".to_owned(),
             normalized_user_id_type(user_id_type),
         )];
-        let response: ApiResponse<TasklistResult> = self.json_request(
-            Method::Get,
-            &path,
-            &query,
-            None::<&Value>,
-            auth,
-            "get Feishu tasklist",
-        )?;
+        let response: ApiResponse<TasklistResult> = self
+            .json_request(
+                Method::Get,
+                &path,
+                &query,
+                None::<&Value>,
+                auth,
+                "get Feishu tasklist",
+            )
+            .await?;
         response
             .data
             .and_then(|value| value.tasklist)
@@ -1225,7 +1287,7 @@ impl<T: Transport> Client<T> {
             })
     }
 
-    pub fn create_tasklist(
+    pub async fn create_tasklist(
         &self,
         name: &str,
         members: &[TasklistMember],
@@ -1249,14 +1311,16 @@ impl<T: Transport> Client<T> {
             "user_id_type".to_owned(),
             normalized_user_id_type(user_id_type),
         )];
-        let response: ApiResponse<TasklistResult> = self.json_request(
-            Method::Post,
-            TASKLISTS_PATH,
-            &query,
-            Some(&body),
-            auth,
-            "create Feishu tasklist",
-        )?;
+        let response: ApiResponse<TasklistResult> = self
+            .json_request(
+                Method::Post,
+                TASKLISTS_PATH,
+                &query,
+                Some(&body),
+                auth,
+                "create Feishu tasklist",
+            )
+            .await?;
         response
             .data
             .and_then(|value| value.tasklist)
@@ -1266,7 +1330,7 @@ impl<T: Transport> Client<T> {
             })
     }
 
-    pub fn list_tasklist_tasks(
+    pub async fn list_tasklist_tasks(
         &self,
         tasklist_guid: &str,
         request: &ListRequest,
@@ -1277,14 +1341,16 @@ impl<T: Transport> Client<T> {
             encode_path_segment(tasklist_guid.trim())
         );
         let query = request.query();
-        let response: ApiResponse<TaskPageResponse> = self.json_request(
-            Method::Get,
-            &path,
-            &query,
-            None::<&Value>,
-            auth,
-            "list Feishu tasklist tasks",
-        )?;
+        let response: ApiResponse<TaskPageResponse> = self
+            .json_request(
+                Method::Get,
+                &path,
+                &query,
+                None::<&Value>,
+                auth,
+                "list Feishu tasklist tasks",
+            )
+            .await?;
         let page = response.data.unwrap_or_default();
         Ok(Page {
             items: page.items,
@@ -1293,7 +1359,7 @@ impl<T: Transport> Client<T> {
         })
     }
 
-    pub fn patch_tasklist(
+    pub async fn patch_tasklist(
         &self,
         tasklist_guid: &str,
         name: Option<&str>,
@@ -1301,7 +1367,7 @@ impl<T: Transport> Client<T> {
         auth: Auth,
     ) -> Result<TasklistRecord, ClientError> {
         let Some(name) = name.filter(|value| !value.trim().is_empty()) else {
-            return self.get_tasklist(tasklist_guid, user_id_type, auth);
+            return self.get_tasklist(tasklist_guid, user_id_type, auth).await;
         };
         let path = format!(
             "{TASKLISTS_PATH}/{}",
@@ -1315,14 +1381,16 @@ impl<T: Transport> Client<T> {
             "tasklist": { "name": name.trim() },
             "update_fields": ["name"]
         });
-        let response: ApiResponse<TasklistResult> = self.json_request(
-            Method::Patch,
-            &path,
-            &query,
-            Some(&body),
-            auth,
-            "patch Feishu tasklist",
-        )?;
+        let response: ApiResponse<TasklistResult> = self
+            .json_request(
+                Method::Patch,
+                &path,
+                &query,
+                Some(&body),
+                auth,
+                "patch Feishu tasklist",
+            )
+            .await?;
         response
             .data
             .and_then(|value| value.tasklist)
@@ -1332,7 +1400,7 @@ impl<T: Transport> Client<T> {
             })
     }
 
-    pub fn delete_tasklist(
+    pub async fn delete_tasklist(
         &self,
         tasklist_guid: &str,
         user_id_type: &str,
@@ -1353,9 +1421,10 @@ impl<T: Transport> Client<T> {
             auth,
             "delete Feishu tasklist",
         )
+        .await
     }
 
-    pub fn add_tasklist_members(
+    pub async fn add_tasklist_members(
         &self,
         tasklist_guid: &str,
         members: &[TasklistMember],
@@ -1380,14 +1449,16 @@ impl<T: Transport> Client<T> {
             normalized_user_id_type(user_id_type),
         )];
         let body = json!({ "members": values });
-        let response: ApiResponse<TasklistResult> = self.json_request(
-            Method::Post,
-            &path,
-            &query,
-            Some(&body),
-            auth,
-            "add Feishu tasklist members",
-        )?;
+        let response: ApiResponse<TasklistResult> = self
+            .json_request(
+                Method::Post,
+                &path,
+                &query,
+                Some(&body),
+                auth,
+                "add Feishu tasklist members",
+            )
+            .await?;
         response
             .data
             .and_then(|value| value.tasklist)
@@ -1400,7 +1471,7 @@ impl<T: Transport> Client<T> {
     /// Escape hatch for Task v2 operations that are provider-defined.  The
     /// request still receives normal Feishu auth/error handling; the Runtime
     /// never needs to import Feishu Task SDK types.
-    pub fn task_json(
+    pub async fn task_json(
         &self,
         method: Method,
         path: &str,
@@ -1409,12 +1480,13 @@ impl<T: Transport> Client<T> {
         auth: Auth,
         operation: &str,
     ) -> Result<Value, ClientError> {
-        let response: ApiResponse<Value> =
-            self.json_request(method, path, query, body, auth, operation)?;
+        let response: ApiResponse<Value> = self
+            .json_request(method, path, query, body, auth, operation)
+            .await?;
         Ok(response.data.unwrap_or(Value::Null))
     }
 
-    pub fn upload_app_avatar(
+    pub async fn upload_app_avatar(
         &self,
         data: &[u8],
         file_name: &str,
@@ -1432,9 +1504,10 @@ impl<T: Transport> Client<T> {
                 "/open-apis/application/v7/app_avatar/upload",
                 &[],
                 auth,
-            )?
+            )
+            .await?
             .body(body, content_type);
-        let response = self.execute_authorized(request, auth)?;
+        let response = self.execute_authorized(request, auth).await?;
         let envelope: ApiResponse<AvatarUploadResult> =
             parse_api_response(&response, "upload Feishu app avatar")?;
         envelope
@@ -1447,7 +1520,7 @@ impl<T: Transport> Client<T> {
             })
     }
 
-    pub fn update_application_profile(
+    pub async fn update_application_profile(
         &self,
         display_name: &str,
         description: &str,
@@ -1484,9 +1557,10 @@ impl<T: Transport> Client<T> {
             auth,
             "update Feishu app profile",
         )
+        .await
     }
 
-    pub fn publish_application(
+    pub async fn publish_application(
         &self,
         remark: &str,
         changelog: &str,
@@ -1497,21 +1571,23 @@ impl<T: Transport> Client<T> {
             encode_path_segment(self.credentials.app_id.trim())
         );
         let body = json!({ "mobile_default_ability": "bot", "pc_default_ability": "bot", "remark": remark, "changelog": changelog });
-        let response: ApiResponse<PublishedApplication> = self.json_request(
-            Method::Post,
-            &path,
-            &[],
-            Some(&body),
-            auth,
-            "publish Feishu application",
-        )?;
+        let response: ApiResponse<PublishedApplication> = self
+            .json_request(
+                Method::Post,
+                &path,
+                &[],
+                Some(&body),
+                auth,
+                "publish Feishu application",
+            )
+            .await?;
         response.data.ok_or_else(|| ClientError::MissingField {
             operation: "publish Feishu application".to_owned(),
             field: "data".to_owned(),
         })
     }
 
-    pub fn update_authorization(
+    pub async fn update_authorization(
         &self,
         scopes: &[String],
         events: &[String],
@@ -1549,15 +1625,17 @@ impl<T: Transport> Client<T> {
             &Value::Object(body),
             auth,
             "update Feishu app authorization",
-        )?;
+        )
+        .await?;
         self.publish_application(
             "Lankide permission update",
             "Update Agent permissions or events",
             auth,
         )
+        .await
     }
 
-    fn obtain_tenant_token(&self, force_refresh: bool) -> Result<String, ClientError> {
+    async fn obtain_tenant_token(&self, force_refresh: bool) -> Result<String, ClientError> {
         if !force_refresh {
             if let Some(value) = self
                 .credentials
@@ -1585,7 +1663,7 @@ impl<T: Transport> Client<T> {
             ),
         )
         .json(&body)?;
-        let response = self.transport.execute(request)?;
+        let response = self.transport.execute(request).await?;
         crate::http::validate_success(&response, "obtain Feishu tenant token")?;
         let envelope: TokenEnvelope = response.json().map_err(|error| match error {
             ClientError::Decode(message) => {
@@ -1642,9 +1720,9 @@ impl<T: Transport> Client<T> {
         Ok(token.trim().to_owned())
     }
 
-    fn auth_token(&self, auth: Auth) -> Result<String, ClientError> {
+    async fn auth_token(&self, auth: Auth) -> Result<String, ClientError> {
         match auth {
-            Auth::Tenant => self.tenant_token(),
+            Auth::Tenant => self.tenant_token().await,
             Auth::User => self
                 .credentials
                 .user_access_token
@@ -1658,14 +1736,14 @@ impl<T: Transport> Client<T> {
         }
     }
 
-    fn authorized_request(
+    async fn authorized_request(
         &self,
         method: Method,
         path: &str,
         query: &[(String, String)],
         auth: Auth,
     ) -> Result<Request, ClientError> {
-        let token = self.auth_token(auth)?;
+        let token = self.auth_token(auth).await?;
         let mut request = Request::new(method, format!("{}{}", self.domain.base_url(), path))
             .header("Authorization", format!("Bearer {token}"));
         for (key, value) in query {
@@ -1674,17 +1752,17 @@ impl<T: Transport> Client<T> {
         Ok(request)
     }
 
-    fn execute_authorized(
+    async fn execute_authorized(
         &self,
         request: Request,
         auth: Auth,
     ) -> Result<crate::http::Response, ClientError> {
         let retry = request.clone();
-        let response = self.transport.execute(request)?;
+        let response = self.transport.execute(request).await?;
         if response.status != 401 || auth != Auth::Tenant {
             return Ok(response);
         }
-        let token = self.obtain_tenant_token(true)?;
+        let token = self.obtain_tenant_token(true).await?;
         let mut retry = retry;
         retry
             .headers
@@ -1692,10 +1770,10 @@ impl<T: Transport> Client<T> {
         retry
             .headers
             .push(("Authorization".into(), format!("Bearer {token}")));
-        Ok(self.transport.execute(retry)?)
+        Ok(self.transport.execute(retry).await?)
     }
 
-    fn json_request<R: serde::de::DeserializeOwned>(
+    async fn json_request<R: serde::de::DeserializeOwned>(
         &self,
         method: Method,
         path: &str,
@@ -1704,15 +1782,15 @@ impl<T: Transport> Client<T> {
         auth: Auth,
         operation: &str,
     ) -> Result<ApiResponse<R>, ClientError> {
-        let mut request = self.authorized_request(method, path, query, auth)?;
+        let mut request = self.authorized_request(method, path, query, auth).await?;
         if let Some(body) = body {
             request = request.json(body)?;
         }
-        let response = self.execute_authorized(request, auth)?;
+        let response = self.execute_authorized(request, auth).await?;
         parse_api_response(&response, operation)
     }
 
-    fn empty_json_request(
+    async fn empty_json_request(
         &self,
         method: Method,
         path: &str,
@@ -1722,9 +1800,10 @@ impl<T: Transport> Client<T> {
         operation: &str,
     ) -> Result<(), ClientError> {
         let request = self
-            .authorized_request(method, path, query, auth)?
+            .authorized_request(method, path, query, auth)
+            .await?
             .json(body)?;
-        let response = self.execute_authorized(request, auth)?;
+        let response = self.execute_authorized(request, auth).await?;
         if (200..300).contains(&response.status) && response.body.is_empty() {
             return Ok(());
         }
@@ -1732,7 +1811,7 @@ impl<T: Transport> Client<T> {
         Ok(())
     }
 
-    fn empty_request(
+    async fn empty_request(
         &self,
         method: Method,
         path: &str,
@@ -1740,8 +1819,8 @@ impl<T: Transport> Client<T> {
         auth: Auth,
         operation: &str,
     ) -> Result<(), ClientError> {
-        let request = self.authorized_request(method, path, query, auth)?;
-        let response = self.execute_authorized(request, auth)?;
+        let request = self.authorized_request(method, path, query, auth).await?;
+        let response = self.execute_authorized(request, auth).await?;
         if (200..300).contains(&response.status) && response.body.is_empty() {
             return Ok(());
         }
@@ -1749,15 +1828,17 @@ impl<T: Transport> Client<T> {
         Ok(())
     }
 
-    fn download(
+    async fn download(
         &self,
         path: &str,
         query: &[(String, String)],
         auth: Auth,
         operation: &str,
     ) -> Result<DownloadedResource, ClientError> {
-        let request = self.authorized_request(Method::Get, path, query, auth)?;
-        let response = self.execute_authorized(request, auth)?;
+        let request = self
+            .authorized_request(Method::Get, path, query, auth)
+            .await?;
+        let response = self.execute_authorized(request, auth).await?;
         if !(200..300).contains(&response.status) {
             return Err(ClientError::HttpStatus {
                 status: response.status,

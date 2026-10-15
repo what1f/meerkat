@@ -22,7 +22,7 @@ pub(crate) fn management_catalog() -> Vec<lankide_provider::ReactionDefinition> 
         .collect()
 }
 
-pub(crate) fn tools(
+pub(crate) async fn tools(
     context: &AgentRuntimeContext,
     client: Arc<SharedClient>,
     auth: Auth,
@@ -138,11 +138,11 @@ impl InvocationHandler for ReactionHandler {
                     .ok_or(ProviderError::InvalidInput {
                         field: "message_id",
                     })?;
-            tokio::task::spawn_blocking(move || match operation {
+            (async move {match operation {
                 ReactionOperation::Add => {
                     let emoji = required_text(&input, "emoji_type")?;
                     let reaction_id = client
-                        .add_reaction(&provider_message_id, &emoji, auth)
+                        .add_reaction(&provider_message_id, &emoji, auth).await
                         .map_err(|_| reaction_error("feishu_reaction_add"))?;
                     Ok(json!({"ok":true,"reaction_id":reaction_id,"emoji_type":emoji}))
                 }
@@ -153,7 +153,7 @@ impl InvocationHandler for ReactionHandler {
                             input.get("page_token").and_then(Value::as_str),
                             input.get("page_size").and_then(Value::as_u64).unwrap_or(50) as usize,
                             auth,
-                        )
+                        ).await
                         .map_err(|_| reaction_error("feishu_reaction_list"))?;
                     Ok(json!({"ok":true,"items":page.items.iter().map(|item|json!({
                         "reaction_id":item.reaction_id,
@@ -165,14 +165,13 @@ impl InvocationHandler for ReactionHandler {
                 ReactionOperation::Remove => {
                     let reaction_id = required_text(&input, "reaction_id")?;
                     client
-                        .remove_reaction(&provider_message_id, &reaction_id, auth)
+                        .remove_reaction(&provider_message_id, &reaction_id, auth).await
                         .map_err(|_| reaction_error("feishu_reaction_remove"))?;
                     Ok(json!({"ok":true}))
                 }
                 ReactionOperation::Catalog => unreachable!(),
-            })
+            }})
             .await
-            .map_err(|_| reaction_error("feishu_reaction"))?
         })
     }
 }

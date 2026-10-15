@@ -87,14 +87,14 @@ pub(crate) async fn tools(
     .collect()
 }
 
-pub(crate) fn target_agents_for_task(
+pub(crate) async fn target_agents_for_task(
     directory: &crate::identity::IdentityDirectory,
     client: &SharedClient,
     auth: Auth,
     task_id: &str,
 ) -> Vec<lankide_core::AgentId> {
     let directory = MemberDirectory::from_identity(directory);
-    let Ok(task) = client.get_task(task_id, "open_id", auth) else {
+    let Ok(task) = client.get_task(task_id, "open_id", auth).await else {
         return Vec::new();
     };
     let member_ids = task_member_ids(&task);
@@ -239,20 +239,14 @@ impl InvocationHandler for TaskHandler {
         let auth = self.auth;
         let access = self.access.clone();
         Box::pin(async move {
-            tokio::task::spawn_blocking(move || {
-                execute(operation, &client, auth, &access, input)
-                    .or_else(|error| Ok(tool_error(&error)))
-            })
-            .await
-            .map_err(|_| ProviderError::External {
-                operation: "feishu_task",
-                retryable: true,
-            })?
+            execute(operation, &client, auth, &access, input)
+                .await
+                .or_else(|error| Ok(tool_error(&error)))
         })
     }
 }
 
-fn execute(
+async fn execute(
     operation: TaskOperation,
     client: &SharedClient,
     auth: Auth,
@@ -260,19 +254,21 @@ fn execute(
     input: Value,
 ) -> Result<Value, ProviderError> {
     match operation {
-        TaskOperation::List => list_tasks(client, auth, access, &input),
-        TaskOperation::Get => get_task(client, auth, access, &input),
-        TaskOperation::Create => create_task(client, auth, access, &input),
-        TaskOperation::Update => update_task(client, auth, access, &input, false),
-        TaskOperation::AddMembers => change_task_members(client, auth, access, &input, true),
-        TaskOperation::RemoveMembers => change_task_members(client, auth, access, &input, false),
-        TaskOperation::Complete => update_task(client, auth, access, &input, true),
-        TaskOperation::Comments => list_comments(client, auth, access, &input),
-        TaskOperation::Comment => create_comment(client, auth, access, &input),
+        TaskOperation::List => list_tasks(client, auth, access, &input).await,
+        TaskOperation::Get => get_task(client, auth, access, &input).await,
+        TaskOperation::Create => create_task(client, auth, access, &input).await,
+        TaskOperation::Update => update_task(client, auth, access, &input, false).await,
+        TaskOperation::AddMembers => change_task_members(client, auth, access, &input, true).await,
+        TaskOperation::RemoveMembers => {
+            change_task_members(client, auth, access, &input, false).await
+        }
+        TaskOperation::Complete => update_task(client, auth, access, &input, true).await,
+        TaskOperation::Comments => list_comments(client, auth, access, &input).await,
+        TaskOperation::Comment => create_comment(client, auth, access, &input).await,
     }
 }
 
-fn list_tasks(
+async fn list_tasks(
     client: &SharedClient,
     auth: Auth,
     access: &TaskAccess,
@@ -292,6 +288,7 @@ fn list_tasks(
     };
     let page = client
         .list_tasklist_tasks(&access.tasklist_id, &request, auth)
+        .await
         .map_err(|_| task_error("feishu_task_list", true))?;
     let tasks = page
         .items
@@ -307,7 +304,7 @@ fn list_tasks(
     }))
 }
 
-fn get_task(
+async fn get_task(
     client: &SharedClient,
     auth: Auth,
     access: &TaskAccess,
@@ -316,6 +313,7 @@ fn get_task(
     let task_id = required_text(input, "task_id")?;
     let task = client
         .get_task(&task_id, "open_id", auth)
+        .await
         .map_err(|_| task_error("feishu_task_get", false))?;
     if !access.can_read(&task) {
         return Ok(denied(
@@ -325,6 +323,7 @@ fn get_task(
     }
     let comments = client
         .list_task_comments(&task_id, None, 50, auth)
+        .await
         .map_err(|_| task_error("feishu_task_comments", true))?;
     Ok(json!({
         "ok":true,
@@ -335,7 +334,7 @@ fn get_task(
     }))
 }
 
-fn list_comments(
+async fn list_comments(
     client: &SharedClient,
     auth: Auth,
     access: &TaskAccess,
@@ -344,6 +343,7 @@ fn list_comments(
     let task_id = required_text(input, "task_id")?;
     let task = client
         .get_task(&task_id, "open_id", auth)
+        .await
         .map_err(|_| task_error("feishu_task_get", false))?;
     if !access.can_read(&task) {
         return Ok(denied(
@@ -358,6 +358,7 @@ fn list_comments(
             input.get("page_size").and_then(Value::as_u64).unwrap_or(50) as usize,
             auth,
         )
+        .await
         .map_err(|_| task_error("feishu_task_comments", true))?;
     Ok(json!({
         "ok":true,
@@ -367,7 +368,7 @@ fn list_comments(
     }))
 }
 
-fn create_comment(
+async fn create_comment(
     client: &SharedClient,
     auth: Auth,
     access: &TaskAccess,
@@ -376,6 +377,7 @@ fn create_comment(
     let task_id = required_text(input, "task_id")?;
     let task = client
         .get_task(&task_id, "open_id", auth)
+        .await
         .map_err(|_| task_error("feishu_task_get", false))?;
     if !access.can_read(&task) {
         return Ok(denied(
@@ -393,11 +395,12 @@ fn create_comment(
             "open_id",
             auth,
         )
+        .await
         .map_err(|_| task_error("feishu_task_comment", false))?;
     Ok(json!({"ok":true,"comment_id":comment_id}))
 }
 
-fn create_task(
+async fn create_task(
     client: &SharedClient,
     auth: Auth,
     access: &TaskAccess,
@@ -432,9 +435,11 @@ fn create_task(
     };
     let created = client
         .create_task(&task, "open_id", auth)
+        .await
         .map_err(|_| task_error("feishu_task_create", false))?;
     let verified = client
         .get_task(&created.guid, "open_id", auth)
+        .await
         .map_err(|_| task_error("feishu_task_verify", true))?;
     if !task_contains_members(&verified, &task.assignees, true)
         || !task_contains_members(&verified, &task.followers, false)
@@ -445,7 +450,7 @@ fn create_task(
     Ok(json!({"ok":true,"task":task_json(&verified, access)}))
 }
 
-fn update_task(
+async fn update_task(
     client: &SharedClient,
     auth: Auth,
     access: &TaskAccess,
@@ -455,6 +460,7 @@ fn update_task(
     let task_id = required_text(input, "task_id")?;
     let current = client
         .get_task(&task_id, "open_id", auth)
+        .await
         .map_err(|_| task_error("feishu_task_get", false))?;
     if !access.can_read(&current) {
         return Ok(denied(
@@ -483,11 +489,12 @@ fn update_task(
     }
     let updated = client
         .update_task(&task_id, &patch, "open_id", auth)
+        .await
         .map_err(|_| task_error("feishu_task_update", false))?;
     Ok(json!({"ok":true,"task":task_json(&updated, access)}))
 }
 
-fn change_task_members(
+async fn change_task_members(
     client: &SharedClient,
     auth: Auth,
     access: &TaskAccess,
@@ -510,6 +517,7 @@ fn change_task_members(
     }
     let current = client
         .get_task(&task_id, "open_id", auth)
+        .await
         .map_err(|_| task_error("feishu_task_get", false))?;
     if !access.can_read(&current) {
         return Ok(denied(
@@ -547,9 +555,13 @@ fn change_task_members(
         return Ok(json!({"ok":true,"task":task_json(&current, access)}));
     }
     let updated = if add {
-        client.add_task_members(&task_id, &changes, "open_id", auth)
+        client
+            .add_task_members(&task_id, &changes, "open_id", auth)
+            .await
     } else {
-        client.remove_task_members(&task_id, &changes, "open_id", auth)
+        client
+            .remove_task_members(&task_id, &changes, "open_id", auth)
+            .await
     }
     .map_err(|_| {
         task_error(
@@ -822,12 +834,12 @@ async fn ensure_tasklist(
     let saved_guid = saved_guid.map(str::to_owned);
     let configured_name = configured_name.map(str::to_owned);
     let desired_members = desired_members.to_vec();
-    tokio::task::spawn_blocking(move || {
+    (async move {
         let saved_tasklist = if let Some(guid) = saved_guid
             .as_deref()
             .filter(|value| !value.trim().is_empty())
         {
-            client.get_tasklist(guid, "open_id", auth).ok()
+            client.get_tasklist(guid, "open_id", auth).await.ok()
         } else {
             None
         };
@@ -847,6 +859,7 @@ async fn ensure_tasklist(
             loop {
                 let page = client
                     .list_tasklists(page_token.as_deref(), 100, "open_id", auth)
+                    .await
                     .map_err(|_| task_error("feishu_tasklist_list", true))?;
                 matches.extend(
                     page.items
@@ -867,6 +880,7 @@ async fn ensure_tasklist(
             match matches.len() {
                 0 => client
                     .create_tasklist(name, &desired_members, "open_id", auth)
+                    .await
                     .map_err(|_| task_error("feishu_tasklist_create", false))?,
                 1 => matches.remove(0),
                 _ => return Err(task_error("feishu_tasklist_ambiguous", false)),
@@ -879,6 +893,7 @@ async fn ensure_tasklist(
         {
             tasklist = client
                 .patch_tasklist(&tasklist.guid, Some(name), "open_id", auth)
+                .await
                 .map_err(|_| task_error("feishu_tasklist_update", false))?;
         }
         if tasklist.guid.trim().is_empty() {
@@ -888,12 +903,12 @@ async fn ensure_tasklist(
         if !missing.is_empty() {
             client
                 .add_tasklist_members(&tasklist.guid, &missing, "open_id", auth)
+                .await
                 .map_err(|_| task_error("feishu_tasklist_members", false))?;
         }
         Ok(tasklist.guid)
     })
     .await
-    .map_err(|_| task_error("feishu_tasklist", true))?
 }
 
 fn missing_tasklist_members(

@@ -28,7 +28,6 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio::runtime::Handle;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinHandle;
 
@@ -43,21 +42,33 @@ const FEISHU_EVENT_TYPES: [&str; 5] = [
 /// A host-provided Feishu long-connection source.  The source owns SDK
 /// websocket framing; the Provider owns source retry, registration,
 /// normalization, lifecycle, and sink delivery.
-pub type EventSourceFactory = dyn Fn(
-        &lankide_core::WorkspaceId,
-        &Credentials,
-        &Domain,
-    ) -> Result<Box<dyn EventSource>, SourceError>
+pub type EventSourceFactory = dyn for<'a> Fn(
+        &'a lankide_core::WorkspaceId,
+        &'a Credentials,
+        &'a Domain,
+        &'a dyn Transport,
+    ) -> crate::events::EventFuture<'a, Result<Box<dyn EventSource>, SourceError>>
     + Send
     + Sync;
 
 type SharedTransport = Arc<dyn Transport>;
 type SharedClient = crate::client::Client<SharedTransport>;
 
+struct EventTask {
+    task: JoinHandle<()>,
+    shutdown: tokio::sync::oneshot::Sender<()>,
+}
+impl EventTask {
+    async fn stop(self) {
+        let _ = self.shutdown.send(());
+        let _ = self.task.await;
+    }
+}
+
 struct WorkspaceState {
     client: Arc<SharedClient>,
     auth: Auth,
-    event_task: Option<JoinHandle<()>>,
+    event_task: Option<EventTask>,
 }
 
 const INBOUND_RESOURCE_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
@@ -168,11 +179,13 @@ impl FeishuProvider {
 
     pub fn with_event_source_factory<F>(mut self, factory: F) -> Self
     where
-        F: Fn(
-                &lankide_core::WorkspaceId,
-                &Credentials,
-                &Domain,
-            ) -> Result<Box<dyn EventSource>, SourceError>
+        F: for<'a> Fn(
+                &'a lankide_core::WorkspaceId,
+                &'a Credentials,
+                &'a Domain,
+                &'a dyn Transport,
+            )
+                -> crate::events::EventFuture<'a, Result<Box<dyn EventSource>, SourceError>>
             + Send
             + Sync
             + 'static,
@@ -215,14 +228,17 @@ impl FeishuProvider {
         if let Ok(mut states) = self.workspaces.lock() {
             if let Some(previous) = states.insert(workspace_id, state) {
                 if let Some(task) = previous.event_task {
-                    task.abort();
+                    let _ = task.shutdown.send(());
                 }
             }
         }
     }
 
-    fn remove_state(&self, workspace_id: &str) {
-        if let Ok(mut states) = self.workspaces.lock() {
+    async fn remove_state(&self, workspace_id: &str) {
+        let removed = {
+            let Ok(mut states) = self.workspaces.lock() else {
+                return;
+            };
             let keys = states
                 .keys()
                 .filter(|key| {
@@ -231,23 +247,23 @@ impl FeishuProvider {
                 })
                 .cloned()
                 .collect::<Vec<_>>();
-            for key in keys {
-                if let Some(state) = states.remove(&key)
-                    && let Some(task) = state.event_task
-                {
-                    task.abort();
-                }
+            keys.into_iter()
+                .filter_map(|key| states.remove(&key))
+                .collect::<Vec<_>>()
+        };
+        for state in removed {
+            if let Some(task) = state.event_task {
+                task.stop().await;
             }
         }
     }
 
-    fn remove_agent_state(&self, workspace_id: &str, agent_id: &AgentId) {
-        let key = agent_state_key(workspace_id, agent_id.as_str());
-        if let Ok(mut states) = self.workspaces.lock()
-            && let Some(state) = states.remove(&key)
-            && let Some(task) = state.event_task
-        {
-            task.abort();
+    async fn remove_agent_state(&self, workspace_id: &str, agent_id: &AgentId) {
+        let removed = self.workspaces.lock().ok().and_then(|mut states| {
+            states.remove(&agent_state_key(workspace_id, agent_id.as_str()))
+        });
+        if let Some(task) = removed.and_then(|state| state.event_task) {
+            task.stop().await;
         }
     }
 }
@@ -367,14 +383,14 @@ impl Provider for FeishuProvider {
             let receive_id_type = receive_id_type(&context.provider_config, &chat_id);
             let auth = state.auth;
             let client = state.client;
-            let sent = match tokio::task::spawn_blocking(move || {
+            let sent = match (async move {
                 let mut primary = None;
                 if !rendered.trim().is_empty() {
                     let result = if let Some(reply_id) = provider_reply_id.as_deref() {
                         let mut reply = ReplyMessage::markdown(reply_id, rendered);
                         reply.idempotency_key =
                             Some(feishu_send_part_key(&idempotency_key, "content"));
-                        client.reply_message(&reply, auth)
+                        client.reply_message(&reply, auth).await
                     } else {
                         let mut message = SendMessage::markdown(
                             chat_id.clone(),
@@ -383,26 +399,25 @@ impl Provider for FeishuProvider {
                         );
                         message.idempotency_key =
                             Some(feishu_send_part_key(&idempotency_key, "content"));
-                        client.send_message(&message, auth)
+                        client.send_message(&message, auth).await
                     }?;
                     primary = Some(result);
                 }
                 for (index, attachment) in attachments.into_iter().enumerate() {
                     let uploaded = if attachment.kind == "image" {
-                        client.upload_image(
-                            &attachment.bytes,
-                            &attachment.file_name,
-                            "message",
-                            auth,
-                        )?
+                        client
+                            .upload_image(&attachment.bytes, &attachment.file_name, "message", auth)
+                            .await?
                     } else {
-                        client.upload_file(
-                            &attachment.bytes,
-                            &attachment.file_name,
-                            feishu_file_type(&attachment.file_name, &attachment.kind),
-                            None,
-                            auth,
-                        )?
+                        client
+                            .upload_file(
+                                &attachment.bytes,
+                                &attachment.file_name,
+                                feishu_file_type(&attachment.file_name, &attachment.kind),
+                                None,
+                                auth,
+                            )
+                            .await?
                     };
                     let result = if let Some(reply_id) = provider_reply_id.as_deref() {
                         let mut reply = if attachment.kind == "image" {
@@ -414,7 +429,7 @@ impl Provider for FeishuProvider {
                             &idempotency_key,
                             &format!("attachment:{index}"),
                         ));
-                        client.reply_message(&reply, auth)?
+                        client.reply_message(&reply, auth).await?
                     } else {
                         let mut message = if attachment.kind == "image" {
                             SendMessage::image(
@@ -433,7 +448,7 @@ impl Provider for FeishuProvider {
                             &idempotency_key,
                             &format!("attachment:{index}"),
                         ));
-                        client.send_message(&message, auth)?
+                        client.send_message(&message, auth).await?
                     };
                     primary.get_or_insert(result);
                 }
@@ -443,11 +458,11 @@ impl Provider for FeishuProvider {
             })
             .await
             {
-                Ok(Ok(sent)) => sent,
-                Ok(Err(error)) if is_unknown_send_error(&error) => {
+                Ok(sent) => sent,
+                Err(error) if is_unknown_send_error(&error) => {
                     return Ok(SendMessageResult::unknown());
                 }
-                Ok(Err(_)) | Err(_) => {
+                Err(_) => {
                     return Err(ProviderError::External {
                         operation: "feishu_send_message",
                         retryable: false,
@@ -462,18 +477,14 @@ impl Provider for FeishuProvider {
         Box::pin(async move {
             let state = self.state(&context.workspace_id.to_string(), &context.agent_id)?;
             let message_id = context.provider_message_id;
-            tokio::task::spawn_blocking(move || {
-                state.client.recall_message(&message_id, state.auth)
-            })
-            .await
-            .map_err(|_| ProviderError::External {
-                operation: "feishu_recall_message",
-                retryable: true,
-            })?
-            .map_err(|_| ProviderError::External {
-                operation: "feishu_recall_message",
-                retryable: false,
-            })
+            state
+                .client
+                .recall_message(&message_id, state.auth)
+                .await
+                .map_err(|_| ProviderError::External {
+                    operation: "feishu_recall_message",
+                    retryable: false,
+                })
         })
     }
 
@@ -505,21 +516,15 @@ impl Provider for FeishuProvider {
                 .ok_or(ProviderError::InvalidInput {
                     field: "trigger_messages",
                 })?;
-            tokio::task::spawn_blocking(move || {
-                state
-                    .client
-                    .add_reaction(&target, &emoji, state.auth)
-                    .map(|_| ())
-            })
-            .await
-            .map_err(|_| ProviderError::External {
-                operation: "feishu_auto_reaction",
-                retryable: true,
-            })?
-            .map_err(|_| ProviderError::External {
-                operation: "feishu_auto_reaction",
-                retryable: false,
-            })
+            state
+                .client
+                .add_reaction(&target, &emoji, state.auth)
+                .await
+                .map(|_| ())
+                .map_err(|_| ProviderError::External {
+                    operation: "feishu_auto_reaction",
+                    retryable: false,
+                })
         })
     }
 
@@ -533,7 +538,8 @@ impl Provider for FeishuProvider {
     ) -> ProviderFuture<'a, Vec<ToolDefinition>> {
         Box::pin(async move {
             let state = self.state(&context.workspace_id.to_string(), &context.agent_id)?;
-            let mut tools = crate::reactions::tools(&context, state.client.clone(), state.auth)?;
+            let mut tools =
+                crate::reactions::tools(&context, state.client.clone(), state.auth).await?;
             tools.push(crate::person_profile::tool(
                 &context,
                 state.client.clone(),
@@ -578,15 +584,11 @@ impl Provider for FeishuProvider {
                     .with_domain(domain.clone()),
             );
             let verify_client = client.clone();
-            let bot = tokio::task::spawn_blocking(move || {
-                verify_client.verify_credentials()?;
-                Ok::<_, crate::http::ClientError>(verify_client.bot_info(Auth::Tenant).ok())
+            let bot = (async move {
+                verify_client.verify_credentials().await?;
+                Ok::<_, crate::http::ClientError>(verify_client.bot_info(Auth::Tenant).await.ok())
             })
             .await
-            .map_err(|_| ProviderError::External {
-                operation: "feishu_verify_agent",
-                retryable: true,
-            })?
             .map_err(|_| ProviderError::InvalidInput {
                 field: "feishu_credentials",
             })?;
@@ -631,18 +633,13 @@ impl Provider for FeishuProvider {
                 let source_workspace_id = context.workspace_id.clone();
                 let source_credentials = credentials.clone();
                 let source_domain = domain.clone();
-                let initial_factory = factory.clone();
-                let initial_workspace_id = source_workspace_id.clone();
-                let initial_credentials = source_credentials.clone();
-                let initial_domain = source_domain.clone();
-                let source = tokio::task::spawn_blocking(move || {
-                    initial_factory(&initial_workspace_id, &initial_credentials, &initial_domain)
-                })
+                let source = factory(
+                    &source_workspace_id,
+                    &source_credentials,
+                    &source_domain,
+                    self.transport.as_ref(),
+                )
                 .await
-                .map_err(|_| ProviderError::External {
-                    operation: "feishu_event_source",
-                    retryable: true,
-                })?
                 .map_err(|_| ProviderError::External {
                     operation: "feishu_event_source",
                     retryable: true,
@@ -666,6 +663,7 @@ impl Provider for FeishuProvider {
                     Auth::Tenant,
                     dispatcher,
                     factory,
+                    self.transport.clone(),
                     source_workspace_id,
                     source_credentials,
                     source_domain,
@@ -688,7 +686,8 @@ impl Provider for FeishuProvider {
 
     fn delete_agent<'a>(&'a self, context: AgentContext) -> ProviderFuture<'a, ()> {
         Box::pin(async move {
-            self.remove_agent_state(&context.workspace_id.to_string(), &context.agent_id);
+            self.remove_agent_state(&context.workspace_id.to_string(), &context.agent_id)
+                .await;
             let _identity_guard = self.identity_lock.lock().await;
             let (workspace_state, mut directory) = crate::identity::load(context.storage()).await?;
             directory.remove_agent(&context.agent_id);
@@ -744,31 +743,36 @@ impl Provider for FeishuProvider {
                 .unwrap_or_else(|| "avatar.jpg".to_owned());
             let client = state.client;
             let auth = state.auth;
-            tokio::task::spawn_blocking(move || {
-                let uploaded_avatar = avatar_bytes
-                    .as_deref()
-                    .map(|bytes| client.upload_app_avatar(bytes, &avatar_file_name, auth))
-                    .transpose()?;
+            (async move {
+                let uploaded_avatar = if let Some(bytes) = avatar_bytes.as_deref() {
+                    Some(
+                        client
+                            .upload_app_avatar(bytes, &avatar_file_name, auth)
+                            .await?,
+                    )
+                } else {
+                    None
+                };
                 let avatar = uploaded_avatar.as_deref().or(avatar_url.as_deref());
-                client.update_application_profile(
-                    &display_name,
-                    &description,
-                    avatar,
-                    &language,
-                    auth,
-                )?;
-                client.publish_application(
-                    "Lankide Agent profile update",
-                    "Update Agent name or avatar",
-                    auth,
-                )?;
+                client
+                    .update_application_profile(
+                        &display_name,
+                        &description,
+                        avatar,
+                        &language,
+                        auth,
+                    )
+                    .await?;
+                client
+                    .publish_application(
+                        "Lankide Agent profile update",
+                        "Update Agent name or avatar",
+                        auth,
+                    )
+                    .await?;
                 Ok::<(), crate::http::ClientError>(())
             })
             .await
-            .map_err(|_| ProviderError::External {
-                operation: "feishu_update_profile",
-                retryable: true,
-            })?
             .map_err(|_| ProviderError::External {
                 operation: "feishu_update_profile",
                 retryable: false,
@@ -779,7 +783,7 @@ impl Provider for FeishuProvider {
     fn shutdown<'a>(&'a self, context: InitContext) -> ProviderFuture<'a, ()> {
         Box::pin(async move {
             let workspace_id = context.workspace_id().to_string();
-            self.remove_state(&workspace_id);
+            self.remove_state(&workspace_id).await;
             if let Ok(mut contexts) = self.contexts.lock() {
                 contexts.remove(&workspace_id);
             }
@@ -826,179 +830,211 @@ async fn normalization_config(
     Ok(directory.normalization_config(app_id, ""))
 }
 
+struct EventRetry {
+    initial: Duration,
+    maximum: Duration,
+}
+impl EventRetry {
+    fn configured(context: &InitContext) -> Self {
+        let config = context.workspace_config();
+        Self {
+            initial: Duration::from_millis(
+                config
+                    .get("event_retry_initial_ms")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(250)
+                    .max(1),
+            ),
+            maximum: Duration::from_millis(
+                config
+                    .get("event_retry_max_ms")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(30_000)
+                    .max(1),
+            ),
+        }
+    }
+    fn delay(&self, failures: u64) -> Duration {
+        self.initial
+            .saturating_mul(2u32.saturating_pow(failures.saturating_sub(1).min(31) as u32))
+            .min(self.maximum)
+    }
+}
 fn spawn_dispatcher(
     context: InitContext,
     client: Arc<SharedClient>,
     auth: Auth,
     mut dispatcher: Dispatcher<Box<dyn EventSource>>,
     factory: Arc<EventSourceFactory>,
+    transport: SharedTransport,
     workspace_id: lankide_core::WorkspaceId,
     credentials: Credentials,
     domain: Domain,
     normalization: NormalizationConfig,
     identity_lock: Arc<AsyncMutex<()>>,
     inbound_resource_cache: Arc<AsyncMutex<InboundResourceCache>>,
-) -> JoinHandle<()> {
-    tokio::task::spawn_blocking(move || {
-        let handle = Handle::current();
+) -> EventTask {
+    let (shutdown, mut stopped) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(async move {
+        let retry = EventRetry::configured(&context);
+        let mut failures = 0;
         let mut sink = FeishuEventBridge {
             context: context.clone(),
             client,
             auth,
-            handle,
             identity_lock,
             inbound_resource_cache,
             human_names: BTreeMap::new(),
         };
         loop {
-            while !context.shutdown_signal().is_shutdown() {
-                match dispatcher.poll_once(&mut sink) {
-                    Ok(true) => {}
-                    Ok(false) => std::thread::sleep(Duration::from_millis(25)),
-                    Err(DispatchError::Normalize(
-                        crate::normalize::NormalizeError::SelfReaction,
-                    )) => {}
-                    Err(DispatchError::Sink(error)) => {
+            let result = tokio::select! {
+                _ = &mut stopped => break,
+                _ = context.shutdown_signal().cancelled() => break,
+                result = dispatcher.poll_once(&mut sink) => result,
+            };
+            match result {
+                Ok(_) => {
+                    failures = 0;
+                }
+                Err(DispatchError::Sink(error)) => {
+                    failures += 1;
+                    if !error.retryable {
                         context.logger().log(
                             lankide_provider::LogLevel::Warn,
-                            &format!("Feishu event acceptance failed; retrying: {error}"),
+                            &format!("Feishu event skipped: {error}"),
                         );
-                        sink.handle.block_on(async {
-                            tokio::select! {
-                                _ = context.shutdown_signal().cancelled() => {},
-                                _ = tokio::time::sleep(Duration::from_millis(250)) => {},
-                            }
-                        });
-                    }
-                    Err(DispatchError::Source(SourceError::Disconnected(error))) => {
+                        // Mark the skip before sending its receipt. An ack retry must not
+                        // process a permanently rejected event again.
+                        dispatcher.discard();
+                    } else {
+                        let delay = retry.delay(failures);
                         context.logger().log(
                             lankide_provider::LogLevel::Warn,
-                            &format!("Feishu event receiver disconnected: {error}"),
+                            &format!(
+                                "Feishu event acceptance failed; retry in {}ms: {error}",
+                                delay.as_millis()
+                            ),
                         );
-                        dispatcher.stop();
-                        if context.shutdown_signal().is_shutdown() {
-                            break;
-                        }
-                        let mut retry_delay = Duration::from_millis(250);
-                        let source = loop {
-                            sink.handle.block_on(async {
-                                tokio::select! {
-                                    _ = context.shutdown_signal().cancelled() => {},
-                                    _ = tokio::time::sleep(retry_delay) => {},
-                                }
-                            });
-                            if context.shutdown_signal().is_shutdown() {
-                                return;
-                            }
-                            match factory(&workspace_id, &credentials, &domain) {
-                                Ok(source) => break source,
-                                Err(error) => {
-                                    context.logger().log(
-                                        lankide_provider::LogLevel::Warn,
-                                        &format!("Feishu event receiver reconnect failed; retrying: {error}"),
-                                    );
-                                    retry_delay = (retry_delay * 2).min(Duration::from_secs(30));
-                                }
-                            }
-                        };
-                        let mut replacement = Dispatcher::new(source, normalization.clone());
-                        let mut registration_failed = false;
-                        for event_type in FEISHU_EVENT_TYPES.into_iter().filter(|event_type| {
-                            *event_type != "task.*"
-                                || crate::agent_tasks::task_system_enabled(
-                                    context.workspace_config(),
-                                )
-                        }) {
-                            if let Err(error) = replacement.register(event_type) {
-                                context.logger().log(
-                                    lankide_provider::LogLevel::Warn,
-                                    &format!(
-                                        "Feishu event receiver re-registration failed: {error}"
-                                    ),
-                                );
-                                registration_failed = true;
-                                break;
-                            }
-                        }
-                        if registration_failed {
-                            replacement.stop();
-                            break;
-                        }
-                        dispatcher = replacement;
-                    }
-                    Err(error) => {
-                        context.logger().log(
-                            lankide_provider::LogLevel::Warn,
-                            &format!("Feishu event receiver stopped: {error}"),
-                        );
-                        break;
+                        tokio::select! { _ = &mut stopped => break, _ = context.shutdown_signal().cancelled() => break, _ = tokio::time::sleep(delay) => {} }
                     }
                 }
+                Err(DispatchError::Normalize(error)) => {
+                    context.logger().log(
+                        lankide_provider::LogLevel::Warn,
+                        &format!("Feishu event skipped: {error}"),
+                    );
+                    dispatcher.discard();
+                }
+                Err(DispatchError::Source(SourceError::Malformed(error))) => {
+                    context.logger().log(
+                        lankide_provider::LogLevel::Warn,
+                        &format!("Feishu malformed event skipped: {error}"),
+                    );
+                    dispatcher.discard();
+                }
+                Err(error) => {
+                    context.logger().log(
+                        lankide_provider::LogLevel::Warn,
+                        &format!("Feishu event receiver disconnected: {error}"),
+                    );
+                    dispatcher.stop().await;
+                    let mut reconnect_failures = 1;
+                    let source = loop {
+                        let delay = retry.delay(reconnect_failures);
+                        tokio::select! { _ = &mut stopped => return, _ = context.shutdown_signal().cancelled() => return, _ = tokio::time::sleep(delay) => {} }
+                        let result = tokio::select! {
+                            _ = &mut stopped => return,
+                            _ = context.shutdown_signal().cancelled() => return,
+                            result = factory(&workspace_id, &credentials, &domain, transport.as_ref()) => result,
+                        };
+                        match result {
+                            Ok(source) => break source,
+                            Err(error) => {
+                                context.logger().log(
+                                    lankide_provider::LogLevel::Warn,
+                                    &format!("Feishu event reconnect failed: {error}"),
+                                );
+                                reconnect_failures += 1;
+                            }
+                        }
+                    };
+                    dispatcher = Dispatcher::new(source, normalization.clone());
+                    for event_type in FEISHU_EVENT_TYPES.into_iter().filter(|event_type| {
+                        *event_type != "task.*"
+                            || crate::agent_tasks::task_system_enabled(context.workspace_config())
+                    }) {
+                        if dispatcher.register(event_type).is_err() {
+                            return;
+                        }
+                    }
+                    failures = 0;
+                }
             }
-            break;
         }
-        dispatcher.stop();
-    })
+        dispatcher.stop().await;
+    });
+    EventTask { task, shutdown }
 }
 
 struct FeishuEventBridge {
     context: InitContext,
     client: Arc<SharedClient>,
     auth: Auth,
-    handle: Handle,
     identity_lock: Arc<AsyncMutex<()>>,
     inbound_resource_cache: Arc<AsyncMutex<InboundResourceCache>>,
     human_names: BTreeMap<String, (String, Instant)>,
 }
 
 impl NormalizedEventSink for FeishuEventBridge {
-    fn emit(&mut self, event: NormalizedEvent) -> Result<(), crate::events::SinkError> {
-        let event = if let NormalizedEvent::Message(message) = event {
-            let app_id = message.app_id.clone();
-            let tenant_key = message.tenant_key.clone();
-            let raw = message.raw.clone();
-            let _identity_guard = self.handle.block_on(self.identity_lock.lock());
-            let (workspace_state, mut directory) = self
-                .handle
-                .block_on(crate::identity::load(self.context.storage()))
-                .map_err(|error| crate::events::SinkError(error.to_string()))?;
-            directory.learn_message(&message);
-            self.handle
-                .block_on(crate::identity::save(
-                    self.context.storage(),
-                    workspace_state,
-                    &directory,
-                ))
-                .map_err(|error| crate::events::SinkError(error.to_string()))?;
-            let normalization = directory.normalization_config(&app_id, &tenant_key);
-            crate::normalize::normalize_event(&raw, &normalization)
-                .map_err(|error| crate::events::SinkError(error.to_string()))?
-        } else {
-            event
-        };
-        let provider_event = normalized_event_to_provider(
-            &self.context,
-            &self.client,
-            self.auth,
-            &self.handle,
-            &self.inbound_resource_cache,
-            &mut self.human_names,
-            event,
-        )?;
-        self.handle
-            .block_on(self.context.event_sink().emit(provider_event))
-            .map_err(|error| crate::events::SinkError(error.to_string()))
+    fn emit(
+        &mut self,
+        event: NormalizedEvent,
+    ) -> crate::events::EventFuture<'_, Result<(), crate::events::SinkError>> {
+        Box::pin(async move {
+            let event = if let NormalizedEvent::Message(message) = event {
+                let app_id = message.app_id.clone();
+                let tenant_key = message.tenant_key.clone();
+                let raw = message.raw.clone();
+                let _identity_guard = self.identity_lock.lock().await;
+                let (workspace_state, mut directory) =
+                    crate::identity::load(self.context.storage())
+                        .await
+                        .map_err(crate::events::SinkError::from)?;
+                directory.learn_message(&message);
+                crate::identity::save(self.context.storage(), workspace_state, &directory)
+                    .await
+                    .map_err(crate::events::SinkError::from)?;
+                let normalization = directory.normalization_config(&app_id, &tenant_key);
+                crate::normalize::normalize_event(&raw, &normalization)
+                    .map_err(crate::events::SinkError::from)?
+            } else {
+                event
+            };
+            let provider_event = normalized_event_to_provider(
+                &self.context,
+                &self.client,
+                self.auth,
+                &self.inbound_resource_cache,
+                &mut self.human_names,
+                event,
+            )
+            .await?;
+            self.context
+                .event_sink()
+                .emit(provider_event)
+                .await
+                .map_err(|error| crate::events::SinkError::from(error))
+        })
     }
 }
 
-fn receiving_agent(
+async fn receiving_agent(
     context: &InitContext,
-    handle: &Handle,
     app_id: &str,
 ) -> Result<Option<AgentId>, crate::events::SinkError> {
-    let (_, directory) = handle
-        .block_on(crate::identity::load(context.storage()))
-        .map_err(|error| crate::events::SinkError(error.to_string()))?;
+    let (_, directory) = crate::identity::load(context.storage())
+        .await
+        .map_err(crate::events::SinkError::from)?;
     let mut receivers = directory
         .agents
         .iter()
@@ -1013,11 +1049,10 @@ fn receiving_agent(
     })
 }
 
-fn normalized_event_to_provider(
+async fn normalized_event_to_provider(
     context: &InitContext,
     client: &SharedClient,
     auth: Auth,
-    handle: &Handle,
     inbound_resource_cache: &Arc<AsyncMutex<InboundResourceCache>>,
     human_names: &mut BTreeMap<String, (String, Instant)>,
     event: NormalizedEvent,
@@ -1026,7 +1061,6 @@ fn normalized_event_to_provider(
         NormalizedEvent::Message(mut message) => {
             let sender = resolved_sender(
                 context,
-                handle,
                 client,
                 auth,
                 human_names,
@@ -1036,14 +1070,14 @@ fn normalized_event_to_provider(
                 &message.sender.aliases,
                 &message.app_id,
                 &message.tenant_key,
-            )?;
+            )
+            .await?;
             for mention in &message.mentions {
                 if mention.kind != SenderKind::Human {
                     continue;
                 }
                 let resolved = resolved_sender(
                     context,
-                    handle,
                     client,
                     auth,
                     human_names,
@@ -1053,7 +1087,8 @@ fn normalized_event_to_provider(
                     &mention.aliases,
                     &message.app_id,
                     &message.tenant_key,
-                )?;
+                )
+                .await?;
                 if let (Some(external_marker), Some(person_marker)) = (
                     markdown_mention(&mention.display_name, &mention.external_id),
                     markdown_mention(&resolved.name, &resolved.id),
@@ -1067,21 +1102,24 @@ fn normalized_event_to_provider(
                     "{}:{}:{}",
                     message.provider_message_id, attachment.kind, attachment.key
                 );
-                let mut cache = handle.block_on(inbound_resource_cache.lock());
+                let mut cache = inbound_resource_cache.lock().await;
                 if let Some(resource) = cache.get(&cache_key) {
                     attachments.push(resource);
                     continue;
                 }
-                let downloaded = match client.download_message_resource(
-                    &message.provider_message_id,
-                    &attachment.key,
-                    if attachment.kind == "image" {
-                        "image"
-                    } else {
-                        "file"
-                    },
-                    auth,
-                ) {
+                let downloaded = match client
+                    .download_message_resource(
+                        &message.provider_message_id,
+                        &attachment.key,
+                        if attachment.kind == "image" {
+                            "image"
+                        } else {
+                            "file"
+                        },
+                        auth,
+                    )
+                    .await
+                {
                     Ok(downloaded) => downloaded,
                     Err(_) => {
                         context.logger().log(
@@ -1096,15 +1134,18 @@ fn normalized_event_to_provider(
                 } else {
                     downloaded.file_name
                 };
-                let resource = match handle.block_on(context.save_resource(ResourceUpload {
-                    file_name,
-                    media_type: if downloaded.content_type.trim().is_empty() {
-                        attachment.content_type.clone()
-                    } else {
-                        downloaded.content_type
-                    },
-                    bytes: downloaded.data,
-                })) {
+                let resource = match context
+                    .save_resource(ResourceUpload {
+                        file_name,
+                        media_type: if downloaded.content_type.trim().is_empty() {
+                            attachment.content_type.clone()
+                        } else {
+                            downloaded.content_type
+                        },
+                        bytes: downloaded.data,
+                    })
+                    .await
+                {
                     Ok(resource) => resource,
                     Err(_) => {
                         context.logger().log(
@@ -1122,10 +1163,10 @@ fn normalized_event_to_provider(
                 .iter()
                 .filter_map(|value| AgentId::new(value.clone()).ok())
                 .collect();
-            let provider_data = serde_json::to_value(&message)
-                .map_err(|error| crate::events::SinkError(error.to_string()))?;
+            let provider_data =
+                serde_json::to_value(&message).map_err(crate::events::SinkError::from)?;
             let receiving_agent_id = if message.channel_id == "private_chat" {
-                receiving_agent(context, handle, &message.app_id)?
+                receiving_agent(context, &message.app_id).await?
             } else {
                 None
             };
@@ -1147,7 +1188,6 @@ fn normalized_event_to_provider(
         NormalizedEvent::Reaction(reaction) => {
             let sender = resolved_sender(
                 context,
-                handle,
                 client,
                 auth,
                 human_names,
@@ -1157,22 +1197,25 @@ fn normalized_event_to_provider(
                 &reaction.sender.aliases,
                 &reaction.app_id,
                 &reaction.tenant_key,
-            )?;
-            let provider_data = serde_json::to_value(&reaction)
-                .map_err(|error| crate::events::SinkError(error.to_string()))?;
+            )
+            .await?;
+            let provider_data =
+                serde_json::to_value(&reaction).map_err(crate::events::SinkError::from)?;
             let action = reaction.action;
             // Feishu reaction callbacks omit chat identity, and the message
             // lookup omits the chat kind. Resolve both through the same App
             // before choosing a channel or recipient.
             let target = client
                 .get_message(&reaction.target_provider_message_id, auth)
-                .map_err(|error| crate::events::SinkError(error.to_string()))?;
+                .await
+                .map_err(crate::events::SinkError::from)?;
             let chat = client
                 .get_chat(&target.chat_id, auth)
-                .map_err(|error| crate::events::SinkError(error.to_string()))?;
+                .await
+                .map_err(crate::events::SinkError::from)?;
             let direct = chat.chat_mode == "p2p";
             let receiving_agent_id = if direct {
-                receiving_agent(context, handle, &reaction.app_id)?
+                receiving_agent(context, &reaction.app_id).await?
             } else {
                 None
             };
@@ -1205,18 +1248,17 @@ fn normalized_event_to_provider(
                 target_agent_ids: Vec::new(),
                 subject_id: update.chat_id.clone(),
                 subject_name: update.name.clone(),
-                data: serde_json::to_value(&update)
-                    .map_err(|error| crate::events::SinkError(error.to_string()))?,
+                data: serde_json::to_value(&update).map_err(crate::events::SinkError::from)?,
             }),
-            provider_data: serde_json::to_value(&update)
-                .map_err(|error| crate::events::SinkError(error.to_string()))?,
+            provider_data: serde_json::to_value(&update).map_err(crate::events::SinkError::from)?,
         }),
         NormalizedEvent::Task(task) => {
-            let (_, directory) = handle
-                .block_on(crate::identity::load(context.storage()))
-                .map_err(|error| crate::events::SinkError(error.to_string()))?;
+            let (_, directory) = crate::identity::load(context.storage())
+                .await
+                .map_err(crate::events::SinkError::from)?;
             let target_agent_ids =
-                crate::agent_tasks::target_agents_for_task(&directory, client, auth, &task.task_id);
+                crate::agent_tasks::target_agents_for_task(&directory, client, auth, &task.task_id)
+                    .await;
             Ok(ProviderEvent {
                 receiving_agent_id: None,
                 channel_id: channel("task"),
@@ -1231,11 +1273,10 @@ fn normalized_event_to_provider(
                     target_agent_ids,
                     subject_id: task.task_id.clone(),
                     subject_name: "Feishu task".to_owned(),
-                    data: serde_json::to_value(&task)
-                        .map_err(|error| crate::events::SinkError(error.to_string()))?,
+                    data: serde_json::to_value(&task).map_err(crate::events::SinkError::from)?,
                 }),
                 provider_data: serde_json::to_value(&task)
-                    .map_err(|error| crate::events::SinkError(error.to_string()))?,
+                    .map_err(crate::events::SinkError::from)?,
             })
         }
     }
@@ -1267,9 +1308,8 @@ fn sender(kind: &SenderKind, id: &str, name: &str) -> EventSender {
     }
 }
 
-fn resolved_sender(
+async fn resolved_sender(
     context: &InitContext,
-    handle: &Handle,
     client: &SharedClient,
     auth: Auth,
     human_names: &mut BTreeMap<String, (String, Instant)>,
@@ -1293,7 +1333,7 @@ fn resolved_sender(
         .or_else(|| alias("user_id"))
         .or_else(|| alias("open_id"))
         .or_else(|| (!id.trim().is_empty()).then_some(id.trim()))
-        .ok_or_else(|| crate::events::SinkError("missing Feishu human identity".to_owned()))?;
+        .ok_or_else(|| crate::events::SinkError::permanent("missing Feishu human identity"))?;
     let external_id_type = if alias("union_id") == Some(external_id) {
         "union_id"
     } else if alias("user_id") == Some(external_id) {
@@ -1301,9 +1341,11 @@ fn resolved_sender(
     } else {
         "open_id"
     };
-    let mut person = handle
-        .block_on(context.storage().get_or_create_person(external_id))
-        .map_err(|error| crate::events::SinkError(error.to_string()))?;
+    let mut person = context
+        .storage()
+        .get_or_create_person(external_id)
+        .await
+        .map_err(crate::events::SinkError::from)?;
 
     for _ in 0..3 {
         let mut state = person
@@ -1342,19 +1384,21 @@ fn resolved_sender(
         if next_state == person.provider_state {
             break;
         }
-        match handle.block_on(context.storage().compare_and_set_person_state(
-            &person.person_id,
-            person.state_revision,
-            next_state,
-        )) {
+        match context
+            .storage()
+            .compare_and_set_person_state(&person.person_id, person.state_revision, next_state)
+            .await
+        {
             Ok(updated) => {
                 person = updated;
                 break;
             }
             Err(_) => {
-                person = handle
-                    .block_on(context.storage().person(&person.person_id))
-                    .map_err(|error| crate::events::SinkError(error.to_string()))?;
+                person = context
+                    .storage()
+                    .person(&person.person_id)
+                    .await
+                    .map_err(crate::events::SinkError::from)?;
             }
         }
     }
@@ -1376,18 +1420,23 @@ fn resolved_sender(
     {
         cached.clone()
     } else {
-        let queried = current_open_id
-            .map(|open_id| client.get_user(open_id, auth))
-            .unwrap_or_else(|| client.get_user_by_id(&person.external_id, external_id_type, auth))
-            .ok()
-            .map(|user| {
-                if user.nickname.trim().is_empty() {
-                    user.name
-                } else {
-                    user.nickname
-                }
-            })
-            .filter(|value| !value.trim().is_empty());
+        let queried = match current_open_id {
+            Some(open_id) => client.get_user(open_id, auth).await,
+            None => {
+                client
+                    .get_user_by_id(&person.external_id, external_id_type, auth)
+                    .await
+            }
+        }
+        .ok()
+        .map(|user| {
+            if user.nickname.trim().is_empty() {
+                user.name
+            } else {
+                user.nickname
+            }
+        })
+        .filter(|value| !value.trim().is_empty());
         if let Some(queried) = queried {
             human_names.insert(cache_key, (queried.clone(), Instant::now()));
             queried

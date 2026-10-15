@@ -38,7 +38,7 @@ status = "implemented"
 
 [package.metadata.lankide.e2e-additional.provider-feishu-hermetic]
 command = "cargo test -p lankide-provider-feishu --test mock_server_e2e"
-scenario = "S2.1 binds two bot accounts to separate Agents and verifies direct messages and reactions identify the receiving Agent. Separate S2.2 group-mention and S2.3 attachment-reply scenarios: Run the real Feishu Provider lifecycle against a loopback IM server; deliver a group mention of bot B, download an attachment, reply with its exact bytes in the same chat and parent, react, recall, and shut down. Preserve the platform pbbp2 WebSocket envelope without a prost dependency (S17)."
+scenario = "S2.1 binds two bot accounts to separate Agents and verifies direct messages and reactions identify the receiving Agent. Separate S2.2 group-mention and S2.3 attachment-reply scenarios: Run the real Feishu Provider lifecycle against a loopback IM server; deliver a group mention of bot B, download an attachment, reply with its exact bytes in the same chat and parent, react, recall, and shut down. Preserve the platform pbbp2 WebSocket envelope without a prost dependency (S17). Skip permanently failed and malformed events so the next message arrives; recover temporary IM outages without duplicate delivery, cap retry delays without discarding transient events, and deliver three concurrent Agents' messages and reactions once each in the same chat under the correct sender."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

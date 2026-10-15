@@ -57,8 +57,8 @@ impl InvocationHandler for ProfileHandler {
                 .unwrap_or("union_id")
                 .to_owned();
             let external_id = person.external_id.clone();
-            let (user, avatar) = tokio::task::spawn_blocking(move || {
-                let user = client.get_user_by_id(&external_id, &id_type, auth)?;
+            let (user, avatar) = (async move {
+                let user = client.get_user_by_id(&external_id, &id_type, auth).await?;
                 let url = [
                     user.avatar.avatar_origin.as_str(),
                     user.avatar.avatar_640.as_str(),
@@ -67,14 +67,14 @@ impl InvocationHandler for ProfileHandler {
                 ]
                 .into_iter()
                 .find(|value| !value.trim().is_empty());
-                let avatar = url.map(|url| client.download_public_url(url)).transpose()?;
+                let avatar = if let Some(url) = url {
+                    Some(client.download_public_url(url).await?)
+                } else {
+                    None
+                };
                 Ok::<_, crate::ClientError>((user, avatar))
             })
             .await
-            .map_err(|_| ProviderError::External {
-                operation: "feishu_person_profile",
-                retryable: true,
-            })?
             .map_err(|_| ProviderError::External {
                 operation: "feishu_person_profile",
                 retryable: true,

@@ -140,53 +140,38 @@ impl Response {
     }
 }
 
-pub trait Transport: Send + Sync {
-    fn execute(&self, request: Request) -> Result<Response, TransportError>;
-}
+pub type TransportFuture<'a> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<Response, TransportError>> + Send + 'a>,
+>;
 
+/// Asynchronous HTTP boundary; all requests use the caller's Tokio runtime.
+pub trait Transport: Send + Sync {
+    fn execute(&self, request: Request) -> TransportFuture<'_>;
+}
 impl<T: Transport + ?Sized> Transport for Arc<T> {
-    fn execute(&self, request: Request) -> Result<Response, TransportError> {
+    fn execute(&self, request: Request) -> TransportFuture<'_> {
         self.as_ref().execute(request)
     }
 }
 
-/// Pooled connections belong to the runtime that opened them, so every
-/// request runs on one process-wide runtime that is never dropped.
-static HTTP_RUNTIME: std::sync::LazyLock<tokio::runtime::Runtime> =
-    std::sync::LazyLock::new(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .thread_name("lankide-telegram-http")
-            .enable_all()
-            .build()
-            .expect("HTTP runtime starts")
-    });
-
-/// Production HTTP transport used by the Provider adapter.  The low-level
-/// Bot API client remains synchronous, so each request is bridged through a
-/// shared Tokio runtime.
 #[derive(Clone)]
 pub struct ReqwestTransport {
     client: reqwest::Client,
 }
-
 impl fmt::Debug for ReqwestTransport {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("ReqwestTransport([configured])")
     }
 }
-
 impl Default for ReqwestTransport {
     fn default() -> Self {
         Self::with_timeout(Duration::from_secs(30))
     }
 }
-
 impl ReqwestTransport {
     pub fn new() -> Self {
         Self::default()
     }
-
     pub fn with_timeout(timeout: Duration) -> Self {
         Self {
             client: reqwest::Client::builder()
@@ -196,66 +181,56 @@ impl ReqwestTransport {
         }
     }
 }
-
 impl Transport for ReqwestTransport {
-    fn execute(&self, request: Request) -> Result<Response, TransportError> {
-        let client = self.client.clone();
-        let (sender, receiver) = std::sync::mpsc::channel();
-        HTTP_RUNTIME.spawn(async move {
-            let result = async move {
-                let method = match request.method {
-                    Method::Get => reqwest::Method::GET,
-                    Method::Post => reqwest::Method::POST,
-                    Method::Put => reqwest::Method::PUT,
-                    Method::Patch => reqwest::Method::PATCH,
-                    Method::Delete => reqwest::Method::DELETE,
-                };
-                let mut builder = client.request(method, &request.path);
-                if !request.query.is_empty() {
-                    builder = builder.query(&request.query);
-                }
-                for (name, value) in &request.headers {
-                    builder = builder.header(name, value);
-                }
-                if !request.body.is_empty() {
-                    builder = builder.body(request.body);
-                }
-                let response = builder.send().await.map_err(|error| {
-                    TransportError::Failed(format!("HTTP request failed: {}", error.without_url()))
-                })?;
-                let status = response.status().as_u16();
-                let headers = response
-                    .headers()
-                    .iter()
-                    .filter_map(|(name, value)| {
-                        value
-                            .to_str()
-                            .ok()
-                            .map(|value| (name.to_string(), value.to_owned()))
-                    })
-                    .collect();
-                let body = response
-                    .bytes()
-                    .await
-                    .map_err(|error| {
-                        TransportError::Failed(format!(
-                            "HTTP response body read failed: {}",
-                            error.without_url()
-                        ))
-                    })?
-                    .to_vec();
-                Ok(Response {
-                    status,
-                    headers,
-                    body,
-                })
+    fn execute(&self, request: Request) -> TransportFuture<'_> {
+        Box::pin(async move {
+            let method = match request.method {
+                Method::Get => reqwest::Method::GET,
+                Method::Post => reqwest::Method::POST,
+                Method::Put => reqwest::Method::PUT,
+                Method::Patch => reqwest::Method::PATCH,
+                Method::Delete => reqwest::Method::DELETE,
+            };
+            let mut builder = self.client.request(method, &request.path);
+            if !request.query.is_empty() {
+                builder = builder.query(&request.query);
             }
-            .await;
-            let _ = sender.send(result);
-        });
-        receiver
-            .recv()
-            .map_err(|_| TransportError::Failed("HTTP transport stopped".to_owned()))?
+            for (name, value) in &request.headers {
+                builder = builder.header(name, value);
+            }
+            if !request.body.is_empty() {
+                builder = builder.body(request.body);
+            }
+            let response = builder.send().await.map_err(|error| {
+                TransportError::Failed(format!("HTTP request failed: {}", error.without_url()))
+            })?;
+            let status = response.status().as_u16();
+            let headers = response
+                .headers()
+                .iter()
+                .filter_map(|(name, value)| {
+                    value
+                        .to_str()
+                        .ok()
+                        .map(|value| (name.to_string(), value.to_owned()))
+                })
+                .collect();
+            let body = response
+                .bytes()
+                .await
+                .map_err(|error| {
+                    TransportError::Failed(format!(
+                        "HTTP response body read failed: {}",
+                        error.without_url()
+                    ))
+                })?
+                .to_vec();
+            Ok(Response {
+                status,
+                headers,
+                body,
+            })
+        })
     }
 }
 
@@ -295,6 +270,24 @@ pub enum ClientError {
         operation: String,
         field: String,
     },
+}
+
+impl ClientError {
+    pub fn retry_after(&self) -> Option<Duration> {
+        match self {
+            Self::Api { retry_after, .. } => retry_after.map(Duration::from_secs),
+            _ => None,
+        }
+    }
+
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::Transport(_) => true,
+            Self::HttpStatus { status, .. } => matches!(status, 408 | 429 | 500..=599),
+            Self::Api { code, .. } => (500..600).contains(code) || matches!(code, 408 | 429),
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Display for ClientError {

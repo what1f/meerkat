@@ -149,121 +149,97 @@ impl Response {
     }
 }
 
-pub trait Transport: Send + Sync {
-    fn execute(&self, request: Request) -> Result<Response, TransportError>;
-}
+pub type TransportFuture<'a> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<Response, TransportError>> + Send + 'a>,
+>;
 
+/// Asynchronous HTTP boundary; all requests use the caller's Tokio runtime.
+pub trait Transport: Send + Sync {
+    fn execute(&self, request: Request) -> TransportFuture<'_>;
+}
 impl<T: Transport + ?Sized> Transport for Arc<T> {
-    fn execute(&self, request: Request) -> Result<Response, TransportError> {
+    fn execute(&self, request: Request) -> TransportFuture<'_> {
         self.as_ref().execute(request)
     }
 }
 
-/// Pooled connections belong to the runtime that opened them, so every
-/// request runs on one process-wide runtime that is never dropped.
-static HTTP_RUNTIME: std::sync::LazyLock<tokio::runtime::Runtime> =
-    std::sync::LazyLock::new(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .thread_name("lankide-feishu-http")
-            .enable_all()
-            .build()
-            .expect("HTTP runtime starts")
-    });
-
-/// Production HTTP transport used by the Provider adapter.
-///
-/// The wire client intentionally remains synchronous so a local peer can be
-/// used without an async runtime.  This boundary owns the small bridge to the
-/// workspace's async `reqwest` client and runs each request on a shared
-/// runtime; Provider methods call it from `spawn_blocking`.
 #[derive(Clone)]
 pub struct ReqwestTransport {
     client: reqwest::Client,
 }
-
 impl fmt::Debug for ReqwestTransport {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("ReqwestTransport([configured])")
     }
 }
-
 impl Default for ReqwestTransport {
     fn default() -> Self {
-        Self {
-            client: reqwest::Client::builder()
-                .timeout(Duration::from_secs(30))
-                .build()
-                .expect("reqwest default client configuration is valid"),
-        }
+        Self::with_timeout(Duration::from_secs(30))
     }
 }
-
 impl ReqwestTransport {
     pub fn new() -> Self {
         Self::default()
     }
+    pub fn with_timeout(timeout: Duration) -> Self {
+        Self {
+            client: reqwest::Client::builder()
+                .timeout(timeout)
+                .build()
+                .expect("reqwest client configuration is valid"),
+        }
+    }
 }
-
 impl Transport for ReqwestTransport {
-    fn execute(&self, request: Request) -> Result<Response, TransportError> {
-        let client = self.client.clone();
-        let (sender, receiver) = std::sync::mpsc::channel();
-        HTTP_RUNTIME.spawn(async move {
-            let result = async move {
-                let method = match request.method {
-                    Method::Get => reqwest::Method::GET,
-                    Method::Post => reqwest::Method::POST,
-                    Method::Put => reqwest::Method::PUT,
-                    Method::Patch => reqwest::Method::PATCH,
-                    Method::Delete => reqwest::Method::DELETE,
-                };
-                let mut builder = client.request(method, &request.path);
-                if !request.query.is_empty() {
-                    builder = builder.query(&request.query);
-                }
-                for (name, value) in &request.headers {
-                    builder = builder.header(name, value);
-                }
-                if !request.body.is_empty() {
-                    builder = builder.body(request.body);
-                }
-                let response = builder.send().await.map_err(|error| {
-                    TransportError::Failed(format!("HTTP request failed: {}", error.without_url()))
-                })?;
-                let status = response.status().as_u16();
-                let headers = response
-                    .headers()
-                    .iter()
-                    .filter_map(|(name, value)| {
-                        value
-                            .to_str()
-                            .ok()
-                            .map(|value| (name.to_string(), value.to_owned()))
-                    })
-                    .collect();
-                let body = response
-                    .bytes()
-                    .await
-                    .map_err(|error| {
-                        TransportError::Failed(format!(
-                            "HTTP response body read failed: {}",
-                            error.without_url()
-                        ))
-                    })?
-                    .to_vec();
-                Ok(Response {
-                    status,
-                    headers,
-                    body,
-                })
+    fn execute(&self, request: Request) -> TransportFuture<'_> {
+        Box::pin(async move {
+            let method = match request.method {
+                Method::Get => reqwest::Method::GET,
+                Method::Post => reqwest::Method::POST,
+                Method::Put => reqwest::Method::PUT,
+                Method::Patch => reqwest::Method::PATCH,
+                Method::Delete => reqwest::Method::DELETE,
+            };
+            let mut builder = self.client.request(method, &request.path);
+            if !request.query.is_empty() {
+                builder = builder.query(&request.query);
             }
-            .await;
-            let _ = sender.send(result);
-        });
-        receiver
-            .recv()
-            .map_err(|_| TransportError::Failed("HTTP transport stopped".to_owned()))?
+            for (name, value) in &request.headers {
+                builder = builder.header(name, value);
+            }
+            if !request.body.is_empty() {
+                builder = builder.body(request.body);
+            }
+            let response = builder.send().await.map_err(|error| {
+                TransportError::Failed(format!("HTTP request failed: {}", error.without_url()))
+            })?;
+            let status = response.status().as_u16();
+            let headers = response
+                .headers()
+                .iter()
+                .filter_map(|(name, value)| {
+                    value
+                        .to_str()
+                        .ok()
+                        .map(|value| (name.to_string(), value.to_owned()))
+                })
+                .collect();
+            let body = response
+                .bytes()
+                .await
+                .map_err(|error| {
+                    TransportError::Failed(format!(
+                        "HTTP response body read failed: {}",
+                        error.without_url()
+                    ))
+                })?
+                .to_vec();
+            Ok(Response {
+                status,
+                headers,
+                body,
+            })
+        })
     }
 }
 
@@ -305,6 +281,23 @@ pub enum ClientError {
     },
 }
 
+impl ClientError {
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::Transport(_) => true,
+            Self::HttpStatus { status, .. } => matches!(status, 408 | 429 | 500..=599),
+            // Common platform rate limit and documented temporary server errors.
+            // Other API codes (permissions, invalid tokens, missing targets) need
+            // a changed request or configuration.
+            Self::Api { code, .. } => matches!(
+                code,
+                99991400 | 230020 | 11232 | 11233 | 1500 | 1503 | 1551 | 99991644 | 99991645
+            ),
+            _ => false,
+        }
+    }
+}
+
 impl fmt::Display for ClientError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -342,6 +335,23 @@ pub(crate) fn validate_success(response: &Response, operation: &str) -> Result<(
     if (200..300).contains(&response.status) {
         Ok(())
     } else {
+        if !matches!(response.status, 408 | 429 | 500..=599)
+            && let Ok(value) = serde_json::from_slice::<serde_json::Value>(&response.body)
+            && let Some(code) = value
+                .get("code")
+                .and_then(serde_json::Value::as_i64)
+                .filter(|code| *code != 0)
+        {
+            return Err(ClientError::Api {
+                code,
+                message: value
+                    .get("msg")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("Feishu API rejected the request")
+                    .to_owned(),
+                operation: operation.to_owned(),
+            });
+        }
         Err(ClientError::HttpStatus {
             status: response.status,
             operation: operation.to_owned(),

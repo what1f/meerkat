@@ -9,14 +9,14 @@
 //! one connected socket and can be replaced by a hermetic peer.
 
 use crate::client::{Credentials, Domain};
+use crate::events::EventFuture;
 use crate::events::{EventSource, RawEvent, SourceError};
-use crate::http::{Method, Request, ReqwestTransport, Transport};
+use crate::http::{Method, Request, Transport};
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use tokio::runtime::Runtime;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
 
 const CONTROL_METHOD: i32 = 0;
@@ -232,7 +232,6 @@ struct FragmentBuffer {
 /// Provider.  `EventSourceFactory` remains injectable for hermetic peers and
 /// hosts that already own an SDK websocket.
 pub struct FeishuWebSocketSource {
-    runtime: Runtime,
     socket: Option<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>>,
     service_id: i32,
     ping_interval: Duration,
@@ -258,7 +257,11 @@ impl FeishuWebSocketSource {
     /// Fetch the SDK websocket endpoint and establish its TLS connection.
     /// Secrets are only placed in the request body and never in an error or
     /// debug value.
-    pub fn connect(credentials: &Credentials, domain: &Domain) -> Result<Self, SourceError> {
+    pub async fn connect(
+        credentials: &Credentials,
+        domain: &Domain,
+        transport: &dyn Transport,
+    ) -> Result<Self, SourceError> {
         let endpoint = format!("{}/callback/ws/endpoint", domain.base_url());
         let request = Request::new(Method::Post, endpoint)
             // The native SDK sends these gateway headers on the endpoint
@@ -274,7 +277,7 @@ impl FeishuWebSocketSource {
             .map_err(|error| {
                 SourceError::Failed(format!("Feishu websocket handshake request: {error}"))
             })?;
-        let response = ReqwestTransport::new().execute(request).map_err(|_| {
+        let response = transport.execute(request).await.map_err(|_| {
             SourceError::Failed("Feishu websocket endpoint request failed".to_owned())
         })?;
         if !(200..300).contains(&response.status) {
@@ -303,15 +306,11 @@ impl FeishuWebSocketSource {
             .and_then(|value| value.parse::<i32>().ok())
             .unwrap_or_default();
         let ping_interval = Duration::from_secs(data.client_config.ping_interval.max(1));
-        let runtime = Runtime::new()
-            .map_err(|_| SourceError::Failed("Feishu websocket runtime failed".to_owned()))?;
-        let url = data.url;
-        let socket = runtime
-            .block_on(async move { connect_async(url).await })
+        let socket = connect_async(data.url)
+            .await
             .map_err(|_| SourceError::Disconnected("Feishu websocket connect failed".to_owned()))?
             .0;
         let mut source = Self {
-            runtime,
             socket: Some(socket),
             service_id,
             ping_interval,
@@ -324,15 +323,15 @@ impl FeishuWebSocketSource {
         // after the websocket is established.  The gateway does not consider
         // an otherwise-idle socket ready for event delivery until that
         // control exchange has started.
-        source.send_ping()?;
+        source.send_ping().await?;
         Ok(source)
     }
 
-    fn receive_message(&mut self, message: Message) -> Result<Option<RawEvent>, SourceError> {
+    async fn receive_message(&mut self, message: Message) -> Result<Option<RawEvent>, SourceError> {
         match message {
             Message::Binary(bytes) => self.receive_frame(&bytes),
             Message::Ping(payload) => {
-                self.send_socket_message(Message::Pong(payload))?;
+                self.send_socket_message(Message::Pong(payload)).await?;
                 Ok(None)
             }
             Message::Pong(_) => Ok(None),
@@ -412,6 +411,7 @@ impl FeishuWebSocketSource {
             .flatten()
             .flatten()
             .collect::<Vec<_>>();
+        self.pending_ack = Some(frame.clone());
         let event_type = serde_json::from_slice::<Value>(&body)
             .ok()
             .and_then(|value| {
@@ -427,7 +427,7 @@ impl FeishuWebSocketSource {
         Ok(Some(RawEvent::new(event_type, body)))
     }
 
-    fn send_event_ack(&mut self, frame: &Frame) -> Result<(), SourceError> {
+    async fn send_event_ack(&mut self, frame: &Frame) -> Result<(), SourceError> {
         let mut headers = frame.headers.clone();
         headers.push(FrameHeader {
             key: "biz_rt".to_owned(),
@@ -444,9 +444,10 @@ impl FeishuWebSocketSource {
             payload: Some(json!({ "code": 200 }).to_string().into_bytes()),
             log_id_new: frame.log_id_new.clone(),
         })
+        .await
     }
 
-    fn send_ping(&mut self) -> Result<(), SourceError> {
+    async fn send_ping(&mut self) -> Result<(), SourceError> {
         self.send_frame(Frame {
             seq_id: 0,
             log_id: 0,
@@ -460,22 +461,25 @@ impl FeishuWebSocketSource {
             payload_type: None,
             payload: None,
             log_id_new: None,
-        })?;
+        })
+        .await?;
         self.last_ping = Instant::now();
         Ok(())
     }
 
-    fn send_frame(&mut self, frame: Frame) -> Result<(), SourceError> {
+    async fn send_frame(&mut self, frame: Frame) -> Result<(), SourceError> {
         self.send_socket_message(Message::binary(frame.encode_to_vec()))
+            .await
     }
 
-    fn send_socket_message(&mut self, message: Message) -> Result<(), SourceError> {
+    async fn send_socket_message(&mut self, message: Message) -> Result<(), SourceError> {
         let socket = self
             .socket
             .as_mut()
             .ok_or_else(|| SourceError::Disconnected("Feishu websocket is closed".to_owned()))?;
-        self.runtime
-            .block_on(async { socket.send(message).await })
+        socket
+            .send(message)
+            .await
             .map_err(|_| SourceError::Disconnected("Feishu websocket send failed".to_owned()))
     }
 
@@ -491,99 +495,63 @@ impl FeishuWebSocketSource {
 }
 
 impl EventSource for FeishuWebSocketSource {
-    fn next(&mut self) -> Result<Option<RawEvent>, SourceError> {
-        if self.closed {
-            return Ok(None);
-        }
-        if self.pending_ack.is_some() {
-            return Err(SourceError::Failed(
-                "previous Feishu event is not acknowledged".into(),
-            ));
-        }
-        loop {
-            if self.last_ping.elapsed() >= self.ping_interval {
-                self.send_ping()?;
+    fn next(&mut self) -> EventFuture<'_, Result<Option<RawEvent>, SourceError>> {
+        Box::pin(async move {
+            if self.closed {
+                return Ok(None);
             }
-            let timeout = self
-                .ping_interval
-                .saturating_sub(self.last_ping.elapsed())
-                .min(Duration::from_secs(1))
-                .max(Duration::from_millis(100));
-            let socket = self.socket.as_mut().ok_or_else(|| {
-                SourceError::Disconnected("Feishu websocket is closed".to_owned())
-            })?;
-            let result = self
-                .runtime
-                .block_on(async { tokio::time::timeout(timeout, socket.next()).await });
-            match result {
-                Err(_) => {
-                    // The short read timeout keeps shutdown responsive even
-                    // when the SDK's advertised interval is long.  It is not
-                    // itself a ping deadline: sending on every one-second
-                    // timeout would turn a 120-second heartbeat into a busy
-                    // control stream.
-                    if self.last_ping.elapsed() >= self.ping_interval {
-                        self.send_ping()?;
-                    }
-                    // Hand control back to the Provider dispatcher so it can
-                    // observe shutdown and lifecycle changes even when the
-                    // gateway has no data frames to deliver.
-                    return Ok(None);
-                }
-                Ok(None) => {
-                    self.closed = true;
-                    self.socket = None;
-                    return Err(SourceError::Disconnected(
-                        "Feishu websocket stream ended".to_owned(),
-                    ));
-                }
-                Ok(Some(Err(_error))) => {
-                    self.closed = true;
-                    return Err(SourceError::Disconnected(
-                        "Feishu websocket receive failed".to_owned(),
-                    ));
-                }
-                Ok(Some(Ok(message))) => {
-                    if let Some(event) = self.receive_message(message)? {
-                        return Ok(Some(event));
+            if self.pending_ack.is_some() {
+                return Err(SourceError::Failed(
+                    "previous Feishu event is not acknowledged".into(),
+                ));
+            }
+            loop {
+                let delay = self.ping_interval.saturating_sub(self.last_ping.elapsed());
+                let socket = self.socket.as_mut().ok_or_else(|| {
+                    SourceError::Disconnected("Feishu websocket is closed".into())
+                })?;
+                tokio::select! {
+                    _ = tokio::time::sleep(delay) => self.send_ping().await?,
+                    message = socket.next() => match message {
+                        Some(Ok(message)) => if let Some(event) = self.receive_message(message).await? { return Ok(Some(event)); },
+                        _ => return Err(SourceError::Disconnected("Feishu websocket receive failed".into())),
                     }
                 }
             }
-        }
+        })
     }
-
-    fn acknowledge(&mut self) -> Result<(), SourceError> {
-        if let Some(frame) = self.pending_ack.clone() {
-            self.send_event_ack(&frame)?;
-            self.pending_ack = None;
-        }
-        Ok(())
+    fn acknowledge(&mut self) -> EventFuture<'_, Result<(), SourceError>> {
+        Box::pin(async move {
+            if let Some(frame) = self.pending_ack.clone() {
+                self.send_event_ack(&frame).await?;
+                self.pending_ack = None;
+            }
+            Ok(())
+        })
     }
-
-    fn close(&mut self) {
-        if self.closed {
-            return;
-        }
-        self.closed = true;
-        if let Some(socket) = self.socket.as_mut() {
-            let _ = self.runtime.block_on(async {
-                let _ = socket.send(Message::Close(None)).await;
-            });
-        }
-        self.socket = None;
+    fn close(&mut self) -> EventFuture<'_, ()> {
+        Box::pin(async move {
+            self.closed = true;
+            if let Some(mut socket) = self.socket.take() {
+                let _ = socket.close(None).await;
+            }
+        })
     }
 }
 
-/// Factory function suitable for [`crate::adapter::EventSourceFactory`].
-pub fn native_event_source_factory(
-    _workspace_id: &lankide_core::WorkspaceId,
-    credentials: &Credentials,
-    domain: &Domain,
-) -> Result<Box<dyn EventSource>, SourceError> {
-    Ok(Box::new(FeishuWebSocketSource::connect(
-        credentials,
-        domain,
-    )?))
+/// Connect with the Provider's shared HTTP client.
+pub fn native_event_source_factory<'a>(
+    _workspace_id: &'a lankide_core::WorkspaceId,
+    credentials: &'a Credentials,
+    domain: &'a Domain,
+    transport: &'a dyn Transport,
+) -> EventFuture<'a, Result<Box<dyn EventSource>, SourceError>> {
+    Box::pin(async move {
+        Ok(
+            Box::new(FeishuWebSocketSource::connect(credentials, domain, transport).await?)
+                as Box<dyn EventSource>,
+        )
+    })
 }
 
 fn header_value(headers: &[FrameHeader], key: &str) -> Option<String> {

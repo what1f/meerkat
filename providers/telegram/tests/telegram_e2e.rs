@@ -32,7 +32,7 @@ use std::time::Duration;
 /// scenario.  The acceptance command therefore covers rendering,
 /// normalization, and acknowledgement semantics together with the real Bot
 /// API flow, without maintaining separate function-level tests.
-fn exercise_telegram_contract() -> Result<(), String> {
+async fn exercise_telegram_contract() -> Result<(), String> {
     let rendered = render_html_with_mentions(
         "ping @Agent[agent_e2e]",
         &[MentionTarget::new(
@@ -77,6 +77,7 @@ fn exercise_telegram_contract() -> Result<(), String> {
     let mut poller = Poller::new(client, config);
     let batch = poller
         .poll_once()
+        .await
         .map_err(|_| "Telegram poll fixture failed".to_owned())?
         .ok_or_else(|| "Telegram poll fixture returned no batch".to_owned())?;
     if poller.offset() != 0 || batch.next_offset != 42 {
@@ -402,16 +403,18 @@ impl Transport for RepeatingTransport {
     fn execute(
         &self,
         _request: lankide_provider_telegram::Request,
-    ) -> Result<lankide_provider_telegram::Response, TransportError> {
-        let response = self
-            .response
-            .lock()
-            .map_err(|_| TransportError::Failed("fixture lock poisoned".to_owned()))?
-            .clone();
-        Ok(lankide_provider_telegram::Response {
-            status: response.status,
-            headers: response.headers,
-            body: response.body,
+    ) -> lankide_provider_telegram::http::TransportFuture<'_> {
+        Box::pin(async move {
+            let response = self
+                .response
+                .lock()
+                .map_err(|_| TransportError::Failed("fixture lock poisoned".to_owned()))?
+                .clone();
+            Ok(lankide_provider_telegram::Response {
+                status: response.status,
+                headers: response.headers,
+                body: response.body,
+            })
         })
     }
 }
@@ -425,50 +428,52 @@ impl Transport for IdentityTransport {
     fn execute(
         &self,
         request: lankide_provider_telegram::Request,
-    ) -> Result<lankide_provider_telegram::Response, TransportError> {
-        let result = if request.path.ends_with("/getMe") {
-            let (id, username, first_name) = if request.path.contains("bot100:alpha") {
-                (100, "alpha_bot", "Alpha Bot")
-            } else if request.path.contains("bot200:beta") {
-                (200, "beta_bot", "Beta Bot")
+    ) -> lankide_provider_telegram::http::TransportFuture<'_> {
+        Box::pin(async move {
+            let result = if request.path.ends_with("/getMe") {
+                let (id, username, first_name) = if request.path.contains("bot100:alpha") {
+                    (100, "alpha_bot", "Alpha Bot")
+                } else if request.path.contains("bot200:beta") {
+                    (200, "beta_bot", "Beta Bot")
+                } else {
+                    return Err(TransportError::Failed("unknown Bot token".into()));
+                };
+                json!({
+                    "id": id,
+                    "is_bot": true,
+                    "first_name": first_name,
+                    "username": username
+                })
+            } else if request.path.ends_with("/sendMessage") {
+                json!({
+                    "message_id": 91,
+                    "chat": {"id": -1001, "type": "group", "title": "Test Group"},
+                    "date": 1700000000,
+                    "text": "sent"
+                })
+            } else if request.path.ends_with("/getChat") {
+                json!({
+                    "id":300,
+                    "type":"private",
+                    "first_name":"Profile",
+                    "last_name":"Human",
+                    "bio":"Profile signature"
+                })
             } else {
-                return Err(TransportError::Failed("unknown Bot token".into()));
+                return Err(TransportError::Failed(
+                    "unexpected Telegram operation".into(),
+                ));
             };
-            json!({
-                "id": id,
-                "is_bot": true,
-                "first_name": first_name,
-                "username": username
+            self.requests
+                .lock()
+                .map_err(|_| TransportError::Failed("request journal poisoned".into()))?
+                .push(request);
+            Ok(lankide_provider_telegram::Response {
+                status: 200,
+                headers: vec![("content-type".into(), "application/json".into())],
+                body: serde_json::to_vec(&json!({"ok": true, "result": result}))
+                    .map_err(|error| TransportError::Failed(error.to_string()))?,
             })
-        } else if request.path.ends_with("/sendMessage") {
-            json!({
-                "message_id": 91,
-                "chat": {"id": -1001, "type": "group", "title": "Test Group"},
-                "date": 1700000000,
-                "text": "sent"
-            })
-        } else if request.path.ends_with("/getChat") {
-            json!({
-                "id":300,
-                "type":"private",
-                "first_name":"Profile",
-                "last_name":"Human",
-                "bio":"Profile signature"
-            })
-        } else {
-            return Err(TransportError::Failed(
-                "unexpected Telegram operation".into(),
-            ));
-        };
-        self.requests
-            .lock()
-            .map_err(|_| TransportError::Failed("request journal poisoned".into()))?
-            .push(request);
-        Ok(lankide_provider_telegram::Response {
-            status: 200,
-            headers: vec![("content-type".into(), "application/json".into())],
-            body: serde_json::to_vec(&json!({"ok": true, "result": result}))
-                .map_err(|error| TransportError::Failed(error.to_string()))?,
         })
     }
 }
@@ -750,16 +755,15 @@ async fn run_telegram_scenario(
         config: ProbeConfig::from_environment(GateSelection::TelegramLiveMutating, true),
     };
     probe.recheck()?;
-    exercise_telegram_contract()?;
+    exercise_telegram_contract().await?;
 
     let agent_client = TelegramClient::new(
         ReqwestTransport::new(),
         Credentials::new(fixture.account_id.clone(), fixture.token.clone()),
     )
     .map_err(|_| "Telegram Agent Bot client could not be created".to_owned())?;
-    let agent = tokio::task::spawn_blocking(move || agent_client.verify_credentials())
+    let agent = (async move { agent_client.verify_credentials().await })
         .await
-        .map_err(|_| "Telegram Agent Bot verification task failed".to_owned())?
         .map_err(|error| format!("Telegram Agent Bot credential verification failed: {error}"))?;
     artifact.record("verify_agent_bot", &agent.id.to_string(), "ok");
 
@@ -771,9 +775,8 @@ async fn run_telegram_scenario(
         ),
     )
     .map_err(|_| "Telegram Manager Bot client could not be created".to_owned())?;
-    let manager = tokio::task::spawn_blocking(move || manager_client.verify_credentials())
+    let manager = (async move { manager_client.verify_credentials().await })
         .await
-        .map_err(|_| "Telegram Manager Bot verification task failed".to_owned())?
         .map_err(|error| format!("Telegram Manager Bot credential verification failed: {error}"))?;
     artifact.record("verify_manager_bot", &manager.id.to_string(), "ok");
 
@@ -784,15 +787,16 @@ async fn run_telegram_scenario(
         Credentials::new(fixture.account_id.clone(), fixture.token.clone()),
     )
     .map_err(|_| "Telegram readonly client could not be created".to_owned())?;
-    let updates = tokio::task::spawn_blocking(move || {
-        readonly_client.get_updates(&PollRequest {
-            offset: 0,
-            timeout_seconds: 0,
-            ..PollRequest::default()
-        })
+    let updates = (async move {
+        readonly_client
+            .get_updates(&PollRequest {
+                offset: 0,
+                timeout_seconds: 0,
+                ..PollRequest::default()
+            })
+            .await
     })
     .await
-    .map_err(|_| "Telegram update read task failed".to_owned())?
     .map_err(|_| "Telegram update endpoint failed".to_owned())?;
     artifact.record("read_updates", &updates.len().to_string(), "ok");
 
@@ -1018,12 +1022,11 @@ async fn run_telegram_scenario(
         );
         let chat_id = fixture.chat_id;
         let result = match cleanup_client {
-            Ok(client) => tokio::task::spawn_blocking(move || {
-                client.set_message_reaction(chat_id, first_id, None)
-            })
-            .await
-            .ok()
-            .and_then(Result::ok),
+            Ok(client) => {
+                (async move { client.set_message_reaction(chat_id, first_id, None).await })
+                    .await
+                    .ok()
+            }
             Err(_) => None,
         };
         artifact.record_cleanup(
@@ -1079,31 +1082,33 @@ async fn telegram_polling_recovers_transport_and_acceptance_failures() {
         fn execute(
             &self,
             request: lankide_provider_telegram::Request,
-        ) -> Result<lankide_provider_telegram::Response, TransportError> {
-            if !request.path.ends_with("/getUpdates") {
-                return self.identity.execute(request);
-            }
-            let body: Value = serde_json::from_slice(&request.body).unwrap();
-            let offset = body["offset"].as_i64().unwrap_or_default();
-            self.offsets.lock().unwrap().push(offset);
-            if self.polls.fetch_add(1, Ordering::SeqCst) == 0 {
-                return Err(TransportError::Failed("transient test disconnect".into()));
-            }
-            let result = if offset < 42 {
-                json!([{"update_id": 41, "message": {
-                    "message_id": 8, "date": 1700000000,
-                    "from": {"id": 300, "is_bot": false, "first_name": "Human"},
-                    "chat": {"id": 300, "type": "private", "first_name": "Human"},
-                    "text": "retry this message"
-                }}])
-            } else {
-                std::thread::sleep(Duration::from_millis(20));
-                json!([])
-            };
-            Ok(lankide_provider_telegram::Response {
-                status: 200,
-                headers: Vec::new(),
-                body: serde_json::to_vec(&json!({"ok": true, "result": result})).unwrap(),
+        ) -> lankide_provider_telegram::http::TransportFuture<'_> {
+            Box::pin(async move {
+                if !request.path.ends_with("/getUpdates") {
+                    return self.identity.execute(request).await;
+                }
+                let body: Value = serde_json::from_slice(&request.body).unwrap();
+                let offset = body["offset"].as_i64().unwrap_or_default();
+                self.offsets.lock().unwrap().push(offset);
+                if self.polls.fetch_add(1, Ordering::SeqCst) == 0 {
+                    return Err(TransportError::Failed("transient test disconnect".into()));
+                }
+                let result = if offset < 42 {
+                    json!([{"update_id": 41, "message": {
+                        "message_id": 8, "date": 1700000000,
+                        "from": {"id": 300, "is_bot": false, "first_name": "Human"},
+                        "chat": {"id": 300, "type": "private", "first_name": "Human"},
+                        "text": "retry this message"
+                    }}])
+                } else {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                    json!([])
+                };
+                Ok(lankide_provider_telegram::Response {
+                    status: 200,
+                    headers: Vec::new(),
+                    body: serde_json::to_vec(&json!({"ok": true, "result": result})).unwrap(),
+                })
             })
         }
     }
@@ -1130,7 +1135,7 @@ async fn telegram_polling_recovers_transport_and_acceptance_failures() {
     .await
     .unwrap();
     let mut person_id = None;
-    for attempt in 0..3 {
+    for attempt in 0..2 {
         let delivery = tokio::time::timeout(Duration::from_secs(3), host.next_event())
             .await
             .unwrap()

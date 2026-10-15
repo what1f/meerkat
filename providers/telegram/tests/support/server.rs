@@ -11,6 +11,7 @@ pub const FILE: &[u8] = b"attachment bytes\0\xff\r\nfrom Alice";
 struct State {
     updates: BTreeMap<String, VecDeque<Value>>,
     requests: Vec<Request>,
+    failures: BTreeMap<String, (u16, usize)>,
     next_message: i64,
 }
 pub struct TelegramServer {
@@ -24,6 +25,18 @@ impl TelegramServer {
         let http = Server::start(move |request| {
             let mut state = shared.lock().unwrap();
             state.requests.push(request.clone());
+            if let Some((status, remaining)) = state.failures.get_mut(&request.path) {
+                if *remaining > 0 {
+                    *remaining -= 1;
+                    let mut response = Response::json(if *status == 429 {
+                        json!({"ok":false,"error_code":429,"description":"rate limit","parameters":{"retry_after":1}})
+                    } else {
+                        json!({})
+                    });
+                    response.status = *status;
+                    return response;
+                }
+            }
             if request.path.starts_with("/file/bot") {
                 assert_eq!(request.method, "GET");
                 assert_eq!(request.path, "/file/bot200:local/documents/inbound.bin");
@@ -37,7 +50,7 @@ impl TelegramServer {
                 .unwrap();
             let result = match method {
                 "getMe" => {
-                    json!({"id":bot.split(':').next().unwrap().parse::<i64>().unwrap(),"is_bot":true,"first_name":"Bot B","username":if bot == "201:local" { "alpha_bot" } else { "beta_bot" },"can_manage_bots":true})
+                    json!({"id":bot.split(':').next().unwrap().parse::<i64>().unwrap(),"is_bot":true,"first_name":"Bot B","username":match bot { "201:local" => "alpha_bot", "202:local" => "gamma_bot", _ => "beta_bot" },"can_manage_bots":true})
                 }
                 "getUpdates" => {
                     let offset = request.json()["offset"].as_i64().unwrap();
@@ -84,6 +97,13 @@ impl TelegramServer {
             .entry(bot_token.into())
             .or_default()
             .push_back(update);
+    }
+    pub fn fail_requests(&self, path: &str, status: u16, count: usize) {
+        self.state
+            .lock()
+            .unwrap()
+            .failures
+            .insert(path.into(), (status, count));
     }
     pub fn requests(&self) -> Vec<Request> {
         self.state.lock().unwrap().requests.clone()

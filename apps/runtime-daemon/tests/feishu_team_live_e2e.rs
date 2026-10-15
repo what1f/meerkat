@@ -150,7 +150,7 @@ async fn real_feishu_team_lifecycle_queue_steer_and_reply() {
     // both real Apps a brief registration window before the first group event.
     tokio::time::sleep(Duration::from_secs(2)).await;
 
-    let snapshot = application_profile(&evan_fixture).expect("snapshot actual Feishu profile");
+    let snapshot = application_profile(&evan_fixture).await.expect("snapshot actual Feishu profile");
     write_private_json(&artifact_dir.join("profile-before.json"), &snapshot).expect("persist profile recovery values");
     owned.lock().unwrap().profile = Some((evan_fixture.clone(), snapshot));
     let profile_marker = format!("Lankide live E2E {run_id}");
@@ -273,7 +273,7 @@ async fn real_feishu_team_lifecycle_queue_steer_and_reply() {
     write_private_json(&artifact_dir.join("evidence.json"), &json!({"runtime":evidence,"native":native}))
         .expect("persist composition evidence");
     }, Duration::from_secs(720)).await;
-    cleanup_team(&cleanup_owned, &cleanup_home, &cleanup_artifact);
+    cleanup_team(&cleanup_owned, &cleanup_home, &cleanup_artifact).await;
     cleanup_artifact.complete_cleanup();
     let result = cleanup_artifact.finish(result);
     if result.is_err() {
@@ -357,7 +357,7 @@ fn app_client(fixture: &FeishuAgentFixture) -> Result<FeishuClient<ReqwestTransp
     .map_err(|_| "create authenticated Feishu client".into())
 }
 
-fn application_profile(fixture: &FeishuAgentFixture) -> Result<Value, String> {
+async fn application_profile(fixture: &FeishuAgentFixture) -> Result<Value, String> {
     let language = if fixture.domain == "lark" {
         "en_us"
     } else {
@@ -372,6 +372,7 @@ fn application_profile(fixture: &FeishuAgentFixture) -> Result<Value, String> {
             Auth::Tenant,
             "snapshot application profile",
         )
+        .await
         .map_err(|_| "read application profile")?;
     let name = data
         .pointer("/app/app_name")
@@ -384,7 +385,7 @@ fn application_profile(fixture: &FeishuAgentFixture) -> Result<Value, String> {
     Ok(json!({"app_id":fixture.app_id,"name":name,"description":description,"language":language}))
 }
 
-fn restore_profile(fixture: &FeishuAgentFixture, before: &Value) -> Result<(), String> {
+async fn restore_profile(fixture: &FeishuAgentFixture, before: &Value) -> Result<(), String> {
     let client = app_client(fixture)?;
     client
         .update_application_profile(
@@ -398,6 +399,7 @@ fn restore_profile(fixture: &FeishuAgentFixture, before: &Value) -> Result<(), S
                 .ok_or("missing prior language")?,
             Auth::Tenant,
         )
+        .await
         .map_err(|_| "restore actual application profile")?;
     client
         .publish_application(
@@ -405,20 +407,23 @@ fn restore_profile(fixture: &FeishuAgentFixture, before: &Value) -> Result<(), S
             "Restore prior name and description",
             Auth::Tenant,
         )
+        .await
         .map_err(|_| "publish restored application profile")?;
     for _ in 0..10 {
-        if application_profile(fixture)? == *before {
+        if application_profile(fixture).await? == *before {
             return Ok(());
         }
-        std::thread::sleep(Duration::from_millis(500));
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
     Err("restored application profile read-back differs".into())
 }
 
-fn cleanup_team(owned: &Mutex<OwnedResources>, home: &Path, artifact: &ScenarioArtifact) {
-    let mut owned = owned
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+async fn cleanup_team(owned: &Mutex<OwnedResources>, home: &Path, artifact: &ScenarioArtifact) {
+    let mut owned = std::mem::take(
+        &mut *owned
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+    );
     for daemon in owned.daemons.iter_mut().rev() {
         daemon.cleanup(artifact, "daemon_shutdown");
     }
@@ -454,12 +459,14 @@ fn cleanup_team(owned: &Mutex<OwnedResources>, home: &Path, artifact: &ScenarioA
                         .apps
                         .get(app_id)
                         .ok_or("unknown owned sender".into())
-                        .and_then(app_client)
-                        .and_then(|client| {
-                            client
-                                .recall_message(&id, Auth::Tenant)
-                                .map_err(|_| "recall bot message".into())
-                        });
+                        .and_then(app_client);
+                    let result = match result {
+                        Ok(client) => client
+                            .recall_message(&id, Auth::Tenant)
+                            .await
+                            .map_err(|_| "recall bot message".into()),
+                        Err(error) => Err(error),
+                    };
                     artifact.record_cleanup("bot_recall", &id, result.is_ok());
                 }
             }
@@ -497,7 +504,7 @@ fn cleanup_team(owned: &Mutex<OwnedResources>, home: &Path, artifact: &ScenarioA
         artifact.record_cleanup("actor_recall", id, success);
     }
     if let Some((fixture, profile)) = &owned.profile {
-        let success = restore_profile(fixture, profile).is_ok();
+        let success = restore_profile(fixture, profile).await.is_ok();
         artifact.record_cleanup("profile_restore_and_readback", &fixture.app_id, success);
     }
 }

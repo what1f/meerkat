@@ -219,7 +219,10 @@ async fn feishu_provider_exposes_im_reaction_and_optional_task_capabilities() {
         Credentials::app("refresh-app", "refresh-secret"),
     )
     .expect("refreshing Feishu client");
-    client.bot_info(Auth::Tenant).expect("retry expired token");
+    client
+        .bot_info(Auth::Tenant)
+        .await
+        .expect("retry expired token");
     assert_eq!(
         refreshing_transport.token_requests.load(Ordering::SeqCst),
         2
@@ -927,12 +930,15 @@ async fn feishu_provider_reconciles_one_agent_across_app_scoped_open_ids() {
     ]);
     let provider = FeishuProvider::new()
         .with_transport(FeishuIdentityTransport)
-        .with_event_source_factory(move |_, credentials, _| {
-            let queue = queues
-                .get(&credentials.app_id)
-                .cloned()
-                .ok_or_else(|| SourceError::Failed("unknown fixture App".into()))?;
-            Ok(Box::new(SharedQueueSource { queue }))
+        .with_event_source_factory(move |_, credentials, _, _| {
+            let result: Result<Box<dyn EventSource>, SourceError> = (|| {
+                let queue = queues
+                    .get(&credentials.app_id)
+                    .cloned()
+                    .ok_or_else(|| SourceError::Failed("unknown fixture App".into()))?;
+                Ok(Box::new(SharedQueueSource { queue }) as Box<dyn EventSource>)
+            })();
+            Box::pin(async move { result })
         });
     let storage = Arc::new(MemoryStorage::default());
     let resource_saver = Arc::new(LiveResourceSaver::default());
@@ -1135,10 +1141,13 @@ async fn feishu_provider_does_not_block_later_events_when_an_attachment_is_unava
     let source_events = events.clone();
     let provider = FeishuProvider::new()
         .with_transport(FeishuFixtureTransport)
-        .with_event_source_factory(move |_, _, _| {
-            Ok(Box::new(SharedQueueSource {
-                queue: source_events.clone(),
-            }))
+        .with_event_source_factory(move |_, _, _, _| {
+            let result: Result<Box<dyn EventSource>, SourceError> = (|| {
+                Ok(Box::new(SharedQueueSource {
+                    queue: source_events.clone(),
+                }) as Box<dyn EventSource>)
+            })();
+            Box::pin(async move { result })
         });
     let logger = Arc::new(LiveLogger::default());
     let host = ProviderHost::new(
@@ -1537,185 +1546,188 @@ struct TaskFlowState {
 }
 
 impl Transport for TaskFlowTransport {
-    fn execute(&self, request: Request) -> Result<Response, TransportError> {
-        if request
-            .path
-            .ends_with("/auth/v3/tenant_access_token/internal")
-        {
-            return json_response(
-                200,
-                json!({"code":0,"tenant_access_token":"task-token","expire":7200}),
-            );
-        }
-        if request.path.ends_with("/bot/v3/info") {
-            return json_response(
-                200,
-                json!({"code":0,"bot":{"open_id":"ou_alpha","app_name":"Alpha"}}),
-            );
-        }
-        if request.path.ends_with("/task/v2/tasklists") && request.method == Method::Get {
-            let state = self.state.lock().expect("task flow state");
-            let items = if state.tasklist_create_bodies.is_empty() {
-                Vec::new()
-            } else {
-                vec![json!({
-                    "guid":"tasklist_flow",
-                    "name":"团队任务",
-                    "owner":{"id":"cli_alpha","type":"app","role":"owner"},
-                    "members":state.tasklist_members
-                })]
-            };
-            return json_response(
-                200,
-                json!({"code":0,"data":{"items":items,"has_more":false}}),
-            );
-        }
-        if request.path.ends_with("/task/v2/tasklists") && request.method == Method::Post {
-            let body: Value = serde_json::from_slice(&request.body)
-                .map_err(|error| TransportError::Failed(error.to_string()))?;
-            let mut state = self.state.lock().expect("task flow state");
-            state.tasklist_members = body["members"].as_array().cloned().unwrap_or_default();
-            state.tasklist_create_bodies.push(body);
-            return json_response(
-                200,
-                json!({"code":0,"data":{"tasklist":{
-                    "guid":"tasklist_flow",
-                    "name":"团队任务",
-                    "owner":{"id":"cli_alpha","type":"app","role":"owner"},
-                    "members":state.tasklist_members
-                }}}),
-            );
-        }
-        if request.path.ends_with("/task/v2/tasklists/tasklist_flow")
-            && request.method == Method::Get
-        {
-            let state = self.state.lock().expect("task flow state");
-            return json_response(
-                200,
-                json!({"code":0,"data":{"tasklist":{
-                    "guid":"tasklist_flow",
-                    "name":"团队任务",
-                    "owner":{"id":"cli_alpha","type":"app","role":"owner"},
-                    "members":state.tasklist_members
-                }}}),
-            );
-        }
-        if request.path.ends_with("/tasklist_flow/add_members") {
-            let body: Value = serde_json::from_slice(&request.body)
-                .map_err(|error| TransportError::Failed(error.to_string()))?;
-            let mut state = self.state.lock().expect("task flow state");
-            state.tasklist_member_bodies.push(body.clone());
-            state
-                .tasklist_members
-                .extend(body["members"].as_array().cloned().unwrap_or_default());
-            return json_response(
-                200,
-                json!({"code":0,"data":{"tasklist":{
-                    "guid":"tasklist_flow",
-                    "name":"团队任务",
-                    "owner":{"id":"cli_alpha","type":"app","role":"owner"},
-                    "members":state.tasklist_members
-                }}}),
-            );
-        }
-        if request.path.contains("/task/v2/tasks/")
-            && (request.path.ends_with("/add_members") || request.path.ends_with("/remove_members"))
-            && request.method == Method::Post
-        {
-            let body: Value = serde_json::from_slice(&request.body)
-                .map_err(|error| TransportError::Failed(error.to_string()))?;
-            let suffix = request
+    fn execute(&self, request: Request) -> lankide_provider_feishu::http::TransportFuture<'_> {
+        Box::pin(async move {
+            if request
                 .path
-                .split("/task/v2/tasks/")
-                .nth(1)
-                .ok_or_else(|| TransportError::Failed("task member path missing".to_owned()))?;
-            let (guid, operation) = suffix.split_once('/').ok_or_else(|| {
-                TransportError::Failed("task member operation missing".to_owned())
-            })?;
-            let requested = body["members"].as_array().cloned().unwrap_or_default();
-            let mut state = self.state.lock().expect("task flow state");
-            if operation == "add_members" {
-                state.task_member_add_bodies.push(body);
-            } else {
-                state.task_member_remove_bodies.push(body);
+                .ends_with("/auth/v3/tenant_access_token/internal")
+            {
+                return json_response(
+                    200,
+                    json!({"code":0,"tenant_access_token":"task-token","expire":7200}),
+                );
             }
-            let task = state
-                .tasks
-                .get_mut(guid)
-                .ok_or_else(|| TransportError::Failed("unknown fixture task".to_owned()))?;
-            let members = task["members"]
-                .as_array_mut()
-                .ok_or_else(|| TransportError::Failed("fixture task members missing".to_owned()))?;
-            if operation == "add_members" {
-                for member in requested {
-                    if !members.iter().any(|existing| existing == &member) {
-                        members.push(member);
-                    }
+            if request.path.ends_with("/bot/v3/info") {
+                return json_response(
+                    200,
+                    json!({"code":0,"bot":{"open_id":"ou_alpha","app_name":"Alpha"}}),
+                );
+            }
+            if request.path.ends_with("/task/v2/tasklists") && request.method == Method::Get {
+                let state = self.state.lock().expect("task flow state");
+                let items = if state.tasklist_create_bodies.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![json!({
+                        "guid":"tasklist_flow",
+                        "name":"团队任务",
+                        "owner":{"id":"cli_alpha","type":"app","role":"owner"},
+                        "members":state.tasklist_members
+                    })]
+                };
+                return json_response(
+                    200,
+                    json!({"code":0,"data":{"items":items,"has_more":false}}),
+                );
+            }
+            if request.path.ends_with("/task/v2/tasklists") && request.method == Method::Post {
+                let body: Value = serde_json::from_slice(&request.body)
+                    .map_err(|error| TransportError::Failed(error.to_string()))?;
+                let mut state = self.state.lock().expect("task flow state");
+                state.tasklist_members = body["members"].as_array().cloned().unwrap_or_default();
+                state.tasklist_create_bodies.push(body);
+                return json_response(
+                    200,
+                    json!({"code":0,"data":{"tasklist":{
+                        "guid":"tasklist_flow",
+                        "name":"团队任务",
+                        "owner":{"id":"cli_alpha","type":"app","role":"owner"},
+                        "members":state.tasklist_members
+                    }}}),
+                );
+            }
+            if request.path.ends_with("/task/v2/tasklists/tasklist_flow")
+                && request.method == Method::Get
+            {
+                let state = self.state.lock().expect("task flow state");
+                return json_response(
+                    200,
+                    json!({"code":0,"data":{"tasklist":{
+                        "guid":"tasklist_flow",
+                        "name":"团队任务",
+                        "owner":{"id":"cli_alpha","type":"app","role":"owner"},
+                        "members":state.tasklist_members
+                    }}}),
+                );
+            }
+            if request.path.ends_with("/tasklist_flow/add_members") {
+                let body: Value = serde_json::from_slice(&request.body)
+                    .map_err(|error| TransportError::Failed(error.to_string()))?;
+                let mut state = self.state.lock().expect("task flow state");
+                state.tasklist_member_bodies.push(body.clone());
+                state
+                    .tasklist_members
+                    .extend(body["members"].as_array().cloned().unwrap_or_default());
+                return json_response(
+                    200,
+                    json!({"code":0,"data":{"tasklist":{
+                        "guid":"tasklist_flow",
+                        "name":"团队任务",
+                        "owner":{"id":"cli_alpha","type":"app","role":"owner"},
+                        "members":state.tasklist_members
+                    }}}),
+                );
+            }
+            if request.path.contains("/task/v2/tasks/")
+                && (request.path.ends_with("/add_members")
+                    || request.path.ends_with("/remove_members"))
+                && request.method == Method::Post
+            {
+                let body: Value = serde_json::from_slice(&request.body)
+                    .map_err(|error| TransportError::Failed(error.to_string()))?;
+                let suffix = request
+                    .path
+                    .split("/task/v2/tasks/")
+                    .nth(1)
+                    .ok_or_else(|| TransportError::Failed("task member path missing".to_owned()))?;
+                let (guid, operation) = suffix.split_once('/').ok_or_else(|| {
+                    TransportError::Failed("task member operation missing".to_owned())
+                })?;
+                let requested = body["members"].as_array().cloned().unwrap_or_default();
+                let mut state = self.state.lock().expect("task flow state");
+                if operation == "add_members" {
+                    state.task_member_add_bodies.push(body);
+                } else {
+                    state.task_member_remove_bodies.push(body);
                 }
-            } else {
-                members.retain(|existing| !requested.iter().any(|member| member == existing));
+                let task = state
+                    .tasks
+                    .get_mut(guid)
+                    .ok_or_else(|| TransportError::Failed("unknown fixture task".to_owned()))?;
+                let members = task["members"].as_array_mut().ok_or_else(|| {
+                    TransportError::Failed("fixture task members missing".to_owned())
+                })?;
+                if operation == "add_members" {
+                    for member in requested {
+                        if !members.iter().any(|existing| existing == &member) {
+                            members.push(member);
+                        }
+                    }
+                } else {
+                    members.retain(|existing| !requested.iter().any(|member| member == existing));
+                }
+                return json_response(200, json!({"code":0,"data":{"task":task.clone()}}));
             }
-            return json_response(200, json!({"code":0,"data":{"task":task.clone()}}));
-        }
-        if request.path.ends_with("/task/v2/tasks") && request.method == Method::Post {
-            let body: Value = serde_json::from_slice(&request.body)
-                .map_err(|error| TransportError::Failed(error.to_string()))?;
-            let mut state = self.state.lock().expect("task flow state");
-            let guid = format!("task_{}", state.create_bodies.len() + 1);
-            let tasklist_guid = body
-                .pointer("/tasklists/0/tasklist_guid")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let task = json!({
-                "guid":guid,
-                "summary":body["summary"].clone(),
-                "description":body["description"].clone(),
-                "members":body["members"].clone(),
-                "tasklists":[{"tasklist_guid":tasklist_guid}],
-                "tasklist_guid":tasklist_guid
-            });
-            state.create_bodies.push(body);
-            state.tasks.insert(guid.clone(), task.clone());
-            return json_response(200, json!({"code":0,"data":{"task":task}}));
-        }
-        if request.path.contains("/task/v2/tasks/") && request.method == Method::Get {
-            let guid = request.path.rsplit('/').next().unwrap_or_default();
-            let task = self
-                .state
-                .lock()
-                .expect("task flow state")
-                .tasks
-                .get(guid)
-                .cloned()
-                .ok_or_else(|| TransportError::Failed("unknown fixture task".to_owned()))?;
-            return json_response(200, json!({"code":0,"data":{"task":task}}));
-        }
-        if request.path.ends_with("/task/v2/comments") && request.method == Method::Post {
-            let body: Value = serde_json::from_slice(&request.body)
-                .map_err(|error| TransportError::Failed(error.to_string()))?;
-            self.state
-                .lock()
-                .expect("task flow state")
-                .comment_bodies
-                .push(body);
-            return json_response(
-                200,
-                json!({"code":0,"data":{"comment":{"comment_id":"comment_flow"}}}),
-            );
-        }
-        if request.path.ends_with("/task/v2/comments") && request.method == Method::Get {
-            return json_response(
-                200,
-                json!({"code":0,"data":{"items":[
+            if request.path.ends_with("/task/v2/tasks") && request.method == Method::Post {
+                let body: Value = serde_json::from_slice(&request.body)
+                    .map_err(|error| TransportError::Failed(error.to_string()))?;
+                let mut state = self.state.lock().expect("task flow state");
+                let guid = format!("task_{}", state.create_bodies.len() + 1);
+                let tasklist_guid = body
+                    .pointer("/tasklists/0/tasklist_guid")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let task = json!({
+                    "guid":guid,
+                    "summary":body["summary"].clone(),
+                    "description":body["description"].clone(),
+                    "members":body["members"].clone(),
+                    "tasklists":[{"tasklist_guid":tasklist_guid}],
+                    "tasklist_guid":tasklist_guid
+                });
+                state.create_bodies.push(body);
+                state.tasks.insert(guid.clone(), task.clone());
+                return json_response(200, json!({"code":0,"data":{"task":task}}));
+            }
+            if request.path.contains("/task/v2/tasks/") && request.method == Method::Get {
+                let guid = request.path.rsplit('/').next().unwrap_or_default();
+                let task = self
+                    .state
+                    .lock()
+                    .expect("task flow state")
+                    .tasks
+                    .get(guid)
+                    .cloned()
+                    .ok_or_else(|| TransportError::Failed("unknown fixture task".to_owned()))?;
+                return json_response(200, json!({"code":0,"data":{"task":task}}));
+            }
+            if request.path.ends_with("/task/v2/comments") && request.method == Method::Post {
+                let body: Value = serde_json::from_slice(&request.body)
+                    .map_err(|error| TransportError::Failed(error.to_string()))?;
+                self.state
+                    .lock()
+                    .expect("task flow state")
+                    .comment_bodies
+                    .push(body);
+                return json_response(
+                    200,
+                    json!({"code":0,"data":{"comment":{"comment_id":"comment_flow"}}}),
+                );
+            }
+            if request.path.ends_with("/task/v2/comments") && request.method == Method::Get {
+                return json_response(
+                    200,
+                    json!({"code":0,"data":{"items":[
                 {"comment_id":"cross_app","content":"<at id=\"ou_lead_beta\"></at> <at id='ou_gamma_beta'></at> <at id=ou_unknown></at> 请确认","creator":{"type":"app","id":"cli_beta"}},
                 {"comment_id":"unknown_author","content":"ordinary text","creator":{"type":"user","id":"ou_unknown"}}
             ],"has_more":false}}),
-            );
-        }
-        Err(TransportError::Failed(format!(
-            "unexpected Feishu task flow request: {}",
-            request.path
-        )))
+                );
+            }
+            Err(TransportError::Failed(format!(
+                "unexpected Feishu task flow request: {}",
+                request.path
+            )))
+        })
     }
 }
 
@@ -1760,121 +1772,126 @@ struct AuthorizationUpgradeTransport {
 }
 
 impl Transport for AuthorizationUpgradeTransport {
-    fn execute(&self, request: Request) -> Result<Response, TransportError> {
-        if request
-            .path
-            .ends_with("/auth/v3/tenant_access_token/internal")
-        {
-            return json_response(
-                200,
-                json!({
-                    "code": 0,
-                    "tenant_access_token": "authorization-upgrade-token",
-                    "expire": 7200
-                }),
-            );
-        }
-        if request.path.contains("/app_versions") && request.method == Method::Get {
-            let mut scopes = STANDARD_BOT_TENANT_SCOPES
-                .iter()
-                .map(|scope| json!({"scope":scope,"token_types":["tenant"]}))
-                .collect::<Vec<_>>();
-            if !self.authorized.load(Ordering::SeqCst) {
-                scopes.retain(|scope| scope["scope"] != "application:application:patch");
-            }
-            let events = STANDARD_BOT_EVENTS
-                .iter()
-                .map(|event| json!({"event_type":event}))
-                .collect::<Vec<_>>();
-            return json_response(
-                200,
-                json!({
-                    "code":0,
-                    "data":{"items":[{
-                        "version":"1.0.0",
-                        "status":1,
-                        "publish_time":"1700000000",
-                        "scopes":scopes,
-                        "event_infos":events
-                    }]}
-                }),
-            );
-        }
-        if request.path.ends_with("/config") && request.method == Method::Patch {
-            let body: Value = serde_json::from_slice(&request.body)
-                .map_err(|error| TransportError::Failed(error.to_string()))?;
-            let adds_patch_scope = body["scope"]["add_scopes"]
-                .as_array()
-                .is_some_and(|scopes| {
-                    scopes.iter().any(|scope| {
-                        scope["scope_name"] == "application:application:patch"
-                            && scope["token_type"] == "tenant"
-                    })
-                });
-            if !adds_patch_scope {
-                return Err(TransportError::Failed(
-                    "authorization update omitted the missing scope".into(),
-                ));
-            }
-            self.config_updates.fetch_add(1, Ordering::SeqCst);
-            if self.reject_updates.load(Ordering::SeqCst) {
+    fn execute(&self, request: Request) -> lankide_provider_feishu::http::TransportFuture<'_> {
+        Box::pin(async move {
+            if request
+                .path
+                .ends_with("/auth/v3/tenant_access_token/internal")
+            {
                 return json_response(
                     200,
                     json!({
-                        "code":99991672,
-                        "msg":"Access denied",
-                        "error":{"permission_violations":[{
-                            "subject":"application:application:patch"
+                        "code": 0,
+                        "tenant_access_token": "authorization-upgrade-token",
+                        "expire": 7200
+                    }),
+                );
+            }
+            if request.path.contains("/app_versions") && request.method == Method::Get {
+                let mut scopes = STANDARD_BOT_TENANT_SCOPES
+                    .iter()
+                    .map(|scope| json!({"scope":scope,"token_types":["tenant"]}))
+                    .collect::<Vec<_>>();
+                if !self.authorized.load(Ordering::SeqCst) {
+                    scopes.retain(|scope| scope["scope"] != "application:application:patch");
+                }
+                let events = STANDARD_BOT_EVENTS
+                    .iter()
+                    .map(|event| json!({"event_type":event}))
+                    .collect::<Vec<_>>();
+                return json_response(
+                    200,
+                    json!({
+                        "code":0,
+                        "data":{"items":[{
+                            "version":"1.0.0",
+                            "status":1,
+                            "publish_time":"1700000000",
+                            "scopes":scopes,
+                            "event_infos":events
                         }]}
                     }),
                 );
             }
-            return json_response(200, json!({"code":0}));
-        }
-        if request.path.ends_with("/publish") && request.method == Method::Post {
-            self.publishes.fetch_add(1, Ordering::SeqCst);
-            self.authorized.store(true, Ordering::SeqCst);
-            return json_response(
-                200,
-                json!({"code":0,"data":{"version_id":"v2","version":"2.0.0"}}),
-            );
-        }
-        Err(TransportError::Failed(
-            "unexpected authorization upgrade request".into(),
-        ))
+            if request.path.ends_with("/config") && request.method == Method::Patch {
+                let body: Value = serde_json::from_slice(&request.body)
+                    .map_err(|error| TransportError::Failed(error.to_string()))?;
+                let adds_patch_scope =
+                    body["scope"]["add_scopes"]
+                        .as_array()
+                        .is_some_and(|scopes| {
+                            scopes.iter().any(|scope| {
+                                scope["scope_name"] == "application:application:patch"
+                                    && scope["token_type"] == "tenant"
+                            })
+                        });
+                if !adds_patch_scope {
+                    return Err(TransportError::Failed(
+                        "authorization update omitted the missing scope".into(),
+                    ));
+                }
+                self.config_updates.fetch_add(1, Ordering::SeqCst);
+                if self.reject_updates.load(Ordering::SeqCst) {
+                    return json_response(
+                        200,
+                        json!({
+                            "code":99991672,
+                            "msg":"Access denied",
+                            "error":{"permission_violations":[{
+                                "subject":"application:application:patch"
+                            }]}
+                        }),
+                    );
+                }
+                return json_response(200, json!({"code":0}));
+            }
+            if request.path.ends_with("/publish") && request.method == Method::Post {
+                self.publishes.fetch_add(1, Ordering::SeqCst);
+                self.authorized.store(true, Ordering::SeqCst);
+                return json_response(
+                    200,
+                    json!({"code":0,"data":{"version_id":"v2","version":"2.0.0"}}),
+                );
+            }
+            Err(TransportError::Failed(
+                "unexpected authorization upgrade request".into(),
+            ))
+        })
     }
 }
 
 impl Transport for RefreshingTokenTransport {
-    fn execute(&self, request: Request) -> Result<Response, TransportError> {
-        if request
-            .path
-            .ends_with("/auth/v3/tenant_access_token/internal")
-        {
-            let request_number = self.token_requests.fetch_add(1, Ordering::SeqCst) + 1;
-            return json_response(
-                200,
-                json!({
-                    "code": 0,
-                    "tenant_access_token": format!("token-{request_number}"),
-                    "expire": 7200
-                }),
-            );
-        }
-        if request.path.ends_with("/bot/v3/info") {
-            let request_number = self.bot_requests.fetch_add(1, Ordering::SeqCst) + 1;
-            if request_number == 1 {
-                return json_response(401, json!({"code":99991663,"msg":"expired"}));
+    fn execute(&self, request: Request) -> lankide_provider_feishu::http::TransportFuture<'_> {
+        Box::pin(async move {
+            if request
+                .path
+                .ends_with("/auth/v3/tenant_access_token/internal")
+            {
+                let request_number = self.token_requests.fetch_add(1, Ordering::SeqCst) + 1;
+                return json_response(
+                    200,
+                    json!({
+                        "code": 0,
+                        "tenant_access_token": format!("token-{request_number}"),
+                        "expire": 7200
+                    }),
+                );
             }
-            return json_response(
-                200,
-                json!({
-                    "code": 0,
-                    "bot": {"open_id":"ou_refresh", "app_name":"Refresh"}
-                }),
-            );
-        }
-        Err(TransportError::Failed("unexpected refresh request".into()))
+            if request.path.ends_with("/bot/v3/info") {
+                let request_number = self.bot_requests.fetch_add(1, Ordering::SeqCst) + 1;
+                if request_number == 1 {
+                    return json_response(401, json!({"code":99991663,"msg":"expired"}));
+                }
+                return json_response(
+                    200,
+                    json!({
+                        "code": 0,
+                        "bot": {"open_id":"ou_refresh", "app_name":"Refresh"}
+                    }),
+                );
+            }
+            Err(TransportError::Failed("unexpected refresh request".into()))
+        })
     }
 }
 
@@ -1888,70 +1905,72 @@ fn json_response(status: u16, body: Value) -> Result<Response, TransportError> {
 }
 
 impl Transport for FeishuFixtureTransport {
-    fn execute(&self, request: Request) -> Result<Response, TransportError> {
-        let body = if request
-            .path
-            .ends_with("/auth/v3/tenant_access_token/internal")
-        {
-            json!({
-                "code": 0,
-                "tenant_access_token": "fixture-tenant-token",
-                "expire": 7200
-            })
-        } else if request.path.ends_with("/bot/v3/info") {
-            json!({
-                "code": 0,
-                "bot": {"open_id": "ou_agent_e2e", "app_name": "E2E Agent"}
-            })
-        } else if request.path.ends_with("/task/v2/tasklists/tasklist_e2e") {
-            json!({
-                "code":0,
-                "data":{"tasklist":{
-                    "guid":"tasklist_e2e",
-                    "name":"团队任务",
-                    "owner":{"id":"cli_e2e","type":"app","role":"owner"},
-                    "members":[{"id":"ou_human_e2e","type":"user","role":"viewer"}]
-                }}
-            })
-        } else if request.path.contains("/contact/v3/users/on_profile") {
-            json!({
-                "code":0,
-                "data":{"user":{
-                    "open_id":"ou_profile",
-                    "union_id":"on_profile",
-                    "name":"Profile Human",
-                    "nickname":"Profile Nickname",
-                    "description":"Profile signature",
-                    "avatar":{"avatar_origin":"https://avatar.example/profile.jpg"}
-                }}
-            })
-        } else if request.path.contains("/contact/v3/users/ou_human") {
-            json!({
-                "code":0,
-                "data":{"user":{
-                    "open_id":"ou_human",
-                    "union_id":"on_human",
-                    "name":"Human Name",
-                    "nickname":"Human Nickname"
-                }}
-            })
-        } else if request.path == "https://avatar.example/profile.jpg" {
-            return Ok(Response {
+    fn execute(&self, request: Request) -> lankide_provider_feishu::http::TransportFuture<'_> {
+        Box::pin(async move {
+            let body = if request
+                .path
+                .ends_with("/auth/v3/tenant_access_token/internal")
+            {
+                json!({
+                    "code": 0,
+                    "tenant_access_token": "fixture-tenant-token",
+                    "expire": 7200
+                })
+            } else if request.path.ends_with("/bot/v3/info") {
+                json!({
+                    "code": 0,
+                    "bot": {"open_id": "ou_agent_e2e", "app_name": "E2E Agent"}
+                })
+            } else if request.path.ends_with("/task/v2/tasklists/tasklist_e2e") {
+                json!({
+                    "code":0,
+                    "data":{"tasklist":{
+                        "guid":"tasklist_e2e",
+                        "name":"团队任务",
+                        "owner":{"id":"cli_e2e","type":"app","role":"owner"},
+                        "members":[{"id":"ou_human_e2e","type":"user","role":"viewer"}]
+                    }}
+                })
+            } else if request.path.contains("/contact/v3/users/on_profile") {
+                json!({
+                    "code":0,
+                    "data":{"user":{
+                        "open_id":"ou_profile",
+                        "union_id":"on_profile",
+                        "name":"Profile Human",
+                        "nickname":"Profile Nickname",
+                        "description":"Profile signature",
+                        "avatar":{"avatar_origin":"https://avatar.example/profile.jpg"}
+                    }}
+                })
+            } else if request.path.contains("/contact/v3/users/ou_human") {
+                json!({
+                    "code":0,
+                    "data":{"user":{
+                        "open_id":"ou_human",
+                        "union_id":"on_human",
+                        "name":"Human Name",
+                        "nickname":"Human Nickname"
+                    }}
+                })
+            } else if request.path == "https://avatar.example/profile.jpg" {
+                return Ok(Response {
+                    status: 200,
+                    headers: vec![("content-type".into(), "image/jpeg".into())],
+                    body: b"fixture-avatar".to_vec(),
+                });
+            } else {
+                return Err(TransportError::Failed(format!(
+                    "unexpected Feishu fixture request: {}",
+                    request.path
+                )));
+            };
+            Ok(Response {
                 status: 200,
-                headers: vec![("content-type".into(), "image/jpeg".into())],
-                body: b"fixture-avatar".to_vec(),
-            });
-        } else {
-            return Err(TransportError::Failed(format!(
-                "unexpected Feishu fixture request: {}",
-                request.path
-            )));
-        };
-        Ok(Response {
-            status: 200,
-            headers: vec![("content-type".into(), "application/json".into())],
-            body: serde_json::to_vec(&body)
-                .map_err(|error| TransportError::Failed(error.to_string()))?,
+                headers: vec![("content-type".into(), "application/json".into())],
+                body: serde_json::to_vec(&body)
+                    .map_err(|error| TransportError::Failed(error.to_string()))?,
+            })
         })
     }
 }
@@ -1961,79 +1980,91 @@ struct SharedQueueSource {
 }
 
 impl EventSource for SharedQueueSource {
-    fn next(&mut self) -> Result<Option<RawEvent>, SourceError> {
-        Ok(self
-            .queue
-            .lock()
-            .ok()
-            .and_then(|mut queue| queue.pop_front()))
+    fn next(
+        &mut self,
+    ) -> lankide_provider_feishu::events::EventFuture<'_, Result<Option<RawEvent>, SourceError>>
+    {
+        Box::pin(async move {
+            loop {
+                if let Some(event) = self.queue.lock().unwrap().pop_front() {
+                    return Ok(Some(event));
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
     }
 
-    fn acknowledge(&mut self) -> Result<(), SourceError> {
-        Ok(())
+    fn acknowledge(
+        &mut self,
+    ) -> lankide_provider_feishu::events::EventFuture<'_, Result<(), SourceError>> {
+        Box::pin(async move { Ok(()) })
     }
 
-    fn close(&mut self) {}
+    fn close(&mut self) -> lankide_provider_feishu::events::EventFuture<'_, ()> {
+        Box::pin(async move {})
+    }
 }
 
 #[derive(Clone, Copy)]
 struct FeishuIdentityTransport;
 
 impl Transport for FeishuIdentityTransport {
-    fn execute(&self, request: Request) -> Result<Response, TransportError> {
-        if request
-            .path
-            .contains("/messages/shared-attachment/resources/img_shared")
-        {
-            return Ok(Response {
-                status: 200,
-                headers: vec![("content-type".into(), "image/png".into())],
-                body: b"shared-image".to_vec(),
-            });
-        }
-        let body = if request
-            .path
-            .ends_with("/auth/v3/tenant_access_token/internal")
-        {
-            let input: Value = serde_json::from_slice(&request.body)
-                .map_err(|error| TransportError::Failed(error.to_string()))?;
-            let app_id = input
-                .get("app_id")
-                .and_then(Value::as_str)
-                .ok_or_else(|| TransportError::Failed("fixture app_id missing".into()))?;
-            json!({
-                "code": 0,
-                "tenant_access_token": format!("token-{app_id}"),
-                "expire": 7200
-            })
-        } else if request.path.ends_with("/bot/v3/info") {
-            let authorization = request
-                .headers
-                .iter()
-                .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
-                .map(|(_, value)| value.as_str())
-                .unwrap_or_default();
-            let (open_id, name) = if authorization.ends_with("token-app_a") {
-                ("ou_alpha_own", "Alpha")
-            } else if authorization.ends_with("token-app_b") {
-                ("ou_beta_own", "Beta")
+    fn execute(&self, request: Request) -> lankide_provider_feishu::http::TransportFuture<'_> {
+        Box::pin(async move {
+            if request
+                .path
+                .contains("/messages/shared-attachment/resources/img_shared")
+            {
+                return Ok(Response {
+                    status: 200,
+                    headers: vec![("content-type".into(), "image/png".into())],
+                    body: b"shared-image".to_vec(),
+                });
+            }
+            let body = if request
+                .path
+                .ends_with("/auth/v3/tenant_access_token/internal")
+            {
+                let input: Value = serde_json::from_slice(&request.body)
+                    .map_err(|error| TransportError::Failed(error.to_string()))?;
+                let app_id = input
+                    .get("app_id")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| TransportError::Failed("fixture app_id missing".into()))?;
+                json!({
+                    "code": 0,
+                    "tenant_access_token": format!("token-{app_id}"),
+                    "expire": 7200
+                })
+            } else if request.path.ends_with("/bot/v3/info") {
+                let authorization = request
+                    .headers
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+                    .map(|(_, value)| value.as_str())
+                    .unwrap_or_default();
+                let (open_id, name) = if authorization.ends_with("token-app_a") {
+                    ("ou_alpha_own", "Alpha")
+                } else if authorization.ends_with("token-app_b") {
+                    ("ou_beta_own", "Beta")
+                } else {
+                    return Err(TransportError::Failed(
+                        "unknown fixture authorization".into(),
+                    ));
+                };
+                json!({"code":0,"bot":{"open_id":open_id,"app_name":name}})
             } else {
-                return Err(TransportError::Failed(
-                    "unknown fixture authorization".into(),
-                ));
+                return Err(TransportError::Failed(format!(
+                    "unexpected Feishu identity request: {}",
+                    request.path
+                )));
             };
-            json!({"code":0,"bot":{"open_id":open_id,"app_name":name}})
-        } else {
-            return Err(TransportError::Failed(format!(
-                "unexpected Feishu identity request: {}",
-                request.path
-            )));
-        };
-        Ok(Response {
-            status: 200,
-            headers: vec![("content-type".into(), "application/json".into())],
-            body: serde_json::to_vec(&body)
-                .map_err(|error| TransportError::Failed(error.to_string()))?,
+            Ok(Response {
+                status: 200,
+                headers: vec![("content-type".into(), "application/json".into())],
+                body: serde_json::to_vec(&body)
+                    .map_err(|error| TransportError::Failed(error.to_string()))?,
+            })
         })
     }
 }
@@ -2505,11 +2536,7 @@ async fn cli_call(
     current_dir: PathBuf,
     args: Vec<String>,
 ) -> Result<Value, String> {
-    tokio::task::spawn_blocking(move || {
-        cli_json(&fixture.cli_dir, &fixture.oauth_dir, &current_dir, &args)
-    })
-    .await
-    .map_err(|_| "lark-cli task failed".to_owned())?
+    (async move { cli_json(&fixture.cli_dir, &fixture.oauth_dir, &current_dir, &args) }).await
 }
 
 async fn wait_for_message<P: Provider>(
@@ -2609,14 +2636,13 @@ async fn run_feishu_scenario(
     artifact: &Artifact,
 ) -> Result<(), String> {
     let fixture = load_fixture()?;
-    let report = tokio::task::spawn_blocking(|| {
+    let report = (async move {
         run_prerequisite_probe(&ProbeConfig::from_environment(
             GateSelection::FeishuLive,
             true,
         ))
     })
-    .await
-    .map_err(|_| "Feishu prerequisite probe task failed".to_owned())?;
+    .await;
     if !report.is_green() {
         return Err(format!(
             "Feishu live prerequisite is not green: {}",
@@ -2915,11 +2941,12 @@ async fn run_feishu_scenario(
         )
         .map_err(|_| "Feishu reaction verification client could not be created".to_owned())?;
         let reaction_message_id = inbound_id.clone();
-        let reactions = tokio::task::spawn_blocking(move || {
-            reaction_client.list_reactions(&reaction_message_id, None, 50, Auth::Tenant)
+        let reactions = (async move {
+            reaction_client
+                .list_reactions(&reaction_message_id, None, 50, Auth::Tenant)
+                .await
         })
         .await
-        .map_err(|_| "Feishu reaction verification failed".to_owned())?
         .map_err(|_| "Feishu reaction list endpoint failed".to_owned())?;
         if let Some(item) = reactions
             .items
@@ -3048,11 +3075,12 @@ async fn run_feishu_scenario(
         )
         .map_err(|_| "Feishu comment verification client could not be created".to_owned())?;
         let comment_task_id = task_id.clone();
-        let comments = tokio::task::spawn_blocking(move || {
-            comment_client.list_task_comments(&comment_task_id, None, 100, Auth::Tenant)
+        let comments = (async move {
+            comment_client
+                .list_task_comments(&comment_task_id, None, 100, Auth::Tenant)
+                .await
         })
         .await
-        .map_err(|_| "Feishu task comment verification failed".to_owned())?
         .map_err(|_| "Feishu task comment list endpoint failed".to_owned())?;
         let native_mention = format!("<at id={}></at>", fixture.user_open_id);
         if !comments
@@ -3122,12 +3150,13 @@ async fn run_feishu_scenario(
         let message_id = actor_message_ids.first().cloned().unwrap_or_default();
         let reaction_id_for_call = reaction_id.clone();
         let result = match client {
-            Ok(client) => tokio::task::spawn_blocking(move || {
-                client.remove_reaction(&message_id, &reaction_id_for_call, Auth::Tenant)
+            Ok(client) => (async move {
+                client
+                    .remove_reaction(&message_id, &reaction_id_for_call, Auth::Tenant)
+                    .await
             })
             .await
-            .ok()
-            .and_then(Result::ok),
+            .ok(),
             Err(_) => None,
         };
         artifact.record_cleanup("provider_reaction_remove", &reaction_id, result.is_some());
@@ -3185,12 +3214,13 @@ async fn run_feishu_scenario(
             );
             let task_id_for_call = task_id.clone();
             result = match client {
-                Ok(client) => tokio::task::spawn_blocking(move || {
-                    client.delete_task(&task_id_for_call, "open_id", Auth::Tenant)
+                Ok(client) => (async move {
+                    client
+                        .delete_task(&task_id_for_call, "open_id", Auth::Tenant)
+                        .await
                 })
                 .await
-                .map_err(|_| "Feishu app task cleanup task failed".to_owned())
-                .and_then(|result| result.map_err(|_| "Feishu app task cleanup failed".to_owned())),
+                .map_err(|_| "Feishu app task cleanup failed".to_owned()),
                 Err(_) => Err("Feishu app task cleanup client could not be created".to_owned()),
             };
         }
@@ -3210,35 +3240,52 @@ async fn run_feishu_scenario(
     scenario_result
 }
 
-#[test]
-fn feishu_ingress_failure_retries_before_acknowledging_source() {
+#[tokio::test]
+async fn feishu_ingress_failure_retries_before_acknowledging_source() {
     use lankide_provider_feishu::{EventSink as FeishuSink, FeishuEventDispatcher, SinkError};
     struct ReceiptSource {
         event: Option<RawEvent>,
         acks: Arc<AtomicI64>,
     }
     impl EventSource for ReceiptSource {
-        fn next(&mut self) -> Result<Option<RawEvent>, SourceError> {
-            Ok(self.event.take())
+        fn next(
+            &mut self,
+        ) -> lankide_provider_feishu::events::EventFuture<'_, Result<Option<RawEvent>, SourceError>>
+        {
+            Box::pin(async move { Ok(self.event.take()) })
         }
-        fn acknowledge(&mut self) -> Result<(), SourceError> {
-            self.acks.fetch_add(1, Ordering::SeqCst);
-            Ok(())
+        fn acknowledge(
+            &mut self,
+        ) -> lankide_provider_feishu::events::EventFuture<'_, Result<(), SourceError>> {
+            Box::pin(async move {
+                self.acks.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
         }
-        fn close(&mut self) {}
+        fn close(&mut self) -> lankide_provider_feishu::events::EventFuture<'_, ()> {
+            Box::pin(async move {})
+        }
     }
     struct RejectOnce {
         failed: bool,
         delivered: usize,
     }
     impl FeishuSink for RejectOnce {
-        fn emit(&mut self, _: NormalizedEvent) -> Result<(), SinkError> {
-            if !self.failed {
-                self.failed = true;
-                return Err(SinkError("durable storage unavailable".into()));
-            }
-            self.delivered += 1;
-            Ok(())
+        fn emit(
+            &mut self,
+            _: NormalizedEvent,
+        ) -> lankide_provider_feishu::events::EventFuture<'_, Result<(), SinkError>> {
+            Box::pin(async move {
+                if !self.failed {
+                    self.failed = true;
+                    return Err(SinkError {
+                        reason: "durable storage unavailable".into(),
+                        retryable: true,
+                    });
+                }
+                self.delivered += 1;
+                Ok(())
+            })
         }
     }
     let acks = Arc::new(AtomicI64::new(0));
@@ -3265,11 +3312,11 @@ fn feishu_ingress_failure_retries_before_acknowledging_source() {
         failed: false,
         delivered: 0,
     };
-    assert!(dispatcher.poll_once(&mut sink).is_err());
+    assert!(dispatcher.poll_once(&mut sink).await.is_err());
     assert_eq!(acks.load(Ordering::SeqCst), 0);
-    assert!(dispatcher.poll_once(&mut sink).unwrap());
+    assert!(dispatcher.poll_once(&mut sink).await.unwrap());
     assert_eq!(acks.load(Ordering::SeqCst), 1);
     assert_eq!(sink.delivered, 1);
-    assert!(!dispatcher.poll_once(&mut sink).unwrap());
-    dispatcher.stop();
+    assert!(!dispatcher.poll_once(&mut sink).await.unwrap());
+    dispatcher.stop().await;
 }

@@ -179,6 +179,7 @@ impl Frame {
 
 #[derive(Clone, Debug)]
 pub struct Delivery {
+    pub sender: String,
     pub chat: String,
     pub parent: Option<String>,
     pub body: Value,
@@ -187,6 +188,7 @@ pub struct Delivery {
 struct State {
     events: BTreeMap<String, VecDeque<Value>>,
     requests: Vec<Request>,
+    failures: BTreeMap<String, (u16, usize)>,
     acknowledgements: Vec<Value>,
     next_message: usize,
     deliveries: Vec<Delivery>,
@@ -329,6 +331,18 @@ impl FeishuServer {
         let http = Server::start(move |request| {
             let mut state = shared.lock().unwrap();
             state.requests.push(request.clone());
+            if let Some((status, remaining)) = state.failures.get_mut(&request.path) {
+                if *remaining > 0 {
+                    *remaining -= 1;
+                    let mut response = Response::json(if *status == 400 {
+                        json!({"code":99991400,"msg":"rate limit"})
+                    } else {
+                        json!({})
+                    });
+                    response.status = *status;
+                    return response;
+                }
+            }
             let path = request.path.split('?').next().unwrap();
             if path == "/callback/ws/endpoint" {
                 let body = request.json();
@@ -343,11 +357,11 @@ impl FeishuServer {
             }
             let app = request.header("authorization");
             let app = app.strip_prefix("Bearer tenant-").unwrap();
-            assert!(matches!(app, "cli_alpha" | "cli_beta"));
+            assert!(matches!(app, "cli_alpha" | "cli_beta" | "cli_gamma"));
             let data = match (request.method.as_str(), path) {
                 ("GET", "/open-apis/bot/v3/info") => {
                     return Response::json(
-                        json!({"code":0,"bot":{"open_id":if app == "cli_alpha" { "ou_alpha" } else { "ou_beta" },"app_name":app}}),
+                        json!({"code":0,"bot":{"open_id":format!("ou_{}", app.trim_start_matches("cli_")),"app_name":app}}),
                     );
                 }
                 ("GET", path)
@@ -355,10 +369,12 @@ impl FeishuServer {
                         && !path.contains("/resources/") =>
                 {
                     let id = path.trim_start_matches("/open-apis/im/v1/messages/");
-                    let message = state
-                        .messages
-                        .get(&(app.into(), id.into()))
-                        .expect("target belongs to receiving App");
+                    let Some(message) = state.messages.get(&(app.into(), id.into())) else {
+                        let mut response =
+                            Response::json(json!({"code":230011,"msg":"message deleted"}));
+                        response.status = 404;
+                        return response;
+                    };
                     // The real endpoint reports the chat but not its type.
                     json!({"items":[{"message_id":id,"chat_id":message["chat_id"],"msg_type":message["message_type"]}]})
                 }
@@ -382,6 +398,7 @@ impl FeishuServer {
                     state.next_message += 1;
                     let body = request.json();
                     state.deliveries.push(Delivery {
+                        sender: app.into(),
                         chat: body["receive_id"].as_str().unwrap().into(),
                         parent: None,
                         body: body.clone(),
@@ -396,6 +413,7 @@ impl FeishuServer {
                         .clone();
                     state.next_message += 1;
                     state.deliveries.push(Delivery {
+                        sender: app.into(),
                         chat: chat.clone(),
                         parent: Some("om_file".into()),
                         body: request.json(),
@@ -440,6 +458,13 @@ impl FeishuServer {
             .entry(app_id.into())
             .or_default()
             .push_back(event);
+    }
+    pub fn fail_requests(&self, path: &str, status: u16, count: usize) {
+        self.state
+            .lock()
+            .unwrap()
+            .failures
+            .insert(path.into(), (status, count));
     }
     pub fn requests(&self) -> Vec<Request> {
         self.state.lock().unwrap().requests.clone()

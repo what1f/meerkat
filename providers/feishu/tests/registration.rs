@@ -18,12 +18,14 @@ impl RegistrationTransport {
 }
 
 impl Transport for RegistrationTransport {
-    fn execute(&self, _: Request) -> Result<Response, TransportError> {
-        self.responses
-            .lock()
-            .expect("registration responses")
-            .pop_front()
-            .ok_or_else(|| TransportError::Failed("missing registration response".into()))
+    fn execute(&self, _: Request) -> lankide_provider_feishu::http::TransportFuture<'_> {
+        Box::pin(async move {
+            self.responses
+                .lock()
+                .expect("registration responses")
+                .pop_front()
+                .ok_or_else(|| TransportError::Failed("missing registration response".into()))
+        })
     }
 }
 
@@ -35,8 +37,8 @@ fn response(status: u16, body: &str) -> Response {
     }
 }
 
-#[test]
-fn poll_accepts_feishu_pending_states_returned_with_http_400() {
+#[tokio::test]
+async fn poll_accepts_feishu_pending_states_returned_with_http_400() {
     for (body, expected) in [
         (r#"{"error":"authorization_pending"}"#, "pending"),
         (r#"{"error":"slow_down"}"#, "slow_down"),
@@ -44,7 +46,10 @@ fn poll_accepts_feishu_pending_states_returned_with_http_400() {
         (r#"{"error":"expired_token"}"#, "expired"),
     ] {
         let registrar = FeishuRegistrar::new(RegistrationTransport::new([response(400, body)]));
-        let actual = registrar.poll("device-code").expect("known poll state");
+        let actual = registrar
+            .poll("device-code")
+            .await
+            .expect("known poll state");
         assert!(
             matches!(
                 (&actual, expected),
@@ -58,11 +63,11 @@ fn poll_accepts_feishu_pending_states_returned_with_http_400() {
     }
 }
 
-#[test]
-fn poll_rejects_http_error_without_a_feishu_poll_state() {
+#[tokio::test]
+async fn poll_rejects_http_error_without_a_feishu_poll_state() {
     let registrar = FeishuRegistrar::new(RegistrationTransport::new([response(503, "{}")]));
     assert!(matches!(
-        registrar.poll("device-code"),
+        registrar.poll("device-code").await,
         Err(ClientError::HttpStatus { status: 503, .. })
     ));
 }

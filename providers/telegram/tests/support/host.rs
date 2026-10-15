@@ -13,6 +13,7 @@ use std::{sync::Arc, time::Duration};
 pub struct Services {
     pub db: Arc<Storage>,
     pub workspace: WorkspaceId,
+    pub logs: std::sync::Mutex<Vec<String>>,
     provider: ProviderId,
     files: LocalResourceStore,
     _directory: tempfile::TempDir,
@@ -56,6 +57,7 @@ impl Services {
             files: LocalResourceStore::new(db.clone(), directory.path().join("resources")),
             db,
             workspace,
+            logs: std::sync::Mutex::new(Vec::new()),
             provider,
             _directory: directory,
         })
@@ -245,6 +247,7 @@ impl ResourceSaver for Services {
 }
 impl ProviderLogger for Services {
     fn log(&self, level: LogLevel, message: &str) {
+        self.logs.lock().unwrap().push(message.to_owned());
         eprintln!("{level:?}: {message}");
     }
 }

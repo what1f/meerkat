@@ -311,3 +311,231 @@ async fn s2_1_direct_messages_and_reactions_identify_the_receiving_agent() {
         panic!("scenario task failed: {error}");
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_missing_file_does_not_block_the_next_message() {
+    let server = TelegramServer::start();
+    let services = Services::new("telegram");
+    let bot = AgentId::new("beta").unwrap();
+    services.agent(&bot, "bot_token", "200:local");
+    let host = ProviderHost::new(
+        TelegramProvider::new(),
+        services.workspace.clone(),
+        json!({"api_endpoint":server.http.endpoint,"poll_timeout_seconds":1}),
+        services.host(),
+    )
+    .unwrap();
+    host.init().await.unwrap();
+    host.create_agent(bot.clone(), agent_spec(json!({"bot_username":"beta_bot"})))
+        .await
+        .unwrap();
+    server.fail_requests("/bot200:local/getFile", 404, usize::MAX);
+    server.deliver("200:local", json!({"update_id":1,"message":{"message_id":8,"date":1,
+        "chat":{"id":-1001,"type":"supergroup"},"from":{"id":300,"is_bot":false,"first_name":"Alice"},
+        "document":{"file_id":"inbound-file","file_unique_id":"unique","file_name":"gone.bin"}}}));
+    server.deliver("200:local", json!({"update_id":2,"message":{"message_id":9,"date":2,
+        "chat":{"id":300,"type":"private"},"from":{"id":300,"is_bot":false,"first_name":"Alice"},"text":"next message"}}));
+    let result = tokio::time::timeout(Duration::from_secs(3), host.next_event()).await;
+    let (event, ack) = result
+        .expect("missing file blocked the next message")
+        .unwrap()
+        .into_parts();
+    assert_eq!(event.receiving_agent_id, Some(bot));
+    assert!(matches!(event.kind, ProviderEventKind::Message(ref m) if m.content == "next message"));
+    ack.accept();
+    host.shutdown().await.unwrap();
+    assert_eq!(
+        services
+            .logs
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|line| line.starts_with("Telegram event skipped:"))
+            .count(),
+        1
+    );
+}
+
+async fn event_host(
+    server: &TelegramServer,
+    services: &std::sync::Arc<Services>,
+) -> ProviderHost<TelegramProvider> {
+    let bot = AgentId::new("beta").unwrap();
+    services.agent(&bot, "bot_token", "200:local");
+    let host = ProviderHost::new(
+        TelegramProvider::new(),
+        services.workspace.clone(),
+        json!({"api_endpoint":server.http.endpoint,"poll_timeout_seconds":1,
+            "event_retry_initial_ms":20,"event_retry_max_ms":80}),
+        services.host(),
+    )
+    .unwrap();
+    host.init().await.unwrap();
+    host.create_agent(bot, agent_spec(json!({"bot_username":"beta_bot"})))
+        .await
+        .unwrap();
+    host
+}
+fn team_message(update: i64, file: bool) -> serde_json::Value {
+    let mut value = json!({"update_id":update,"message":{"message_id":update+10,"date":1,
+        "chat":{"id":-1001,"type":"supergroup"},"from":{"id":300,"is_bot":false,"first_name":"Alice"}}});
+    if file {
+        value["message"]["document"] =
+            json!({"file_id":"inbound-file","file_unique_id":"unique","file_name":"inbound.bin"});
+    } else {
+        value["message"]["text"] = json!(format!("message {update}"));
+    }
+    value
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_temporary_im_outage_delivers_a_batch_once_without_replaying_its_prefix() {
+    let server = TelegramServer::start();
+    let services = Services::new("telegram");
+    // Queue the whole batch before starting the receiver.
+    server.deliver("200:local", team_message(1, false));
+    server.deliver("200:local", team_message(2, true));
+    server.deliver("200:local", team_message(3, false));
+    server.fail_requests("/bot200:local/getFile", 503, 8);
+    server.fail_requests("/bot200:local/getUpdates", 429, 1);
+    let host = event_host(&server, &services).await;
+    for id in 1..=3 {
+        let (event, receipt) = tokio::time::timeout(Duration::from_secs(3), host.next_event())
+            .await
+            .unwrap()
+            .unwrap()
+            .into_parts();
+        let ProviderEventKind::Message(message) = event.kind else {
+            panic!("expected message")
+        };
+        assert_eq!(message.provider_message_id, (id + 10).to_string());
+        if id == 2 {
+            assert_eq!(
+                services
+                    .resource(&message.attachments[0])
+                    .await
+                    .unwrap()
+                    .bytes,
+                FILE
+            );
+        }
+        receipt.accept();
+    }
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), host.next_event())
+            .await
+            .is_err(),
+        "duplicate delivery"
+    );
+    host.shutdown().await.unwrap();
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_malformed_update_does_not_block_later_messages() {
+    let server = TelegramServer::start();
+    let services = Services::new("telegram");
+    let mut malformed = team_message(2, false);
+    malformed["message"]["message_id"] = json!("invalid message id");
+    server.deliver("200:local", malformed);
+    server.deliver("200:local", team_message(3, false));
+    let host = event_host(&server, &services).await;
+    let (event, receipt) = tokio::time::timeout(Duration::from_secs(3), host.next_event())
+        .await
+        .unwrap()
+        .unwrap()
+        .into_parts();
+    assert!(matches!(event.kind, ProviderEventKind::Message(ref m) if m.content == "message 3"));
+    receipt.accept();
+    host.shutdown().await.unwrap();
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_agents_send_and_react_in_one_chat_with_their_own_identity() {
+    let server = TelegramServer::start();
+    let services = Services::new("telegram");
+    let host = std::sync::Arc::new(event_host(&server, &services).await);
+    for (id, token) in [("alpha", "201:local"), ("gamma", "202:local")] {
+        let agent = AgentId::new(id).unwrap();
+        services.agent(&agent, "bot_token", token);
+        host.create_agent(
+            agent,
+            agent_spec(json!({"bot_username":format!("{id}_bot")})),
+        )
+        .await
+        .unwrap();
+    }
+    let parent = services.remember("-1001", "9");
+    let mut jobs = tokio::task::JoinSet::new();
+    for (index, id) in ["alpha", "beta", "gamma"].into_iter().enumerate() {
+        let host = host.clone();
+        jobs.spawn(async move {
+            let agent = AgentId::new(id).unwrap();
+            host.send_message(
+                agent.clone(),
+                SendMessageSpec {
+                    channel_id: ChannelId::new("group_chat").unwrap(),
+                    chat_id: "-1001".into(),
+                    message_id: MessageId::new(100 + index as i64).unwrap(),
+                    idempotency_key: format!("send-{id}"),
+                    content: format!("hello from {id}"),
+                    reply_to: None,
+                    mentions: vec![],
+                    attachments: vec![],
+                    force: false,
+                    provider_agent_config: json!({}),
+                },
+            )
+            .await
+            .unwrap();
+            host.auto_reaction(
+                agent,
+                AutoReactionSpec {
+                    auto_reaction: "👍".into(),
+                    channel_id: ChannelId::new("group_chat").unwrap(),
+                    chat_id: "-1001".into(),
+                    trigger_messages: vec![parent],
+                    provider_agent_config: json!({}),
+                },
+            )
+            .await
+            .unwrap();
+        });
+    }
+    while let Some(result) = jobs.join_next().await {
+        result.unwrap();
+    }
+    host.shutdown().await.unwrap();
+    let requests = server.requests();
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| r.path.ends_with("/sendMessage"))
+            .count(),
+        3
+    );
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| r.path.ends_with("/setMessageReaction"))
+            .count(),
+        3
+    );
+    for (id, token) in [
+        ("alpha", "201:local"),
+        ("beta", "200:local"),
+        ("gamma", "202:local"),
+    ] {
+        let sends: Vec<_> = requests
+            .iter()
+            .filter(|r| r.path == format!("/bot{token}/sendMessage"))
+            .collect();
+        assert_eq!(sends.len(), 1);
+        assert_eq!(sends[0].json()["chat_id"], -1001);
+        assert_eq!(sends[0].json()["text"], format!("hello from {id}"));
+        let reactions: Vec<_> = requests
+            .iter()
+            .filter(|r| r.path == format!("/bot{token}/setMessageReaction"))
+            .collect();
+        assert_eq!(reactions.len(), 1);
+        assert_eq!(reactions[0].json()["chat_id"], -1001);
+        assert_eq!(reactions[0].json()["message_id"], 9);
+        assert_eq!(reactions[0].json()["reaction"][0]["emoji"], "👍");
+    }
+}

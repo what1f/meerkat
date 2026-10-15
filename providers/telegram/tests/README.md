@@ -21,7 +21,18 @@ verification/onboarding and Agent verification, polling, sends and downloads.
 It accepts an HTTP(S) base URL, including a path prefix, without credentials,
 query, or fragment.
 
-S2.1 is deliberately deferred. `TelegramServer::deliver(bot_token, update)`
-already selects the receiving account. A later scenario can supply a private
-chat update and assert the receiving-Agent field when that contract exists.
+S2.1 binds two Bot accounts to separate Agents and verifies that direct
+messages and reactions identify the receiving Agent.
 The live contract remains `provider-telegram` in `tests/e2e-modules.tsv`.
+
+The loopback scenarios also cover permanent-event skips, temporary IM outages,
+malformed events, and three Agents concurrently sending and reacting in one chat. Assertions use the public Provider host and platform wire
+requests, including each sending account.
+
+Event acceptance retries use workspace configuration: `event_retry_initial_ms`
+(default 250) and `event_retry_max_ms` (default 30000). Backoff doubles until
+the maximum. Transient events remain pending until recovery or shutdown.
+A permanent error is logged once and skipped; its platform acknowledgement
+lets later events flow. Telegram honors platform `retry_after` values.
+Polling errors use capped backoff until recovery or shutdown; permanent polling
+errors stop the receiver.

@@ -183,13 +183,13 @@ impl<T: Transport> Client<T> {
     pub fn credentials(&self) -> &Credentials {
         &self.credentials
     }
-    pub fn get_me(&self) -> Result<User, ClientError> {
-        self.call("getMe", None::<&Value>, "Telegram getMe")
+    pub async fn get_me(&self) -> Result<User, ClientError> {
+        self.call("getMe", None::<&Value>, "Telegram getMe").await
     }
     /// Verify the configured credential against Telegram and the persisted
     /// account ID before a provider installation is considered ready.
-    pub fn verify_credentials(&self) -> Result<User, ClientError> {
-        let bot = self.get_me()?;
+    pub async fn verify_credentials(&self) -> Result<User, ClientError> {
+        let bot = self.get_me().await?;
         if !bot.is_bot || bot.id == 0 {
             return Err(ClientError::InvalidInput(
                 "Telegram credential does not belong to a Bot".to_owned(),
@@ -202,10 +202,8 @@ impl<T: Transport> Client<T> {
         }
         Ok(bot)
     }
-    pub fn get_updates(&self, request: &PollRequest) -> Result<Vec<Update>, ClientError> {
-        let body = json!({ "offset": request.offset, "timeout": request.timeout_seconds.min(50), "allowed_updates": request.allowed_updates });
-        let raw_updates: Vec<Value> =
-            self.call("getUpdates", Some(&body), "Telegram getUpdates")?;
+    pub async fn get_updates(&self, request: &PollRequest) -> Result<Vec<Update>, ClientError> {
+        let raw_updates = self.get_update_values(request).await?;
         raw_updates
             .into_iter()
             .map(|value| {
@@ -215,7 +213,15 @@ impl<T: Transport> Client<T> {
             })
             .collect()
     }
-    pub fn send_message(
+    pub(crate) async fn get_update_values(
+        &self,
+        request: &PollRequest,
+    ) -> Result<Vec<Value>, ClientError> {
+        let body = json!({ "offset": request.offset, "timeout": request.timeout_seconds.min(50), "allowed_updates": request.allowed_updates });
+        self.call("getUpdates", Some(&body), "Telegram getUpdates")
+            .await
+    }
+    pub async fn send_message(
         &self,
         chat_id: i64,
         html: &str,
@@ -225,10 +231,12 @@ impl<T: Transport> Client<T> {
         if let Some(message_id) = reply_to.filter(|value| *value != 0) {
             body["reply_parameters"] = json!({ "message_id": message_id });
         }
-        let message: Message = self.call("sendMessage", Some(&body), "Telegram sendMessage")?;
+        let message: Message = self
+            .call("sendMessage", Some(&body), "Telegram sendMessage")
+            .await?;
         message_ref(message, "Telegram sendMessage")
     }
-    pub fn edit_message_text(
+    pub async fn edit_message_text(
         &self,
         chat_id: i64,
         message_id: i64,
@@ -239,19 +247,21 @@ impl<T: Transport> Client<T> {
                 "Telegram edited message cannot be empty".to_owned(),
             ));
         }
-        let _: Message = self.call(
-            "editMessageText",
-            Some(&json!({
-                "chat_id": chat_id,
-                "message_id": message_id,
-                "text": html,
-                "parse_mode": "HTML",
-            })),
-            "Telegram editMessageText",
-        )?;
+        let _: Message = self
+            .call(
+                "editMessageText",
+                Some(&json!({
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "text": html,
+                    "parse_mode": "HTML",
+                })),
+                "Telegram editMessageText",
+            )
+            .await?;
         Ok(())
     }
-    pub fn send_markdown(
+    pub async fn send_markdown(
         &self,
         chat_id: i64,
         markdown: &str,
@@ -263,8 +273,9 @@ impl<T: Transport> Client<T> {
             &render_html_with_mentions(markdown, mentions),
             reply_to,
         )
+        .await
     }
-    pub fn send_photo(
+    pub async fn send_photo(
         &self,
         chat_id: i64,
         data: &[u8],
@@ -296,11 +307,12 @@ impl<T: Transport> Client<T> {
             data,
             "application/octet-stream",
         )?;
-        let message: Message =
-            self.multipart_call("sendPhoto", body, content_type, "Telegram sendPhoto")?;
+        let message: Message = self
+            .multipart_call("sendPhoto", body, content_type, "Telegram sendPhoto")
+            .await?;
         message_ref(message, "Telegram sendPhoto")
     }
-    pub fn send_document(
+    pub async fn send_document(
         &self,
         chat_id: i64,
         data: &[u8],
@@ -332,16 +344,19 @@ impl<T: Transport> Client<T> {
             data,
             "application/octet-stream",
         )?;
-        let message: Message =
-            self.multipart_call("sendDocument", body, content_type, "Telegram sendDocument")?;
+        let message: Message = self
+            .multipart_call("sendDocument", body, content_type, "Telegram sendDocument")
+            .await?;
         message_ref(message, "Telegram sendDocument")
     }
-    pub fn delete_message(&self, chat_id: i64, message_id: i64) -> Result<(), ClientError> {
+    pub async fn delete_message(&self, chat_id: i64, message_id: i64) -> Result<(), ClientError> {
         let body = json!({ "chat_id": chat_id, "message_id": message_id });
-        let _: bool = self.call("deleteMessage", Some(&body), "Telegram deleteMessage")?;
+        let _: bool = self
+            .call("deleteMessage", Some(&body), "Telegram deleteMessage")
+            .await?;
         Ok(())
     }
-    pub fn set_message_reaction(
+    pub async fn set_message_reaction(
         &self,
         chat_id: i64,
         message_id: i64,
@@ -352,29 +367,33 @@ impl<T: Transport> Client<T> {
             .map(|value| vec![json!({ "type": "emoji", "emoji": value.trim() })])
             .unwrap_or_default();
         let body = json!({ "chat_id": chat_id, "message_id": message_id, "reaction": reaction });
-        let _: bool = self.call(
-            "setMessageReaction",
-            Some(&body),
-            "Telegram setMessageReaction",
-        )?;
+        let _: bool = self
+            .call(
+                "setMessageReaction",
+                Some(&body),
+                "Telegram setMessageReaction",
+            )
+            .await?;
         Ok(())
     }
-    pub fn get_file(&self, file_id: &str) -> Result<File, ClientError> {
+    pub async fn get_file(&self, file_id: &str) -> Result<File, ClientError> {
         self.call(
             "getFile",
             Some(&json!({ "file_id": file_id })),
             "Telegram getFile",
         )
+        .await
     }
-    pub fn get_chat(&self, chat_id: i64) -> Result<Chat, ClientError> {
+    pub async fn get_chat(&self, chat_id: i64) -> Result<Chat, ClientError> {
         self.call(
             "getChat",
             Some(&json!({ "chat_id": chat_id })),
             "Telegram getChat",
         )
+        .await
     }
-    pub fn download_file(&self, file_id: &str) -> Result<DownloadedFile, ClientError> {
-        let file = self.get_file(file_id)?;
+    pub async fn download_file(&self, file_id: &str) -> Result<DownloadedFile, ClientError> {
+        let file = self.get_file(file_id).await?;
         let path = file.file_path.trim();
         if path.is_empty() || path.starts_with('/') || path.split('/').any(|part| part == "..") {
             return Err(ClientError::InvalidInput(
@@ -393,7 +412,7 @@ impl<T: Transport> Client<T> {
                     .join("/")
             ),
         );
-        let response = self.transport.execute(request)?;
+        let response = self.transport.execute(request).await?;
         if !(200..300).contains(&response.status) {
             return Err(ClientError::HttpStatus {
                 status: response.status,
@@ -415,12 +434,14 @@ impl<T: Transport> Client<T> {
             content_type,
         })
     }
-    pub fn get_managed_bot_token(&self, user_id: i64) -> Result<String, ClientError> {
-        let token: String = self.call(
-            "getManagedBotToken",
-            Some(&json!({ "user_id": user_id })),
-            "Telegram getManagedBotToken",
-        )?;
+    pub async fn get_managed_bot_token(&self, user_id: i64) -> Result<String, ClientError> {
+        let token: String = self
+            .call(
+                "getManagedBotToken",
+                Some(&json!({ "user_id": user_id })),
+                "Telegram getManagedBotToken",
+            )
+            .await?;
         if token.trim().is_empty() {
             return Err(ClientError::MissingField {
                 operation: "Telegram getManagedBotToken".to_owned(),
@@ -436,7 +457,7 @@ impl<T: Transport> Client<T> {
     /// token is returned by a separate `getManagedBotToken` call.  Keeping the
     /// two-step operation here prevents the thin adapter from accidentally
     /// treating an update as complete before the credential is verified.
-    pub fn managed_bot_credential(
+    pub async fn managed_bot_credential(
         &self,
         update: &Update,
     ) -> Result<ManagedBotCredential, ClientError> {
@@ -454,7 +475,7 @@ impl<T: Transport> Client<T> {
                 "Telegram managed_bot update has no creator identity".to_owned(),
             ));
         }
-        let token = self.get_managed_bot_token(bot.id)?.trim().to_owned();
+        let token = self.get_managed_bot_token(bot.id).await?.trim().to_owned();
         if token.trim().is_empty() {
             return Err(ClientError::MissingField {
                 operation: "Telegram getManagedBotToken".to_owned(),
@@ -469,28 +490,35 @@ impl<T: Transport> Client<T> {
             token,
         })
     }
-    pub fn set_my_name(&self, name: &str) -> Result<(), ClientError> {
+    pub async fn set_my_name(&self, name: &str) -> Result<(), ClientError> {
         self.boolean_call(
             "setMyName",
             Some(&json!({ "name": name })),
             "Telegram setMyName",
         )
+        .await
     }
-    pub fn set_my_description(&self, description: &str) -> Result<(), ClientError> {
+    pub async fn set_my_description(&self, description: &str) -> Result<(), ClientError> {
         self.boolean_call(
             "setMyDescription",
             Some(&json!({ "description": description })),
             "Telegram setMyDescription",
         )
+        .await
     }
-    pub fn set_my_short_description(&self, description: &str) -> Result<(), ClientError> {
+    pub async fn set_my_short_description(&self, description: &str) -> Result<(), ClientError> {
         self.boolean_call(
             "setMyShortDescription",
             Some(&json!({ "short_description": description })),
             "Telegram setMyShortDescription",
         )
+        .await
     }
-    pub fn set_my_profile_photo(&self, data: &[u8], file_name: &str) -> Result<(), ClientError> {
+    pub async fn set_my_profile_photo(
+        &self,
+        data: &[u8],
+        file_name: &str,
+    ) -> Result<(), ClientError> {
         if data.is_empty() {
             return Err(ClientError::InvalidInput(
                 "Telegram profile photo cannot be empty".to_owned(),
@@ -501,12 +529,14 @@ impl<T: Transport> Client<T> {
             br#"{"type":"static","photo":"attach://avatar"}"#.to_vec(),
         )];
         let (body, content_type) = multipart(&fields, "avatar", file_name, data, "image/jpeg")?;
-        let _: bool = self.multipart_call(
-            "setMyProfilePhoto",
-            body,
-            content_type,
-            "Telegram setMyProfilePhoto",
-        )?;
+        let _: bool = self
+            .multipart_call(
+                "setMyProfilePhoto",
+                body,
+                content_type,
+                "Telegram setMyProfilePhoto",
+            )
+            .await?;
         Ok(())
     }
     pub fn managed_bot_registration(
@@ -564,7 +594,7 @@ impl<T: Transport> Client<T> {
     fn endpoint(&self, method: &str) -> String {
         format!("{}/bot{}/{}", self.domain, self.token(), method)
     }
-    fn call<R: serde::de::DeserializeOwned>(
+    async fn call<R: serde::de::DeserializeOwned>(
         &self,
         method: &str,
         body: Option<&Value>,
@@ -574,19 +604,19 @@ impl<T: Transport> Client<T> {
         if let Some(body) = body {
             request = request.json(body)?;
         }
-        let response = self.transport.execute(request)?;
+        let response = self.transport.execute(request).await?;
         decode_envelope(&response, operation)
     }
-    fn boolean_call(
+    async fn boolean_call(
         &self,
         method: &str,
         body: Option<&Value>,
         operation: &str,
     ) -> Result<(), ClientError> {
-        let _: bool = self.call(method, body, operation)?;
+        let _: bool = self.call(method, body, operation).await?;
         Ok(())
     }
-    fn multipart_call<R: serde::de::DeserializeOwned>(
+    async fn multipart_call<R: serde::de::DeserializeOwned>(
         &self,
         method: &str,
         body: Vec<u8>,
@@ -594,7 +624,7 @@ impl<T: Transport> Client<T> {
         operation: &str,
     ) -> Result<R, ClientError> {
         let request = Request::new(Method::Post, self.endpoint(method)).body(body, content_type);
-        let response = self.transport.execute(request)?;
+        let response = self.transport.execute(request).await?;
         decode_envelope(&response, operation)
     }
 }
@@ -630,7 +660,7 @@ fn decode_envelope<R: serde::de::DeserializeOwned>(
         }
         Err(error) => return Err(error),
     };
-    if !(200..300).contains(&response.status) && envelope.ok {
+    if !(200..300).contains(&response.status) && (envelope.ok || envelope.error_code == 0) {
         return Err(ClientError::HttpStatus {
             status: response.status,
             operation: operation.to_owned(),

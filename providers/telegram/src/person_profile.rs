@@ -53,8 +53,8 @@ impl InvocationHandler for ProfileHandler {
                     .map_err(|_| ProviderError::InvalidInput {
                         field: "person_external_id",
                     })?;
-            let (chat, avatar) = tokio::task::spawn_blocking(move || {
-                let chat = client.get_chat(external_id)?;
+            let (chat, avatar) = (async move {
+                let chat = client.get_chat(external_id).await?;
                 let file_id = chat
                     .photo
                     .as_ref()
@@ -66,14 +66,14 @@ impl InvocationHandler for ProfileHandler {
                         }
                     })
                     .filter(|value| !value.trim().is_empty());
-                let avatar = file_id.map(|id| client.download_file(id)).transpose()?;
+                let avatar = if let Some(id) = file_id {
+                    Some(client.download_file(id).await?)
+                } else {
+                    None
+                };
                 Ok::<_, crate::http::ClientError>((chat, avatar))
             })
             .await
-            .map_err(|_| ProviderError::External {
-                operation: "telegram_person_profile",
-                retryable: true,
-            })?
             .map_err(|_| ProviderError::External {
                 operation: "telegram_person_profile",
                 retryable: true,

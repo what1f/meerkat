@@ -9,24 +9,23 @@ use crate::normalize::{NormalizationConfig, NormalizedEvent, normalize_event};
 use std::collections::HashMap;
 use std::fmt;
 
-pub trait EventSource: Send {
-    fn next(&mut self) -> Result<Option<RawEvent>, SourceError>;
-    /// Confirm the last event only after the consumer durably accepts it.
-    fn acknowledge(&mut self) -> Result<(), SourceError>;
-    fn close(&mut self);
-}
+pub type EventFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
 
+pub trait EventSource: Send {
+    fn next(&mut self) -> EventFuture<'_, Result<Option<RawEvent>, SourceError>>;
+    /// Confirm the last event only after durable acceptance or a deliberate skip.
+    fn acknowledge(&mut self) -> EventFuture<'_, Result<(), SourceError>>;
+    fn close(&mut self) -> EventFuture<'_, ()>;
+}
 impl<T: EventSource + ?Sized> EventSource for Box<T> {
-    fn next(&mut self) -> Result<Option<RawEvent>, SourceError> {
+    fn next(&mut self) -> EventFuture<'_, Result<Option<RawEvent>, SourceError>> {
         self.as_mut().next()
     }
-
-    fn acknowledge(&mut self) -> Result<(), SourceError> {
+    fn acknowledge(&mut self) -> EventFuture<'_, Result<(), SourceError>> {
         self.as_mut().acknowledge()
     }
-
-    fn close(&mut self) {
-        self.as_mut().close();
+    fn close(&mut self) -> EventFuture<'_, ()> {
+        self.as_mut().close()
     }
 }
 
@@ -45,8 +44,8 @@ impl RawEvent {
     }
 }
 
-pub trait EventSink {
-    fn emit(&mut self, event: NormalizedEvent) -> Result<(), SinkError>;
+pub trait EventSink: Send {
+    fn emit(&mut self, event: NormalizedEvent) -> EventFuture<'_, Result<(), SinkError>>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -74,14 +73,57 @@ impl fmt::Display for SourceError {
 impl std::error::Error for SourceError {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SinkError(pub String);
-
-impl fmt::Display for SinkError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
+pub struct SinkError {
+    pub reason: String,
+    pub retryable: bool,
+}
+impl SinkError {
+    pub fn permanent(reason: impl Into<String>) -> Self {
+        Self {
+            reason: reason.into(),
+            retryable: false,
+        }
     }
 }
-
+impl From<crate::http::ClientError> for SinkError {
+    fn from(error: crate::http::ClientError) -> Self {
+        Self {
+            retryable: error.is_retryable(),
+            reason: error.to_string(),
+        }
+    }
+}
+impl From<lankide_provider::ProviderError> for SinkError {
+    fn from(error: lankide_provider::ProviderError) -> Self {
+        let retryable = matches!(
+            error,
+            lankide_provider::ProviderError::External {
+                retryable: true,
+                ..
+            } | lankide_provider::ProviderError::Timeout { .. }
+                | lankide_provider::ProviderError::EventSinkClosed
+        );
+        Self {
+            retryable,
+            reason: format!("{error:?}"),
+        }
+    }
+}
+impl fmt::Display for SinkError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.reason)
+    }
+}
+impl From<crate::normalize::NormalizeError> for SinkError {
+    fn from(error: crate::normalize::NormalizeError) -> Self {
+        Self::permanent(error.to_string())
+    }
+}
+impl From<serde_json::Error> for SinkError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::permanent(error.to_string())
+    }
+}
 impl std::error::Error for SinkError {}
 
 /// Registers handlers for a single App's event types and routes each event to
@@ -94,6 +136,7 @@ pub struct Dispatcher<S> {
     ready: bool,
     stopped: bool,
     pending: Option<RawEvent>,
+    accepted: bool,
 }
 
 impl<S: EventSource> Dispatcher<S> {
@@ -105,6 +148,7 @@ impl<S: EventSource> Dispatcher<S> {
             ready: false,
             stopped: false,
             pending: None,
+            accepted: false,
         }
     }
 
@@ -127,12 +171,16 @@ impl<S: EventSource> Dispatcher<S> {
         self.ready
     }
 
-    pub fn poll_once<E: EventSink>(&mut self, sink: &mut E) -> Result<bool, DispatchError> {
+    pub async fn poll_once<E: EventSink>(&mut self, sink: &mut E) -> Result<bool, DispatchError> {
         if self.stopped {
             return Ok(false);
         }
+        if self.accepted {
+            self.skip().await?;
+            return Ok(false);
+        }
         if self.pending.is_none() {
-            self.pending = self.source.next().map_err(DispatchError::Source)?;
+            self.pending = self.source.next().await.map_err(DispatchError::Source)?;
         }
         let Some(raw) = self.pending.as_ref() else {
             self.ready = true;
@@ -145,25 +193,44 @@ impl<S: EventSource> Dispatcher<S> {
         if !self.handlers.is_empty() && !registered {
             // Apps can retain subscriptions for disabled channels. They must
             // not permanently stop delivery of the channels enabled here.
-            self.source.acknowledge().map_err(DispatchError::Source)?;
+            self.source
+                .acknowledge()
+                .await
+                .map_err(DispatchError::Source)?;
             self.pending = None;
             return Ok(false);
         }
-        match normalize_event(&raw.body, &self.config) {
-            Ok(event) => sink.emit(event).map_err(DispatchError::Sink)?,
-            Err(crate::normalize::NormalizeError::SelfReaction) => {
-                // Deliberately ignored feedback still needs a transport receipt.
+        if !self.accepted {
+            match normalize_event(&raw.body, &self.config) {
+                Ok(event) => sink.emit(event).await.map_err(DispatchError::Sink)?,
+                Err(crate::normalize::NormalizeError::SelfReaction) => {
+                    // Deliberately ignored feedback still needs a transport receipt.
+                }
+                Err(error) => return Err(DispatchError::Normalize(error)),
             }
-            Err(error) => return Err(DispatchError::Normalize(error)),
+            self.accepted = true;
         }
-        self.source.acknowledge().map_err(DispatchError::Source)?;
-        self.pending = None;
+        self.skip().await?;
         Ok(true)
     }
 
-    pub fn stop(&mut self) {
+    pub fn discard(&mut self) {
+        self.accepted = true;
+    }
+
+    pub async fn skip(&mut self) -> Result<(), DispatchError> {
+        self.source
+            .acknowledge()
+            .await
+            .map_err(DispatchError::Source)?;
+        self.pending = None;
+        self.accepted = false;
+        Ok(())
+    }
+
+    pub async fn stop(&mut self) {
         self.stopped = true;
-        self.source.close();
+        self.source.close().await;
     }
 }
 
