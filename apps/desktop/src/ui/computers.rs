@@ -2,6 +2,15 @@ use super::*;
 use gpui_component::text::TextView;
 use std::path::Path;
 
+fn computer_status_dot(theme: DesktopTheme, available: bool) -> Div {
+    let dot = div().size(px(8.)).flex_none().rounded_full();
+    if available {
+        dot.bg(theme.success)
+    } else {
+        dot.border_1().border_color(theme.text_tertiary)
+    }
+}
+
 pub(crate) fn local_computer_id(home: &Path) -> Option<String> {
     let value: Value =
         serde_json::from_slice(&std::fs::read(home.join("computer-credentials.json")).ok()?)
@@ -12,18 +21,32 @@ pub(crate) fn local_computer_id(home: &Path) -> Option<String> {
 #[derive(Clone)]
 pub(super) struct ComputerChoice {
     id: String,
-    label: SharedString,
+    name: SharedString,
+    available: bool,
+    theme: DesktopTheme,
+}
+impl ComputerChoice {
+    fn label(&self) -> Div {
+        div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .child(computer_status_dot(self.theme, self.available))
+            .child(self.name.clone())
+    }
 }
 impl SelectItem for ComputerChoice {
     type Value = String;
     fn title(&self) -> SharedString {
-        self.label.clone()
+        self.name.clone()
+    }
+    fn display_title(&self) -> Option<AnyElement> {
+        Some(self.label().into_any_element())
     }
     fn render(&self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let id = self.id.clone();
-        div()
+        self.label()
             .debug_selector(move || format!("computer-choice-{id}"))
-            .child(self.label.clone())
     }
     fn value(&self) -> &String {
         &self.id
@@ -192,23 +215,9 @@ impl LankideApp {
             .iter()
             .map(|computer| ComputerChoice {
                 id: computer.id.clone(),
-                label: format!(
-                    "{} · {}",
-                    computer.name,
-                    self.language.text(
-                        if computer.available {
-                            "在线"
-                        } else {
-                            "离线"
-                        },
-                        if computer.available {
-                            "Online"
-                        } else {
-                            "Offline"
-                        },
-                    )
-                )
-                .into(),
+                name: computer.name.clone().into(),
+                available: computer.available,
+                theme: self.theme(),
             })
             .collect();
         self.agent_computer.update(cx, |select, cx| {
@@ -386,33 +395,24 @@ impl LankideApp {
                             .py(px(16.))
                             .flex()
                             .items_center()
-                            .justify_between()
-                            .child(computer.name.clone())
                             .child(
                                 div()
-                                    .debug_selector({
-                                        let id = computer.id.clone();
-                                        let state = if computer.available {
-                                            "online"
-                                        } else {
-                                            "offline"
-                                        };
-                                        move || format!("computer-{state}-{id}")
-                                    })
-                                    .text_size(px(12.))
-                                    .text_color(theme.text_secondary)
-                                    .child(self.language.text(
-                                        if computer.available {
-                                            "在线"
-                                        } else {
-                                            "离线"
-                                        },
-                                        if computer.available {
-                                            "Online"
-                                        } else {
-                                            "Offline"
-                                        },
-                                    )),
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(10.))
+                                    .child(
+                                        computer_status_dot(theme, computer.available)
+                                            .debug_selector({
+                                                let id = computer.id.clone();
+                                                let state = if computer.available {
+                                                    "online"
+                                                } else {
+                                                    "offline"
+                                                };
+                                                move || format!("computer-{state}-{id}")
+                                            }),
+                                    )
+                                    .child(computer.name.clone()),
                             )
                     }))
                     .child(
@@ -547,10 +547,11 @@ impl LankideApp {
                                     div()
                                         .debug_selector(|| "pairing-connected".into())
                                         .py(px(12.))
-                                        .child(format!(
-                                            "{} · {name}",
-                                            language.text("已连接", "Connected")
-                                        )),
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(8.))
+                                        .child(computer_status_dot(theme, true))
+                                        .child(name),
                                 )
                             })
                             .when_some(error.clone(), |body, error| {

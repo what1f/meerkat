@@ -33,6 +33,7 @@ pub struct DesktopTheme {
     pub text_tertiary: Hsla,
     pub focus: Hsla,
     pub error: Hsla,
+    pub success: Hsla,
 }
 
 impl DesktopTheme {
@@ -56,6 +57,7 @@ impl DesktopTheme {
             text_tertiary: Rgba::from(rgba(0x0d0d0d80)).into(),
             focus: rgb(0x0169cc).into(),
             error: rgb(0xb91c1c).into(),
+            success: rgb(0x16a34a).into(),
         }
     }
 
@@ -76,6 +78,7 @@ impl DesktopTheme {
             text_tertiary: Rgba::from(rgba(0xffffff80)).into(),
             focus: rgb(0x339cff).into(),
             error: rgb(0xfca5a5).into(),
+            success: rgb(0x4ade80).into(),
         }
     }
 }
