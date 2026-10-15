@@ -33,6 +33,8 @@ where
         crate::link::LinkSettings::default(),
         false,
         None,
+        None,
+        None,
         shutdown,
     )
     .await
@@ -52,7 +54,7 @@ where
     F: Future<Output = ()> + Send,
 {
     serve_inner(
-        listener, secret, peer, config, settings, true, None, shutdown,
+        listener, secret, peer, config, settings, true, None, None, None, shutdown,
     )
     .await
 }
@@ -79,10 +81,44 @@ where
         settings,
         true,
         Some(owner),
+        None,
+        None,
         shutdown,
     )
     .await
 }
+
+/// Local management with live remote access control, or a Computer-only TLS listener.
+pub async fn serve_configured<P, F>(
+    listener: TcpListener,
+    secret: String,
+    peer: P,
+    settings: crate::link::LinkSettings,
+    owner: Option<crate::management::OwnerCredential>,
+    remote: Option<std::sync::Arc<dyn crate::management::RemoteAccessControl>>,
+    tls: Option<tokio_rustls::TlsAcceptor>,
+    shutdown: F,
+) -> Result<(), crate::link::LinkError>
+where
+    P: RuntimePeer + ComputerPeer + Clone,
+    F: Future<Output = ()> + Send,
+{
+    serve_inner(
+        listener,
+        secret,
+        peer,
+        TransportConfig::default(),
+        settings,
+        true,
+        owner,
+        remote,
+        tls,
+        shutdown,
+    )
+    .await
+}
+trait Socket: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> Socket for T {}
 
 async fn serve_inner<P, F>(
     listener: TcpListener,
@@ -92,6 +128,8 @@ async fn serve_inner<P, F>(
     settings: crate::link::LinkSettings,
     override_heartbeat: bool,
     owner: Option<crate::management::OwnerCredential>,
+    remote: Option<std::sync::Arc<dyn crate::management::RemoteAccessControl>>,
+    tls: Option<tokio_rustls::TlsAcceptor>,
     shutdown: F,
 ) -> Result<(), crate::link::LinkError>
 where
@@ -110,19 +148,33 @@ where
                 let peer = peer.clone();
                 let secret = secret.clone();
                 let settings = settings.clone();
+                let remote = remote.clone();
+                let tls = tls.clone();
                 tasks.spawn(async move {
+                    let computer_only = tls.is_some();
+                    let socket: Box<dyn Socket> = if let Some(tls) = tls {
+                        match tokio::time::timeout(settings.handshake_timeout, tls.accept(socket)).await {
+                            Ok(Ok(socket)) => Box::new(socket),
+                            _ => return,
+                        }
+                    } else { Box::new(socket) };
                     let (upgrades, mut upgraded) = tokio::sync::mpsc::channel(1);
                     let ws_peer = peer.clone();
                     let service = service_fn(move |mut request: Request<Incoming>| {
+                        let remote = remote.clone();
                         let owner = owner.clone();
                         let peer = peer.clone();
                         let secret = secret.clone();
                         let upgrades = upgrades.clone();
                         async move {
-                            let response = if request.uri().path().starts_with(crate::management::PREFIX) {
+                            let response = if computer_only && request.uri().path() != "/" && request.uri().path() != "/computers/pair" {
+                                empty(StatusCode::NOT_FOUND)
+                            } else if request.uri().path().starts_with(crate::management::PREFIX) {
                                 let credential = request.headers().get("authorization").and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
                                 if !owner.as_ref().is_some_and(|owner| owner.authorizes(credential)) {
                                     crate::management_http::error(crate::Status::unauthenticated("owner credential required"))
+                                } else if matches!(request.uri().path(), "/api/v1/get_remote_access" | "/api/v1/set_remote_access") {
+                                    remote_access(request, remote, config.max_message_bytes).await
                                 } else if request.uri().path() == crate::management::EVENTS_PATH {
                                     let subscription = request.headers().get("x-lankide-subscription").and_then(|v| v.to_str().ok()).and_then(|v| serde_json::from_str::<crate::management::ManagementSubscription>(v).ok());
                                     match subscription {
@@ -346,5 +398,39 @@ async fn pair<P: ComputerPeer>(
             )))
             .expect("HTTP response"),
         Err(_) => empty(StatusCode::UNAUTHORIZED),
+    }
+}
+
+async fn remote_access(
+    request: Request<Incoming>,
+    remote: Option<std::sync::Arc<dyn crate::management::RemoteAccessControl>>,
+    limit: usize,
+) -> Response<Body> {
+    let Some(remote) = remote else {
+        return empty(StatusCode::NOT_FOUND);
+    };
+    if request.method() != hyper::Method::POST {
+        return empty(StatusCode::METHOD_NOT_ALLOWED);
+    }
+    let set = request.uri().path().ends_with("set_remote_access");
+    let result = if set {
+        match http_body_util::Limited::new(request.into_body(), limit)
+            .collect()
+            .await
+        {
+            Ok(bytes) => match serde_json::from_slice::<crate::management::SetRemoteAccessRequest>(
+                &bytes.to_bytes(),
+            ) {
+                Ok(value) => remote.set(value.address).await,
+                Err(_) => Err(crate::Status::invalid_argument("invalid remote address")),
+            },
+            Err(_) => Err(crate::Status::resource_exhausted("request too large")),
+        }
+    } else {
+        remote.get().await
+    };
+    match result {
+        Ok(value) => crate::management_http::response(StatusCode::OK, &value),
+        Err(error) => crate::management_http::error(error),
     }
 }

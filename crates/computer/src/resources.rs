@@ -56,22 +56,7 @@ pub(crate) async fn download_resource(
     context: AgentRunContext,
     directory: &Path,
 ) -> Result<PathBuf, ComputerError> {
-    let file_name = Path::new(&resource.file_name)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty())
-        .ok_or_else(|| ComputerError::Resource("invalid_resource_file_name".into()))?;
-    if Path::new(&resource.file_name).is_absolute()
-        || Path::new(&resource.file_name).components().count() != 1
-        || file_name != resource.file_name
-    {
-        return Err(ComputerError::Resource(
-            "resource_file_name_outside_target".into(),
-        ));
-    }
-    std::fs::create_dir_all(directory)?;
-    let path = directory.join(format!("{}-{file_name}", resource.resource_id));
-    let temporary = path.with_extension("part");
+    let (path, temporary) = download_paths(resource, directory)?;
     let runtime_url = match endpoint {
         Some(url) => url.to_owned(),
         None => lankide_protocol::link::discover(runtime_run)?.0,
@@ -178,6 +163,37 @@ pub(crate) async fn download_resource(
             ));
         }
     }
+    finish_download(resource, &temporary, &path)
+}
+
+pub(crate) fn download_paths(
+    resource: &ResourceRef,
+    directory: &Path,
+) -> Result<(PathBuf, PathBuf), ComputerError> {
+    let file_name = Path::new(&resource.file_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| ComputerError::Resource("invalid_resource_file_name".into()))?;
+    if Path::new(&resource.file_name).is_absolute()
+        || Path::new(&resource.file_name).components().count() != 1
+        || file_name != resource.file_name
+    {
+        return Err(ComputerError::Resource(
+            "resource_file_name_outside_target".into(),
+        ));
+    }
+    std::fs::create_dir_all(directory)?;
+    let path = directory.join(format!("{}-{file_name}", resource.resource_id));
+    let temporary = path.with_extension("part");
+    Ok((path, temporary))
+}
+
+pub(crate) fn finish_download(
+    resource: &ResourceRef,
+    temporary: &Path,
+    path: &Path,
+) -> Result<PathBuf, ComputerError> {
     let mut file = std::fs::File::open(&temporary)?;
     let mut digest = Sha256::new();
     let mut size = 0_u64;
@@ -198,7 +214,7 @@ pub(crate) async fn download_resource(
     }
     drop(file);
     std::fs::rename(&temporary, &path)?;
-    Ok(path)
+    Ok(path.to_owned())
 }
 
 pub(crate) fn replace_resource_links(markdown: &str, paths: &[(i64, PathBuf)]) -> String {

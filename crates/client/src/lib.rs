@@ -473,6 +473,15 @@ pub trait ManagementClient: Send + Sync {
     ) -> Result<Vec<ProviderCapabilityCatalogEntry>, ClientError> {
         Ok(Vec::new())
     }
+    async fn get_remote_access(&self) -> Result<wire::RemoteAccess, ClientError> {
+        Err(ClientError::Protocol("remote_access_unavailable".into()))
+    }
+    async fn set_remote_access(
+        &self,
+        _address: Option<String>,
+    ) -> Result<wire::RemoteAccess, ClientError> {
+        Err(ClientError::Protocol("remote_access_unavailable".into()))
+    }
     async fn create_pairing_code(&self) -> Result<PairingCode, ClientError> {
         Err(ClientError::Protocol("pairing_unavailable".into()))
     }
@@ -1325,6 +1334,18 @@ impl ManagementClient for RuntimeManagementClient {
                 capabilities: provider.capabilities,
             })
             .collect())
+    }
+    async fn get_remote_access(&self) -> Result<wire::RemoteAccess, ClientError> {
+        self.client.get_remote_access().await.map_err(map_status)
+    }
+    async fn set_remote_access(
+        &self,
+        address: Option<String>,
+    ) -> Result<wire::RemoteAccess, ClientError> {
+        self.client
+            .set_remote_access(address)
+            .await
+            .map_err(map_status)
     }
     async fn create_pairing_code(&self) -> Result<PairingCode, ClientError> {
         let value = self

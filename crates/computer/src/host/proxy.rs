@@ -284,3 +284,59 @@ fn attempt_socket(inner: &Inner, execution: &ExecutionRef) -> PathBuf {
         .join(format!("{}-{}", execution.execution_id, execution.attempt))
         .join("agent.sock")
 }
+
+/// Secure listeners expose only the Computer link. Reuse its existing resource
+/// capability for assignment and Tool-result attachments, with the same local
+/// path and integrity checks as loopback HTTP downloads.
+pub(super) async fn download_resource(
+    inner: Arc<Inner>,
+    resource: &ResourceRef,
+    context: AgentRunContext,
+    directory: &std::path::Path,
+) -> Result<PathBuf, ComputerError> {
+    if !inner
+        .link_endpoint
+        .as_ref()
+        .is_some_and(|(url, _)| url.starts_with("wss://"))
+    {
+        return crate::resources::download_resource(
+            &inner.runtime_run,
+            inner.link_endpoint.as_ref().map(|(url, _)| url.as_str()),
+            resource,
+            context,
+            directory,
+        )
+        .await;
+    }
+    use tokio_stream::StreamExt as _;
+    let (path, temporary) = crate::resources::download_paths(resource, directory)?;
+    let (_stop, stopped) = watch::channel(false);
+    let peer = AgentProxy(LocalTransport {
+        inner,
+        context: context.clone(),
+        stopped,
+    });
+    let mut chunks = peer
+        .download_resource(ResourceRequest {
+            resource_id: resource.resource_id,
+            transfer_id: uuid::Uuid::new_v4().to_string(),
+            context: Some(context),
+        })
+        .await
+        .map_err(ComputerError::Rpc)?;
+    let mut file = std::fs::File::create(&temporary)?;
+    let mut size = 0;
+    while let Some(chunk) = chunks.next().await {
+        let chunk = chunk.map_err(ComputerError::Rpc)?;
+        if chunk.offset != size || size + chunk.bytes.len() as u64 > resource.size_bytes {
+            drop(file);
+            let _ = std::fs::remove_file(&temporary);
+            return Err(ComputerError::ResourceIntegrityMismatch);
+        }
+        std::io::Write::write_all(&mut file, &chunk.bytes)?;
+        size += chunk.bytes.len() as u64;
+    }
+    file.sync_all()?;
+    drop(file);
+    crate::resources::finish_download(resource, &temporary, &path)
+}

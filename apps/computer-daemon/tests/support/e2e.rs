@@ -531,6 +531,7 @@ pub async fn run() -> Result<PathBuf, AppError> {
             .map_err(AppError::Computer)?;
         let (url, credential) = lankide_protocol::link::discover(&paths.runtime_run)?;
         fs::write(paths.home.join("computer-credentials.json"), serde_json::to_vec(&lankide_computer_daemon::DeviceCredentials {
+        cert_sha256: None,
             computer_id:"fixture-computer".into(),device_credential:credential,runtime_url:url,local_discovery:true,
         })?)?;
         let mut child = Command::new(&executable)

@@ -270,3 +270,51 @@ async fn corrupted_download_is_discarded_before_the_harness_starts() -> Result<(
     assert!(agent.harness_inputs()?.is_empty());
     rig.close().await
 }
+
+#[tokio::test]
+async fn pinned_tls_computer_receives_attachment_over_its_computer_link() -> Result<()> {
+    use lankide_client::ManagementClient;
+    let mut rig = SystemRig::start(RigConfig {
+        auto_start_computer: false,
+        local_discovery: true,
+        ..config()
+    })
+    .await?;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+    let address = listener.local_addr()?.to_string();
+    drop(listener);
+    let access = rig
+        .management()
+        .set_remote_access(Some(address.clone()))
+        .await?;
+    let code = rig.management().create_pairing_code().await?;
+    lankide_computer_daemon::pair_with_pin(
+        &lankide_computer_daemon::ComputerDaemonPaths::for_home(rig.computer_home())?,
+        &format!("wss://{address}"),
+        &code.code,
+        access.cert_sha256.as_deref(),
+    )
+    .await?;
+    rig.start_paired_computer()?;
+    rig.wait_computer_online().await?;
+    let team = rig.workspace("team").await?;
+    let agent = team
+        .agent("bruce")
+        .harness(Script::LinkReply {
+            text: "seen securely".into(),
+        })
+        .create()
+        .await?;
+    let bytes = image(1_200_000);
+    let resource = team.image_message(&agent, "images", bytes.clone()).await?;
+    rig.settle().await?;
+    let path = agent
+        .resource_directory()?
+        .join(format!("{}-photo.png", resource.resource_id));
+    assert_eq!(std::fs::read(&path)?, bytes);
+    assert_eq!(hash(&std::fs::read(&path)?), resource.sha256);
+    assert!(agent.harness_inputs()?[0].contains(path.to_str().unwrap()));
+    assert!(!path.with_extension("part").exists());
+    assert_eq!(team.outbound(&agent, "images").len(), 1);
+    rig.close().await
+}

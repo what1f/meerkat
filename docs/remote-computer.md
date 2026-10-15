@@ -100,7 +100,7 @@ Delivery rules:
 
 1. The Desktop asks the Runtime for a pairing code. Codes are single-use and
    expire after ten minutes.
-2. The Computer runs `lankide-computer-daemon pair <runtime-url> <code>`. On
+2. The Computer runs `lankide-computer-daemon pair <wss-url> <code> --cert-sha256 <hex>`. It stays in the foreground after pairing. On
    successful pairing the Runtime generates a random `computer_id`. The Computer
    stores it with the device
    credential in its home directory, readable only by its owner.
@@ -285,3 +285,31 @@ The Feishu provider fixture root (`LANKIDE_E2E_TEAM_ROOT`) contains
 `feishu-app.json` (`app_id`, `app_secret`, `domain`) and `feishu-e2e.json`
 (test chat, Agent, task list, and user OAuth metadata). These are scenario
 fixtures, separate from application configuration.
+
+## Remote Computer access
+
+Local Computer discovery and management remain on loopback. The Desktop's Add
+Computer dialog uses owner-authenticated `get_remote_access` and
+`set_remote_access` operations on local management. `set_remote_access` takes
+`{ "address": "host:port" }`; a null or empty address disables remote access.
+The address is persisted in `remote-access.json`. Changes take effect live.
+The remote port binds on all interfaces and serves only Computer pairing and
+Computer WebSocket connections, with TLS. It does not expose management or
+resource HTTP routes. Secure assignment and Tool-result attachments reuse the
+existing Computer resource capability and the same local path and integrity
+checks as loopback downloads. They use the existing bounded capability payload;
+loopback HTTP downloads keep their range/resume behavior.
+
+On first enable, the Runtime atomically creates `computer-link-identity.json`
+with the DER certificate and private key (0600); it reuses this identity across
+address changes and restarts. The command contains its SHA-256 certificate pin.
+The Computer verifies the pin and TLS handshake signature during pairing and
+stores the pin with its credentials (0600). Every reconnect uses the same pin.
+A `wss://` destination without a pin uses normal WebPKI validation. A `ws://`
+destination is permitted only for loopback. Pairing codes retain 256 random
+bits, encoded in 43 URL-safe characters, expire after the configured validity,
+and can be used once. The Desktop renews expired commands while the dialog is
+open and detects new online registrations by polling the public catalog.
+
+No installer is included. The remote machine must already have
+`lankide-computer-daemon` on PATH. Its `pair` command stays in the foreground.

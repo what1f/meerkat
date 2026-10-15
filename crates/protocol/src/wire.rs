@@ -21,10 +21,10 @@ pub use crate::management::{
     ListAgentsResponse, ListProviderInterfacesRequest, ListProviderInterfacesResponse,
     ListWorkspacesRequest, ListWorkspacesResponse, ManagementEvent, ManagementSubscription,
     ModelCatalogRequest, PairingCode, ProviderCatalog, ProviderCatalogItem, ProviderInterface,
-    ProviderOnboardingState, ReactionCatalog, ReactionCatalogItem, RevokeComputerRequest,
-    SetWorkspaceStateRequest, UpdateAgentRequest, UpdateWorkspaceRequest,
-    UploadWorkspaceImageRequest, UploadWorkspaceImageResponse, Workspace, WorkspaceImageRequest,
-    WorkspaceImageResponse,
+    ProviderOnboardingState, ReactionCatalog, ReactionCatalogItem, RemoteAccess,
+    RevokeComputerRequest, SetRemoteAccessRequest, SetWorkspaceStateRequest, UpdateAgentRequest,
+    UpdateWorkspaceRequest, UploadWorkspaceImageRequest, UploadWorkspaceImageResponse, Workspace,
+    WorkspaceImageRequest, WorkspaceImageResponse,
 };
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]

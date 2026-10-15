@@ -78,6 +78,19 @@ impl HttpManagementTransport {
         serde_json::from_slice(&bytes).map_err(|e| Status::internal(e.to_string()))
     }
 
+    pub async fn get_remote_access(&self) -> Result<json::RemoteAccess, Status> {
+        self.call("get_remote_access", &()).await
+    }
+    pub async fn set_remote_access(
+        &self,
+        address: Option<String>,
+    ) -> Result<json::RemoteAccess, Status> {
+        self.call(
+            "set_remote_access",
+            &json::SetRemoteAccessRequest { address },
+        )
+        .await
+    }
     pub async fn list_workspaces(
         &self,
         request: wire::ListWorkspacesRequest,

@@ -182,6 +182,7 @@ pub struct Computer {
     output_records: OutputRecordPolicy,
     capability_cli: Option<PathBuf>,
     link_endpoint: Option<(String, String)>,
+    cert_sha256: Option<String>,
     device_credential: String,
     config: ComputerConfig,
     harnesses: HashMap<String, RegisteredHarness>,
@@ -191,6 +192,7 @@ impl Computer {
     pub fn new(config: ComputerConfig) -> Self {
         Self {
             link_endpoint: None,
+            cert_sha256: None,
             device_credential: String::new(),
             config,
             liveness: ExecutionLiveness::default(),
@@ -223,6 +225,10 @@ impl Computer {
         self
     }
 
+    pub fn with_certificate_pin(mut self, pin: Option<String>) -> Self {
+        self.cert_sha256 = pin;
+        self
+    }
     pub fn with_link_endpoint(mut self, url: String, secret: String) -> Self {
         self.device_credential = secret.clone();
         self.link_endpoint = Some((url, secret));
@@ -335,6 +341,7 @@ impl Computer {
             root,
             runtime_run,
             link_endpoint: self.link_endpoint,
+            cert_sha256: self.cert_sha256,
             device_credential: self.device_credential,
             state_path,
             factories,
@@ -476,6 +483,7 @@ struct Inner {
     root: PathBuf,
     runtime_run: PathBuf,
     link_endpoint: Option<(String, String)>,
+    cert_sha256: Option<String>,
     device_credential: String,
     state_path: PathBuf,
     factories: HashMap<String, Arc<dyn HarnessFactory>>,

@@ -1,6 +1,7 @@
 use super::Inner;
 use super::connection::send_frame;
-use crate::resources::{download_resource, replace_resource_links};
+use super::proxy::download_resource;
+use crate::resources::replace_resource_links;
 use crate::state::assignment_key;
 use lankide_harness::{ToolResultError, ToolResultRequest, ToolResultResource};
 use lankide_protocol::{
@@ -124,7 +125,10 @@ pub(super) async fn handle_cancel(
     }
 }
 
-pub(super) async fn route_tool_result(inner: &Inner, result: lankide_protocol::ToolResult) {
+pub(super) async fn route_tool_result(
+    inner: &std::sync::Arc<Inner>,
+    result: lankide_protocol::ToolResult,
+) {
     let Some(execution) = result.execution.clone() else {
         return;
     };
@@ -177,8 +181,7 @@ pub(super) async fn route_tool_result(inner: &Inner, result: lankide_protocol::T
     let mut local_resources = Vec::new();
     for resource in &result.resources {
         match download_resource(
-            &inner.runtime_run,
-            inner.link_endpoint.as_ref().map(|(url, _)| url.as_str()),
+            inner.clone(),
             resource,
             context.clone(),
             &agent_home.join("tool-results"),

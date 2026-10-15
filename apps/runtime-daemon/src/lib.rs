@@ -1,8 +1,10 @@
 #![forbid(unsafe_code)]
 
+mod remote_access;
+
 pub use lankide_daemon_runtime::InstanceGuard;
 use lankide_daemon_runtime::{DaemonRuntimeError, create_private_directory};
-use lankide_protocol::TransportConfig;
+
 use lankide_provider::{HostServices, Provider, ProviderError, ProviderHost, ProviderInfo};
 use lankide_runtime::{
     ProviderFactoryFuture, ProviderFactoryRegistry, ProviderOnboarding, ProviderTypeFactory,
@@ -196,6 +198,9 @@ where
     application.set_pairing_validity(Duration::from_millis(settings.pairing_validity_ms))?;
     let address = settings.computer_link_listen;
     let listener = tokio::net::TcpListener::bind(&address).await?;
+    if !listener.local_addr()?.ip().is_loopback() {
+        return Err(AppError::InvalidHome("local listener must use loopback"));
+    }
     let url = format!("ws://{}", listener.local_addr()?);
     let secret = lankide_protocol::link::publish(&paths.run, &url)?;
     let owner = lankide_protocol::management::OwnerCredential::load_or_create(&paths.run)?;
@@ -210,14 +215,23 @@ where
         paths.run.join(lankide_protocol::management::URL_FILE),
         format!("http://{management_address}"),
     )?;
+    let remote = remote_access::RemoteComputers::open(
+        paths.home.clone(),
+        RuntimePeerAdapter::new(application.clone()),
+        secret.clone(),
+        settings.computer_link.clone(),
+    )
+    .await
+    .map_err(AppError::Status)?;
     let (link_stop, link_stopped) = oneshot::channel();
-    let link_server = tokio::spawn(lankide_protocol::resources::serve_with_management(
+    let link_server = tokio::spawn(lankide_protocol::resources::serve_configured(
         listener,
         secret,
-        owner,
         RuntimePeerAdapter::new(application.clone()),
-        TransportConfig::default(),
         settings.computer_link,
+        Some(owner),
+        Some(remote.clone()),
+        None,
         async {
             let _ = link_stopped.await;
         },
@@ -251,6 +265,7 @@ where
     let _reason = shutdown.await?;
     provider_start.abort();
     let _ = provider_start.await;
+    remote.stop().await;
     application.begin_shutdown().await?;
     let _ = link_stop.send(());
     link_server

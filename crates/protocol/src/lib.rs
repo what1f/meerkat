@@ -13,6 +13,7 @@ pub mod link;
 mod peer;
 pub mod resources;
 mod service;
+pub mod tls;
 mod transport;
 mod validation;
 

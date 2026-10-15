@@ -640,14 +640,12 @@ impl LankideApp {
                     "请检查配置后重试启用。",
                     "Check the settings, then try enabling again.",
                 ),
-                WorkspaceObservedState::Unknown if runtime.is_none() => language.text(
-                    "创建团队后即可启用运行状态。",
-                    "Create a team to enable the runtime.",
-                ),
-                WorkspaceObservedState::Unknown => language.text(
-                    "请刷新后确认运行状态。",
-                    "Refresh to check the runtime status.",
-                ),
+                WorkspaceObservedState::Unknown if runtime.is_none() => {
+                    language.text("创建团队即可开始。", "Create a team to get started.")
+                }
+                WorkspaceObservedState::Unknown => {
+                    language.text("请刷新后确认运行状态。", "Refresh to check the status.")
+                }
                 _ => language.text(
                     "已暂停。团队成员不会接收新的协作消息。",
                     "Paused. Team members won't receive new collaboration messages.",
@@ -820,7 +818,7 @@ impl LankideApp {
                     .child(self.tr("偏好设置", "Preferences")),
             )
             .child(desktop_settings_section_title(
-                self.tr("运行状态", "Runtime status"),
+                self.tr("状态", "Status"),
                 true,
             ))
             .child(self.runtime_status_card(cx))

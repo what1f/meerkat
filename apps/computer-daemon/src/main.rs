@@ -12,7 +12,11 @@ use std::{
 #[tokio::main]
 async fn main() {
     if let Err(error) = execute().await {
-        eprintln!("{error}");
+        match &error {
+            AppError::Io(error) => eprintln!("{error}"),
+            AppError::InvalidArgument(message) => eprintln!("{message}"),
+            _ => eprintln!("Could not start this computer: {error}"),
+        }
         std::process::exit(1);
     }
 }
@@ -24,6 +28,7 @@ async fn execute() -> Result<(), AppError> {
     let mut link_secret_file = None;
     let mut instance_id = None;
     let mut pairing = None;
+    let mut cert_sha256 = None;
     while let Some(argument) = arguments.next() {
         if argument == "pair" {
             let url = arguments
@@ -37,12 +42,20 @@ async fn execute() -> Result<(), AppError> {
                 .to_string_lossy()
                 .into_owned();
             pairing = Some((url, code));
+        } else if argument == "--cert-sha256" {
+            cert_sha256 = Some(
+                arguments
+                    .next()
+                    .ok_or(AppError::InvalidArgument("--cert-sha256 requires a value"))?
+                    .to_string_lossy()
+                    .into_owned(),
+            );
         } else if argument == "--version" {
             println!("lankide-computer-daemon {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         } else if argument == "--help" {
             println!(
-                "Usage: lankide-computer-daemon [pair RUNTIME_URL CODE] [--home PATH] [--instance-id ID] [--runtime-url URL] [--link-secret-file PATH]"
+                "Usage: lankide-computer-daemon [pair URL CODE [--cert-sha256 HEX]] [--home PATH] [--instance-id ID] [--runtime-url URL] [--link-secret-file PATH]"
             );
             return Ok(());
         } else if argument == "--home" {
@@ -79,8 +92,8 @@ async fn execute() -> Result<(), AppError> {
         None => DaemonConfig::local_default()?,
     };
     if let Some((url, code)) = pairing {
-        lankide_computer_daemon::pair(&config.paths, &url, &code).await?;
-        return Ok(());
+        lankide_computer_daemon::pair_with_pin(&config.paths, &url, &code, cert_sha256.as_deref())
+            .await?;
     }
     config.runtime_url = runtime_url;
     config.link_secret_file = link_secret_file;

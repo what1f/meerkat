@@ -17,7 +17,12 @@ impl RuntimeApplication {
     }
 
     pub fn create_pairing_code(&self) -> Result<lankide_protocol::PairingCode, RuntimeError> {
-        let code = random_secret()?;
+        use base64::Engine as _;
+        let mut bytes = [0u8; 32];
+        std::fs::File::open("/dev/urandom")
+            .and_then(|mut file| file.read_exact(&mut bytes))
+            .map_err(|error| RuntimeError::Application(error.to_string()))?;
+        let code = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
         let issued_at = application::now_millis();
         self.runtime()?
             .storage()

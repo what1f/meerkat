@@ -68,6 +68,7 @@ fn local_online_offline_selection_and_pairing_dialog() {
     let rig = runtime
         .block_on(SystemRig::start(RigConfig {
             local_discovery: true,
+            pairing_validity: Duration::from_secs(2),
             harness_executable: "/usr/bin/false".into(),
             ..Default::default()
         }))
@@ -204,23 +205,55 @@ fn local_online_offline_selection_and_pairing_dialog() {
         assert!(cx.debug_bounds(offline_selector).is_some());
         assert!(cx.debug_bounds(revoked_selector).is_none());
         click(cx, "pair-computer");
-        wait(cx, |cx| cx.debug_bounds("pairing-code").is_some());
-        assert!(
-            cx.debug_bounds("copy-pairing-command").is_none(),
-            "loopback address exposed as a remote command"
-        );
-        click(cx, "copy-pairing-code");
+        wait(cx, |cx| cx.debug_bounds("pairing-address-input").is_some());
+        let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = socket.local_addr().unwrap().to_string();
+        drop(socket);
+        fill(cx, "pairing-address-input", &address);
+        click(cx, "enable-computer-access");
+        wait(cx, |cx| cx.debug_bounds("pairing-command").is_some());
+        assert!(cx.debug_bounds("pairing-code").is_none());
+        click(cx, "copy-pairing-command");
         let copied = cx.update(|_, cx| cx.read_from_clipboard().unwrap().text().unwrap());
-        assert!(!copied.is_empty());
+        std::thread::sleep(Duration::from_millis(2100));
+        let original = copied;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let copied = loop {
+            click(cx, "copy-pairing-command");
+            let refreshed = cx.update(|_, cx| cx.read_from_clipboard().unwrap().text().unwrap());
+            if refreshed != original {
+                break refreshed;
+            }
+            assert!(Instant::now() < deadline, "expired command was not renewed");
+            std::thread::yield_now();
+        };
+        let args = copied.split_whitespace().collect::<Vec<_>>();
+        assert_eq!(args[0], "lankide-computer-daemon");
+        assert_eq!(args[1], "pair");
+        assert_eq!(args[2], format!("wss://{address}"));
+        assert_eq!(args[4], "--cert-sha256");
         let paired_home = tempfile::tempdir_in("/tmp").unwrap();
-        runtime
-            .block_on(pair(
-                &ComputerDaemonPaths::for_home(paired_home.path()).unwrap(),
-                &url,
-                &copied,
-            ))
-            .unwrap();
-        click(cx, "close-pairing");
+        let executable = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("lankide-computer-daemon");
+        let _paired = OwnedComputer(
+            std::process::Command::new(executable)
+                .args(&args[1..])
+                .arg("--home")
+                .arg(paired_home.path())
+                .env("HOME", paired_home.path())
+                .env("SHELL", "/bin/sh")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        wait(cx, |cx| cx.debug_bounds("pairing-connected").is_some());
+        wait(cx, |cx| cx.debug_bounds("pairing-connected").is_none());
         click(cx, "language-select");
         cx.simulate_keystrokes("down enter");
         draw(cx);
@@ -277,4 +310,101 @@ fn local_online_offline_selection_and_pairing_dialog() {
     });
     gpui::run_test(1, &[], 0, &mut |dispatcher, _| scenario(dispatcher), None);
     runtime.block_on(rig.close()).unwrap();
+}
+
+#[path = "../src/backend.rs"]
+mod backend;
+#[path = "../src/background_services.rs"]
+mod background_services;
+
+/// Run the public Desktop bootstrap and app-quit lifecycle with real helpers.
+/// A subprocess provides private environment variables without mutating this test process.
+#[test]
+fn owned_helpers_stop_on_app_quit_while_reused_helpers_stay_running() {
+    const CHILD: &str = "LANKIDE_QUIT_E2E_CHILD";
+    const NAME: &str = "owned_helpers_stop_on_app_quit_while_reused_helpers_stay_running";
+    if std::env::var_os(CHILD).is_none() {
+        let directory = tempfile::Builder::new()
+            .prefix("lkq-")
+            .tempdir_in("/tmp")
+            .unwrap();
+        let current = std::env::current_exe().unwrap();
+        let binaries = current.parent().unwrap().parent().unwrap();
+        let executable = directory.path().join("quit-e2e");
+        std::fs::hard_link(&current, &executable).unwrap();
+        for name in ["lankide-runtime-daemon", "lankide-computer-daemon"] {
+            std::fs::hard_link(binaries.join(name), directory.path().join(name)).unwrap();
+        }
+        let home = directory.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let output = std::process::Command::new(executable)
+            .args(["--exact", NAME, "--nocapture"])
+            .env(CHILD, "1")
+            .env("LANKIDE_HOME", &home)
+            .env("HOME", &home)
+            .env_remove("LANKIDE_RUNTIME_RUN")
+            .env("SHELL", "/bin/sh")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    let owner = backend::DesktopBackend::bootstrap();
+    let _entered = owner.enter();
+    assert!(owner.startup_error.is_none());
+    let pids: Vec<String> = ["runtime.lock", "computer.lock"]
+        .into_iter()
+        .map(|name| {
+            let lock = std::fs::read_to_string(owner.local_home.join("run").join(name)).unwrap();
+            lock.split_whitespace()
+                .find_map(|part| part.strip_prefix("pid="))
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    let reused = backend::DesktopBackend::bootstrap();
+    assert!(reused.startup_error.is_none());
+    let scenario = std::panic::AssertUnwindSafe(|dispatcher: gpui::TestDispatcher| {
+        let mut cx = TestAppContext::build(dispatcher.clone(), Some("reused_quit"));
+        let cleanup = reused.quit_cleanup();
+        cx.update(|cx| {
+            cx.on_app_quit(cleanup).detach();
+            cx.shutdown();
+        });
+        for pid in &pids {
+            assert!(
+                std::process::Command::new("kill")
+                    .args(["-0", pid])
+                    .status()
+                    .unwrap()
+                    .success(),
+                "quit stopped a reused helper"
+            );
+        }
+        let mut cx = TestAppContext::build(dispatcher, Some("owned_quit"));
+        let cleanup = owner.quit_cleanup();
+        cx.update(|cx| {
+            cx.on_app_quit(cleanup).detach();
+            cx.shutdown();
+        });
+        for pid in &pids {
+            assert!(
+                !std::process::Command::new("kill")
+                    .args(["-0", pid])
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .unwrap()
+                    .success(),
+                "owned helper survived app quit"
+            );
+        }
+        assert!(!owner.local_home.join("run/runtime.lock").exists());
+        assert!(!owner.local_home.join("run/computer.lock").exists());
+    });
+    gpui::run_test(1, &[], 0, &mut |dispatcher, _| scenario(dispatcher), None);
 }

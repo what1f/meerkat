@@ -211,7 +211,14 @@ pub async fn run_with_harnesses(
                 .await
                 .map_err(|_| AppError::InvalidArgument("runtime_unavailable"))?
             };
-            pair_inner(&config.paths, &url, &secret, config.runtime_url.is_none()).await?
+            pair_inner(
+                &config.paths,
+                &url,
+                &secret,
+                config.runtime_url.is_none(),
+                None,
+            )
+            .await?
         }
     };
     let mut computer = Computer::new(ComputerConfig {
@@ -220,6 +227,7 @@ pub async fn run_with_harnesses(
         workspace_root: config.paths.workspaces.display().to_string(),
         reconnect: read_reconnect(&config.paths.home)?,
     })
+    .with_certificate_pin(credentials.cert_sha256.clone())
     .with_device_credential(credentials.device_credential.clone())
     .with_execution_liveness(config.execution_liveness);
     if !credentials.local_discovery || config.runtime_url.is_some() {
@@ -236,12 +244,29 @@ pub async fn run_with_harnesses(
             .register_harness(registration)
             .map_err(AppError::Computer)?;
     }
-    computer
-        .run(&config.paths.runtime_run, async {
-            let _ = wait_for_shutdown().await;
-        })
+    let handle = computer
+        .spawn(&config.paths.runtime_run)
         .await
-        .map_err(AppError::Computer)
+        .map_err(AppError::Computer)?;
+    let shutdown = wait_for_shutdown();
+    tokio::pin!(shutdown);
+    let mut status = tokio::time::interval(Duration::from_millis(100));
+    let mut announced = false;
+    loop {
+        tokio::select! {
+            result = handle.join() => return result.map_err(AppError::Computer),
+            _ = &mut shutdown => {
+                handle.shutdown("computer_shutdown").await;
+                return handle.join().await.map_err(AppError::Computer);
+            }
+            _ = status.tick(), if !announced => {
+                if handle.status().await.connected {
+                    println!("Connected as {}", computer_name());
+                    announced = true;
+                }
+            }
+        }
+    }
 }
 
 pub fn production_harnesses(config: &DaemonConfig) -> Vec<RegisteredHarness> {
@@ -359,6 +384,7 @@ pub struct DeviceCredentials {
     pub device_credential: String,
     pub runtime_url: String,
     pub local_discovery: bool,
+    pub cert_sha256: Option<String>,
 }
 
 pub fn read_credentials(home: &std::path::Path) -> Result<Option<DeviceCredentials>, AppError> {
@@ -374,12 +400,21 @@ pub async fn pair(
     runtime_url: &str,
     code: &str,
 ) -> Result<DeviceCredentials, AppError> {
+    pair_with_pin(paths, runtime_url, code, None).await
+}
+
+pub async fn pair_with_pin(
+    paths: &ComputerDaemonPaths,
+    runtime_url: &str,
+    code: &str,
+    pin: Option<&str>,
+) -> Result<DeviceCredentials, AppError> {
     paths.prepare()?;
     let _guard = InstanceGuard::acquire(&paths.run, &paths.instance_lock, &unique_run_id())?;
     if read_credentials(&paths.home)?.is_some() {
         return Err(AppError::InvalidArgument("computer_already_paired"));
     }
-    pair_inner(paths, runtime_url, code, false).await
+    pair_inner(paths, runtime_url, code, false, pin).await
 }
 
 async fn pair_inner(
@@ -387,29 +422,50 @@ async fn pair_inner(
     runtime_url: &str,
     code: &str,
     local_discovery: bool,
+    pin: Option<&str>,
 ) -> Result<DeviceCredentials, AppError> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
+    let runtime_url = runtime_url
+        .trim_end_matches('/')
+        .replacen("http://", "ws://", 1)
+        .replacen("https://", "wss://", 1);
+    lankide_protocol::tls::validate_url(&runtime_url, pin)?;
     let url = runtime_url
         .trim_end_matches('/')
         .replacen("ws://", "http://", 1)
         .replacen("wss://", "https://", 1);
-    let response = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
+    let mut client = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(10));
+    if let Some(pin) = pin {
+        client = client.use_preconfigured_tls(lankide_protocol::tls::client_config(pin)?);
+    }
+    let response = client
         .build()
         .map_err(|e| io::Error::other(e.to_string()))?
         .post(format!("{url}/computers/pair"))
         .json(&lankide_protocol::link::PairComputerRequest {
             code: code.into(),
-            display_name: std::env::var("HOSTNAME").unwrap_or_else(|_| std::env::consts::OS.into()),
+            display_name: computer_name(),
             os: std::env::consts::OS.into(),
             version: env!("CARGO_PKG_VERSION").into(),
         })
         .send()
         .await
-        .map_err(|e| io::Error::other(e.to_string()))?;
+        .map_err(|e| {
+            let detail = format!("{e:?}");
+            io::Error::other(if detail.contains("pin mismatch") {
+                "Certificate pin mismatch. Check the copied command."
+            } else {
+                "Could not reach this address. Check the address and try again."
+            })
+        })?;
     if !response.status().is_success() {
-        return Err(AppError::InvalidArgument("pairing_rejected"));
+        return Err(AppError::InvalidArgument(
+            "Pairing code was rejected or expired. Copy a new command.",
+        ));
     }
     let paired: lankide_protocol::link::PairComputerResponse = response
         .json()
@@ -423,6 +479,7 @@ async fn pair_inner(
             .replacen("http://", "ws://", 1)
             .replacen("https://", "wss://", 1),
         local_discovery,
+        cert_sha256: pin.map(str::to_ascii_lowercase),
     };
     let temporary = paths
         .home
@@ -444,4 +501,23 @@ async fn pair_inner(
     }
     result?;
     Ok(credentials)
+}
+
+/// Use the same user-visible machine name in local and remote registration.
+pub fn computer_name() -> String {
+    #[cfg(target_os = "macos")]
+    for key in ["ComputerName", "LocalHostName"] {
+        if let Some(name) = command_name("/usr/sbin/scutil", &["--get", key]) {
+            return name;
+        }
+    }
+    command_name("hostname", &[]).unwrap_or_else(|| "Computer".into())
+}
+fn command_name(command: &str, args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new(command)
+        .args(args)
+        .output()
+        .ok()?;
+    let name = String::from_utf8(output.stdout).ok()?.trim().to_owned();
+    (output.status.success() && !name.is_empty()).then_some(name)
 }

@@ -79,7 +79,12 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, ComputerError> {
     };
     let mut link = tokio::time::timeout(
         inner.config.reconnect.handshake_timeout,
-        lankide_protocol::link::connect(&url, &secret, lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES),
+        lankide_protocol::link::connect_pinned(
+            &url,
+            &secret,
+            lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES,
+            inner.cert_sha256.as_deref(),
+        ),
     )
     .await
     .map_err(|_| LinkError::Closed(CloseReason::Timeout))??;

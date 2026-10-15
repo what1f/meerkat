@@ -42,7 +42,9 @@ Task 14 scenarios:
   Computers remain visible with the second offline. Revoked Computers are absent.
   Create an Agent on the chosen Computer and save an edited placement; verify it
   through management. A new form defaults to the local Computer.
-- `pairing-code-dialog`: Add Computer opens a compact code dialog. Copy produces
-  the displayed code. A loopback-only listener shows no command. A remotely
-  addressed listener also shows a copyable `lankide-computer-daemon pair` command.
-  Check English and Chinese copy, including online/offline state, in both themes.
+- `pairing-code-dialog`: Add Computer first shows one address input and Enable.
+  After enabling remote access, it shows one selectable command and Copy command.
+  Run the copied command with a second private Computer home; verify the connected
+  name, automatic close, and updated list. Check command renewal after expiry.
+  Review Settings, address, command, and connected states in English and Chinese,
+  in both themes, including wrapping, contrast, spacing, and button alignment.

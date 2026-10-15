@@ -27,11 +27,13 @@ fn main() {
     let _tokio_guard = backend.enter();
     let client = backend.client.clone();
     let local_home = backend.local_home.clone();
+    let quit_cleanup = backend.quit_cleanup();
     gpui_platform::application()
         .with_assets(Assets)
         .run(move |cx: &mut App| {
             cx.set_app_identity("com.lankide.desktop", "Lankide");
             gpui_component::init(cx);
+            cx.on_app_quit(quit_cleanup).detach();
             cx.on_action(|_: &Quit, cx| cx.quit());
             cx.bind_keys([
                 #[cfg(target_os = "macos")]

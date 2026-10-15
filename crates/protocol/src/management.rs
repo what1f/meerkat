@@ -605,3 +605,19 @@ pub(crate) mod base64_bytes {
         STANDARD.decode(value).map_err(serde::de::Error::custom)
     }
 }
+
+/// Remote Computer entry point. Management always remains on loopback.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RemoteAccess {
+    pub address: Option<String>,
+    pub cert_sha256: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SetRemoteAccessRequest {
+    pub address: Option<String>,
+}
+#[async_trait::async_trait]
+pub trait RemoteAccessControl: Send + Sync {
+    async fn get(&self) -> Result<RemoteAccess, crate::Status>;
+    async fn set(&self, address: Option<String>) -> Result<RemoteAccess, crate::Status>;
+}

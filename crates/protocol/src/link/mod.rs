@@ -198,6 +198,19 @@ fn ws_config(limit: usize) -> WebSocketConfig {
 }
 pub type ClientLink = WebSocketLink<MaybeTlsStream<TcpStream>, ComputerFrame, RuntimeFrame>;
 pub async fn connect(url: &str, secret: &str, limit: usize) -> Result<ClientLink, LinkError> {
+    connect_pinned(url, secret, limit, None).await
+}
+pub async fn connect_pinned(
+    url: &str,
+    secret: &str,
+    limit: usize,
+    pin: Option<&str>,
+) -> Result<ClientLink, LinkError> {
+    crate::tls::validate_url(url, pin)?;
+    let connector = pin
+        .map(crate::tls::client_config)
+        .transpose()?
+        .map(|config| tokio_tungstenite::Connector::Rustls(std::sync::Arc::new(config)));
     let mut request = url.into_client_request()?;
     request.headers_mut().insert(
         "authorization",
@@ -205,9 +218,13 @@ pub async fn connect(url: &str, secret: &str, limit: usize) -> Result<ClientLink
             .parse()
             .map_err(|_| LinkError::Closed(CloseReason::Unauthorized))?,
     );
-    let (socket, _) =
-        tokio_tungstenite::connect_async_with_config(request, Some(ws_config(limit)), false)
-            .await?;
+    let (socket, _) = tokio_tungstenite::connect_async_tls_with_config(
+        request,
+        Some(ws_config(limit)),
+        false,
+        connector,
+    )
+    .await?;
     Ok(WebSocketLink::new(socket, limit))
 }
 

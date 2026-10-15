@@ -26,6 +26,7 @@ const COMPUTER_AGENT_LABEL: &str = "com.lankide.computer";
 
 pub(crate) struct BackgroundServices {
     adapter: Adapter,
+    stopping: bool,
 }
 
 enum Adapter {
@@ -44,6 +45,7 @@ impl BackgroundServices {
         #[cfg(target_os = "macos")]
         if persistent && bundled_launch_agents_available() {
             return Self {
+                stopping: false,
                 adapter: if ad_hoc_background_services() {
                     Adapter::AdHocLaunchAgents
                 } else {
@@ -53,6 +55,7 @@ impl BackgroundServices {
         }
 
         Self {
+            stopping: false,
             adapter: Adapter::Transient {
                 runtime: None,
                 computer: None,
@@ -106,6 +109,9 @@ impl BackgroundServices {
     }
 
     pub(crate) fn ensure_runtime(&mut self, home: &Path) -> Result<(), ClientError> {
+        if self.stopping {
+            return Ok(());
+        }
         match &mut self.adapter {
             Adapter::Transient { runtime, .. } => {
                 if runtime.is_none() {
@@ -122,6 +128,9 @@ impl BackgroundServices {
     }
 
     pub(crate) fn ensure_computer(&mut self, home: &Path) -> Result<(), ClientError> {
+        if self.stopping {
+            return Ok(());
+        }
         match &mut self.adapter {
             Adapter::Transient { computer, .. } => {
                 if computer.is_none() {
@@ -155,6 +164,7 @@ impl BackgroundServices {
     }
 
     pub(crate) fn stop_owned(&mut self) {
+        self.stopping = true;
         match &mut self.adapter {
             Adapter::Transient { runtime, computer } => {
                 for mut child in [computer.take(), runtime.take()].into_iter().flatten() {

@@ -116,13 +116,12 @@ async fn owner_manages_over_http_and_events_while_other_credentials_are_rejected
 }
 
 #[tokio::test]
-async fn wildcard_listener_keeps_local_desktop_management_and_closes_events_on_shutdown()
--> Result<()> {
+async fn loopback_management_closes_events_on_shutdown() -> Result<()> {
     use lankide_runtime_daemon::{RuntimePaths, ShutdownReason, run_daemon};
     let home = tempfile::tempdir()?;
     std::fs::write(
         home.path().join("runtime.json"),
-        br#"{"computer_link_listen":"0.0.0.0:0"}"#,
+        br#"{"computer_link_listen":"127.0.0.1:0"}"#,
     )?;
     let paths = RuntimePaths::for_home(home.path())?;
     let (stop, stopped) = tokio::sync::oneshot::channel();
@@ -187,4 +186,19 @@ async fn paused_workspace_agent_can_be_renamed_and_runs_after_resume() -> Result
     assert_eq!(agent.view().await?.name, "Bruce renamed");
     assert_eq!(team.dm_transcript(&agent, "alice"), ["hello", "done"]);
     rig.close().await
+}
+
+#[tokio::test]
+async fn management_cannot_be_configured_on_a_public_plaintext_listener() -> Result<()> {
+    use lankide_runtime_daemon::{RuntimePaths, run_daemon};
+    let home = tempfile::tempdir()?;
+    std::fs::write(
+        home.path().join("runtime.json"),
+        br#"{"computer_link_listen":"0.0.0.0:0"}"#,
+    )?;
+    let paths = RuntimePaths::for_home(home.path())?;
+    let result = run_daemon(paths.clone(), Default::default(), std::future::pending()).await;
+    assert!(result.is_err());
+    assert!(!paths.run.join(management::URL_FILE).exists());
+    Ok(())
 }

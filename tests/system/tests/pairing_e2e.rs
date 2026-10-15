@@ -307,6 +307,7 @@ async fn local_secret_and_unknown_or_mismatched_devices_cannot_authorize_links()
     ));
     let unknown_home = tempfile::tempdir()?;
     let unknown = lankide_computer_daemon::DeviceCredentials {
+        cert_sha256: None,
         computer_id: "unknown".into(),
         ..device
     };

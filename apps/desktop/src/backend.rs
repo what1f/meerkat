@@ -29,7 +29,7 @@ impl DesktopBackend {
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join("run"));
         let services = Arc::new(Mutex::new(BackgroundServices::new(
-            configured_run.is_none(),
+            configured_run.is_none() && env::var_os(HOME_ENV).is_none(),
         )));
         let client = {
             let _guard = tokio.enter();
@@ -119,6 +119,16 @@ impl DesktopBackend {
         }
     }
 
+    pub fn quit_cleanup(&self) -> impl FnMut(&mut gpui::App) -> std::future::Ready<()> + use<> {
+        let services = self._services.clone();
+        move |_| {
+            services
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .stop_owned();
+            std::future::ready(())
+        }
+    }
     pub fn stop_local_services(&self) {
         self._services
             .lock()

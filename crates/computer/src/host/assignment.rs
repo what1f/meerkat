@@ -1,9 +1,10 @@
 use super::connection::send_frame;
 use super::control::replay_assignment_pending;
 use super::events::run_events;
+use super::proxy::download_resource;
 use super::{ActiveExecution, ComputerError, Inner, StartingExecution};
 use crate::STANDARD_HARNESS_IDS;
-use crate::resources::{agent_directory, download_resource, replace_resource_links};
+use crate::resources::{agent_directory, replace_resource_links};
 use crate::state::{
     AssignmentLifecycle, PersistedAssignment, PersistedSession, SessionRecovery, assignment_key,
 };
@@ -315,8 +316,7 @@ async fn prepare_assignment(
             continue;
         }
         let path = download_resource(
-            &inner.runtime_run,
-            inner.link_endpoint.as_ref().map(|(url, _)| url.as_str()),
+            inner.clone(),
             resource,
             context.clone(),
             &agent_home.join("resources"),

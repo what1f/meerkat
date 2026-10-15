@@ -456,10 +456,10 @@ Crates: `apps/desktop`, `crates/desktop-ui`, `lankide-client`.
 
 Contract: on first launch the Desktop pairs its own Computer without showing a
 code. The Agent form lists registered Computers with online state. Remote
-pairing shows a code to copy.
+pairing shows one pinned command to copy.
 
 Acceptance: the `desktop` visual-semantic scenario set gains first launch,
-Computer list with one offline Computer, and the pairing code dialog.
+Computer list with one offline Computer, and the address and command pairing dialog.
 
 ## Phase 4: Agent capability path
 
@@ -519,8 +519,8 @@ listed scenarios, read the report, and run `just check` and `just test`.
 
 - Desktop visual acceptance for Tasks 14–17 needs an actual-window review with
   authorized live Provider accounts (`./apps/desktop/visual-e2e.sh`).
-- Computer links, pairing, and management use plain WS and HTTP. Binding the
-  Runtime listener beyond loopback needs TLS before remote use.
+- Remote Computer access now uses a separate TLS listener with persisted identity
+  and certificate pinning; management and local discovery remain on loopback.
 - HTTP resource downloads read the whole resource into memory before serving
   a range.
 - Steer requests to a Harness without steering support are skipped at
