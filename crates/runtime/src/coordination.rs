@@ -72,7 +72,7 @@ impl Runtime {
         } else {
             None
         };
-        let provider_id = self.storage.workspace(workspace_id)?.provider_id;
+        let provider_id = self.storage.workspace(workspace_id).await?.provider_id;
         let occurred_at = event.occurred_at_millis().unwrap_or(now);
         let chat_name = event
             .provider_data
@@ -86,17 +86,22 @@ impl Runtime {
             ProviderEventKind::Message(message) => {
                 let mut chat_attention = BTreeMap::new();
                 for agent_id in agents.keys() {
-                    if let Some(attention) = self.storage.chat_attention(
-                        workspace_id,
-                        agent_id,
-                        &event.channel_id,
-                        &event.provider_chat_id,
-                    )? {
+                    if let Some(attention) = self
+                        .storage
+                        .chat_attention(
+                            workspace_id,
+                            agent_id,
+                            &event.channel_id,
+                            &event.provider_chat_id,
+                        )
+                        .await?
+                    {
                         chat_attention.insert(agent_id.clone(), attention_policy(&attention)?);
                     }
                 }
-                let team_command =
-                    self.apply_team_command(workspace_id, &event.sender, &message.content, now)?;
+                let team_command = self
+                    .apply_team_command(workspace_id, &event.sender, &message.content, now)
+                    .await?;
                 let dispatch = if team_command {
                     Vec::new()
                 } else {
@@ -114,29 +119,32 @@ impl Runtime {
                     .iter()
                     .map(resource_view)
                     .collect::<Result<Vec<_>, _>>()?;
-                let result = self.storage.ingest_event(IngestEvent {
-                    receiving_agent_id: receiving_agent_id.clone(),
-                    workspace_id: workspace_id.clone(),
-                    provider_id,
-                    channel_id: event.channel_id.clone(),
-                    channel_name: channel.name.clone(),
-                    provider_chat_id: event.provider_chat_id.clone(),
-                    chat_name,
-                    provider_event_id,
-                    provider_message_id: message.provider_message_id,
-                    message: MessageInput {
-                        sender_kind: sender_kind(event.sender.kind),
-                        sender_id: event.sender.id,
-                        sender_name: event.sender.name,
-                        content: message.content,
-                        mentions: message.mentioned_agent_ids,
-                        reply_to_provider_message_id: message.reply_to_provider_message_id,
-                        resources,
-                        occurred_at,
-                    },
-                    dispatch: dispatch.clone(),
-                    now,
-                })?;
+                let result = self
+                    .storage
+                    .ingest_event(IngestEvent {
+                        receiving_agent_id: receiving_agent_id.clone(),
+                        workspace_id: workspace_id.clone(),
+                        provider_id,
+                        channel_id: event.channel_id.clone(),
+                        channel_name: channel.name.clone(),
+                        provider_chat_id: event.provider_chat_id.clone(),
+                        chat_name,
+                        provider_event_id,
+                        provider_message_id: message.provider_message_id,
+                        message: MessageInput {
+                            sender_kind: sender_kind(event.sender.kind),
+                            sender_id: event.sender.id,
+                            sender_name: event.sender.name,
+                            content: message.content,
+                            mentions: message.mentioned_agent_ids,
+                            reply_to_provider_message_id: message.reply_to_provider_message_id,
+                            resources,
+                            occurred_at,
+                        },
+                        dispatch: dispatch.clone(),
+                        now,
+                    })
+                    .await?;
                 // Keep new messages pending for the next execution. Injecting only
                 // their text into a running execution would not expand that run's
                 // readable messages, reply scope, or cursor boundary.
@@ -206,13 +214,15 @@ impl Runtime {
                         &reaction.sender,
                         &reaction.reaction,
                         if reaction.sender.kind == EventSenderType::Agent {
-                            self.storage.reaction_target_author(
-                                workspace_id,
-                                &event.channel_id,
-                                &event.provider_chat_id,
-                                &reaction.target_provider_message_id,
-                                receiving_agent_id.as_ref(),
-                            )?
+                            self.storage
+                                .reaction_target_author(
+                                    workspace_id,
+                                    &event.channel_id,
+                                    &event.provider_chat_id,
+                                    &reaction.target_provider_message_id,
+                                    receiving_agent_id.as_ref(),
+                                )
+                                .await?
                         } else {
                             None
                         },
@@ -228,28 +238,31 @@ impl Runtime {
                         reaction.action
                     )
                 });
-                let result = self.storage.record_reaction(IncomingReaction {
-                    receiving_agent_id,
-                    workspace_id: workspace_id.clone(),
-                    provider_id,
-                    channel_id: event.channel_id,
-                    provider_chat_id: event.provider_chat_id,
-                    target_provider_message_id: reaction.target_provider_message_id,
-                    sender_kind: sender_kind(reaction.sender.kind),
-                    sender_id: reaction.sender.id,
-                    sender_name: reaction.sender.name,
-                    reaction: reaction.reaction,
-                    action: reaction.action,
-                    origin: if own_auto_reaction {
-                        ReactionOrigin::AutoReaction
-                    } else {
-                        ReactionOrigin::Provider
-                    },
-                    provider_event_id: event_id,
-                    dispatch,
-                    occurred_at,
-                    now,
-                })?;
+                let result = self
+                    .storage
+                    .record_reaction(IncomingReaction {
+                        receiving_agent_id,
+                        workspace_id: workspace_id.clone(),
+                        provider_id,
+                        channel_id: event.channel_id,
+                        provider_chat_id: event.provider_chat_id,
+                        target_provider_message_id: reaction.target_provider_message_id,
+                        sender_kind: sender_kind(reaction.sender.kind),
+                        sender_id: reaction.sender.id,
+                        sender_name: reaction.sender.name,
+                        reaction: reaction.reaction,
+                        action: reaction.action,
+                        origin: if own_auto_reaction {
+                            ReactionOrigin::AutoReaction
+                        } else {
+                            ReactionOrigin::Provider
+                        },
+                        provider_event_id: event_id,
+                        dispatch,
+                        occurred_at,
+                        now,
+                    })
+                    .await?;
                 Ok(CoordinatedEvent::Reaction(result))
             }
             ProviderEventKind::Custom(custom) => {
@@ -271,35 +284,38 @@ impl Runtime {
                     .filter(|value| !value.trim().is_empty())
                     .map(|value| format!("custom-event:{value}"))
                     .unwrap_or_else(|| format!("custom-object:{}", custom.subject_id));
-                let result = self.storage.ingest_event(IngestEvent {
-                    receiving_agent_id: receiving_agent_id.clone(),
-                    workspace_id: workspace_id.clone(),
-                    provider_id,
-                    channel_id: event.channel_id,
-                    channel_name: channel.name.clone(),
-                    provider_chat_id: event.provider_chat_id,
-                    chat_name,
-                    provider_event_id,
-                    provider_message_id: synthetic_message_id,
-                    message: MessageInput {
-                        sender_kind: sender_kind(event.sender.kind),
-                        sender_id: event.sender.id,
-                        sender_name: event.sender.name,
-                        content: custom.subject_name,
-                        mentions: custom.target_agent_ids,
-                        reply_to_provider_message_id: None,
-                        resources: Vec::new(),
-                        occurred_at,
-                    },
-                    dispatch,
-                    now,
-                })?;
+                let result = self
+                    .storage
+                    .ingest_event(IngestEvent {
+                        receiving_agent_id: receiving_agent_id.clone(),
+                        workspace_id: workspace_id.clone(),
+                        provider_id,
+                        channel_id: event.channel_id,
+                        channel_name: channel.name.clone(),
+                        provider_chat_id: event.provider_chat_id,
+                        chat_name,
+                        provider_event_id,
+                        provider_message_id: synthetic_message_id,
+                        message: MessageInput {
+                            sender_kind: sender_kind(event.sender.kind),
+                            sender_id: event.sender.id,
+                            sender_name: event.sender.name,
+                            content: custom.subject_name,
+                            mentions: custom.target_agent_ids,
+                            reply_to_provider_message_id: None,
+                            resources: Vec::new(),
+                            occurred_at,
+                        },
+                        dispatch,
+                        now,
+                    })
+                    .await?;
                 Ok(CoordinatedEvent::Custom(result))
             }
         }
     }
 
-    fn apply_team_command(
+    async fn apply_team_command(
         &self,
         workspace_id: &WorkspaceId,
         sender: &lankide_provider::EventSender,
@@ -338,6 +354,7 @@ impl Runtime {
         match self
             .storage
             .update_team_member(workspace_id, &actor, &target, role, now)
+            .await
         {
             Ok(_) => Ok(true),
             Err(StorageError::Conflict(_)) => Ok(false),
@@ -381,14 +398,16 @@ impl Runtime {
                 "This conversation does not support that attention level.".into(),
             ));
         }
-        self.storage.set_chat_attention(
-            workspace_id,
-            agent_id,
-            channel_id,
-            provider_chat_id,
-            &attention,
-            now,
-        )?;
+        self.storage
+            .set_chat_attention(
+                workspace_id,
+                agent_id,
+                channel_id,
+                provider_chat_id,
+                &attention,
+                now,
+            )
+            .await?;
         Ok(())
     }
 }

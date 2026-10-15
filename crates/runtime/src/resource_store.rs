@@ -29,12 +29,16 @@ pub struct ResourceBytes {
 
 #[derive(Clone)]
 pub struct LocalResourceStore {
-    storage: Arc<Storage>,
+    storage: Database,
     root: PathBuf,
 }
 
 impl LocalResourceStore {
     pub fn new(storage: Arc<Storage>, root: impl Into<PathBuf>) -> Self {
+        Self::with_database(Database::new(storage), root)
+    }
+
+    pub(crate) fn with_database(storage: Database, root: impl Into<PathBuf>) -> Self {
         Self {
             storage,
             root: root.into(),
@@ -57,7 +61,8 @@ impl ResourceStore for LocalResourceStore {
         Box::pin(async move {
             let resource_id = self
                 .storage
-                .allocate_resource_id(workspace_id, now_millis())?;
+                .allocate_resource_id(workspace_id, now_millis())
+                .await?;
             let path = self.path(workspace_id, resource_id);
             let parent = path
                 .parent()
@@ -68,16 +73,20 @@ impl ResourceStore for LocalResourceStore {
                 .iter()
                 .map(|byte| format!("{byte:02x}"))
                 .collect::<String>();
-            if let Err(error) = self.storage.upsert_resource_metadata(ResourceMetadata {
-                workspace_id: workspace_id.clone(),
-                resource_id,
-                file_name: upload.file_name.clone(),
-                media_type: upload.media_type.clone(),
-                size_bytes: upload.bytes.len() as u64,
-                sha256: sha256.clone(),
-                storage_ref: path.to_string_lossy().into_owned(),
-                created_at: now_millis(),
-            }) {
+            if let Err(error) = self
+                .storage
+                .upsert_resource_metadata(ResourceMetadata {
+                    workspace_id: workspace_id.clone(),
+                    resource_id,
+                    file_name: upload.file_name.clone(),
+                    media_type: upload.media_type.clone(),
+                    size_bytes: upload.bytes.len() as u64,
+                    sha256: sha256.clone(),
+                    storage_ref: path.to_string_lossy().into_owned(),
+                    created_at: now_millis(),
+                })
+                .await
+            {
                 let _ = std::fs::remove_file(&path);
                 return Err(error.into());
             }
@@ -99,7 +108,8 @@ impl ResourceStore for LocalResourceStore {
         Box::pin(async move {
             let metadata = self
                 .storage
-                .resource_metadata(workspace_id, resource_id)?
+                .resource_metadata(workspace_id, resource_id)
+                .await?
                 .ok_or_else(|| RuntimeError::Application("resource not found".into()))?;
             let expected = self.path(workspace_id, resource_id);
             if PathBuf::from(&metadata.storage_ref) != expected {

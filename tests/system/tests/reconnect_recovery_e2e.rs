@@ -22,7 +22,6 @@ async fn held_run_is_readopted_with_messages_during_repeated_disconnects() -> Re
         retry: lankide_runtime::RetryConfig {
             base_ms: 40,
             max_ms: 160,
-            poll_ms: 10,
             ..Default::default()
         },
         link: lankide_protocol::link::LinkSettings {
@@ -98,7 +97,6 @@ async fn expired_offline_attempt_is_closed_on_return_before_queued_work_runs() -
         retry: lankide_runtime::RetryConfig {
             base_ms: 40,
             max_ms: 160,
-            poll_ms: 10,
             ..Default::default()
         },
         link: lankide_protocol::link::LinkSettings {

@@ -494,7 +494,7 @@ impl Storage {
         w: &WorkspaceId,
         id: ResourceId,
     ) -> Result<Option<ResourceMetadata>> {
-        let c = self.conn()?;
+        let c = self.read_conn()?;
         load_resource_metadata(&c, w, id)
     }
     pub fn receive_message(&self, m: IncomingMessage) -> Result<IncomingMessageResult> {
@@ -676,7 +676,7 @@ impl Storage {
         pm: &str,
         receiver: Option<&AgentId>,
     ) -> Result<Option<i64>> {
-        Ok(self.conn()?.query_row("SELECT m.message_id FROM messages m JOIN chats c USING(chat_id) WHERE c.workspace_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND m.provider_message_id=?4 AND c.receiving_agent_id=?5",params![w.as_str(),ch.as_str(),pc,pm,receiver.map(AgentId::as_str).unwrap_or("")],|r|r.get(0)).optional()?)
+        Ok(self.read_conn()?.query_row("SELECT m.message_id FROM messages m JOIN chats c USING(chat_id) WHERE c.workspace_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND m.provider_message_id=?4 AND c.receiving_agent_id=?5",params![w.as_str(),ch.as_str(),pc,pm,receiver.map(AgentId::as_str).unwrap_or("")],|r|r.get(0)).optional()?)
     }
     /// Resolve the author of a reaction target within its receiving account.
     pub fn reaction_target_author(
@@ -687,7 +687,7 @@ impl Storage {
         target: &str,
         receiver: Option<&AgentId>,
     ) -> Result<Option<(MessageAuthorType, String)>> {
-        let row: Option<(String, String)> = self.conn()?.query_row(
+        let row: Option<(String, String)> = self.read_conn()?.query_row(
             "SELECT m.sender_kind,COALESCE(m.sender_id,'') FROM messages m JOIN chats c USING(chat_id) WHERE c.workspace_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND m.provider_message_id=?4 AND c.receiving_agent_id=?5",
             params![workspace.as_str(), channel.as_str(), chat, target, receiver.map(AgentId::as_str).unwrap_or("")],
             |row| Ok((row.get(0)?, row.get(1)?)),
@@ -696,7 +696,7 @@ impl Storage {
             .transpose()
     }
     pub fn message_count(&self, w: &WorkspaceId) -> Result<usize> {
-        let n: i64 = self.conn()?.query_row(
+        let n: i64 = self.read_conn()?.query_row(
             "SELECT count(*) FROM messages m JOIN chats c USING(chat_id) WHERE c.workspace_id=?1",
             [w.as_str()],
             |r| r.get(0),
@@ -708,7 +708,7 @@ impl Storage {
         workspace_id: &WorkspaceId,
         message_id: i64,
     ) -> Result<Option<ProviderMessageView>> {
-        let row: Option<(Option<String>, String, String)> = self.conn()?.query_row(
+        let row: Option<(Option<String>, String, String)> = self.read_conn()?.query_row(
             "SELECT m.provider_message_id,ch.channel_id,ch.provider_chat_id FROM messages m JOIN chats ch USING(chat_id) WHERE m.message_id=?1 AND ch.workspace_id=?2",
             params![message_id, workspace_id.as_str()],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -731,7 +731,7 @@ impl Storage {
         provider_chat_id: &str,
     ) -> Result<Option<AttentionRecord>> {
         let value: Option<String> = self
-            .conn()?
+            .read_conn()?
             .query_row(
                 "SELECT a.attention_json FROM agent_chat_attention a JOIN chats c USING(chat_id) WHERE a.workspace_id=?1 AND a.agent_id=?2 AND c.channel_id=?3 AND c.provider_chat_id=?4 AND (c.receiving_agent_id='' OR c.receiving_agent_id=?2)",
                 params![workspace_id.as_str(), agent_id.as_str(), channel_id.as_str(), provider_chat_id],
@@ -777,7 +777,7 @@ impl Storage {
         agent_id: &AgentId,
         message_id: i64,
     ) -> Result<Option<RecallTarget>> {
-        let row: Option<(String, String, Option<String>)> = self.conn()?.query_row(
+        let row: Option<(String, String, Option<String>)> = self.read_conn()?.query_row(
             "SELECT ch.channel_id,ch.provider_chat_id,m.provider_message_id FROM messages m JOIN chats ch USING(chat_id) WHERE m.message_id=?1 AND ch.workspace_id=?2 AND m.direction='outbound' AND m.sender_kind='agent' AND m.sender_id=?3",
             params![message_id, workspace_id.as_str(), agent_id.as_str()],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -814,7 +814,7 @@ impl Storage {
         before_message_id: Option<i64>,
         limit: usize,
     ) -> Result<Vec<MessageView>> {
-        let connection = self.conn()?;
+        let connection = self.read_conn()?;
         let boundary: Option<(i64, i64)> = connection
             .query_row(
                 "SELECT sc.chat_id,sc.read_to_message_id FROM unread_snapshot_chats sc JOIN chats ch USING(chat_id) WHERE sc.snapshot_id=?1 AND ch.channel_id=?2 AND ch.provider_chat_id=?3",
@@ -846,7 +846,7 @@ impl Storage {
         snapshot_id: i64,
         message_id: i64,
     ) -> Result<Option<MessageView>> {
-        let connection = self.conn()?;
+        let connection = self.read_conn()?;
         let included: bool = connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM unread_snapshot_chats sc JOIN messages m ON m.chat_id=sc.chat_id WHERE sc.snapshot_id=?1 AND m.message_id=?2 AND m.message_id<=sc.read_to_message_id AND m.send_status IN ('received','sent'))",
             params![snapshot_id, message_id], |row| row.get(0),
@@ -862,7 +862,7 @@ impl Storage {
         provider_chat_id: &str,
         message_id: i64,
     ) -> Result<bool> {
-        let count: i64 = self.conn()?.query_row(
+        let count: i64 = self.read_conn()?.query_row(
             "SELECT count(*) FROM unread_snapshot_chats sc JOIN chats ch USING(chat_id) JOIN messages m ON m.chat_id=sc.chat_id WHERE sc.snapshot_id=?1 AND ch.channel_id=?2 AND ch.provider_chat_id=?3 AND m.message_id=?4 AND m.message_id<=sc.read_to_message_id AND m.send_status IN ('received','sent')",
             params![snapshot_id, channel_id.as_str(), provider_chat_id, message_id],
             |row| row.get(0),
@@ -870,7 +870,7 @@ impl Storage {
         Ok(count == 1)
     }
     pub fn inbox_items(&self, w: &WorkspaceId, a: &AgentId) -> Result<Vec<InboxItemView>> {
-        let c = self.conn()?;
+        let c = self.read_conn()?;
         let mut s=c.prepare("SELECT inbox_item_id,chat_id,source_id,state,claimed_execution_id FROM agent_inbox_items WHERE workspace_id=?1 AND agent_id=?2 ORDER BY inbox_item_id")?;
         let rows = s.query_map(params![w.as_str(), a.as_str()], |r| {
             Ok((
@@ -895,7 +895,7 @@ impl Storage {
         Ok(out)
     }
     pub fn snapshot(&self, snapshot_id: i64) -> Result<SnapshotView> {
-        let connection = self.conn()?;
+        let connection = self.read_conn()?;
         load_snapshot(&connection, snapshot_id)
     }
 }

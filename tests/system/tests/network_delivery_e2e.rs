@@ -228,7 +228,6 @@ async fn s10_4_ten_flaps_follow_backoff_and_complete() -> Result<()> {
 async fn offline_past_attempt_lease_fails_the_run() -> Result<()> {
     let mut cfg = config();
     cfg.attempt_lease = Duration::from_secs(2);
-    cfg.retry.poll_ms = 50;
     let rig = SystemRig::start(cfg).await?;
     let team = rig.workspace("team").await?;
     let agent = team

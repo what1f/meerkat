@@ -29,7 +29,9 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
         if credential.is_empty() {
             return Err(lankide_protocol::link::CloseReason::Unauthorized);
         }
-        self.application.authenticate_computer(None, credential)
+        self.application
+            .authenticate_computer(None, credential)
+            .await
     }
     async fn pair_computer(
         &self,
@@ -38,6 +40,7 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
     ) -> Result<lankide_protocol::link::PairComputerResponse, Status> {
         self.application
             .pair_computer(request, local_secret)
+            .await
             .map_err(status)
     }
 
@@ -61,19 +64,15 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
         let computer_id = hello.computer_id.clone();
         let instance_id = hello.instance_id.clone();
         let (connection_id, output) = {
-            let _guard = self
-                .application
-                .inner
-                .computer_registration
-                .lock()
-                .map_err(|_| Status::internal("registration unavailable"))?;
+            let _guard = self.application.inner.computer_registration.lock().await;
             self.application
                 .authenticate_computer(Some(&computer_id), &hello.device_credential)
+                .await
                 .map_err(|reason| Status::unauthenticated(reason.to_string()))?;
             self.application
                 .runtime()
                 .map_err(status)?
-                .storage()
+                .database()
                 .observe_computer(
                     &computer_id,
                     application::now_millis(),
@@ -84,10 +83,12 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                     Some(&hello.os),
                     Some(&hello.computer_version),
                 )
+                .await
                 .map_err(|error| status(error.into()))?;
             self.application
                 .computer_broker()
                 .connect_tracked(hello)
+                .await
                 .map_err(status)?
         };
         self.application.set_computer_connected(true);
@@ -175,11 +176,10 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                         }
                     }
                 }
-                let _ = application.computer_broker().disconnect_connection(
-                    &computer_id,
-                    &instance_id,
-                    connection_id,
-                );
+                let _ = application
+                    .computer_broker()
+                    .disconnect_connection(&computer_id, &instance_id, connection_id)
+                    .await;
                 application.set_computer_connected(
                     application
                         .computer_broker()
@@ -332,9 +332,10 @@ impl RuntimePeer for RuntimePeerAdapter {
         let resource_id = ResourceId::new(request.resource_id)
             .map_err(|_| Status::invalid_argument("Choose a valid image"))?;
         let runtime = self.application.runtime().map_err(status)?;
-        let storage = runtime.storage();
+        let storage = runtime.database();
         let workspace = storage
             .workspace_record(&workspace_id)
+            .await
             .map_err(|error| status(error.into()))?;
         let referenced = workspace.cover_resource_id == Some(resource_id);
         if !referenced {
@@ -344,6 +345,7 @@ impl RuntimePeer for RuntimePeerAdapter {
         }
         let metadata = storage
             .resource_metadata(&workspace_id, resource_id)
+            .await
             .map_err(|error| status(error.into()))?
             .ok_or_else(|| Status::not_found("Image not found"))?;
         if metadata.size_bytes > MAX_WORKSPACE_IMAGE_BYTES as u64 {
@@ -382,8 +384,9 @@ impl RuntimePeer for RuntimePeerAdapter {
             .map_err(|_| Status::invalid_argument("Choose a valid workspace"))?;
         let runtime = self.application.runtime().map_err(status)?;
         runtime
-            .storage()
+            .database()
             .workspace_record(&workspace_id)
+            .await
             .map_err(|error| status(error.into()))?;
         let resource = self
             .application
@@ -551,7 +554,7 @@ impl RuntimePeer for RuntimePeerAdapter {
         self.application.provider_catalog(request).map_err(status)
     }
     async fn create_pairing_code(&self, _request: CatalogRequest) -> Result<PairingCode, Status> {
-        self.application.create_pairing_code().map_err(status)
+        self.application.create_pairing_code().await.map_err(status)
     }
     async fn revoke_computer(
         &self,
@@ -559,19 +562,24 @@ impl RuntimePeer for RuntimePeerAdapter {
     ) -> Result<ComputerCatalog, Status> {
         self.application
             .revoke_computer(&request.computer_id)
+            .await
             .map_err(status)?;
         self.application
             .computer_catalog(CatalogRequest {
                 request_id: request.request_id,
                 workspace: None,
             })
+            .await
             .map_err(status)
     }
     async fn get_computer_catalog(
         &self,
         request: CatalogRequest,
     ) -> Result<ComputerCatalog, Status> {
-        self.application.computer_catalog(request).map_err(status)
+        self.application
+            .computer_catalog(request)
+            .await
+            .map_err(status)
     }
     async fn get_harness_catalog(&self, request: CatalogRequest) -> Result<HarnessCatalog, Status> {
         self.application.harness_catalog(request).map_err(status)

@@ -152,7 +152,7 @@ where
         factories,
     )
     .await?;
-    let _ = application.recover(now_millis())?;
+    let _ = application.recover(now_millis()).await?;
     #[derive(serde::Deserialize)]
     struct LinkSettings {
         #[serde(default = "default_link_listen")]

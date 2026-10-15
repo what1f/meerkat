@@ -173,13 +173,15 @@ async fn scenario(db: &Path) -> Result<(), String> {
         workspace_a.clone(),
         provider_id.clone(),
         state_a.clone(),
-    )?;
+    )
+    .await?;
     register(
         &mut runtime,
         workspace_b.clone(),
         provider_id,
         state_b.clone(),
-    )?;
+    )
+    .await?;
     runtime
         .configure_agent(
             &workspace_a,
@@ -676,7 +678,8 @@ async fn scenario(db: &Path) -> Result<(), String> {
         workspace_a.clone(),
         ProviderId::new("fixture").map_err(err)?,
         state_a.clone(),
-    )?;
+    )
+    .await?;
     restarted
         .configure_agent(
             &workspace_a,
@@ -688,6 +691,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
     ensure(
         restarted
             .recoverable_executions(Some(&workspace_a))
+            .await
             .map_err(err)?
             .len()
             == 1,
@@ -696,6 +700,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
     ensure(
         restarted
             .recoverable_sends(Some(&workspace_a))
+            .await
             .map_err(err)?
             .len()
             == 1,
@@ -705,6 +710,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
         matches!(
             restarted
                 .resolve_unknown_send(&workspace_a, &request_key, "reconciled_id".into(), 30)
+                .await
                 .map_err(err)?,
             ExecutionProgress::Committed {
                 committed: true,
@@ -831,7 +837,8 @@ async fn pause_drain_scenario(db: &Path) -> Result<(), String> {
         workspace.clone(),
         ProviderId::new("fixture").map_err(err)?,
         state.clone(),
-    )?;
+    )
+    .await?;
     runtime
         .configure_agent(
             &workspace,
@@ -953,7 +960,7 @@ async fn collaboration_fencing_scenario(db: &Path) -> Result<(), String> {
             .map_err(err)?;
     }
     let state = Arc::new(FakeState::default());
-    register(&mut runtime, workspace.clone(), provider_id, state.clone())?;
+    register(&mut runtime, workspace.clone(), provider_id, state.clone()).await?;
     runtime
         .configure_agent(
             &workspace,
@@ -1198,7 +1205,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         arch: "test".into(),
         harnesses: Vec::new(),
     };
-    let mut first = broker.connect(hello.clone()).map_err(err)?;
+    let mut first = broker.connect(hello.clone()).await.map_err(err)?;
     let _ = first.next().await;
     let execution = ExecutionRef {
         execution_id: created.execution_id,
@@ -1324,6 +1331,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
                         .as_millis() as i64
                         + 30_000,
                 )
+                .await
                 .map_err(err)?;
         } else {
             broker
@@ -1376,12 +1384,14 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         )?;
         broker
             .disconnect("computer-attempt", "instance-stable")
+            .await
             .map_err(err)?;
         runtime.shutdown().await.map_err(err)?;
         return Ok(());
     }
     broker
         .disconnect("computer-attempt", "instance-stable")
+        .await
         .map_err(err)?;
     ensure(
         !execution_task.is_finished(),
@@ -1397,7 +1407,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         "execution recovering",
     )?;
 
-    let mut resumed = broker.connect(hello).map_err(err)?;
+    let mut resumed = broker.connect(hello).await.map_err(err)?;
     let _ = resumed.next().await;
     broker
         .handle_frame(
@@ -1516,6 +1526,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
     )?;
     broker
         .disconnect("computer-attempt", "instance-stable")
+        .await
         .map_err(err)?;
     runtime.shutdown().await.map_err(err)?;
     Ok(())
@@ -1748,7 +1759,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     let application = RuntimeApplication::open(config.clone(), factories.clone())
         .await
         .map_err(err)?;
-    let recovered = application.recover(5).map_err(err)?;
+    let recovered = application.recover(5).await.map_err(err)?;
     ensure(
         recovered
             .recovering_execution_ids
@@ -1774,6 +1785,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             arch: "test".into(),
             harnesses: Vec::new(),
         })
+        .await
         .map_err(err)?;
     ensure(
         matches!(
@@ -1796,6 +1808,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             arch: "test".into(),
             harnesses: Vec::new(),
         })
+        .await
         .map_err(err)?;
     ensure(
         matches!(
@@ -1808,7 +1821,10 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "Computer reconnect replaces old connection",
     )?;
     let _ = second_connection.next().await;
-    broker.disconnect("computer-a", "instance-1").map_err(err)?;
+    broker
+        .disconnect("computer-a", "instance-1")
+        .await
+        .map_err(err)?;
     ensure(
         broker.is_connected("computer-a"),
         "stale disconnect keeps reconnected Computer",
@@ -1823,11 +1839,13 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         arch: "test".into(),
         harnesses: Vec::new(),
     };
-    let (old_connection_id, mut old_connection) =
-        broker.connect_tracked(same_instance.clone()).map_err(err)?;
+    let (old_connection_id, mut old_connection) = broker
+        .connect_tracked(same_instance.clone())
+        .await
+        .map_err(err)?;
     let _ = old_connection.next().await;
     let (_new_connection_id, mut new_connection) =
-        broker.connect_tracked(same_instance).map_err(err)?;
+        broker.connect_tracked(same_instance).await.map_err(err)?;
     let _ = new_connection.next().await;
     broker
         .disconnect_connection(
@@ -1835,6 +1853,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             "stable-instance",
             old_connection_id,
         )
+        .await
         .map_err(err)?;
     ensure(
         broker.is_connected("computer-same-instance"),
@@ -3314,7 +3333,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     let restarted = RuntimeApplication::open(config, factories)
         .await
         .map_err(err)?;
-    let report = restarted.recover(10).map_err(err)?;
+    let report = restarted.recover(10).await.map_err(err)?;
     ensure(
         report
             .recovering_execution_ids
@@ -3361,7 +3380,7 @@ impl ProviderTypeFactory for ApplicationFactory {
     }
 }
 
-fn register(
+async fn register(
     runtime: &mut Runtime,
     workspace: WorkspaceId,
     provider_id: ProviderId,
@@ -3380,6 +3399,7 @@ fn register(
                 services(),
             )
         })
+        .await
         .map_err(err)
 }
 
@@ -4406,6 +4426,7 @@ async fn prompt_failure_recovery_scenario() {
                 services(),
             )
         })
+        .await
         .unwrap();
     runtime
         .configure_agent(&w, agent_config(&w, &a, &ch, "provider_agent_audit"))
@@ -4428,7 +4449,7 @@ async fn prompt_failure_recovery_scenario() {
         "failure injection must reach dynamic prompt construction"
     );
     let pinned = runtime.storage().has_active_execution(&w).unwrap();
-    let recovery = runtime.recoverable_executions(Some(&w)).unwrap();
+    let recovery = runtime.recoverable_executions(Some(&w)).await.unwrap();
     let stored = runtime.storage().execution(1).unwrap();
     assert_eq!(
         stored.error_code.as_deref(),
@@ -4530,6 +4551,7 @@ async fn durable_ingress_retry_scenario() {
                 services(),
             )
         })
+        .await
         .unwrap();
     runtime
         .configure_agent(&w, agent_config(&w, &a, &ch, "provider_receipt"))
@@ -4625,6 +4647,7 @@ async fn configured_assignment_scenario() {
                 instance_id: "config-audit".into(),
                 ..Default::default()
             })
+            .await
             .unwrap();
         let _ = connection.next().await.unwrap().unwrap();
         broker

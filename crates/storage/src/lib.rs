@@ -1,9 +1,8 @@
 #![forbid(unsafe_code)]
 //! Real SQLite/WAL persistence and Runtime transaction boundary.
 
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, sync::Mutex};
+use std::path::PathBuf;
 
 mod computer;
 pub use computer::ComputerRecord;
@@ -13,6 +12,7 @@ mod error;
 mod execution;
 mod message;
 mod person;
+mod scheduling;
 mod schema;
 mod send;
 mod workspace;
@@ -57,7 +57,7 @@ impl DatabaseConfig {
 
 pub struct Storage {
     config: DatabaseConfig,
-    connection: Mutex<Connection>,
+    pool: schema::ConnectionPool,
 }
 pub trait Store: Send + Sync {
     fn database_config(&self) -> &DatabaseConfig;

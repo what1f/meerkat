@@ -7,7 +7,7 @@ use lankide_protocol::{
 use lankide_storage::{ExecutionEventDisposition, RecordExecutionEvent, SteerDelivery, Storage};
 use std::collections::BTreeSet;
 use std::sync::{
-    Mutex as StdMutex, RwLock as StdRwLock, Weak,
+    Mutex as StdMutex, RwLock as StdRwLock,
     atomic::{AtomicI64, AtomicU64, Ordering},
 };
 use tokio::sync::{mpsc, oneshot};
@@ -18,7 +18,7 @@ pub struct ComputerBroker {
 }
 
 struct BrokerInner {
-    storage: Weak<Storage>,
+    storage: database::WeakDatabase,
     attempt_lease_millis: AtomicI64,
     connections: StdRwLock<BTreeMap<String, ComputerConnection>>,
     next_connection_id: AtomicU64,
@@ -35,6 +35,7 @@ struct ComputerConnection {
     sender: mpsc::Sender<Result<RuntimeFrame, Status>>,
     harnesses: Vec<HarnessInfo>,
     reconciled: bool,
+    reconciling: bool,
     active_agents: BTreeSet<(String, String)>,
 }
 
@@ -52,9 +53,13 @@ struct PendingExecution {
 
 impl ComputerBroker {
     pub fn new(storage: Arc<Storage>) -> Self {
+        Self::with_database(Database::new(storage))
+    }
+
+    pub(crate) fn with_database(storage: Database) -> Self {
         Self {
             inner: Arc::new(BrokerInner {
-                storage: Arc::downgrade(&storage),
+                storage: storage.downgrade(),
                 attempt_lease_millis: AtomicI64::new(15_000),
                 connections: StdRwLock::new(BTreeMap::new()),
                 next_connection_id: AtomicU64::new(0),
@@ -122,6 +127,7 @@ impl ComputerBroker {
             .map(|connections| {
                 connections.get(computer_id).is_some_and(|connection| {
                     connection.reconciled
+                        && !connection.reconciling
                         && !connection
                             .active_agents
                             .contains(&(workspace.to_string(), agent.to_string()))
@@ -130,8 +136,11 @@ impl ComputerBroker {
             .unwrap_or(false)
     }
 
-    pub fn expire_leases(&self, now: i64) -> Result<Vec<(i64, i64)>, RuntimeError> {
-        let expired = self.storage()?.expire_execution_attempt_leases(now)?;
+    pub async fn expire_leases(&self, now: i64) -> Result<Vec<(i64, i64)>, RuntimeError> {
+        let expired = self
+            .database()?
+            .expire_execution_attempt_leases(now)
+            .await?;
         self.release_lost_attempts(&expired, "execution_lease_expired")?;
         Ok(expired)
     }
@@ -174,7 +183,7 @@ impl ComputerBroker {
         Ok(())
     }
 
-    fn storage(&self) -> Result<Arc<Storage>, RuntimeError> {
+    fn database(&self) -> Result<Database, RuntimeError> {
         self.inner
             .storage
             .upgrade()
@@ -229,11 +238,11 @@ impl ComputerBroker {
         Ok(())
     }
 
-    pub fn connect(&self, hello: ComputerHello) -> Result<RuntimeFrameStream, RuntimeError> {
-        self.connect_tracked(hello).map(|(_, stream)| stream)
+    pub async fn connect(&self, hello: ComputerHello) -> Result<RuntimeFrameStream, RuntimeError> {
+        self.connect_tracked(hello).await.map(|(_, stream)| stream)
     }
 
-    pub fn connect_tracked(
+    pub async fn connect_tracked(
         &self,
         hello: ComputerHello,
     ) -> Result<(u64, RuntimeFrameStream), RuntimeError> {
@@ -256,6 +265,7 @@ impl ComputerBroker {
             sender: sender.clone(),
             harnesses: hello.harnesses,
             reconciled: false,
+            reconciling: false,
             active_agents: BTreeSet::new(),
         };
         if let Some(previous) = self
@@ -288,8 +298,9 @@ impl ComputerBroker {
             }))
             .map_err(|_| RuntimeError::Application("computer stream closed".into()))?;
         for delivery in self
-            .storage()?
-            .pending_steer_deliveries(&hello.computer_id, &hello.instance_id)?
+            .database()?
+            .pending_steer_deliveries(&hello.computer_id, &hello.instance_id)
+            .await?
         {
             if !self.can_steer(&delivery)? {
                 continue;
@@ -308,56 +319,72 @@ impl ComputerBroker {
         ))
     }
 
-    pub fn disconnect(&self, computer_id: &str, instance_id: &str) -> Result<(), RuntimeError> {
+    pub async fn disconnect(
+        &self,
+        computer_id: &str,
+        instance_id: &str,
+    ) -> Result<(), RuntimeError> {
         self.disconnect_matching(computer_id, instance_id, None)
+            .await
     }
 
-    pub fn disconnect_connection(
+    pub async fn disconnect_connection(
         &self,
         computer_id: &str,
         instance_id: &str,
         connection_id: u64,
     ) -> Result<(), RuntimeError> {
         self.disconnect_matching(computer_id, instance_id, Some(connection_id))
+            .await
     }
 
-    fn disconnect_matching(
+    async fn disconnect_matching(
         &self,
         computer_id: &str,
         instance_id: &str,
         connection_id: Option<u64>,
     ) -> Result<(), RuntimeError> {
-        let mut connections = self
-            .inner
-            .connections
-            .write()
-            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
-        let removed = if connections.get(computer_id).is_some_and(|connection| {
-            connection.instance_id == instance_id
-                && connection_id.is_none_or(|id| connection.connection_id == id)
-        }) {
-            connections.remove(computer_id);
-            true
-        } else {
-            false
+        let removed = {
+            let mut connections = self
+                .inner
+                .connections
+                .write()
+                .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
+            if connections.get(computer_id).is_some_and(|connection| {
+                connection.instance_id == instance_id
+                    && connection_id.is_none_or(|id| connection.connection_id == id)
+            }) {
+                connections.remove(computer_id);
+                true
+            } else {
+                false
+            }
         };
-        drop(connections);
         if !removed {
             return Ok(());
         }
         // A link loss is not an attempt loss. Keep the completion waiter and
         // its acceptance/output state until a terminal event or reconciliation.
-        let pending = self
-            .inner
-            .pending
-            .lock()
-            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
-        for (execution_id, value) in pending.iter() {
-            if value.computer_id == computer_id && value.instance_id == instance_id {
-                self.storage()?
-                    .mark_execution_recovering(*execution_id, now_millis())?;
-            }
+        let execution_ids = {
+            let pending = self
+                .inner
+                .pending
+                .lock()
+                .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
+            pending
+                .iter()
+                .filter(|(_, value)| {
+                    value.computer_id == computer_id && value.instance_id == instance_id
+                })
+                .map(|(id, _)| *id)
+                .collect::<Vec<_>>()
+        };
+        for id in execution_ids {
+            self.database()?
+                .mark_execution_recovering(id, now_millis())
+                .await?;
         }
+        self.inner.storage.wake();
         Ok(())
     }
 
@@ -382,6 +409,17 @@ impl ComputerBroker {
         let Some(frame) = frame.frame else {
             return Ok(());
         };
+        if matches!(&frame, computer_frame::Frame::Heartbeat(_)) {
+            if let Some(connection) = self
+                .inner
+                .connections
+                .write()
+                .map_err(|_| RuntimeError::RuntimeLockPoisoned)?
+                .get_mut(computer_id)
+            {
+                connection.reconciling = true;
+            }
+        }
         let execution = match &frame {
             computer_frame::Frame::AssignmentResult(v) => v.execution.as_ref(),
             computer_frame::Frame::ExecutionEvent(v) => v.execution.as_ref(),
@@ -389,11 +427,14 @@ impl ComputerBroker {
             _ => None,
         };
         if let Some(execution) = execution
-            && !self.storage()?.execution_placement_matches(
-                execution.execution_id,
-                i64::from(execution.attempt),
-                computer_id,
-            )?
+            && !self
+                .database()?
+                .execution_placement_matches(
+                    execution.execution_id,
+                    i64::from(execution.attempt),
+                    computer_id,
+                )
+                .await?
         {
             // Placement changes invalidate every event in the old attempt's
             // outbox, including progress saved before its acknowledgement arrived.
@@ -424,20 +465,23 @@ impl ComputerBroker {
         }
         match &frame {
             computer_frame::Frame::Heartbeat(_) => {
-                self.storage()?
-                    .observe_computer(computer_id, now_millis(), None, None, None)?;
+                self.database()?
+                    .observe_computer(computer_id, now_millis(), None, None, None)
+                    .await?;
             }
             computer_frame::Frame::InventoryChanged(inventory) => {
-                self.storage()?.observe_computer(
-                    computer_id,
-                    now_millis(),
-                    Some(
-                        &serde_json::to_string(&inventory.harnesses)
-                            .map_err(|e| RuntimeError::Application(e.to_string()))?,
-                    ),
-                    None,
-                    None,
-                )?;
+                self.database()?
+                    .observe_computer(
+                        computer_id,
+                        now_millis(),
+                        Some(
+                            &serde_json::to_string(&inventory.harnesses)
+                                .map_err(|e| RuntimeError::Application(e.to_string()))?,
+                        ),
+                        None,
+                        None,
+                    )
+                    .await?;
             }
             _ => {}
         }
@@ -448,12 +492,14 @@ impl ComputerBroker {
                 })?;
                 let execution_id = execution.execution_id;
                 if result.accepted {
-                    self.storage()?.accept_execution_attempt(
-                        execution_id,
-                        i64::from(execution.attempt),
-                        true,
-                        now_millis(),
-                    )?;
+                    self.database()?
+                        .accept_execution_attempt(
+                            execution_id,
+                            i64::from(execution.attempt),
+                            true,
+                            now_millis(),
+                        )
+                        .await?;
                 } else {
                     if result
                         .failure
@@ -470,20 +516,22 @@ impl ComputerBroker {
                             connection.reconciled = false;
                         }
                     }
-                    self.storage()?.reject_execution_attempt_with_failure(
-                        execution_id,
-                        i64::from(execution.attempt),
-                        &result.error_code,
-                        &result.error_message,
-                        result
-                            .failure
-                            .as_ref()
-                            .map(serde_json::to_value)
-                            .transpose()
-                            .map_err(|error| RuntimeError::Application(error.to_string()))?
-                            .as_ref(),
-                        now_millis(),
-                    )?;
+                    self.database()?
+                        .reject_execution_attempt_with_failure(
+                            execution_id,
+                            i64::from(execution.attempt),
+                            &result.error_code,
+                            &result.error_message,
+                            result
+                                .failure
+                                .as_ref()
+                                .map(serde_json::to_value)
+                                .transpose()
+                                .map_err(|error| RuntimeError::Application(error.to_string()))?
+                                .as_ref(),
+                            now_millis(),
+                        )
+                        .await?;
                 }
                 let mut pending = self
                     .inner
@@ -525,15 +573,16 @@ impl ComputerBroker {
                 // a new process identity. Authenticate its Computer ownership,
                 // then let storage enforce the attempt/sequence commit boundary.
                 let owner = self
-                    .storage()?
-                    .execution_attempt(execution.execution_id, i64::from(execution.attempt))?;
+                    .database()?
+                    .execution_attempt(execution.execution_id, i64::from(execution.attempt))
+                    .await?;
                 let event_instance = owner
                     .as_ref()
                     .filter(|owner| owner.computer_id == computer_id)
                     .map(|owner| owner.computer_instance_id.as_str())
                     .unwrap_or(instance_id);
                 let receipt = self
-                    .storage()?
+                    .database()?
                     .record_execution_event(RecordExecutionEvent {
                         execution_id: execution.execution_id,
                         attempt: i64::from(execution.attempt),
@@ -544,7 +593,8 @@ impl ComputerBroker {
                         payload: event.payload.clone(),
                         occurred_at: event.occurred_at,
                         now: event.occurred_at,
-                    })?;
+                    })
+                    .await?;
                 // A lost attempt cannot commit late output, but its Computer
                 // still needs a terminal receipt to discard the durable outbox.
                 let abandoned_terminal = receipt.disposition
@@ -656,24 +706,28 @@ impl ComputerBroker {
                     .map(|value| value.attempt)
                     .unwrap_or_default();
                 if result.delivery_id < 0 {
-                    self.storage()?.mark_steer_delivery_result(
-                        -result.delivery_id,
-                        execution_id,
-                        i64::from(attempt),
-                        computer_id,
-                        instance_id,
-                        result.accepted,
-                        now_millis(),
-                    )?;
+                    self.database()?
+                        .mark_steer_delivery_result(
+                            -result.delivery_id,
+                            execution_id,
+                            i64::from(attempt),
+                            computer_id,
+                            instance_id,
+                            result.accepted,
+                            now_millis(),
+                        )
+                        .await?;
                     return Ok(());
                 }
-                self.storage()?.mark_attempt_delivery(
-                    execution_id,
-                    i64::from(attempt),
-                    result.delivery_id,
-                    result.accepted,
-                    now_millis(),
-                )?;
+                self.database()?
+                    .mark_attempt_delivery(
+                        execution_id,
+                        i64::from(attempt),
+                        result.delivery_id,
+                        result.accepted,
+                        now_millis(),
+                    )
+                    .await?;
                 let mut pending = self
                     .inner
                     .pending
@@ -715,21 +769,27 @@ impl ComputerBroker {
                     .collect::<Vec<_>>();
                 // Use Runtime receipt time for leases, independent of Computer clock skew.
                 let now = now_millis();
-                self.expire_leases(now)?;
-                let reconciled = self.storage()?.reconcile_computer_heartbeat(
-                    computer_id,
-                    instance_id,
-                    &active,
-                    now,
-                    now.saturating_add(self.inner.attempt_lease_millis.load(Ordering::Relaxed)),
-                )?;
+                self.expire_leases(now).await?;
+                let reconciled = self
+                    .database()?
+                    .reconcile_computer_heartbeat(
+                        computer_id,
+                        instance_id,
+                        &active,
+                        now,
+                        now.saturating_add(self.inner.attempt_lease_millis.load(Ordering::Relaxed)),
+                    )
+                    .await?;
                 self.release_lost_attempts(&reconciled.lost, "execution_attempt_lost")?;
                 // Include reported runs even if their Runtime lease already expired.
                 // The Computer must release the Agent before another dispatch.
-                let storage = self.storage()?;
+                let storage = self.database()?;
                 let mut active_agents = BTreeSet::new();
                 for (id, attempt) in &active {
-                    if !storage.execution_placement_matches(*id, *attempt, computer_id)? {
+                    if !storage
+                        .execution_placement_matches(*id, *attempt, computer_id)
+                        .await?
+                    {
                         self.send_to(
                             computer_id,
                             instance_id,
@@ -750,7 +810,7 @@ impl ComputerBroker {
                         .await?;
                         continue;
                     }
-                    if let Some(context) = storage.execution_auth_context(*id, *attempt)? {
+                    if let Some(context) = storage.execution_auth_context(*id, *attempt).await? {
                         active_agents.insert((
                             context.workspace_id.to_string(),
                             context.agent_id.to_string(),
@@ -793,6 +853,7 @@ impl ComputerBroker {
                 {
                     connection.active_agents = active_agents;
                     connection.reconciled = true;
+                    connection.reconciling = false;
                 }
             }
             computer_frame::Frame::ResourceTransferResult(_) => {}
@@ -816,6 +877,7 @@ impl ComputerBroker {
                 return Err(RuntimeError::Application("duplicate computer hello".into()));
             }
         }
+        self.inner.storage.wake();
         Ok(())
     }
 
@@ -895,8 +957,9 @@ impl ComputerBroker {
             }
         };
         if result.is_ok() {
-            self.storage()?
-                .complete_agent_file_deletion(workspace_id, agent_id)?;
+            self.database()?
+                .complete_agent_file_deletion(workspace_id, agent_id)
+                .await?;
         }
         result
     }
@@ -905,7 +968,10 @@ impl ComputerBroker {
         &self,
         computer_id: &str,
     ) -> Result<(), RuntimeError> {
-        let pending = self.storage()?.pending_agent_file_deletions(computer_id)?;
+        let pending = self
+            .database()?
+            .pending_agent_file_deletions(computer_id)
+            .await?;
         for (workspace_id, agent_id) in pending {
             if let Err(error) = self
                 .delete_agent_files(computer_id, &workspace_id, &agent_id)
@@ -939,16 +1005,21 @@ impl ComputerBroker {
         // A surviving attempt has no in-memory waiter after Runtime restart.
         // Its durable ownership still identifies where cancellation must go.
         if destination.is_none() {
-            let storage = self.storage()?;
-            if let Some(attempt) = storage.execution_attempts(execution_id)?.into_iter().last()
+            let storage = self.database()?;
+            if let Some(attempt) = storage
+                .execution_attempts(execution_id)
+                .await?
+                .into_iter()
+                .last()
                 && matches!(
                     attempt.state,
                     lankide_storage::ExecutionAttemptState::Offered
                         | lankide_storage::ExecutionAttemptState::Accepted
                         | lankide_storage::ExecutionAttemptState::Running
                 )
-                && let Some(context) =
-                    storage.execution_auth_context(execution_id, attempt.attempt)?
+                && let Some(context) = storage
+                    .execution_auth_context(execution_id, attempt.attempt)
+                    .await?
                 && matches!(
                     context.state,
                     lankide_storage::ExecutionState::Assigning
@@ -956,7 +1027,9 @@ impl ComputerBroker {
                         | lankide_storage::ExecutionState::Recovering
                 )
             {
-                let agent = storage.agent_record(&context.workspace_id, &context.agent_id)?;
+                let agent = storage
+                    .agent_record(&context.workspace_id, &context.agent_id)
+                    .await?;
                 destination = Some((
                     attempt.computer_id,
                     attempt.computer_instance_id,
@@ -1185,7 +1258,7 @@ impl ComputerExecutor for BrokerComputerExecutor {
             let offered_at = now_millis();
             if !self
                 .broker
-                .storage()
+                .database()
                 .map_err(|e| ComputerError {
                     code: e.to_string(),
                 })?
@@ -1194,6 +1267,7 @@ impl ComputerExecutor for BrokerComputerExecutor {
                     i64::from(execution.attempt),
                     &self.computer_id,
                 )
+                .await
                 .map_err(|e| ComputerError {
                     code: e.to_string(),
                 })?
@@ -1203,7 +1277,7 @@ impl ComputerExecutor for BrokerComputerExecutor {
                 });
             }
             self.broker
-                .storage()
+                .database()
                 .map_err(|error| ComputerError {
                     code: error.to_string(),
                 })?
@@ -1220,6 +1294,7 @@ impl ComputerExecutor for BrokerComputerExecutor {
                     ),
                     offered_at,
                 )
+                .await
                 .map_err(|error| ComputerError {
                     code: error.to_string(),
                 })?;
@@ -1265,11 +1340,12 @@ impl ComputerExecutor for BrokerComputerExecutor {
                 // The transport cannot prove whether the Computer received the
                 // assignment. Let the offered attempt's lease/reconciliation decide.
                 self.broker
-                    .storage()
+                    .database()
                     .map_err(|error| ComputerError {
                         code: error.to_string(),
                     })?
                     .mark_execution_recovering(execution_id, now_millis())
+                    .await
                     .map_err(|error| ComputerError {
                         code: error.to_string(),
                     })?;

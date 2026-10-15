@@ -218,7 +218,7 @@ impl Storage {
         Ok(())
     }
     pub fn list_agents(&self, w: &WorkspaceId) -> Result<Vec<AgentView>> {
-        let c = self.conn()?;
+        let c = self.read_conn()?;
         let mut s = c.prepare(
             "SELECT workspace_id,agent_id,name FROM agents WHERE workspace_id=?1 ORDER BY agent_id",
         )?;
@@ -232,11 +232,11 @@ impl Storage {
         .collect::<std::result::Result<Vec<_>, _>>()?)
     }
     pub fn agent_record(&self, w: &WorkspaceId, a: &AgentId) -> Result<AgentRecord> {
-        let c = self.conn()?;
+        let c = self.read_conn()?;
         load_agent_record(&c, w, a)
     }
     pub fn list_agent_records(&self, w: &WorkspaceId) -> Result<Vec<AgentRecord>> {
-        let c = self.conn()?;
+        let c = self.read_conn()?;
         let mut s =
             c.prepare("SELECT agent_id FROM agents WHERE workspace_id=?1 ORDER BY agent_id")?;
         let ids = s
@@ -389,7 +389,7 @@ impl Storage {
         &self,
         computer_id: &str,
     ) -> Result<Vec<(WorkspaceId, AgentId)>> {
-        let connection = self.conn()?;
+        let connection = self.read_conn()?;
         let mut statement = connection.prepare(
             "SELECT workspace_id,agent_id FROM agent_file_deletions WHERE computer_id=?1 ORDER BY created_at,workspace_id,agent_id",
         )?;

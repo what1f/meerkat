@@ -165,7 +165,7 @@ pub(super) fn load_recoverable_sends(
 
 impl Storage {
     pub fn cursors(&self, w: &WorkspaceId, a: &AgentId) -> Result<Vec<CursorView>> {
-        let c = self.conn()?;
+        let c = self.read_conn()?;
         let mut s=c.prepare("SELECT chat_id,read_to_message_id FROM agent_chat_cursors WHERE workspace_id=?1 AND agent_id=?2 ORDER BY chat_id")?;
         Ok(s.query_map(params![w.as_str(), a.as_str()], |r| {
             Ok(CursorView {
@@ -176,7 +176,7 @@ impl Storage {
         .collect::<std::result::Result<Vec<_>, _>>()?)
     }
     pub fn cursor(&self, w: &WorkspaceId, a: &AgentId, ch: i64) -> Result<Option<i64>> {
-        Ok(self.conn()?.query_row("SELECT read_to_message_id FROM agent_chat_cursors WHERE workspace_id=?1 AND agent_id=?2 AND chat_id=?3",params![w.as_str(),a.as_str(),ch],|r|r.get(0)).optional()?)
+        Ok(self.read_conn()?.query_row("SELECT read_to_message_id FROM agent_chat_cursors WHERE workspace_id=?1 AND agent_id=?2 AND chat_id=?3",params![w.as_str(),a.as_str(),ch],|r|r.get(0)).optional()?)
     }
     pub fn begin_tool_invocation(&self, r: ToolInvocationRequest) -> Result<ToolInvocationResult> {
         let c = self.conn()?;
@@ -482,14 +482,14 @@ impl Storage {
         })
     }
     pub fn send_attempt(&self, k: &str) -> Result<SendAttemptView> {
-        let connection = self.conn()?;
+        let connection = self.read_conn()?;
         load_send(&connection, k)?.ok_or_else(|| StorageError::Invalid("send not found".into()))
     }
     pub fn recoverable_sends(
         &self,
         workspace_id: Option<&WorkspaceId>,
     ) -> Result<Vec<RecoverableSendView>> {
-        let c = self.conn()?;
+        let c = self.read_conn()?;
         let mut sql="SELECT a.message_id,a.request_key,a.state,a.provider_message_id,a.error_code,c.workspace_id,w.provider_id,c.channel_id,c.provider_chat_id,m.sender_id,m.content_markdown FROM message_send_attempts a JOIN messages m USING(message_id) JOIN chats c USING(chat_id) JOIN workspaces w USING(workspace_id) WHERE a.state IN('sending','unknown')".to_owned();
         if workspace_id.is_some() {
             sql.push_str(" AND c.workspace_id=?1");

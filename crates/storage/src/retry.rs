@@ -17,7 +17,7 @@ pub struct FailureNotice {
 }
 impl Storage {
     pub fn unapplied_failures(&self, w: &WorkspaceId, a: &AgentId) -> Result<Vec<(i64, i64)>> {
-        let c = self.conn()?;
+        let c = self.read_conn()?;
         let mut q=c.prepare("SELECT execution_id,coalesce(completed_at,updated_at) FROM executions WHERE workspace_id=?1 AND agent_id=?2 AND state IN ('failed','cancelled') AND retry_policy_applied=0 AND (state='cancelled' OR EXISTS(SELECT 1 FROM execution_attempts a WHERE a.execution_id=executions.execution_id AND a.failure_json IS NOT NULL)) ORDER BY execution_id")?;
         Ok(q.query_map(params![w.as_str(), a.as_str()], |r| {
             Ok((r.get(0)?, r.get(1)?))
@@ -25,7 +25,7 @@ impl Storage {
         .collect::<std::result::Result<Vec<_>, _>>()?)
     }
     pub fn agent_pause_reason(&self, w: &WorkspaceId, a: &AgentId) -> Result<Option<String>> {
-        Ok(self.conn()?.query_row(
+        Ok(self.read_conn()?.query_row(
             "SELECT pause_reason FROM agents WHERE workspace_id=?1 AND agent_id=?2",
             params![w.as_str(), a.as_str()],
             |r| r.get(0),
@@ -40,7 +40,7 @@ impl Storage {
         Ok(())
     }
     pub fn failure_history(&self, id: i64) -> Result<FailureHistory> {
-        Ok(self.conn()?.query_row("SELECT coalesce((SELECT max(i.failure_count) FROM agent_inbox_items i JOIN execution_delivery_items d USING(inbox_item_id) JOIN execution_deliveries ed USING(delivery_id) WHERE ed.execution_id=e.execution_id),0),a.failure_fingerprint,a.failure_streak FROM executions e JOIN agents a USING(workspace_id,agent_id) WHERE execution_id=?1", [id], |r| Ok(FailureHistory {batch_failures:r.get(0)?,fingerprint:r.get(1)?,streak:r.get(2)?}))?)
+        Ok(self.read_conn()?.query_row("SELECT coalesce((SELECT max(i.failure_count) FROM agent_inbox_items i JOIN execution_delivery_items d USING(inbox_item_id) JOIN execution_deliveries ed USING(delivery_id) WHERE ed.execution_id=e.execution_id),0),a.failure_fingerprint,a.failure_streak FROM executions e JOIN agents a USING(workspace_id,agent_id) WHERE execution_id=?1", [id], |r| Ok(FailureHistory {batch_failures:r.get(0)?,fingerprint:r.get(1)?,streak:r.get(2)?}))?)
     }
     /// Requeue an ownership conflict without changing Harness failure counters.
     pub fn retry_execution_conflict(&self, id: i64, retry_at: i64) -> Result<()> {
@@ -97,7 +97,7 @@ impl Storage {
         w: &WorkspaceId,
         a: &AgentId,
     ) -> Result<Vec<FailureNotice>> {
-        let c = self.conn()?;
+        let c = self.read_conn()?;
         let mut q=c.prepare("SELECT n.notice_id,c.channel_id,c.provider_chat_id,n.content FROM failure_notices n JOIN chats c USING(chat_id) WHERE n.workspace_id=?1 AND n.agent_id=?2 AND n.sent_at IS NULL ORDER BY n.notice_id")?;
         Ok(q.query_map(params![w.as_str(), a.as_str()], |r| {
             Ok(FailureNotice {

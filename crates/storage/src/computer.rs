@@ -44,7 +44,7 @@ impl Storage {
     }
 
     pub fn registered_computers(&self) -> Result<Vec<ComputerRecord>> {
-        let connection = self.conn()?;
+        let connection = self.read_conn()?;
         let mut statement = connection.prepare("SELECT computer_id,display_name,credential_hash,paired_at,revoked_at,last_seen_at,os,version,inventory_json FROM computers ORDER BY paired_at,computer_id")?;
         Ok(statement
             .query_map([], |r| {

@@ -112,14 +112,20 @@ cargo test -p lankide-system-e2e --test retry_policy_e2e
 
 They set `RuntimeConfig.retry` through the daemon's optional `retry-policy.json`
 in each private Runtime home. The file accepts `base_ms`, `max_ms`,
-`notice_dedupe_ms`, and `poll_ms`. Production defaults are 30000, 600000,
-900000, and 1000 milliseconds. All values must be positive; maximum backoff
+and `notice_dedupe_ms`. Production defaults are 30000, 600000, and 900000
+milliseconds. All values must be positive; maximum backoff
 must be at least the base. Omitted fields use their production defaults.
 
 A Runtime restart in these scenarios opens the same database and reconnects
 management. The graceful shutdown frame also ends the Computer daemon, so the
 rig restarts that peer with its existing private home, as a service supervisor
 would. Assertions check saved attempt times and deduplicated chat notices.
+
+The application schedules retries and lease expiry independently of Provider
+receivers. `tests/scheduler_e2e.rs` verifies that an offline attempt expires
+while every Workspace is paused and that queued work replies once after resume.
+`tests/concurrent_workspaces_e2e.rs` runs six Agents across three Workspaces,
+serves management listings during their runs, and checks each reply exactly once.
 
 ## Network delivery (Task 10)
 

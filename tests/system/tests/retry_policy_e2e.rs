@@ -8,7 +8,6 @@ fn config() -> RigConfig {
             base_ms: 40,
             max_ms: 160,
             notice_dedupe_ms: 900_000,
-            poll_ms: 10,
         },
         ..Default::default()
     }

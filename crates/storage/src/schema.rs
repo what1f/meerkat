@@ -4,8 +4,38 @@ use crate::{
     DatabaseConfig, RecoverableExecutionView, RecoverableSendView, Result, Storage, StorageError,
 };
 use rusqlite::Connection;
+use std::ops::Deref;
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Condvar, Mutex, MutexGuard};
+
+// Writes retain one connection for the whole transaction. Read connections are
+// checked out independently and cannot accidentally start a write transaction.
+pub(crate) struct ConnectionPool {
+    writer: Mutex<Connection>,
+    readers: Mutex<Vec<Connection>>,
+    available: Condvar,
+}
+
+pub(super) struct ReadConnection<'a> {
+    connection: Option<Connection>,
+    pool: &'a ConnectionPool,
+}
+
+impl Deref for ReadConnection<'_> {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        self.connection.as_ref().expect("checked out connection")
+    }
+}
+
+impl Drop for ReadConnection<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut readers) = self.pool.readers.lock() {
+            readers.push(self.connection.take().expect("checked out connection"));
+            self.pool.available.notify_one();
+        }
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecoveryState {
@@ -97,26 +127,61 @@ impl Storage {
         let mut c = Connection::open(&config.path)?;
         configure(&c)?;
         initialize_schema(&mut c)?;
+        let mut readers = Vec::new();
+        for _ in 0..4 {
+            let reader = Connection::open_with_flags(
+                &config.path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )?;
+            reader.busy_timeout(std::time::Duration::from_secs(2))?;
+            reader.execute_batch("PRAGMA foreign_keys=ON;PRAGMA query_only=ON;")?;
+            readers.push(reader);
+        }
         Ok(Self {
             config,
-            connection: Mutex::new(c),
+            pool: ConnectionPool {
+                writer: Mutex::new(c),
+                readers: Mutex::new(readers),
+                available: Condvar::new(),
+            },
         })
     }
     pub(super) fn conn(&self) -> Result<MutexGuard<'_, Connection>> {
-        self.connection
+        self.pool
+            .writer
             .lock()
             .map_err(|_| StorageError::LockPoisoned)
+    }
+    pub(super) fn read_conn(&self) -> Result<ReadConnection<'_>> {
+        let mut readers = self
+            .pool
+            .readers
+            .lock()
+            .map_err(|_| StorageError::LockPoisoned)?;
+        loop {
+            if let Some(connection) = readers.pop() {
+                return Ok(ReadConnection {
+                    connection: Some(connection),
+                    pool: &self.pool,
+                });
+            }
+            readers = self
+                .pool
+                .available
+                .wait(readers)
+                .map_err(|_| StorageError::LockPoisoned)?;
+        }
     }
     pub fn database_path(&self) -> &Path {
         &self.config.path
     }
     pub fn schema_version(&self) -> Result<i64> {
         Ok(self
-            .conn()?
+            .read_conn()?
             .query_row("PRAGMA user_version", [], |r| r.get(0))?)
     }
     pub fn sqlite_settings(&self) -> Result<SqliteSettings> {
-        let c = self.conn()?;
+        let c = self.read_conn()?;
         let j: String = c.query_row("PRAGMA journal_mode", [], |r| r.get(0))?;
         let f: i64 = c.query_row("PRAGMA foreign_keys", [], |r| r.get(0))?;
         Ok(SqliteSettings {
@@ -165,8 +230,15 @@ impl Storage {
         })
     }
     pub fn close(self) -> Result<()> {
+        drop(
+            self.pool
+                .readers
+                .into_inner()
+                .map_err(|_| StorageError::LockPoisoned)?,
+        );
         let c = self
-            .connection
+            .pool
+            .writer
             .into_inner()
             .map_err(|_| StorageError::LockPoisoned)?;
         let (busy, _, _): (i64, i64, i64) =

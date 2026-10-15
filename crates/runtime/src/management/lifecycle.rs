@@ -46,8 +46,9 @@ impl<'a> WorkspaceLifecycle<'a> {
         let now = now_millis();
         let runtime = self.application.runtime()?;
         if runtime
-            .storage()
-            .list_workspace_records()?
+            .database()
+            .list_workspace_records()
+            .await?
             .iter()
             .any(|record| record.id == id)
         {
@@ -69,11 +70,12 @@ impl<'a> WorkspaceLifecycle<'a> {
             updated_at: now,
         };
         let record = runtime
-            .storage()
-            .insert_new_workspace_record(candidate, &secrets_json(&provider_secrets))?;
+            .database()
+            .insert_new_workspace_record(candidate, &secrets_json(&provider_secrets))
+            .await?;
         let factory = self.application.factories().factory(&record.provider_id)?;
         let services = workspace_services_with_secrets(
-            runtime.storage_arc(),
+            runtime.database(),
             self.application.resource_store()?,
             &record,
             provider_secrets,
@@ -83,33 +85,38 @@ impl<'a> WorkspaceLifecycle<'a> {
             .create_workspace(provider_workspace_spec(&record))
             .await
         {
-            if let Err(rollback_error) = runtime.storage().rollback_new_workspace(&id) {
+            if let Err(rollback_error) = runtime.database().rollback_new_workspace(&id).await {
                 log::error!("[runtime] workspace={id} setup rollback failed: {rollback_error}");
                 return Err(rollback_error.into());
             }
             return Err(error.into());
         }
-        let record = runtime.storage().workspace_record(&id)?;
+        let record = runtime.database().workspace_record(&id).await?;
         self.application
             .attach_workspace(&runtime, record.clone())
             .await?;
         if self.application.readiness().providers_started {
             if runtime.resume_workspace(&id, now).await.is_err() {
-                return self.fail_setup(&runtime, &id, now);
+                return self.fail_setup(&runtime, &id, now).await;
             }
             self.application.start_workspace_loop(id.clone())?;
         }
         runtime
-            .storage()
-            .set_workspace_setup(&id, WorkspaceSetupStatus::Ready, None, now)?;
+            .database()
+            .set_workspace_setup(&id, WorkspaceSetupStatus::Ready, None, now)
+            .await?;
         self.application
             .emit_management(ManagementEventKind::WorkspaceCreated, &id, None, now);
-        runtime.storage().workspace_record(&id).map_err(Into::into)
+        runtime
+            .database()
+            .workspace_record(&id)
+            .await
+            .map_err(Into::into)
     }
 
     pub async fn update(&self, command: UpdateWorkspace) -> Result<WorkspaceRecord, RuntimeError> {
         let runtime = self.application.runtime()?;
-        let old_record = runtime.storage().workspace_record(&command.id)?;
+        let old_record = runtime.database().workspace_record(&command.id).await?;
         let mut record = old_record.clone();
         if let Some(name) = command.name {
             record.name = name;
@@ -121,20 +128,20 @@ impl<'a> WorkspaceLifecycle<'a> {
             record.rules = rules;
         }
         if let Some(cover) = command.cover_resource_id {
-            record.cover_resource_id = Some(workspace_image_resource(
-                runtime.storage(),
-                &command.id,
-                cover,
-            )?);
+            record.cover_resource_id =
+                Some(workspace_image_resource(runtime.database(), &command.id, cover).await?);
         }
         record.updated_at = now_millis();
         if record.provider_config == old_record.provider_config
             && command.provider_secrets.is_empty()
         {
-            let record = runtime.storage().update_workspace_record_with_secrets(
-                record,
-                &secrets_json(&command.provider_secrets),
-            )?;
+            let record = runtime
+                .database()
+                .update_workspace_record_with_secrets(
+                    record,
+                    &secrets_json(&command.provider_secrets),
+                )
+                .await?;
             self.application.emit_management(
                 ManagementEventKind::WorkspaceUpdated,
                 &command.id,
@@ -148,7 +155,7 @@ impl<'a> WorkspaceLifecycle<'a> {
         let provider = factory.create(
             &record,
             workspace_services_with_secrets(
-                runtime.storage_arc(),
+                runtime.database(),
                 self.application.resource_store()?,
                 &record,
                 command.provider_secrets.clone(),
@@ -157,11 +164,14 @@ impl<'a> WorkspaceLifecycle<'a> {
         provider
             .update_workspace(old_record.provider_config, provider_workspace_spec(&record))
             .await?;
-        record.provider_state = runtime.storage().workspace_provider_state(&command.id)?;
-        let record = runtime.storage().update_workspace_record_with_secrets(
-            record,
-            &secrets_json(&command.provider_secrets),
-        )?;
+        record.provider_state = runtime
+            .database()
+            .workspace_provider_state(&command.id)
+            .await?;
+        let record = runtime
+            .database()
+            .update_workspace_record_with_secrets(record, &secrets_json(&command.provider_secrets))
+            .await?;
         self.application.stop_workspace_loop(&command.id).await?;
         runtime.remove_provider_instance(&command.id).await?;
         if self
@@ -170,7 +180,9 @@ impl<'a> WorkspaceLifecycle<'a> {
             .await
             .is_err()
         {
-            return self.fail_setup(&runtime, &command.id, record.updated_at);
+            return self
+                .fail_setup(&runtime, &command.id, record.updated_at)
+                .await;
         }
         if was_active && self.application.readiness().providers_started {
             if runtime
@@ -178,7 +190,9 @@ impl<'a> WorkspaceLifecycle<'a> {
                 .await
                 .is_err()
             {
-                return self.fail_setup(&runtime, &command.id, record.updated_at);
+                return self
+                    .fail_setup(&runtime, &command.id, record.updated_at)
+                    .await;
             }
             self.application.start_workspace_loop(command.id.clone())?;
         }
@@ -201,25 +215,23 @@ impl<'a> WorkspaceLifecycle<'a> {
         match desired {
             WorkspaceDesiredState::Running => {
                 if !runtime.has_provider_instance(&id) {
-                    let record = runtime.storage().workspace_record(&id)?;
+                    let record = runtime.database().workspace_record(&id).await?;
                     if self
                         .application
                         .attach_workspace(&runtime, record)
                         .await
                         .is_err()
                     {
-                        return self.fail_setup(&runtime, &id, now);
+                        return self.fail_setup(&runtime, &id, now).await;
                     }
                 }
                 if runtime.resume_workspace(&id, now).await.is_err() {
-                    return self.fail_setup(&runtime, &id, now);
+                    return self.fail_setup(&runtime, &id, now).await;
                 }
-                runtime.storage().set_workspace_setup(
-                    &id,
-                    WorkspaceSetupStatus::Ready,
-                    None,
-                    now,
-                )?;
+                runtime
+                    .database()
+                    .set_workspace_setup(&id, WorkspaceSetupStatus::Ready, None, now)
+                    .await?;
                 if self.application.readiness().providers_started {
                     self.application.start_workspace_loop(id.clone())?;
                 }
@@ -229,7 +241,10 @@ impl<'a> WorkspaceLifecycle<'a> {
                 if runtime.has_provider_instance(&id) {
                     runtime.pause_workspace(&id, now).await?;
                 } else {
-                    runtime.storage().set_workspace_active(&id, false, now)?;
+                    runtime
+                        .database()
+                        .set_workspace_active(&id, false, now)
+                        .await?;
                 }
             }
         }
@@ -239,22 +254,32 @@ impl<'a> WorkspaceLifecycle<'a> {
             None,
             now,
         );
-        runtime.storage().workspace_record(&id).map_err(Into::into)
+        runtime
+            .database()
+            .workspace_record(&id)
+            .await
+            .map_err(Into::into)
     }
 
-    fn fail_setup<T>(
+    async fn fail_setup<T>(
         &self,
         runtime: &Runtime,
         id: &WorkspaceId,
         now: i64,
     ) -> Result<T, RuntimeError> {
-        runtime.storage().set_workspace_active(id, false, now)?;
-        runtime.storage().set_workspace_setup(
-            id,
-            WorkspaceSetupStatus::Error,
-            Some("provider_setup_failed"),
-            now,
-        )?;
+        runtime
+            .database()
+            .set_workspace_active(id, false, now)
+            .await?;
+        runtime
+            .database()
+            .set_workspace_setup(
+                id,
+                WorkspaceSetupStatus::Error,
+                Some("provider_setup_failed"),
+                now,
+            )
+            .await?;
         Err(RuntimeError::ActionRequired(
             "Workspace setup needs attention. Check the provider settings and try again.".into(),
         ))
@@ -281,8 +306,9 @@ impl<'a> AgentLifecycle<'a> {
         let agent_id = candidate.agent_id.clone();
         let occurred_at = candidate.updated_at;
         if runtime
-            .storage()
+            .database()
             .agent_record(&workspace_id, &agent_id)
+            .await
             .is_ok()
         {
             return Err(RuntimeError::DuplicateAgent {
@@ -291,16 +317,18 @@ impl<'a> AgentLifecycle<'a> {
             });
         }
         let record = runtime
-            .storage()
-            .insert_new_agent_record(candidate, &secrets_json(&provider_secrets))?;
+            .database()
+            .insert_new_agent_record(candidate, &secrets_json(&provider_secrets))
+            .await?;
         let (provider, temporary) = runtime.lifecycle_host(&workspace_id).await?;
         if let Err(error) = provider
             .create_agent(agent_id.clone(), provider_agent_spec(&record))
             .await
         {
             if let Err(rollback_error) = runtime
-                .storage()
+                .database()
                 .rollback_new_agent(&workspace_id, &agent_id)
+                .await
             {
                 log::error!(
                     "[runtime] workspace={workspace_id} agent={agent_id} setup rollback failed: {rollback_error}"
@@ -315,7 +343,10 @@ impl<'a> AgentLifecycle<'a> {
         if temporary {
             provider.shutdown().await?;
         }
-        let record = runtime.storage().agent_record(&workspace_id, &agent_id)?;
+        let record = runtime
+            .database()
+            .agent_record(&workspace_id, &agent_id)
+            .await?;
         runtime
             .configure_agent(
                 &workspace_id,
@@ -395,13 +426,15 @@ impl<'a> AgentLifecycle<'a> {
             }
             update_result?;
             record.provider_state = runtime
-                .storage()
-                .agent_record(&workspace_id, &agent_id)?
+                .database()
+                .agent_record(&workspace_id, &agent_id)
+                .await?
                 .provider_state;
         }
         let record = runtime
-            .storage()
-            .update_agent_record_with_secrets(record, &secrets_json(&provider_secrets))?;
+            .database()
+            .update_agent_record_with_secrets(record, &secrets_json(&provider_secrets))
+            .await?;
         runtime
             .configure_agent(
                 &workspace_id,
@@ -423,9 +456,13 @@ impl<'a> AgentLifecycle<'a> {
         agent_id: AgentId,
     ) -> Result<(), RuntimeError> {
         let runtime = self.application.runtime()?;
-        let record = runtime.storage().agent_record(&workspace_id, &agent_id)?;
+        let record = runtime
+            .database()
+            .agent_record(&workspace_id, &agent_id)
+            .await?;
         self.application
-            .stop_agent_execution(&workspace_id, &agent_id)?;
+            .stop_agent_execution(&workspace_id, &agent_id)
+            .await?;
         let (provider, temporary) = runtime.lifecycle_host(&workspace_id).await?;
         if temporary {
             provider.init().await?;
@@ -437,7 +474,11 @@ impl<'a> AgentLifecycle<'a> {
             let _ = provider.shutdown().await;
         }
         result?;
-        if !runtime.storage().delete_agent(&workspace_id, &agent_id)? {
+        if !runtime
+            .database()
+            .delete_agent(&workspace_id, &agent_id)
+            .await?
+        {
             return Err(RuntimeError::UnknownAgent {
                 workspace_id,
                 agent_id,

@@ -29,7 +29,10 @@ impl RuntimeApplication {
         request: lankide_protocol::CancelAttemptRequest,
     ) -> Result<lankide_protocol::CancelAttemptResponse, RuntimeError> {
         // Validate ownership/existence through storage before forwarding control.
-        self.runtime()?.storage().execution(request.execution_id)?;
+        self.runtime()?
+            .database()
+            .execution(request.execution_id)
+            .await?;
         self.computer_broker()
             .request_cancellation(request.execution_id)
             .await?;
@@ -41,10 +44,11 @@ impl RuntimeApplication {
         request: lankide_protocol::GetExecutionDetailsRequest,
     ) -> Result<lankide_protocol::ExecutionDetails, RuntimeError> {
         let runtime = self.runtime()?;
-        let execution = runtime.storage().execution(request.execution_id)?;
+        let execution = runtime.database().execution(request.execution_id).await?;
         let attempts = runtime
-            .storage()
-            .execution_attempts(request.execution_id)?
+            .database()
+            .execution_attempts(request.execution_id)
+            .await?
             .into_iter()
             .map(|attempt| {
                 Ok(lankide_protocol::ExecutionAttemptDetails {
@@ -73,12 +77,10 @@ impl RuntimeApplication {
         request: ListWorkspacesRequest,
     ) -> Result<ListWorkspacesResponse, RuntimeError> {
         let runtime = self.runtime()?;
-        let workspaces = runtime
-            .storage()
-            .list_workspace_records()?
-            .into_iter()
-            .map(|record| workspace_dto(runtime.storage(), record))
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut workspaces = Vec::new();
+        for record in runtime.database().list_workspace_records().await? {
+            workspaces.push(workspace_dto(runtime.database(), record).await?);
+        }
         Ok(ListWorkspacesResponse {
             request_id: request.request_id,
             workspaces,
@@ -91,7 +93,11 @@ impl RuntimeApplication {
     ) -> Result<ProtocolWorkspace, RuntimeError> {
         let id = workspace_id(request.workspace)?;
         let runtime = self.runtime()?;
-        workspace_dto(runtime.storage(), runtime.storage().workspace_record(&id)?)
+        workspace_dto(
+            runtime.database(),
+            runtime.database().workspace_record(&id).await?,
+        )
+        .await
     }
 
     pub async fn create_workspace(
@@ -109,7 +115,7 @@ impl RuntimeApplication {
             provider_secrets: parse_secrets(&request.provider_secrets_json)?,
         };
         let record = WorkspaceLifecycle::new(self).create(command).await?;
-        workspace_dto(self.runtime()?.storage(), record)
+        workspace_dto(self.runtime()?.database(), record).await
     }
 
     pub async fn update_workspace(
@@ -134,7 +140,7 @@ impl RuntimeApplication {
             cover_resource_id: request.cover_resource_id,
         };
         let record = WorkspaceLifecycle::new(self).update(command).await?;
-        workspace_dto(self.runtime()?.storage(), record)
+        workspace_dto(self.runtime()?.database(), record).await
     }
 
     pub async fn set_workspace_state(
@@ -153,7 +159,7 @@ impl RuntimeApplication {
         let record = WorkspaceLifecycle::new(self)
             .set_state(workspace_id(request.workspace)?, desired)
             .await?;
-        workspace_dto(self.runtime()?.storage(), record)
+        workspace_dto(self.runtime()?.database(), record).await
     }
 
     pub async fn list_agents(
@@ -162,12 +168,10 @@ impl RuntimeApplication {
     ) -> Result<ListAgentsResponse, RuntimeError> {
         let workspace = workspace_id(request.workspace)?;
         let runtime = self.runtime()?;
-        let agents = runtime
-            .storage()
-            .list_agent_records(&workspace)?
-            .into_iter()
-            .map(|record| agent_dto(record, runtime.storage()))
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut agents = Vec::new();
+        for record in runtime.database().list_agent_records(&workspace).await? {
+            agents.push(agent_dto(record, runtime.database()).await?);
+        }
         Ok(ListAgentsResponse {
             request_id: request.request_id,
             agents,
@@ -178,9 +182,10 @@ impl RuntimeApplication {
         let (workspace, agent) = agent_id(request.agent)?;
         let runtime = self.runtime()?;
         agent_dto(
-            runtime.storage().agent_record(&workspace, &agent)?,
-            runtime.storage(),
+            runtime.database().agent_record(&workspace, &agent).await?,
+            runtime.database(),
         )
+        .await
     }
 
     pub async fn get_agent_avatar(
@@ -189,7 +194,10 @@ impl RuntimeApplication {
     ) -> Result<GetAgentAvatarResponse, RuntimeError> {
         let (workspace_id, agent_id) = agent_id(request.agent)?;
         let runtime = self.runtime()?;
-        let record = runtime.storage().agent_record(&workspace_id, &agent_id)?;
+        let record = runtime
+            .database()
+            .agent_record(&workspace_id, &agent_id)
+            .await?;
         let avatar = self
             .agent_profiles()
             .read_avatar(&workspace_id, &agent_id, record.avatar.as_deref())?
@@ -204,11 +212,12 @@ impl RuntimeApplication {
         })
     }
 
-    fn validate_placement(&self, agent: &AgentRecord) -> Result<(), RuntimeError> {
+    async fn validate_placement(&self, agent: &AgentRecord) -> Result<(), RuntimeError> {
         let computer = self
             .runtime()?
-            .storage()
-            .registered_computers()?
+            .database()
+            .registered_computers()
+            .await?
             .into_iter()
             .find(|c| c.computer_id == agent.computer_id)
             .ok_or(RuntimeError::ComputerNotRegistered)?;
@@ -231,7 +240,7 @@ impl RuntimeApplication {
         let (workspace_id, agent_id) = agent_id(request.agent)?;
         let now = now_millis();
         let runtime = self.runtime()?;
-        let workspace = runtime.storage().workspace_record(&workspace_id)?;
+        let workspace = runtime.database().workspace_record(&workspace_id).await?;
         let provider_agent_secrets = parse_secrets(&request.provider_agent_secrets_json)?;
         let channels = runtime.channels(&workspace_id).await?;
         let attention = attention_record(&channels, request.attention)?;
@@ -262,11 +271,11 @@ impl RuntimeApplication {
             created_at: now,
             updated_at: now,
         };
-        self.validate_placement(&candidate)?;
+        self.validate_placement(&candidate).await?;
         let record = AgentLifecycle::new(self)
             .create(workspace, candidate, provider_agent_secrets)
             .await?;
-        agent_dto(record, runtime.storage())
+        agent_dto(record, runtime.database()).await
     }
 
     pub async fn resume_agent(
@@ -275,7 +284,10 @@ impl RuntimeApplication {
     ) -> Result<ProtocolAgent, RuntimeError> {
         let (w, a) = agent_id(request.agent.clone())?;
         let runtime = self.runtime()?;
-        runtime.storage().resume_agent(&w, &a, now_millis())?;
+        runtime
+            .database()
+            .resume_agent(&w, &a, now_millis())
+            .await?;
         self.emit_management(
             ManagementEventKind::AgentUpdated,
             &w,
@@ -291,8 +303,11 @@ impl RuntimeApplication {
     ) -> Result<ProtocolAgent, RuntimeError> {
         let (workspace_id, agent_id) = agent_id(request.agent)?;
         let runtime = self.runtime()?;
-        let workspace = runtime.storage().workspace_record(&workspace_id)?;
-        let old_record = runtime.storage().agent_record(&workspace_id, &agent_id)?;
+        let workspace = runtime.database().workspace_record(&workspace_id).await?;
+        let old_record = runtime
+            .database()
+            .agent_record(&workspace_id, &agent_id)
+            .await?;
         let mut record = old_record.clone();
         if let Some(value) = request.name {
             record.name = value;
@@ -327,7 +342,7 @@ impl RuntimeApplication {
         if let Some(value) = request.provider_agent_config_json {
             record.provider_agent_config = parse_json(&value)?;
         }
-        self.validate_placement(&record)?;
+        self.validate_placement(&record).await?;
         let avatar_update = request
             .avatar
             .as_ref()
@@ -382,8 +397,9 @@ impl RuntimeApplication {
             .await;
         if result.is_ok() && resume {
             runtime
-                .storage()
-                .resume_agent(&workspace_id, &agent_id, now_millis())?;
+                .database()
+                .resume_agent(&workspace_id, &agent_id, now_millis())
+                .await?;
             self.emit_management(
                 ManagementEventKind::AgentUpdated,
                 &workspace_id,
@@ -394,9 +410,9 @@ impl RuntimeApplication {
         match (result, avatar_update) {
             (Ok(record), Some(avatar)) => {
                 avatar.finish();
-                agent_dto(record, runtime.storage())
+                agent_dto(record, runtime.database()).await
             }
-            (Ok(record), None) => agent_dto(record, runtime.storage()),
+            (Ok(record), None) => agent_dto(record, runtime.database()).await,
             (Err(error), Some(avatar)) => {
                 avatar.rollback()?;
                 Err(error)
@@ -451,13 +467,13 @@ impl RuntimeApplication {
         payload: serde_json::Value,
     ) -> Result<ProviderOnboardingState, RuntimeError> {
         let runtime = self.runtime()?;
-        let workspace = runtime.storage().workspace_record(&workspace_id)?;
+        let workspace = runtime.database().workspace_record(&workspace_id).await?;
         let provider = self.factories().factory(&workspace.provider_id)?;
         let state = provider
             .workspace_onboarding(
                 action,
                 payload,
-                workspace_services(runtime.storage_arc(), self.resource_store()?, &workspace),
+                workspace_services(runtime.database(), self.resource_store()?, &workspace),
             )
             .await?;
         Ok(onboarding_dto(&workspace, state))
@@ -494,8 +510,11 @@ impl RuntimeApplication {
         payload: serde_json::Value,
     ) -> Result<AgentOnboardingState, RuntimeError> {
         let runtime = self.runtime()?;
-        let workspace = runtime.storage().workspace_record(&workspace_id)?;
-        let mut agent = runtime.storage().agent_record(&workspace_id, &agent_id)?;
+        let workspace = runtime.database().workspace_record(&workspace_id).await?;
+        let mut agent = runtime
+            .database()
+            .agent_record(&workspace_id, &agent_id)
+            .await?;
         let host = runtime.host(&workspace_id).await?;
         let state = host
             .agent_onboarding(
@@ -508,8 +527,9 @@ impl RuntimeApplication {
             .await?;
         if state.status == crate::ProviderOnboardingStatus::Ready {
             agent.provider_state = runtime
-                .storage()
-                .agent_provider_state(&workspace_id, &agent_id)?;
+                .database()
+                .agent_provider_state(&workspace_id, &agent_id)
+                .await?;
             if let (Some(target), Some(updates)) = (
                 agent.provider_agent_config.as_object_mut(),
                 state.agent_config_updates.as_object(),
@@ -520,19 +540,20 @@ impl RuntimeApplication {
             }
             agent.updated_at = now_millis();
             let agent = runtime
-                .storage()
-                .update_agent_record_with_secrets(agent, &serde_json::json!({}))?;
+                .database()
+                .update_agent_record_with_secrets(agent, &serde_json::json!({}))
+                .await?;
             if let Some(person_id) = agent
                 .provider_agent_config
                 .get("creator_person_id")
                 .and_then(serde_json::Value::as_str)
                 .and_then(|value| lankide_core::PersonId::new(value.to_owned()).ok())
             {
-                match runtime.storage().initialize_team_lead(
-                    &workspace_id,
-                    &person_id,
-                    now_millis(),
-                ) {
+                match runtime
+                    .database()
+                    .initialize_team_lead(&workspace_id, &person_id, now_millis())
+                    .await
+                {
                     Ok(_) | Err(StorageError::Conflict(_)) => {}
                     Err(error) => return Err(error.into()),
                 }
@@ -566,13 +587,17 @@ impl RuntimeApplication {
         Ok(ProviderCatalog { providers })
     }
 
-    pub fn computer_catalog(&self, _: CatalogRequest) -> Result<ComputerCatalog, RuntimeError> {
+    pub async fn computer_catalog(
+        &self,
+        _: CatalogRequest,
+    ) -> Result<ComputerCatalog, RuntimeError> {
         let broker = self.computer_broker();
         let online = broker.catalog()?;
         let mut computers: Vec<_> = self
             .runtime()?
-            .storage()
-            .registered_computers()?
+            .database()
+            .registered_computers()
+            .await?
             .into_iter()
             .map(|record| {
                 let live = online
@@ -664,14 +689,14 @@ impl RuntimeApplication {
     }
 }
 
-fn workspace_dto(
-    storage: &Storage,
+async fn workspace_dto(
+    storage: Database,
     record: WorkspaceRecord,
 ) -> Result<ProtocolWorkspace, RuntimeError> {
-    let cover = record
-        .cover_resource_id
-        .map(|id| resource_ref(storage, &record.id, id))
-        .transpose()?;
+    let cover = match record.cover_resource_id {
+        Some(id) => Some(resource_ref(storage, &record.id, id).await?),
+        None => None,
+    };
     Ok(ProtocolWorkspace {
         workspace: Some(WorkspaceRef {
             workspace_id: record.id.to_string(),
@@ -808,16 +833,19 @@ fn attention_record(
     Ok(result)
 }
 
-fn workspace_image_resource(
-    storage: &Storage,
+async fn workspace_image_resource(
+    storage: Database,
     workspace: &WorkspaceId,
     value: i64,
 ) -> Result<ResourceId, RuntimeError> {
     let id =
         ResourceId::new(value).map_err(|error| RuntimeError::InvalidCore(error.to_string()))?;
-    let metadata = storage.resource_metadata(workspace, id)?.ok_or_else(|| {
-        RuntimeError::Application("Profile image not found in this workspace".into())
-    })?;
+    let metadata = storage
+        .resource_metadata(workspace, id)
+        .await?
+        .ok_or_else(|| {
+            RuntimeError::Application("Profile image not found in this workspace".into())
+        })?;
     if metadata.size_bytes > 3 * 1024 * 1024
         || !matches!(
             metadata.media_type.as_str(),
@@ -831,13 +859,14 @@ fn workspace_image_resource(
     Ok(id)
 }
 
-fn resource_ref(
-    storage: &Storage,
+async fn resource_ref(
+    storage: Database,
     workspace_id: &WorkspaceId,
     resource_id: ResourceId,
 ) -> Result<lankide_protocol::ResourceRef, RuntimeError> {
     let value = storage
-        .resource_metadata(workspace_id, resource_id)?
+        .resource_metadata(workspace_id, resource_id)
+        .await?
         .ok_or_else(|| RuntimeError::Application("resource metadata not found".into()))?;
     Ok(lankide_protocol::ResourceRef {
         resource_id: value.resource_id.get(),
@@ -848,8 +877,10 @@ fn resource_ref(
     })
 }
 
-fn agent_dto(record: AgentRecord, storage: &Storage) -> Result<ProtocolAgent, RuntimeError> {
-    let pause_reason = storage.agent_pause_reason(&record.workspace_id, &record.agent_id)?;
+async fn agent_dto(record: AgentRecord, storage: Database) -> Result<ProtocolAgent, RuntimeError> {
+    let pause_reason = storage
+        .agent_pause_reason(&record.workspace_id, &record.agent_id)
+        .await?;
     Ok(ProtocolAgent {
         pause_reason,
         agent: Some(AgentRef {

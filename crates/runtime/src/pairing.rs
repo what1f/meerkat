@@ -16,7 +16,7 @@ impl RuntimeApplication {
         Ok(())
     }
 
-    pub fn create_pairing_code(&self) -> Result<lankide_protocol::PairingCode, RuntimeError> {
+    pub async fn create_pairing_code(&self) -> Result<lankide_protocol::PairingCode, RuntimeError> {
         use base64::Engine as _;
         let mut bytes = [0u8; 32];
         std::fs::File::open("/dev/urandom")
@@ -25,8 +25,9 @@ impl RuntimeApplication {
         let code = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
         let issued_at = application::now_millis();
         self.runtime()?
-            .storage()
-            .issue_pairing_code(&credential_hash(&code), issued_at)?;
+            .database()
+            .issue_pairing_code(&credential_hash(&code), issued_at)
+            .await?;
         Ok(lankide_protocol::PairingCode {
             code,
             issued_at,
@@ -35,7 +36,7 @@ impl RuntimeApplication {
         })
     }
 
-    pub fn pair_computer(
+    pub async fn pair_computer(
         &self,
         request: PairComputerRequest,
         local_secret: &str,
@@ -57,28 +58,31 @@ impl RuntimeApplication {
         let device_credential = random_secret()?;
         let computer_id = format!("computer-{}", random_secret()?);
         let code_hash = credential_hash(&request.code);
-        self.runtime()?.storage().pair_computer(
-            &ComputerRecord {
-                computer_id: computer_id.clone(),
-                display_name: request.display_name,
-                credential_hash: credential_hash(&device_credential),
-                paired_at: application::now_millis(),
-                revoked_at: None,
-                last_seen_at: None,
-                os: request.os,
-                version: request.version,
-                inventory_json: "[]".into(),
-            },
-            if local { None } else { Some(&code_hash) },
-            self.inner.pairing_validity_ms.load(Ordering::Relaxed),
-        )?;
+        self.runtime()?
+            .database()
+            .pair_computer(
+                &ComputerRecord {
+                    computer_id: computer_id.clone(),
+                    display_name: request.display_name,
+                    credential_hash: credential_hash(&device_credential),
+                    paired_at: application::now_millis(),
+                    revoked_at: None,
+                    last_seen_at: None,
+                    os: request.os,
+                    version: request.version,
+                    inventory_json: "[]".into(),
+                },
+                if local { None } else { Some(&code_hash) },
+                self.inner.pairing_validity_ms.load(Ordering::Relaxed),
+            )
+            .await?;
         Ok(PairComputerResponse {
             computer_id,
             device_credential,
         })
     }
 
-    pub(crate) fn authenticate_computer(
+    pub(crate) async fn authenticate_computer(
         &self,
         computer_id: Option<&str>,
         credential: &str,
@@ -86,8 +90,9 @@ impl RuntimeApplication {
         let hash = credential_hash(credential);
         let runtime = self.runtime().map_err(|_| CloseReason::Unauthorized)?;
         let computers = runtime
-            .storage()
+            .database()
             .registered_computers()
+            .await
             .map_err(|_| CloseReason::Unauthorized)?;
         for computer in computers {
             let matches = bool::from(computer.credential_hash.as_bytes().ct_eq(hash.as_bytes()));
@@ -102,16 +107,13 @@ impl RuntimeApplication {
         Err(CloseReason::ComputerUnknown)
     }
 
-    pub fn revoke_computer(&self, computer_id: &str) -> Result<(), RuntimeError> {
+    pub async fn revoke_computer(&self, computer_id: &str) -> Result<(), RuntimeError> {
         // Serialize revocation against authenticated hello registration.
-        let _guard = self
-            .inner
-            .computer_registration
-            .lock()
-            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
+        let _guard = self.inner.computer_registration.lock().await;
         self.runtime()?
-            .storage()
-            .revoke_computer(computer_id, application::now_millis())?;
+            .database()
+            .revoke_computer(computer_id, application::now_millis())
+            .await?;
         self.computer_broker().revoke(computer_id)?;
         Ok(())
     }

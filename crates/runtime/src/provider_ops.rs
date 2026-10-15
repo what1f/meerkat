@@ -21,7 +21,7 @@ impl Runtime {
         runtime_spec: AgentRuntimeSpec,
         request: ToolInvocationRequest,
     ) -> Result<ToolProgress, RuntimeError> {
-        let begun = self.storage.begin_tool_invocation(request.clone())?;
+        let begun = self.storage.begin_tool_invocation(request.clone()).await?;
         if !begun.created {
             return Ok(match (begun.state.as_str(), begun.result) {
                 ("completed", Some(result)) => ToolProgress::Completed { result },
@@ -36,7 +36,7 @@ impl Runtime {
                 _ => ToolProgress::InProgress,
             });
         }
-        let guard = ToolInvocationGuard::new(self.storage.as_ref(), request.clone());
+        let guard = ToolInvocationGuard::new(self.storage.clone(), request.clone());
         match self
             .host(workspace_id)
             .await?
@@ -49,11 +49,11 @@ impl Runtime {
             .await
         {
             Ok(result) => {
-                guard.complete(result.clone(), request.now)?;
+                guard.complete(result.clone(), request.now).await?;
                 Ok(ToolProgress::Completed { result })
             }
             Err(error) => {
-                guard.fail("provider_tool_failed", now_millis())?;
+                guard.fail("provider_tool_failed", now_millis()).await?;
                 log::error!("provider Tool {} failed: {error}", request.tool_name);
                 Ok(ToolProgress::Failed {
                     code: "provider_tool_failed".into(),
@@ -140,7 +140,8 @@ impl Runtime {
             .ok_or_else(|| RuntimeError::Application("execution ref required".into()))?;
         let auth = self
             .storage
-            .execution_auth_context(execution.execution_id, i64::from(execution.attempt))?
+            .execution_auth_context(execution.execution_id, i64::from(execution.attempt))
+            .await?
             .ok_or(RuntimeError::InvalidExecutionToken)?;
         if auth.expires_at < now
             || !constant_time_eq(&auth.token_hash, &token_hash(&context.execution_token))
@@ -153,11 +154,16 @@ impl Runtime {
         {
             return Err(RuntimeError::InvalidExecutionToken);
         }
-        let snapshot_id = self.storage.execution(execution.execution_id)?.snapshot_id;
-        let snapshot = self.storage.snapshot(snapshot_id)?;
+        let snapshot_id = self
+            .storage
+            .execution(execution.execution_id)
+            .await?
+            .snapshot_id;
+        let snapshot = self.storage.snapshot(snapshot_id).await?;
         let authorization = self
             .storage
-            .attempt_authorization(execution.execution_id, i64::from(execution.attempt))?
+            .attempt_authorization(execution.execution_id, i64::from(execution.attempt))
+            .await?
             .ok_or(RuntimeError::InvalidExecutionToken)?;
         if !constant_time_eq(
             &authorization.context_fingerprint,

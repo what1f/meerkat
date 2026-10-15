@@ -14,21 +14,7 @@ impl Runtime {
         // blocking tasks. Their contexts can outlive the host's shutdown call.
         // ProviderHost exposes cancellation, but no join for those receivers.
         // Close SQLite only after those contexts have released HostServices.
-        let deadline = tokio::time::Instant::now() + shutdown_timeout;
-        let mut storage = self.storage;
-        loop {
-            match Arc::try_unwrap(storage) {
-                Ok(storage) => {
-                    storage.close()?;
-                    break;
-                }
-                Err(shared) => storage = shared,
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return Err(RuntimeError::StorageStillShared);
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
+        self.storage.close(shutdown_timeout).await?;
         Ok(())
     }
 
@@ -37,7 +23,7 @@ impl Runtime {
     /// The factory is intentionally retained: a stopped [`ProviderHost`] owns a
     /// closed event sink, so resume must construct a fresh host rather than
     /// pretending that the stopped instance can consume events again.
-    pub fn register_provider_factory<P, F>(
+    pub async fn register_provider_factory<P, F>(
         &self,
         workspace_id: WorkspaceId,
         factory: F,
@@ -49,13 +35,15 @@ impl Runtime {
         let factory =
             Arc::new(move || factory().map(|host| Arc::new(host) as Arc<dyn ProviderHostInstance>));
         self.register_provider_instance_factory(workspace_id, factory)
+            .await
     }
 
-    pub fn register_provider_instance_factory(
+    pub async fn register_provider_instance_factory(
         &self,
         workspace_id: WorkspaceId,
         factory: ProviderFactory,
     ) -> Result<(), RuntimeError> {
+        let active = self.storage.workspace(&workspace_id).await?.active;
         let mut providers = self
             .providers
             .write()
@@ -63,7 +51,6 @@ impl Runtime {
         if providers.contains_key(&workspace_id) {
             return Err(RuntimeError::DuplicateWorkspace(workspace_id));
         }
-        let active = self.storage.workspace(&workspace_id)?.active;
         providers.insert(
             workspace_id,
             Arc::new(ProviderInstance {
@@ -133,12 +120,16 @@ impl Runtime {
     ) -> Result<(), RuntimeError> {
         let provider = self.provider(workspace_id)?;
         provider.active.store(false, Ordering::Release);
-        if let Err(error) = self.storage.set_workspace_active(workspace_id, false, now) {
+        if let Err(error) = self
+            .storage
+            .set_workspace_active(workspace_id, false, now)
+            .await
+        {
             provider.active.store(true, Ordering::Release);
             return Err(error.into());
         }
         provider.channels.write().await.clear();
-        if !self.storage.has_active_execution(workspace_id)? {
+        if !self.storage.has_active_execution(workspace_id).await? {
             if let Some(host) = provider.host.lock().await.take() {
                 host.shutdown().await?;
             }
@@ -157,7 +148,7 @@ impl Runtime {
             return Ok(());
         }
         let has_existing_host = provider.host.lock().await.is_some();
-        if has_existing_host && self.storage.has_active_execution(workspace_id)? {
+        if has_existing_host && self.storage.has_active_execution(workspace_id).await? {
             return Err(RuntimeError::Application(
                 "workspace is still completing an active execution".into(),
             ));
@@ -169,7 +160,9 @@ impl Runtime {
             provider.active.store(false, Ordering::Release);
             return Err(error);
         }
-        self.storage.set_workspace_active(workspace_id, true, now)?;
+        self.storage
+            .set_workspace_active(workspace_id, true, now)
+            .await?;
         provider.active.store(true, Ordering::Release);
         Ok(())
     }
@@ -180,7 +173,7 @@ impl Runtime {
     ) -> Result<(), RuntimeError> {
         let provider = self.provider(workspace_id)?;
         if provider.active.load(Ordering::Acquire)
-            || self.storage.has_active_execution(workspace_id)?
+            || self.storage.has_active_execution(workspace_id).await?
         {
             return Ok(());
         }
@@ -197,7 +190,8 @@ impl Runtime {
     ) -> Result<(), RuntimeError> {
         if !self
             .storage
-            .list_agents(workspace_id)?
+            .list_agents(workspace_id)
+            .await?
             .iter()
             .any(|agent| agent.id == config.agent_id)
         {
@@ -267,7 +261,7 @@ impl Runtime {
             workspace_id: workspace_id.clone(),
             source,
         })?;
-        let expected_provider_id = self.storage.workspace(workspace_id)?.provider_id;
+        let expected_provider_id = self.storage.workspace(workspace_id).await?.provider_id;
         let actual_provider_id = host.provider_id();
         if actual_provider_id != expected_provider_id {
             return Err(RuntimeError::ProviderMismatch {
@@ -284,7 +278,7 @@ impl Runtime {
                 workspace_id: workspace_id.clone(),
                 source,
             })?;
-            for agent in self.storage.list_agent_records(workspace_id)? {
+            for agent in self.storage.list_agent_records(workspace_id).await? {
                 host.create_agent(
                     agent.agent_id.clone(),
                     management::provider_agent_spec(&agent),

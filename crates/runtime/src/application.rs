@@ -30,7 +30,7 @@ pub struct RuntimeApplication {
 
 pub(crate) struct ApplicationInner {
     pub(crate) pairing_validity_ms: AtomicI64,
-    pub(crate) computer_registration: StdMutex<()>,
+    pub(crate) computer_registration: tokio::sync::Mutex<()>,
     runtime: StdMutex<Option<Arc<Runtime>>>,
     factories: ProviderFactoryRegistry,
     state: AtomicU8,
@@ -44,6 +44,7 @@ pub(crate) struct ApplicationInner {
     workspace_tasks: StdMutex<BTreeMap<WorkspaceId, JoinHandle<()>>>,
     execution_tasks: StdMutex<BTreeMap<String, JoinHandle<()>>>,
     shutting_down: AtomicBool,
+    scheduler_started: AtomicBool,
     background_tasks: StdMutex<tokio::task::JoinSet<()>>,
     shutdown_timeout: Duration,
 }
@@ -72,7 +73,7 @@ pub enum RecoveryAction {
 }
 
 impl RuntimeApplication {
-    pub(crate) fn stop_agent_execution(
+    pub(crate) async fn stop_agent_execution(
         &self,
         workspace_id: &WorkspaceId,
         agent_id: &AgentId,
@@ -89,15 +90,17 @@ impl RuntimeApplication {
         }
         let runtime = self.runtime()?;
         for execution_id in runtime
-            .storage()
-            .active_execution_ids_for_agent(workspace_id, agent_id)?
+            .database()
+            .active_execution_ids_for_agent(workspace_id, agent_id)
+            .await?
         {
             self.inner
                 .broker
                 .cancel_execution(execution_id, "Agent was deleted")?;
             runtime
-                .storage()
-                .cancel_execution(execution_id, now_millis())?;
+                .database()
+                .cancel_execution(execution_id, now_millis())
+                .await?;
         }
         Ok(())
     }
@@ -121,16 +124,20 @@ impl RuntimeApplication {
             .parent()
             .unwrap_or_else(|| std::path::Path::new("."))
             .join("resources");
-        let runtime = Arc::new(Runtime::new(config)?);
-        let broker = ComputerBroker::new(runtime.storage_arc());
-        let resources: Arc<dyn ResourceStore> = Arc::new(LocalResourceStore::new(
-            runtime.storage_arc(),
+        let runtime = Arc::new(
+            tokio::task::spawn_blocking(move || Runtime::new(config))
+                .await
+                .map_err(|error| RuntimeError::Application(error.to_string()))??,
+        );
+        let broker = ComputerBroker::with_database(runtime.database());
+        let resources: Arc<dyn ResourceStore> = Arc::new(LocalResourceStore::with_database(
+            runtime.database(),
             resource_root,
         ));
         let application = Self {
             inner: Arc::new(ApplicationInner {
                 pairing_validity_ms: AtomicI64::new(600_000),
-                computer_registration: StdMutex::new(()),
+                computer_registration: tokio::sync::Mutex::new(()),
                 runtime: StdMutex::new(Some(runtime)),
                 factories,
                 state: AtomicU8::new(APP_NEW),
@@ -144,6 +151,7 @@ impl RuntimeApplication {
                 workspace_tasks: StdMutex::new(BTreeMap::new()),
                 execution_tasks: StdMutex::new(BTreeMap::new()),
                 shutting_down: AtomicBool::new(false),
+                scheduler_started: AtomicBool::new(false),
                 background_tasks: StdMutex::new(tokio::task::JoinSet::new()),
                 shutdown_timeout,
             }),
@@ -155,17 +163,21 @@ impl RuntimeApplication {
 
     pub async fn start(&self) -> Result<(), RuntimeError> {
         let runtime = self.runtime()?;
+        self.start_scheduler()?;
         self.inner.state.store(APP_RUNNING, Ordering::Release);
-        for workspace in runtime.storage().list_workspace_records()? {
+        for workspace in runtime.database().list_workspace_records().await? {
             if workspace.active {
                 match runtime.resume_workspace(&workspace.id, now_millis()).await {
                     Ok(()) => {
-                        runtime.storage().set_workspace_setup(
-                            &workspace.id,
-                            lankide_storage::WorkspaceSetupStatus::Ready,
-                            None,
-                            now_millis(),
-                        )?;
+                        runtime
+                            .database()
+                            .set_workspace_setup(
+                                &workspace.id,
+                                lankide_storage::WorkspaceSetupStatus::Ready,
+                                None,
+                                now_millis(),
+                            )
+                            .await?;
                         self.start_workspace_loop(workspace.id)?;
                     }
                     Err(error) => {
@@ -173,17 +185,19 @@ impl RuntimeApplication {
                             "[runtime] workspace={} Provider startup failed: {error}",
                             workspace.id
                         );
-                        runtime.storage().set_workspace_active(
-                            &workspace.id,
-                            false,
-                            now_millis(),
-                        )?;
-                        runtime.storage().set_workspace_setup(
-                            &workspace.id,
-                            lankide_storage::WorkspaceSetupStatus::Error,
-                            Some("provider_setup_failed"),
-                            now_millis(),
-                        )?;
+                        runtime
+                            .database()
+                            .set_workspace_active(&workspace.id, false, now_millis())
+                            .await?;
+                        runtime
+                            .database()
+                            .set_workspace_setup(
+                                &workspace.id,
+                                lankide_storage::WorkspaceSetupStatus::Error,
+                                Some("provider_setup_failed"),
+                                now_millis(),
+                            )
+                            .await?;
                     }
                 }
             }
@@ -191,9 +205,9 @@ impl RuntimeApplication {
         Ok(())
     }
 
-    pub fn recover(&self, now: i64) -> Result<RecoveryReport, RuntimeError> {
+    pub async fn recover(&self, now: i64) -> Result<RecoveryReport, RuntimeError> {
         let runtime = self.runtime()?;
-        let state = runtime.storage().recover_startup(now)?;
+        let state = runtime.database().recover_startup(now).await?;
         let mut report = RecoveryReport {
             recovering_execution_ids: Vec::new(),
             unknown_send_keys: Vec::new(),
@@ -385,6 +399,8 @@ impl RuntimeApplication {
         if self.inner.shutting_down.load(Ordering::Acquire) {
             return Err(RuntimeError::ApplicationStopped);
         }
+        self.start_scheduler()?;
+        self.runtime()?.database().wake();
         let mut tasks = self
             .inner
             .workspace_tasks
@@ -440,21 +456,25 @@ impl RuntimeApplication {
 
     async fn load_persisted_workspaces(&self) -> Result<(), RuntimeError> {
         let runtime = self.runtime()?;
-        for workspace in runtime.storage().list_workspace_records()? {
+        for workspace in runtime.database().list_workspace_records().await? {
             if self
                 .attach_workspace(&runtime, workspace.clone())
                 .await
                 .is_err()
             {
                 runtime
-                    .storage()
-                    .set_workspace_active(&workspace.id, false, now_millis())?;
-                runtime.storage().set_workspace_setup(
-                    &workspace.id,
-                    lankide_storage::WorkspaceSetupStatus::Error,
-                    Some("provider_setup_failed"),
-                    now_millis(),
-                )?;
+                    .database()
+                    .set_workspace_active(&workspace.id, false, now_millis())
+                    .await?;
+                runtime
+                    .database()
+                    .set_workspace_setup(
+                        &workspace.id,
+                        lankide_storage::WorkspaceSetupStatus::Error,
+                        Some("provider_setup_failed"),
+                        now_millis(),
+                    )
+                    .await?;
             }
         }
         Ok(())
@@ -464,53 +484,98 @@ impl RuntimeApplication {
         let Ok(runtime) = self.runtime() else {
             return;
         };
-        let mut interval = tokio::time::interval(std::time::Duration::from_millis(
-            runtime.config().retry.poll_ms.max(1),
-        ));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
-            if self.inner.shutting_down.load(Ordering::Acquire)
-                || !runtime.is_workspace_active(&workspace_id).unwrap_or(false)
-            {
+            if self.inner.shutting_down.load(Ordering::Acquire) {
                 break;
             }
-            tokio::select! {
-                event = runtime.next_provider_event(&workspace_id) => {
-                    match event {
-                        Ok(Some(event)) => {
-                            match runtime.accept_provider_event(&workspace_id, event, now_millis()).await {
-                                Ok(CoordinatedEvent::Message { steer_deliveries, .. }) => {
-                                    for delivery in steer_deliveries {
-                                        // Failed sends remain pending for this same Computer instance.
-                                        if let Err(error) = self.inner.broker.deliver_steer(delivery).await {
-                                            log::error!("[runtime] workspace={workspace_id} steer delivery failed: {error}");
-                                        }
-                                    }
+            match runtime.next_provider_event(&workspace_id).await {
+                Ok(Some(event)) => {
+                    match runtime
+                        .accept_provider_event(&workspace_id, event, now_millis())
+                        .await
+                    {
+                        Ok(CoordinatedEvent::Message {
+                            steer_deliveries, ..
+                        }) => {
+                            for delivery in steer_deliveries {
+                                if let Err(error) = self.inner.broker.deliver_steer(delivery).await
+                                {
+                                    log::error!(
+                                        "[runtime] workspace={workspace_id} steer delivery failed: {error}"
+                                    );
                                 }
-                                Ok(_) => {},
-                                Err(error) => log::error!("[runtime] workspace={workspace_id} event acceptance failed: {error}"),
                             }
                         }
-                        Ok(None) => tokio::time::sleep(std::time::Duration::from_millis(100)).await,
-                        Err(RuntimeError::WorkspacePaused(_)) => break,
-                        Err(error) => {
-                            log::error!("[runtime] workspace={workspace_id} event receive failed: {error}");
-                            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                        },
+                        Ok(_) => {}
+                        Err(error) => log::error!(
+                            "[runtime] workspace={workspace_id} event acceptance failed: {error}"
+                        ),
                     }
                 }
-                _ = interval.tick() => {}
-            }
-            if let Err(error) = self.inner.broker.expire_leases(now_millis()) {
-                log::error!("[runtime] workspace={workspace_id} lease expiry failed: {error}");
-            }
-            let agents = match runtime.storage().list_agent_records(&workspace_id) {
-                Ok(agents) => agents,
+                // None means the Provider event channel has closed.
+                Ok(None) | Err(RuntimeError::WorkspacePaused(_)) => break,
                 Err(error) => {
-                    log::error!("[runtime] workspace={workspace_id} agent listing failed: {error}");
-                    continue;
+                    log::error!("[runtime] workspace={workspace_id} event receive failed: {error}");
+                    break;
+                }
+            }
+        }
+    }
+
+    fn start_scheduler(&self) -> Result<(), RuntimeError> {
+        if self.inner.scheduler_started.swap(true, Ordering::AcqRel) {
+            return Ok(());
+        }
+        let application = self.clone();
+        self.spawn_background(async move {
+            application.schedule_work().await;
+        })
+    }
+
+    async fn schedule_work(&self) {
+        let Ok(runtime) = self.runtime() else {
+            return;
+        };
+        let changes = runtime.database().changes();
+        loop {
+            let changed = changes.notified();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
+            let next_due = match self.schedule_ready_work(&runtime).await {
+                Ok(due) => due,
+                Err(error) => {
+                    log::error!("[runtime] scheduling failed: {error}");
+                    Some(now_millis().saturating_add(1000))
                 }
             };
+            if let Some(due) = next_due {
+                let delay = Duration::from_millis(due.saturating_sub(now_millis()).max(0) as u64);
+                tokio::select! {
+                    _ = &mut changed => {},
+                    _ = tokio::time::sleep(delay) => {},
+                }
+            } else {
+                changed.await;
+            }
+        }
+    }
+
+    async fn schedule_ready_work(
+        &self,
+        runtime: &Arc<Runtime>,
+    ) -> Result<Option<i64>, RuntimeError> {
+        // Lease expiry is global and remains active with no receiving Workspace.
+        let mut next_due = runtime.database().next_attempt_lease_at().await?;
+        if next_due.is_some_and(|due| due <= now_millis()) {
+            self.inner.broker.expire_leases(now_millis()).await?;
+            next_due = runtime.database().next_attempt_lease_at().await?;
+        }
+        for workspace in runtime.database().list_workspace_records().await? {
+            let workspace_id = workspace.id;
+            if !runtime.is_workspace_active(&workspace_id).unwrap_or(false) {
+                continue;
+            }
+            let agents = runtime.database().list_agent_records(&workspace_id).await?;
             for agent in agents {
                 let connected = self.inner.broker.can_dispatch(
                     &agent.computer_id,
@@ -530,15 +595,32 @@ impl RuntimeApplication {
                 if !should_start {
                     continue;
                 }
+                let due = runtime
+                    .database()
+                    .next_agent_work_at(&workspace_id, &agent.agent_id, connected)
+                    .await?;
+                let Some(due) = due else {
+                    continue;
+                };
+                if due > now_millis() {
+                    next_due = Some(next_due.map_or(due, |current: i64| current.min(due)));
+                    continue;
+                }
                 let executor = self.inner.broker.executor(agent.computer_id);
                 let execution_runtime = runtime.clone();
                 let execution_application = self.clone();
                 let execution_workspace = workspace_id.clone();
                 let execution_agent = agent.agent_id.clone();
+                let mut tasks = self
+                    .inner
+                    .execution_tasks
+                    .lock()
+                    .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
                 let task = tokio::spawn(async move {
                     let previous_pause = execution_runtime
-                        .storage()
+                        .database()
                         .agent_pause_reason(&execution_workspace, &execution_agent)
+                        .await
                         .ok()
                         .flatten();
                     let result = if connected {
@@ -558,11 +640,13 @@ impl RuntimeApplication {
                     };
                     let changed = matches!(&result,Ok(progress) if !matches!(progress,ExecutionProgress::Idle))
                         || execution_runtime
-                            .storage()
+                            .database()
                             .agent_pause_reason(&execution_workspace, &execution_agent)
+                            .await
                             .ok()
                             .flatten()
                             != previous_pause;
+                    let retry_after_error = result.is_err();
                     if let Err(error) = result {
                         log::error!(
                             "[runtime] workspace={execution_workspace} agent={execution_agent} execution failed: {error}"
@@ -584,14 +668,20 @@ impl RuntimeApplication {
                             "[runtime] workspace={execution_workspace} pause completion failed: {error}"
                         );
                     }
+                    // A failed Provider operation has no due time in the inbox.
+                    // Back off that operation before making the Agent eligible again.
+                    if retry_after_error {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                    if let Ok(mut tasks) = execution_application.inner.execution_tasks.lock() {
+                        tasks.remove(&format!("{}:{}", execution_workspace, execution_agent));
+                    }
+                    execution_runtime.database().wake();
                 });
-                if let Ok(mut tasks) = self.inner.execution_tasks.lock() {
-                    tasks.insert(task_key, task);
-                } else {
-                    task.abort();
-                }
+                tasks.insert(task_key, task);
             }
         }
+        Ok(next_due)
     }
 
     pub(crate) async fn attach_workspace(
@@ -600,14 +690,15 @@ impl RuntimeApplication {
         workspace: WorkspaceRecord,
     ) -> Result<(), RuntimeError> {
         let factory = self.inner.factories.factory(&workspace.provider_id)?;
-        let services =
-            workspace_services(runtime.storage_arc(), self.resource_store()?, &workspace);
+        let services = workspace_services(runtime.database(), self.resource_store()?, &workspace);
         let factory_workspace = workspace.clone();
-        runtime.register_provider_instance_factory(
-            workspace.id.clone(),
-            Arc::new(move || factory.create(&factory_workspace, services.clone())),
-        )?;
-        for agent in runtime.storage().list_agent_records(&workspace.id)? {
+        runtime
+            .register_provider_instance_factory(
+                workspace.id.clone(),
+                Arc::new(move || factory.create(&factory_workspace, services.clone())),
+            )
+            .await?;
+        for agent in runtime.database().list_agent_records(&workspace.id).await? {
             let config = agent_runtime_config(&workspace, agent)?;
             runtime.configure_agent(&workspace.id, config).await?;
         }
@@ -732,7 +823,7 @@ pub(crate) fn agent_runtime_config(
 }
 
 pub(crate) fn workspace_services(
-    storage: Arc<Storage>,
+    storage: Database,
     resources: Arc<dyn ResourceStore>,
     workspace: &WorkspaceRecord,
 ) -> HostServices {
@@ -740,7 +831,7 @@ pub(crate) fn workspace_services(
 }
 
 pub(crate) fn workspace_services_with_secrets(
-    storage: Arc<Storage>,
+    storage: Database,
     resources: Arc<dyn ResourceStore>,
     workspace: &WorkspaceRecord,
     staged_secrets: BTreeMap<String, ProviderSecret>,
@@ -766,7 +857,7 @@ pub(crate) fn workspace_services_with_secrets(
 }
 
 struct WorkspaceServices {
-    storage: Arc<Storage>,
+    storage: Database,
     workspace_id: WorkspaceId,
     namespace: String,
     provider_instance_id: ProviderId,
@@ -781,6 +872,7 @@ impl SecretReader for WorkspaceServices {
             }
             self.storage
                 .read_secret(&self.workspace_id, name)
+                .await
                 .map_err(provider_storage_error)?
                 .map(|value| ProviderSecret::new(value.expose_secret()))
                 .ok_or(ProviderError::SecretAccessDenied)
@@ -804,6 +896,7 @@ impl lankide_provider::SecretWriter for WorkspaceServices {
                         lankide_storage::SecretValue::new(value.expose_secret()),
                         now_millis(),
                     )
+                    .await
                     .map_err(provider_storage_error);
             }
             self.storage
@@ -813,6 +906,7 @@ impl lankide_provider::SecretWriter for WorkspaceServices {
                     lankide_storage::SecretValue::new(value.expose_secret()),
                     now_millis(),
                 )
+                .await
                 .map(|_| ())
                 .map_err(provider_storage_error)
         })
@@ -823,6 +917,7 @@ impl ProviderStorage for WorkspaceServices {
         Box::pin(async move {
             self.storage
                 .provider_kv_get(&self.workspace_id, &self.namespace, key)
+                .await
                 .map_err(provider_storage_error)
         })
     }
@@ -836,6 +931,7 @@ impl ProviderStorage for WorkspaceServices {
                     &value,
                     now_millis(),
                 )
+                .await
                 .map_err(provider_storage_error)
         })
     }
@@ -843,6 +939,7 @@ impl ProviderStorage for WorkspaceServices {
         Box::pin(async move {
             self.storage
                 .workspace_provider_state(&self.workspace_id)
+                .await
                 .map_err(provider_storage_error)
         })
     }
@@ -850,6 +947,7 @@ impl ProviderStorage for WorkspaceServices {
         Box::pin(async move {
             self.storage
                 .put_workspace_provider_state(&self.workspace_id, &state)
+                .await
                 .map_err(provider_storage_error)
         })
     }
@@ -857,6 +955,7 @@ impl ProviderStorage for WorkspaceServices {
         Box::pin(async move {
             self.storage
                 .agent_provider_state(&self.workspace_id, agent_id)
+                .await
                 .map_err(provider_storage_error)
         })
     }
@@ -868,6 +967,7 @@ impl ProviderStorage for WorkspaceServices {
         Box::pin(async move {
             self.storage
                 .put_agent_provider_state(&self.workspace_id, agent_id, &state)
+                .await
                 .map_err(provider_storage_error)
         })
     }
@@ -876,6 +976,7 @@ impl ProviderStorage for WorkspaceServices {
             let message = self
                 .storage
                 .provider_message(&self.workspace_id, message_id.get())
+                .await
                 .map_err(provider_storage_error)?
                 .ok_or(ProviderError::InvalidInput {
                     field: "message_id",
@@ -927,6 +1028,7 @@ impl ProviderStorage for WorkspaceServices {
                     external_id,
                     now_millis(),
                 )
+                .await
                 .map(person_identity)
                 .map_err(provider_storage_error)
         })
@@ -935,6 +1037,7 @@ impl ProviderStorage for WorkspaceServices {
         Box::pin(async move {
             self.storage
                 .person(&self.workspace_id, person_id)
+                .await
                 .map_err(provider_storage_error)?
                 .map(person_identity)
                 .ok_or(ProviderError::NotFound { entity: "person" })
@@ -945,10 +1048,12 @@ impl ProviderStorage for WorkspaceServices {
             let humans = self
                 .storage
                 .list_human_team_members(&self.workspace_id)
+                .await
                 .map_err(provider_storage_error)?;
             let agents = self
                 .storage
                 .list_agents(&self.workspace_id)
+                .await
                 .map_err(provider_storage_error)?;
             Ok(humans
                 .into_iter()
@@ -975,6 +1080,7 @@ impl ProviderStorage for WorkspaceServices {
                     &state,
                     now_millis(),
                 )
+                .await
                 .map(person_identity)
                 .map_err(provider_storage_error)
         })
@@ -996,6 +1102,7 @@ impl ProviderStorage for WorkspaceServices {
             let metadata = self
                 .storage
                 .resource_metadata(&self.workspace_id, resource_id)
+                .await
                 .map_err(provider_storage_error)?
                 .ok_or(ProviderError::NotFound { entity: "resource" })?;
             Ok(ProviderAgentFile {

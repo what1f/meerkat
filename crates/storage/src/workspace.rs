@@ -207,14 +207,14 @@ impl Storage {
         Ok(())
     }
     pub fn workspace(&self, id: &WorkspaceId) -> Result<WorkspaceView> {
-        Ok(self.conn()?.query_row(
+        Ok(self.read_conn()?.query_row(
             "SELECT * FROM workspaces WHERE workspace_id=?1",
             [id.as_str()],
             map_workspace,
         )?)
     }
     pub fn list_workspaces(&self) -> Result<Vec<WorkspaceView>> {
-        let c = self.conn()?;
+        let c = self.read_conn()?;
         let mut s = c.prepare("SELECT * FROM workspaces ORDER BY workspace_id")?;
         Ok(s.query_map([], map_workspace)?
             .collect::<std::result::Result<Vec<_>, _>>()?)
@@ -224,11 +224,11 @@ impl Storage {
     /// assigned a compact UUID-derived ID which is also checked against Agent
     /// IDs so the value remains unambiguous in Agent-facing text.
     pub fn workspace_record(&self, id: &WorkspaceId) -> Result<WorkspaceRecord> {
-        let c = self.conn()?;
+        let c = self.read_conn()?;
         load_workspace_record(&c, id)
     }
     pub fn list_workspace_records(&self) -> Result<Vec<WorkspaceRecord>> {
-        let c = self.conn()?;
+        let c = self.read_conn()?;
         let mut statement =
             c.prepare("SELECT workspace_id FROM workspaces ORDER BY workspace_id")?;
         let ids = statement
@@ -469,7 +469,7 @@ impl Storage {
             && let Some((agent_id, secret_name)) = scoped.split_once(':')
         {
             return Ok(self
-                .conn()?
+                .read_conn()?
                 .query_row(
                     "SELECT value FROM agent_named_secrets WHERE workspace_id=?1 AND agent_id=?2 AND name=?3",
                     params![workspace_id.as_str(), agent_id, secret_name],
@@ -479,7 +479,7 @@ impl Storage {
                 .map(SecretValue::new));
         }
         Ok(self
-            .conn()?
+            .read_conn()?
             .query_row(
                 "SELECT value FROM workspace_named_secrets WHERE workspace_id=?1 AND name=?2",
                 params![workspace_id.as_str(), name],
@@ -495,7 +495,7 @@ impl Storage {
         )? == 1)
     }
     pub fn workspace_provider_state(&self, workspace_id: &WorkspaceId) -> Result<Value> {
-        let value: String = self.conn()?.query_row(
+        let value: String = self.read_conn()?.query_row(
             "SELECT provider_state_json FROM workspaces WHERE workspace_id=?1",
             [workspace_id.as_str()],
             |row| row.get(0),
@@ -528,7 +528,7 @@ impl Storage {
         workspace_id: &WorkspaceId,
         agent_id: &AgentId,
     ) -> Result<Value> {
-        let value: String = self.conn()?.query_row(
+        let value: String = self.read_conn()?.query_row(
             "SELECT provider_state_json FROM agents WHERE workspace_id=?1 AND agent_id=?2",
             params![workspace_id.as_str(), agent_id.as_str()],
             |row| row.get(0),
@@ -568,7 +568,7 @@ impl Storage {
         key: &str,
     ) -> Result<Option<Vec<u8>>> {
         Ok(self
-            .conn()?
+            .read_conn()?
             .query_row(
                 "SELECT value FROM provider_kv WHERE workspace_id=?1 AND namespace=?2 AND key=?3",
                 params![workspace_id.as_str(), namespace, key],

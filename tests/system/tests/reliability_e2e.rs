@@ -147,7 +147,6 @@ async fn repeated_computer_loss_uses_backoff_and_pauses_with_one_notice() -> Res
         retry: lankide_runtime::RetryConfig {
             base_ms: 500,
             max_ms: 1000,
-            poll_ms: 10,
             ..Default::default()
         },
         ..config()

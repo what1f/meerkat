@@ -16,7 +16,6 @@ fn config(idle: Duration, total: Duration) -> RigConfig {
         retry: lankide_runtime::RetryConfig {
             base_ms: 30_000,
             max_ms: 30_000,
-            poll_ms: 10,
             ..Default::default()
         },
         ..Default::default()

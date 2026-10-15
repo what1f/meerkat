@@ -95,7 +95,6 @@ async fn restarting_the_computer_during_a_run_delivers_the_reply_exactly_once() 
         retry: lankide_runtime::RetryConfig {
             base_ms: 50,
             max_ms: 100,
-            poll_ms: 10,
             ..Default::default()
         },
         ..config()

@@ -608,7 +608,7 @@ impl Storage {
         attempt: i64,
     ) -> Result<Option<ExecutionAuthContext>> {
         let row: Option<(String, String, i64, String, i64, String)> = self
-            .conn()?
+            .read_conn()?
             .query_row(
                 "SELECT e.workspace_id,e.agent_id,e.attempt,e.token_hash,e.token_expires_at,e.state FROM executions e JOIN agents a ON a.workspace_id=e.workspace_id AND a.agent_id=e.agent_id WHERE e.execution_id=?1 AND e.attempt=?2 AND e.token_hash IS NOT NULL AND e.token_expires_at IS NOT NULL AND e.placement_computer_id=a.computer_id AND e.placement_generation=a.placement_generation AND NOT EXISTS(SELECT 1 FROM computers c WHERE c.computer_id=e.placement_computer_id AND c.revoked_at IS NOT NULL)",
                 params![execution_id, attempt],
@@ -637,7 +637,7 @@ impl Storage {
         attempt: i64,
         computer_id: &str,
     ) -> Result<bool> {
-        Ok(self.conn()?.query_row(
+        Ok(self.read_conn()?.query_row(
             "SELECT EXISTS(SELECT 1 FROM executions e JOIN agents a ON a.workspace_id=e.workspace_id AND a.agent_id=e.agent_id WHERE e.execution_id=?1 AND e.attempt=?2 AND e.placement_computer_id=?3 AND a.computer_id=?3 AND e.placement_generation=a.placement_generation AND NOT EXISTS(SELECT 1 FROM computers c WHERE c.computer_id=?3 AND c.revoked_at IS NOT NULL))",
             params![execution_id, attempt, computer_id], |r| r.get(0))?)
     }
@@ -649,7 +649,7 @@ impl Storage {
         attempt: i64,
         computer_id: &str,
     ) -> Result<bool> {
-        Ok(self.conn()?.query_row(
+        Ok(self.read_conn()?.query_row(
             "SELECT EXISTS(SELECT 1 FROM executions e JOIN agents a ON a.workspace_id=e.workspace_id AND a.agent_id=e.agent_id JOIN execution_attempts t ON t.execution_id=e.execution_id AND t.attempt=e.attempt WHERE e.execution_id=?1 AND e.attempt=?2 AND t.computer_id=?3 AND e.placement_computer_id=t.computer_id AND e.placement_computer_id=a.computer_id AND e.placement_generation=a.placement_generation AND NOT EXISTS(SELECT 1 FROM computers c WHERE c.computer_id=?3 AND c.revoked_at IS NOT NULL))",
             params![execution_id, attempt, computer_id], |r| r.get(0))?)
     }
@@ -707,7 +707,7 @@ impl Storage {
         computer_id: &str,
         computer_instance_id: &str,
     ) -> Result<Vec<SteerDelivery>> {
-        let connection = self.conn()?;
+        let connection = self.read_conn()?;
         let mut statement = connection.prepare(
             "SELECT s.steer_delivery_id,s.execution_id,s.attempt,s.computer_id,s.computer_instance_id,s.rendered_markdown,s.created_at FROM steer_deliveries s JOIN executions e USING(execution_id) JOIN execution_attempts a ON a.execution_id=s.execution_id AND a.attempt=s.attempt WHERE s.computer_id=?1 AND s.computer_instance_id=?2 AND s.state='pending' AND e.attempt=s.attempt AND e.state IN('assigning','running','recovering') AND a.state IN('offered','accepted','running') ORDER BY s.steer_delivery_id",
         )?;
@@ -832,7 +832,7 @@ impl Storage {
         Ok(true)
     }
     pub fn execution(&self, id: i64) -> Result<ExecutionView> {
-        let(s,st,o,e,detail):(i64,String,Option<String>,Option<String>,Option<String>)=self.conn()?.query_row("SELECT snapshot_id,state,final_output,error_code,error_message FROM executions WHERE execution_id=?1",[id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)))?;
+        let(s,st,o,e,detail):(i64,String,Option<String>,Option<String>,Option<String>)=self.read_conn()?.query_row("SELECT snapshot_id,state,final_output,error_code,error_message FROM executions WHERE execution_id=?1",[id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)))?;
         Ok(ExecutionView {
             execution_id: id,
             snapshot_id: s,
@@ -843,7 +843,7 @@ impl Storage {
         })
     }
     pub fn has_active_execution(&self, workspace_id: &WorkspaceId) -> Result<bool> {
-        Ok(self.conn()?.query_row(
+        Ok(self.read_conn()?.query_row(
             "SELECT EXISTS(SELECT 1 FROM executions WHERE workspace_id=?1 AND state IN('queued','assigning','running','recovering'))",
             [workspace_id.as_str()],
             |row| row.get(0),
@@ -854,7 +854,7 @@ impl Storage {
         workspace_id: &WorkspaceId,
         agent_id: &AgentId,
     ) -> Result<Vec<i64>> {
-        let connection = self.conn()?;
+        let connection = self.read_conn()?;
         let mut statement = connection.prepare(
             "SELECT execution_id FROM executions WHERE workspace_id=?1 AND agent_id=?2 AND state IN('queued','assigning','running','recovering') ORDER BY execution_id",
         )?;
@@ -868,7 +868,7 @@ impl Storage {
         &self,
         workspace_id: Option<&WorkspaceId>,
     ) -> Result<Vec<RecoverableExecutionView>> {
-        let c = self.conn()?;
+        let c = self.read_conn()?;
         let mut sql="SELECT e.execution_id,e.snapshot_id,e.state,e.final_output,e.error_code,d.delivery_id,d.state,e.error_message FROM executions e JOIN execution_deliveries d USING(execution_id) WHERE e.state IN('queued','assigning','running','recovering')".to_owned();
         if workspace_id.is_some() {
             sql.push_str(" AND e.workspace_id=?1");

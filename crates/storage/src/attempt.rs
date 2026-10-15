@@ -278,7 +278,7 @@ impl Storage {
         execution_id: i64,
         attempt: i64,
     ) -> Result<Option<AttemptAuthorization>> {
-        let connection = self.conn()?;
+        let connection = self.read_conn()?;
         let header: Option<(String, String)> = connection
             .query_row(
                 "SELECT context_json,context_fingerprint FROM execution_attempt_authorizations WHERE execution_id=?1 AND attempt=?2",
@@ -447,7 +447,7 @@ impl Storage {
         accepted: bool,
         now: i64,
     ) -> Result<bool> {
-        let connection = self.conn()?;
+        let connection = self.read_conn()?;
         let current: i64 = connection.query_row(
             "SELECT count(*) FROM executions e JOIN execution_attempts a USING(execution_id) WHERE e.execution_id=?1 AND e.attempt=?2 AND a.attempt=?2 AND a.state IN('accepted','running')",
             params![execution_id, attempt],
@@ -465,7 +465,7 @@ impl Storage {
     }
 
     pub fn execution_attempts(&self, execution_id: i64) -> Result<Vec<ExecutionAttemptView>> {
-        let connection = self.conn()?;
+        let connection = self.read_conn()?;
         let mut statement = connection.prepare(
             "SELECT attempt FROM execution_attempts WHERE execution_id=?1 ORDER BY attempt",
         )?;
@@ -483,7 +483,7 @@ impl Storage {
         execution_id: i64,
         attempt: i64,
     ) -> Result<Option<ExecutionAttemptView>> {
-        let connection = self.conn()?;
+        let connection = self.read_conn()?;
         match load_execution_attempt(&connection, execution_id, attempt) {
             Ok(value) => Ok(Some(value)),
             Err(StorageError::Sqlite(rusqlite::Error::QueryReturnedNoRows)) => Ok(None),
@@ -496,7 +496,7 @@ impl Storage {
         execution_id: i64,
         attempt: i64,
     ) -> Result<Vec<ExecutionEventRecord>> {
-        let connection = self.conn()?;
+        let connection = self.read_conn()?;
         let mut statement = connection.prepare("SELECT sequence,kind,payload,occurred_at FROM execution_events WHERE execution_id=?1 AND attempt=?2 ORDER BY sequence")?;
         let rows = statement
             .query_map(params![execution_id, attempt], |row| {

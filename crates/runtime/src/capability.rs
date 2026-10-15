@@ -58,6 +58,7 @@ impl RuntimeApplication {
         let runtime = self.runtime()?;
         let validated = runtime.validate_run_context(&context, now_millis()).await?;
         self.self_profile(&validated.workspace_id, &validated.agent_id)
+            .await
     }
 
     pub async fn update_self_profile(
@@ -85,16 +86,19 @@ impl RuntimeApplication {
             ..Default::default()
         })
         .await?;
-        self.self_profile(&workspace_id, &agent_id)
+        self.self_profile(&workspace_id, &agent_id).await
     }
 
-    fn self_profile(
+    async fn self_profile(
         &self,
         workspace_id: &WorkspaceId,
         agent_id: &AgentId,
     ) -> Result<AgentProfile, RuntimeError> {
         let runtime = self.runtime()?;
-        let record = runtime.storage().agent_record(workspace_id, agent_id)?;
+        let record = runtime
+            .database()
+            .agent_record(workspace_id, agent_id)
+            .await?;
         let avatar = self
             .agent_profiles()
             .read_avatar(workspace_id, agent_id, record.avatar.as_deref())
@@ -133,8 +137,9 @@ impl RuntimeApplication {
         let runtime = self.runtime()?;
         let validated = runtime.validate_run_context(context, now_millis()).await?;
         if runtime
-            .storage()
-            .resource_metadata(&validated.workspace_id, resource_id)?
+            .database()
+            .resource_metadata(&validated.workspace_id, resource_id)
+            .await?
             .is_none()
         {
             return Err(RuntimeError::InvalidExecutionToken);
@@ -284,12 +289,15 @@ impl RuntimeApplication {
             ));
         }
         if let Some(message_id) = request.reply_to_message_id
-            && !runtime.storage().snapshot_contains_message(
-                validated.snapshot.snapshot_id,
-                &channel_id,
-                &request.chat_id,
-                message_id,
-            )?
+            && !runtime
+                .database()
+                .snapshot_contains_message(
+                    validated.snapshot.snapshot_id,
+                    &channel_id,
+                    &request.chat_id,
+                    message_id,
+                )
+                .await?
         {
             return Err(RuntimeError::Application(
                 "Choose a message included in the current conversation.".into(),
@@ -300,8 +308,9 @@ impl RuntimeApplication {
             let id = ResourceId::new(resource.resource_id)
                 .map_err(|error| RuntimeError::InvalidCore(error.to_string()))?;
             let stored = runtime
-                .storage()
-                .resource_metadata(&validated.workspace_id, id)?
+                .database()
+                .resource_metadata(&validated.workspace_id, id)
+                .await?
                 .ok_or_else(|| RuntimeError::Application("resource not found".into()))?;
             if stored.sha256 != resource.sha256 || stored.size_bytes != resource.size_bytes {
                 return Err(RuntimeError::Application(
@@ -324,21 +333,25 @@ impl RuntimeApplication {
             &format!("execution:{}", validated.execution_id),
             &request.idempotency_key,
         );
-        let begun = match runtime.storage().begin_send_guarded(
-            validated.snapshot.snapshot_id,
-            &channel_id,
-            &request.chat_id,
-            request.force,
-            SendRequest {
-                workspace_id: validated.workspace_id.clone(),
-                channel_id: channel_id.clone(),
-                provider_chat_id: request.chat_id.clone(),
-                request_key: provider_idempotency_key.clone(),
-                sender_agent_id: validated.agent_id.clone(),
-                content: request.content_markdown.clone(),
-                now,
-            },
-        )? {
+        let begun = match runtime
+            .database()
+            .begin_send_guarded(
+                validated.snapshot.snapshot_id,
+                &channel_id,
+                &request.chat_id,
+                request.force,
+                SendRequest {
+                    workspace_id: validated.workspace_id.clone(),
+                    channel_id: channel_id.clone(),
+                    provider_chat_id: request.chat_id.clone(),
+                    request_key: provider_idempotency_key.clone(),
+                    sender_agent_id: validated.agent_id.clone(),
+                    content: request.content_markdown.clone(),
+                    now,
+                },
+            )
+            .await?
+        {
             GuardedSendResult::Ready(attempt) => attempt,
             GuardedSendResult::NewMessages { .. } => {
                 return Ok(ProtocolSendMessageResult {
@@ -384,13 +397,16 @@ impl RuntimeApplication {
                 let provider_message_id = result.provider_message_id.ok_or_else(|| {
                     RuntimeError::InvalidCore("sent Provider result missing message id".into())
                 })?;
-                runtime.storage().finish_send(
-                    &provider_idempotency_key,
-                    SendOutcome::Sent {
-                        provider_message_id: provider_message_id.clone(),
-                    },
-                    now,
-                )?;
+                runtime
+                    .database()
+                    .finish_send(
+                        &provider_idempotency_key,
+                        SendOutcome::Sent {
+                            provider_message_id: provider_message_id.clone(),
+                        },
+                        now,
+                    )
+                    .await?;
                 Ok(ProtocolSendMessageResult {
                     accepted: true,
                     message_id: begun.message_id,
@@ -399,11 +415,10 @@ impl RuntimeApplication {
                 })
             }
             Ok(_) => {
-                runtime.storage().finish_send(
-                    &provider_idempotency_key,
-                    SendOutcome::Unknown,
-                    now,
-                )?;
+                runtime
+                    .database()
+                    .finish_send(&provider_idempotency_key, SendOutcome::Unknown, now)
+                    .await?;
                 Ok(ProtocolSendMessageResult {
                     accepted: false,
                     message_id: begun.message_id,
@@ -439,8 +454,9 @@ impl RuntimeApplication {
                     }
                 };
                 runtime
-                    .storage()
-                    .finish_send(&provider_idempotency_key, outcome, now)?;
+                    .database()
+                    .finish_send(&provider_idempotency_key, outcome, now)
+                    .await?;
                 Ok(ProtocolSendMessageResult {
                     accepted: false,
                     message_id: begun.message_id,
@@ -480,8 +496,9 @@ impl RuntimeApplication {
             .parse::<i64>()
             .map_err(|_| RuntimeError::Application("invalid message content id".into()))?;
         let message = runtime
-            .storage()
-            .snapshot_message(validated.snapshot.snapshot_id, message_id)?
+            .database()
+            .snapshot_message(validated.snapshot.snapshot_id, message_id)
+            .await?
             .ok_or_else(|| {
                 RuntimeError::Application(
                     "This content is not available for the current task.".into(),
@@ -613,13 +630,17 @@ async fn invoke_standard_tool(
                 .unwrap_or(50) as usize;
             let channel = ChannelId::new(channel_id)
                 .map_err(|error| RuntimeError::InvalidCore(error.to_string()))?;
-            let messages = application.runtime()?.storage().snapshot_chat_messages(
-                validated.snapshot.snapshot_id,
-                &channel,
-                chat_id,
-                before_message_id,
-                limit,
-            )?;
+            let messages = application
+                .runtime()?
+                .database()
+                .snapshot_chat_messages(
+                    validated.snapshot.snapshot_id,
+                    &channel,
+                    chat_id,
+                    before_message_id,
+                    limit,
+                )
+                .await?;
             serde_json::json!({
                 "channel_id": channel.as_str(),
                 "chat_id": chat_id,
@@ -722,20 +743,21 @@ async fn invoke_message_recall(
         now: now_millis(),
     };
     let begun = runtime
-        .storage()
-        .begin_tool_invocation(invocation.clone())?;
+        .database()
+        .begin_tool_invocation(invocation.clone())
+        .await?;
     if !begun.created {
         return Ok(match begun.result {
             Some(value) => recall_capability_result(request.invocation_id.clone(), &value),
             None => capability_error(request.invocation_id.clone(), "in_progress", true),
         });
     }
-    let guard = ToolInvocationGuard::new(runtime.storage(), invocation.clone());
-    let result = match runtime.storage().recall_target(
-        &validated.workspace_id,
-        &validated.agent_id,
-        message_id,
-    )? {
+    let guard = ToolInvocationGuard::new(runtime.database(), invocation.clone());
+    let result = match runtime
+        .database()
+        .recall_target(&validated.workspace_id, &validated.agent_id, message_id)
+        .await?
+    {
         None => serde_json::json!({"success":false,"error":"message_not_found"}),
         Some(target) => match target.provider_message_id {
             None => serde_json::json!({"success":false,"error":"provider_message_id_missing"}),
@@ -770,7 +792,7 @@ async fn invoke_message_recall(
             }
         },
     };
-    guard.complete(result.clone(), now_millis())?;
+    guard.complete(result.clone(), now_millis()).await?;
     Ok(recall_capability_result(
         request.invocation_id.clone(),
         &result,
@@ -799,20 +821,21 @@ async fn invoke_message_edit(
         now: now_millis(),
     };
     let begun = runtime
-        .storage()
-        .begin_tool_invocation(invocation.clone())?;
+        .database()
+        .begin_tool_invocation(invocation.clone())
+        .await?;
     if !begun.created {
         return Ok(match begun.result {
             Some(value) => edit_capability_result(request.invocation_id.clone(), &value),
             None => capability_error(request.invocation_id.clone(), "in_progress", true),
         });
     }
-    let guard = ToolInvocationGuard::new(runtime.storage(), invocation.clone());
-    let result = match runtime.storage().recall_target(
-        &validated.workspace_id,
-        &validated.agent_id,
-        message_id,
-    )? {
+    let guard = ToolInvocationGuard::new(runtime.database(), invocation.clone());
+    let result = match runtime
+        .database()
+        .recall_target(&validated.workspace_id, &validated.agent_id, message_id)
+        .await?
+    {
         None => serde_json::json!({"success":false,"error":"message_not_found"}),
         Some(target) => match target.provider_message_id {
             None => serde_json::json!({"success":false,"error":"provider_message_id_missing"}),
@@ -838,13 +861,16 @@ async fn invoke_message_edit(
                     .await
                 {
                     Ok(()) => {
-                        let updated = runtime.storage().update_outbound_message_content(
-                            &validated.workspace_id,
-                            &validated.agent_id,
-                            target.message_id,
-                            &content,
-                            now_millis(),
-                        )?;
+                        let updated = runtime
+                            .database()
+                            .update_outbound_message_content(
+                                &validated.workspace_id,
+                                &validated.agent_id,
+                                target.message_id,
+                                &content,
+                                now_millis(),
+                            )
+                            .await?;
                         if updated {
                             serde_json::json!({"success":true,"message_id":target.message_id})
                         } else {
@@ -859,7 +885,7 @@ async fn invoke_message_edit(
             }
         },
     };
-    guard.complete(result.clone(), now_millis())?;
+    guard.complete(result.clone(), now_millis()).await?;
     Ok(edit_capability_result(
         request.invocation_id.clone(),
         &result,

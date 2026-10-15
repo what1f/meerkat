@@ -137,11 +137,11 @@ impl Storage {
         workspace_id: &WorkspaceId,
         person_id: &PersonId,
     ) -> Result<Option<PersonRecord>> {
-        load_person_by_id(&*self.conn()?, workspace_id, person_id)
+        load_person_by_id(&*self.read_conn()?, workspace_id, person_id)
     }
 
     pub fn list_human_team_members(&self, workspace_id: &WorkspaceId) -> Result<Vec<PersonRecord>> {
-        let connection = self.conn()?;
+        let connection = self.read_conn()?;
         let mut statement = connection.prepare(
             "SELECT workspace_id,person_id,team_role,provider_instance_id,external_id,provider_identity_state_json,provider_state_revision,created_at,updated_at FROM people WHERE workspace_id=?1 AND team_role IN('member','lead') ORDER BY person_id",
         )?;
@@ -157,7 +157,7 @@ impl Storage {
         &self,
         workspace_id: &WorkspaceId,
     ) -> Result<Vec<HumanTeamMemberView>> {
-        let connection = self.conn()?;
+        let connection = self.read_conn()?;
         let mut statement = connection.prepare(
             "SELECT p.person_id,p.team_role,(SELECT NULLIF(TRIM(m.sender_name),'') FROM messages m JOIN chats c ON c.chat_id=m.chat_id WHERE c.workspace_id=p.workspace_id AND m.sender_kind='human' AND m.sender_id=p.person_id AND NULLIF(TRIM(m.sender_name),'') IS NOT NULL ORDER BY m.occurred_at DESC,m.message_id DESC LIMIT 1) FROM people p WHERE p.workspace_id=?1 AND p.team_role IN('member','lead') ORDER BY p.person_id",
         )?;

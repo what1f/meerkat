@@ -9,6 +9,8 @@ mod capability;
 mod capability_link;
 mod computer_broker;
 mod coordination;
+mod database;
+use database::Database;
 mod error;
 mod execution;
 mod lifecycle;
@@ -89,7 +91,7 @@ pub struct RuntimeConfig {
 pub struct Runtime {
     config: RuntimeConfig,
     execution_token_lifetime_ms: AtomicI64,
-    storage: Arc<Storage>,
+    storage: Database,
     background_tasks: std::sync::Mutex<tokio::task::JoinSet<()>>,
     providers: StdRwLock<BTreeMap<WorkspaceId, Arc<ProviderInstance>>>,
 }
@@ -99,13 +101,12 @@ impl Runtime {
         if config.retry.base_ms <= 0
             || config.retry.max_ms < config.retry.base_ms
             || config.retry.notice_dedupe_ms <= 0
-            || config.retry.poll_ms == 0
         {
             return Err(RuntimeError::Application(
                 "invalid retry policy durations".into(),
             ));
         }
-        let storage = Arc::new(Storage::open(config.database.clone())?);
+        let storage = Database::new(Arc::new(Storage::open(config.database.clone())?));
         Ok(Self {
             config,
             execution_token_lifetime_ms: AtomicI64::new(3_600_000),
@@ -137,14 +138,14 @@ impl Runtime {
         self.storage.as_ref()
     }
 
-    pub(crate) fn storage_arc(&self) -> Arc<Storage> {
+    pub(crate) fn database(&self) -> Database {
         self.storage.clone()
     }
 
     /// Creates a detached Broker for embedding Runtime without RuntimeApplication.
     /// Production management paths must use RuntimeApplication's connected Broker.
     pub fn new_computer_broker(&self) -> ComputerBroker {
-        ComputerBroker::new(self.storage.clone())
+        ComputerBroker::with_database(self.storage.clone())
     }
 }
 
@@ -154,7 +155,6 @@ pub struct RetryConfig {
     pub base_ms: i64,
     pub max_ms: i64,
     pub notice_dedupe_ms: i64,
-    pub poll_ms: u64,
 }
 impl Default for RetryConfig {
     fn default() -> Self {
@@ -162,7 +162,6 @@ impl Default for RetryConfig {
             base_ms: 30_000,
             max_ms: 600_000,
             notice_dedupe_ms: 900_000,
-            poll_ms: 1000,
         }
     }
 }

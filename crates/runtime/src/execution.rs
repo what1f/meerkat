@@ -12,9 +12,12 @@ impl Runtime {
         self.require_active(workspace_id)?;
         let host = self.host(workspace_id).await?;
         let provider_prompt = host.system_prompt(agent_id.clone(), spec.clone()).await?;
-        let workspace = self.storage.workspace_record(workspace_id)?;
-        let humans = self.storage.list_human_team_member_views(workspace_id)?;
-        let agents = self.storage.list_agent_records(workspace_id)?;
+        let workspace = self.storage.workspace_record(workspace_id).await?;
+        let humans = self
+            .storage
+            .list_human_team_member_views(workspace_id)
+            .await?;
+        let agents = self.storage.list_agent_records(workspace_id).await?;
         let system_prompt = prompt::system_prompt(
             &workspace,
             &agent_id,
@@ -62,25 +65,29 @@ impl Runtime {
         // owns the Agent until the attempt is completed or declared lost.
         if !self
             .storage
-            .active_execution_ids_for_agent(workspace_id, agent_id)?
+            .active_execution_ids_for_agent(workspace_id, agent_id)
+            .await?
             .is_empty()
         {
             return Ok(ExecutionProgress::Idle);
         }
         let execution_token = generate_execution_token()?;
         let provider_send_namespace = token_hash(&execution_token);
-        let Some(created) = self.storage.create_execution_with_auth(
-            workspace_id,
-            agent_id,
-            "unread",
-            now,
-            ExecutionAuthSpec {
-                attempt: 1,
-                token_hash: token_hash(&execution_token),
-                expires_at: now
-                    .saturating_add(self.execution_token_lifetime_ms.load(Ordering::Relaxed)),
-            },
-        )?
+        let Some(created) = self
+            .storage
+            .create_execution_with_auth(
+                workspace_id,
+                agent_id,
+                "unread",
+                now,
+                ExecutionAuthSpec {
+                    attempt: 1,
+                    token_hash: token_hash(&execution_token),
+                    expires_at: now
+                        .saturating_add(self.execution_token_lifetime_ms.load(Ordering::Relaxed)),
+                },
+            )
+            .await?
         else {
             return Ok(ExecutionProgress::Idle);
         };
@@ -144,13 +151,15 @@ impl Runtime {
                     "workspace={workspace_id} agent={agent_id} execution={} input_preparation_failed: {detail}",
                     created.execution_id
                 );
-                self.storage.fail_execution_retry_after(
-                    created.execution_id,
-                    "input_preparation_failed",
-                    &detail,
-                    now.saturating_add(60_000),
-                    now,
-                )?;
+                self.storage
+                    .fail_execution_retry_after(
+                        created.execution_id,
+                        "input_preparation_failed",
+                        &detail,
+                        now.saturating_add(60_000),
+                        now,
+                    )
+                    .await?;
                 return Err(error);
             }
         };
@@ -191,12 +200,15 @@ impl Runtime {
                 context_fingerprint,
                 capabilities,
             })
+            .await
         {
-            self.storage.fail_execution(
-                created.execution_id,
-                "authorization_preparation_failed",
-                now,
-            )?;
+            self.storage
+                .fail_execution(
+                    created.execution_id,
+                    "authorization_preparation_failed",
+                    now,
+                )
+                .await?;
             return Err(error.into());
         }
         let execution_ref = ExecutionRef {
@@ -228,7 +240,8 @@ impl Runtime {
             created_at: now,
         };
         self.storage
-            .mark_execution_running(created.execution_id, now)?;
+            .mark_execution_running(created.execution_id, now)
+            .await?;
         let completion = match computer.execute(assignment).await {
             Ok(completion) => completion,
             Err(error) => {
@@ -239,13 +252,12 @@ impl Runtime {
                 );
                 if error.code == "computer_disconnected" {
                     self.storage
-                        .mark_execution_recovering(created.execution_id, now)?;
+                        .mark_execution_recovering(created.execution_id, now)
+                        .await?;
                 } else {
-                    self.storage.fail_execution(
-                        created.execution_id,
-                        "computer_unavailable",
-                        now,
-                    )?;
+                    self.storage
+                        .fail_execution(created.execution_id, "computer_unavailable", now)
+                        .await?;
                 }
                 return Ok(ExecutionProgress::Failed {
                     execution_id: created.execution_id,
@@ -257,7 +269,8 @@ impl Runtime {
             && matches!(completion.outcome, ComputerOutcome::Succeeded { .. })
         {
             self.storage
-                .fail_execution(created.execution_id, "delivery_rejected", now)?;
+                .fail_execution(created.execution_id, "delivery_rejected", now)
+                .await?;
             return Ok(ExecutionProgress::Failed {
                 execution_id: created.execution_id,
                 code: "delivery_rejected".into(),
@@ -265,13 +278,15 @@ impl Runtime {
         }
         if completion.delivery_accepted {
             self.storage
-                .mark_delivery_delivered(created.delivery_id, now)?;
+                .mark_delivery_delivered(created.delivery_id, now)
+                .await?;
         }
         match completion.outcome {
             ComputerOutcome::Failed { code } => {
                 log::error!("execution={} failed: {code}", created.execution_id);
                 self.storage
-                    .fail_execution(created.execution_id, &code, now_millis())?;
+                    .fail_execution(created.execution_id, &code, now_millis())
+                    .await?;
                 self.apply_pending_failure_policies(workspace_id, agent_id)
                     .await?;
                 Ok(ExecutionProgress::Failed {
@@ -280,7 +295,9 @@ impl Runtime {
                 })
             }
             ComputerOutcome::Cancelled => {
-                self.storage.cancel_execution(created.execution_id, now)?;
+                self.storage
+                    .cancel_execution(created.execution_id, now)
+                    .await?;
                 self.apply_pending_failure_policies(workspace_id, agent_id)
                     .await?;
                 Ok(ExecutionProgress::Cancelled {
@@ -289,9 +306,10 @@ impl Runtime {
             }
             ComputerOutcome::Succeeded { output, reply } => {
                 let Some(reply) = reply else {
-                    let committed =
-                        self.storage
-                            .commit_execution(created.execution_id, &output, None, now)?;
+                    let committed = self
+                        .storage
+                        .commit_execution(created.execution_id, &output, None, now)
+                        .await?;
                     return Ok(ExecutionProgress::Committed {
                         execution_id: created.execution_id,
                         committed: matches!(
@@ -302,29 +320,31 @@ impl Runtime {
                     });
                 };
                 let request_key = format!("execution:{}:reply", created.execution_id);
-                let send = match self.storage.begin_send_guarded(
-                    created.snapshot_id,
-                    &reply.channel_id,
-                    &reply.provider_chat_id,
-                    false,
-                    SendRequest {
-                        workspace_id: workspace_id.clone(),
-                        channel_id: reply.channel_id.clone(),
-                        provider_chat_id: reply.provider_chat_id.clone(),
-                        request_key: request_key.clone(),
-                        sender_agent_id: agent_id.clone(),
-                        content: reply.content.clone(),
-                        now,
-                    },
-                )? {
+                let send = match self
+                    .storage
+                    .begin_send_guarded(
+                        created.snapshot_id,
+                        &reply.channel_id,
+                        &reply.provider_chat_id,
+                        false,
+                        SendRequest {
+                            workspace_id: workspace_id.clone(),
+                            channel_id: reply.channel_id.clone(),
+                            provider_chat_id: reply.provider_chat_id.clone(),
+                            request_key: request_key.clone(),
+                            sender_agent_id: agent_id.clone(),
+                            content: reply.content.clone(),
+                            now,
+                        },
+                    )
+                    .await?
+                {
                     GuardedSendResult::Ready(send) => send,
                     GuardedSendResult::NewMessages { .. } => {
-                        let committed = self.storage.commit_execution(
-                            created.execution_id,
-                            &output,
-                            None,
-                            now,
-                        )?;
+                        let committed = self
+                            .storage
+                            .commit_execution(created.execution_id, &output, None, now)
+                            .await?;
                         return Ok(ExecutionProgress::Committed {
                             execution_id: created.execution_id,
                             committed: matches!(
@@ -365,19 +385,24 @@ impl Runtime {
                                 "sent Provider result missing message id".into(),
                             )
                         })?;
-                        self.storage.finish_send(
-                            &request_key,
-                            SendOutcome::Sent {
-                                provider_message_id,
-                            },
-                            now,
-                        )?;
-                        let committed = self.storage.commit_execution(
-                            created.execution_id,
-                            &output,
-                            Some(&request_key),
-                            now,
-                        )?;
+                        self.storage
+                            .finish_send(
+                                &request_key,
+                                SendOutcome::Sent {
+                                    provider_message_id,
+                                },
+                                now,
+                            )
+                            .await?;
+                        let committed = self
+                            .storage
+                            .commit_execution(
+                                created.execution_id,
+                                &output,
+                                Some(&request_key),
+                                now,
+                            )
+                            .await?;
                         Ok(ExecutionProgress::Committed {
                             execution_id: created.execution_id,
                             committed: matches!(
@@ -389,7 +414,8 @@ impl Runtime {
                     }
                     Ok(_) => {
                         self.storage
-                            .finish_send(&request_key, SendOutcome::Unknown, now)?;
+                            .finish_send(&request_key, SendOutcome::Unknown, now)
+                            .await?;
                         Ok(ExecutionProgress::PendingSend {
                             execution_id: created.execution_id,
                             request_key,
@@ -400,18 +426,18 @@ impl Runtime {
                             "execution={} provider send failed: {error}",
                             created.execution_id
                         );
-                        self.storage.finish_send(
-                            &request_key,
-                            SendOutcome::Failed {
-                                code: "provider_send_failed".into(),
-                            },
-                            now,
-                        )?;
-                        self.storage.fail_execution(
-                            created.execution_id,
-                            "provider_send_failed",
-                            now,
-                        )?;
+                        self.storage
+                            .finish_send(
+                                &request_key,
+                                SendOutcome::Failed {
+                                    code: "provider_send_failed".into(),
+                                },
+                                now,
+                            )
+                            .await?;
+                        self.storage
+                            .fail_execution(created.execution_id, "provider_send_failed", now)
+                            .await?;
                         Ok(ExecutionProgress::Failed {
                             execution_id: created.execution_id,
                             code: "provider_send_failed".into(),
@@ -422,24 +448,24 @@ impl Runtime {
         }
     }
 
-    pub fn recoverable_executions(
+    pub async fn recoverable_executions(
         &self,
         workspace_id: Option<&WorkspaceId>,
     ) -> Result<Vec<lankide_storage::RecoverableExecutionView>, RuntimeError> {
-        Ok(self.storage.recoverable_executions(workspace_id)?)
+        Ok(self.storage.recoverable_executions(workspace_id).await?)
     }
 
-    pub fn recoverable_sends(
+    pub async fn recoverable_sends(
         &self,
         workspace_id: Option<&WorkspaceId>,
     ) -> Result<Vec<lankide_storage::RecoverableSendView>, RuntimeError> {
-        Ok(self.storage.recoverable_sends(workspace_id)?)
+        Ok(self.storage.recoverable_sends(workspace_id).await?)
     }
 
     /// Resolves a Provider send whose outcome was unknown across a restart.
     /// The execution is committed only after Storage has durably linked the
     /// returned Provider message id to the pre-existing outbound Message.
-    pub fn resolve_unknown_send(
+    pub async fn resolve_unknown_send(
         &self,
         workspace_id: &WorkspaceId,
         request_key: &str,
@@ -448,24 +474,25 @@ impl Runtime {
     ) -> Result<ExecutionProgress, RuntimeError> {
         let recoverable = self
             .storage
-            .recoverable_sends(Some(workspace_id))?
+            .recoverable_sends(Some(workspace_id))
+            .await?
             .into_iter()
             .find(|send| send.attempt.request_key == request_key)
             .ok_or_else(|| RuntimeError::UnknownSend(request_key.to_owned()))?;
-        self.storage.finish_send(
-            request_key,
-            SendOutcome::Sent {
-                provider_message_id,
-            },
-            now,
-        )?;
+        self.storage
+            .finish_send(
+                request_key,
+                SendOutcome::Sent {
+                    provider_message_id,
+                },
+                now,
+            )
+            .await?;
         let execution_id = execution_id_from_request_key(request_key)?;
-        let committed = self.storage.commit_execution(
-            execution_id,
-            &recoverable.content,
-            Some(request_key),
-            now,
-        )?;
+        let committed = self
+            .storage
+            .commit_execution(execution_id, &recoverable.content, Some(request_key), now)
+            .await?;
         Ok(ExecutionProgress::Committed {
             execution_id,
             committed: matches!(
@@ -548,54 +575,63 @@ pub enum ToolProgress {
     Failed { code: String },
 }
 
-pub(crate) struct ToolInvocationGuard<'a> {
-    storage: &'a Storage,
+pub(crate) struct ToolInvocationGuard {
+    storage: Database,
     request: Option<ToolInvocationRequest>,
 }
 
-impl<'a> ToolInvocationGuard<'a> {
-    pub(crate) fn new(storage: &'a Storage, request: ToolInvocationRequest) -> Self {
+impl ToolInvocationGuard {
+    pub(crate) fn new(storage: Database, request: ToolInvocationRequest) -> Self {
         Self {
             storage,
             request: Some(request),
         }
     }
 
-    pub(crate) fn complete(
+    pub(crate) async fn complete(
         mut self,
         result: serde_json::Value,
         now: i64,
     ) -> Result<(), RuntimeError> {
         let request = self.request.as_ref().expect("active tool invocation");
-        self.storage.finish_tool_invocation(request, result, now)?;
+        self.storage
+            .finish_tool_invocation(request, result, now)
+            .await?;
         self.request = None;
         Ok(())
     }
 
-    pub(crate) fn fail(mut self, code: &str, now: i64) -> Result<(), RuntimeError> {
+    pub(crate) async fn fail(mut self, code: &str, now: i64) -> Result<(), RuntimeError> {
         let request = self.request.as_ref().expect("active tool invocation");
-        self.storage.fail_tool_invocation(request, code, now)?;
+        self.storage
+            .fail_tool_invocation(request, code, now)
+            .await?;
         self.request = None;
         Ok(())
     }
 }
 
-impl Drop for ToolInvocationGuard<'_> {
+impl Drop for ToolInvocationGuard {
     fn drop(&mut self) {
         let Some(request) = self.request.take() else {
             return;
         };
-        if let Err(error) =
-            self.storage
-                .fail_tool_invocation(&request, "invocation_cancelled", now_millis())
-        {
-            log::error!(
-                "[runtime] execution={} attempt={} tool_call={} finalization failed: {error}",
-                request.execution_id,
-                request.attempt,
-                request.tool_call_id
-            );
-        }
+        let database = self.storage.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Err(error) = database.as_ref().fail_tool_invocation(
+                &request,
+                "invocation_cancelled",
+                now_millis(),
+            ) {
+                log::error!(
+                    "[runtime] execution={} attempt={} tool_call={} finalization failed: {error}",
+                    request.execution_id,
+                    request.attempt,
+                    request.tool_call_id
+                );
+            }
+            database.wake();
+        });
     }
 }
 
