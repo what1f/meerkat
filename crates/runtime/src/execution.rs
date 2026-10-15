@@ -675,7 +675,7 @@ fn trigger_reason_name(reason: &DispatchReason) -> String {
         DispatchReason::Mention => "mention".to_owned(),
         DispatchReason::Follow => "follow".to_owned(),
         DispatchReason::Schedule => "schedule".to_owned(),
-        DispatchReason::Reaction { reaction } => format!("reaction:{reaction}"),
+        DispatchReason::Reaction { reaction, .. } => format!("reaction:{reaction}"),
         DispatchReason::Custom { name, .. } => format!("custom:{name}"),
     }
 }
@@ -770,6 +770,25 @@ fn render_snapshot(snapshot: &SnapshotView) -> String {
             markdown.push_str(": ");
             markdown.push_str(&truncate_message(&message.content));
             render_attachment_links(&mut markdown, message);
+        }
+        for (reason, message) in chat.trigger_reasons.iter().zip(&chat.trigger_messages) {
+            if let DispatchReason::Reaction {
+                reaction,
+                sender_name,
+            } = reason
+            {
+                markdown.push_str(&format!(
+                    "\n- {sender_name} 回应了 {reaction}：[message_id={}] {}: {}",
+                    message.message_id,
+                    if message.sender_name.trim().is_empty() {
+                        &message.sender_id
+                    } else {
+                        &message.sender_name
+                    },
+                    truncate_message(&message.content),
+                ));
+                render_attachment_links(&mut markdown, message);
+            }
         }
         if chat.unread_count > chat.recent_messages.len() {
             markdown.push_str("\n- 还有更早的未读内容，需要时使用 chat_messages 继续查看。");

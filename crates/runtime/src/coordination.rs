@@ -38,7 +38,7 @@ impl Runtime {
     pub async fn coordinate_event(
         &self,
         workspace_id: &WorkspaceId,
-        event: ProviderEvent,
+        mut event: ProviderEvent,
         now: i64,
     ) -> Result<CoordinatedEvent, RuntimeError> {
         self.require_active(workspace_id)?;
@@ -54,6 +54,21 @@ impl Runtime {
             })?;
         drop(channels);
         let mut agents = provider.agents.read().await.clone();
+        // Providers only know an Agent's account; the Runtime owns its name.
+        let name_agent = |sender: &mut lankide_provider::EventSender| {
+            if sender.kind != EventSenderType::Agent {
+                return;
+            }
+            if let Some(agent) = agents.values().find(|agent| {
+                sender.id == agent.agent_id.as_str() || sender.id == agent.provider_sender_id
+            }) {
+                sender.name = agent.agent_profile.name.clone();
+            }
+        };
+        name_agent(&mut event.sender);
+        if let ProviderEventKind::Reaction(reaction) = &mut event.kind {
+            name_agent(&mut reaction.sender);
+        }
         let receiving_agent_id = if channel.default_attention
             == ChannelDefaultAttention::DirectMessage
         {
@@ -566,6 +581,7 @@ fn reaction_dispatches(
             available_at: now,
             trigger_reason: DispatchReason::Reaction {
                 reaction: reaction.to_owned(),
+                sender_name: sender.name.clone(),
             },
         })
         .collect()

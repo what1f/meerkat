@@ -1,3 +1,4 @@
+use lankide_client::ManagementClient;
 use lankide_system_e2e::{OutboundKind, Result, RigConfig, Script, SystemRig};
 use std::time::Duration;
 
@@ -434,6 +435,11 @@ async fn bot_reactions_only_wake_the_author_and_humans_still_wake_the_group() ->
     let a = team.agent("a").create().await?;
     let b = team.agent("b").create().await?;
     let c = team.agent("c").create().await?;
+    for (agent, name) in [(&a, "Alice Agent"), (&b, "Bruce Agent")] {
+        let mut profile = agent.view().await?;
+        profile.name = name.into();
+        rig.management().update_agent(profile, None).await?;
+    }
     team.mention(&b, "group", "owner", "hello").await?;
     rig.settle().await?;
     let human_message = team.outbound(&b, "group")[0].reply_to.clone().unwrap();
@@ -473,6 +479,17 @@ async fn bot_reactions_only_wake_the_author_and_humans_still_wake_the_group() ->
     assert_eq!(a.executions().await?.len(), 0);
     assert_eq!(b.executions().await?.len(), 2);
     assert_eq!(c.executions().await?.len(), 0);
+    let inputs = b.harness_inputs()?;
+    let prompt = &inputs[1];
+    let target = prompt
+        .lines()
+        .find(|line| line.ends_with("] Bruce Agent: hi"))
+        .expect("Agent reply must carry its display name");
+    let message = target.strip_prefix("- ").unwrap();
+    assert!(
+        prompt.contains(&format!("Alice Agent 回应了 thumbs_up：{message}")),
+        "{prompt}"
+    );
     team.group_reaction("group", &b.id, true, &bot_message, "b-to-self")
         .await?;
     rig.settle().await?;
@@ -483,5 +500,46 @@ async fn bot_reactions_only_wake_the_author_and_humans_still_wake_the_group() ->
     assert_eq!(a.executions().await?.len(), 1);
     assert_eq!(b.executions().await?.len(), 3);
     assert_eq!(c.executions().await?.len(), 1);
+    let first_prompt = &b.harness_inputs()?[0];
+    let human_target = first_prompt
+        .lines()
+        .find(|line| line.ends_with("] owner: hello"))
+        .unwrap()
+        .strip_prefix("- ")
+        .unwrap();
+    for agent in [&a, &b, &c] {
+        let inputs = agent.harness_inputs()?;
+        let prompt = inputs.last().unwrap();
+        assert!(
+            prompt.contains(&format!("owner 回应了 thumbs_up：{human_target}")),
+            "{prompt}"
+        );
+        if agent.id != b.id {
+            assert!(prompt.contains("] Bruce Agent: hi"), "{prompt}");
+        }
+    }
+    rig.close().await
+}
+
+#[tokio::test]
+async fn provider_agent_messages_use_the_runtime_display_name_in_other_agents_prompts() -> Result<()>
+{
+    let rig = SystemRig::start(config()).await?;
+    let team = rig.workspace("agent_names").await?;
+    let a = team.agent("a").create().await?;
+    let b = team.agent("b").create().await?;
+    let mut profile = a.view().await?;
+    profile.name = "Alice Agent".into();
+    rig.management().update_agent(profile, None).await?;
+    team.agent_message(&a, &b, "group", "the draft is ready")
+        .await?;
+    rig.settle().await?;
+    let inputs = b.harness_inputs()?;
+    assert_eq!(inputs.len(), 1);
+    assert!(
+        inputs[0].contains("] Alice Agent: the draft is ready"),
+        "{}",
+        inputs[0]
+    );
     rig.close().await
 }

@@ -65,8 +65,14 @@ pub enum DispatchReason {
     Mention,
     Follow,
     Schedule,
-    Reaction { reaction: String },
-    Custom { name: String, object_id: String },
+    Reaction {
+        reaction: String,
+        sender_name: String,
+    },
+    Custom {
+        name: String,
+        object_id: String,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]

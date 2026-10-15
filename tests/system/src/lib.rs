@@ -726,6 +726,44 @@ impl<'a> Workspace<'a> {
         )
         .await
     }
+    pub async fn agent_message(
+        &self,
+        sender: &Agent<'_>,
+        recipient: &Agent<'_>,
+        chat: &str,
+        text: &str,
+    ) -> Result<()> {
+        let sink = self
+            .rig
+            .im
+            .sinks
+            .lock()
+            .expect("sinks")
+            .get(&self.id)
+            .expect("workspace IM")
+            .clone();
+        let id = self.rig.sequence.fetch_add(1, Ordering::SeqCst) + 1;
+        sink.emit(ProviderEvent {
+            receiving_agent_id: None,
+            channel_id: ChannelId::new("group_chat")?,
+            provider_chat_id: chat.into(),
+            sender: EventSender {
+                id: sender.id.clone(),
+                kind: EventSenderType::Agent,
+                name: "Agent".into(),
+            },
+            kind: ProviderEventKind::Message(MessageEvent {
+                provider_message_id: format!("incoming-{id}"),
+                content: text.into(),
+                reply_to_provider_message_id: None,
+                mentioned_agent_ids: vec![AgentId::new(&recipient.id)?],
+                attachments: Vec::new(),
+            }),
+            provider_data: json!({"event_id":format!("event-{id}")}),
+        })
+        .await?;
+        Ok(())
+    }
     pub async fn direct_message(&self, agent: &Agent<'_>, person: &str, text: &str) -> Result<()> {
         // Telegram uses the person ID as the private chat ID for every bot.
         self.message(
@@ -809,7 +847,11 @@ impl<'a> Workspace<'a> {
             .clone();
         let sender = EventSender {
             id: sender_id.into(),
-            name: sender_id.into(),
+            name: if bot {
+                "Agent".into()
+            } else {
+                sender_id.into()
+            },
             kind: if bot {
                 EventSenderType::Agent
             } else {

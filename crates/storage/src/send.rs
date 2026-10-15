@@ -336,7 +336,7 @@ impl Storage {
                 latest_message_id,
             });
         }
-        t.execute("INSERT INTO messages(chat_id,direction,sender_kind,sender_id,content_markdown,send_status,occurred_at,created_at,updated_at)VALUES(?1,'outbound','agent',?2,?3,'sending',?4,?4,?4)",params![chat_id,r.sender_agent_id.as_str(),r.content,r.now])?;
+        t.execute("INSERT INTO messages(chat_id,direction,sender_kind,sender_id,sender_name,content_markdown,send_status,occurred_at,created_at,updated_at)VALUES(?1,'outbound','agent',?2,(SELECT name FROM agents WHERE workspace_id=?5 AND agent_id=?2),?3,'sending',?4,?4,?4)",params![chat_id,r.sender_agent_id.as_str(),r.content,r.now,r.workspace_id.as_str()])?;
         let message_id = t.last_insert_rowid();
         t.execute("INSERT INTO message_send_attempts(message_id,execution_id,request_key,state,started_at)VALUES(?1,?2,?3,'sending',?4)",params![message_id,execution_id,r.request_key,r.now])?;
         t.commit()?;
@@ -404,7 +404,7 @@ impl Storage {
                 ));
             }
         }
-        t.execute("INSERT INTO messages(chat_id,direction,sender_kind,sender_id,content_markdown,send_status,occurred_at,created_at,updated_at)VALUES(?1,'outbound','agent',?2,?3,'sending',?4,?4,?4)",params![ch,r.sender_agent_id.as_str(),r.content,r.now])?;
+        t.execute("INSERT INTO messages(chat_id,direction,sender_kind,sender_id,sender_name,content_markdown,send_status,occurred_at,created_at,updated_at)VALUES(?1,'outbound','agent',?2,(SELECT name FROM agents WHERE workspace_id=?5 AND agent_id=?2),?3,'sending',?4,?4,?4)",params![ch,r.sender_agent_id.as_str(),r.content,r.now,r.workspace_id.as_str()])?;
         let mid = t.last_insert_rowid();
         t.execute("INSERT INTO message_send_attempts(message_id,execution_id,request_key,state,started_at)VALUES(?1,?2,?3,'sending',?4)",params![mid,execution_id,r.request_key,r.now])?;
         t.commit()?;
