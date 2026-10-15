@@ -245,11 +245,12 @@ impl SystemRig {
         .await
         .map_err(|_| "Runtime management startup timed out")??;
         if rig.config.network_proxy {
-            let (url, secret) = rig.local_pairing_endpoint()?;
+            let (url, _) = rig.local_pairing_endpoint()?;
+            let code = rig.client.create_pairing_code().await?;
             lankide_computer_daemon::pair(
                 &lankide_computer_daemon::ComputerDaemonPaths::for_home(rig.computer_home.path())?,
                 &url,
-                &secret,
+                &code.code,
             )
             .await?;
             rig.proxy =

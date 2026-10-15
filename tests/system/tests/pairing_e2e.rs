@@ -240,6 +240,13 @@ async fn local_self_pairing_places_new_agents_and_reuses_credentials() -> Result
     let team = rig.existing_workspace("team");
     let credentials = read_credentials(rig.computer_home())?.unwrap();
     assert!(credentials.local_discovery);
+    assert!(matches!(
+        rig.management()
+            .revoke_computer(&credentials.computer_id)
+            .await,
+        Err(lankide_client::ClientError::LocalComputerCannotBeRemoved)
+    ));
+    assert!(rig.management().get_computer_catalog(None).await?[0].available);
     let agent = team
         .agent("bruce")
         .harness(Script::reply("hi"))
@@ -323,5 +330,60 @@ async fn local_secret_and_unknown_or_mismatched_devices_cannot_authorize_links()
     .await?
     .expect_err("unknown Computer must stop");
     assert!(error.to_string().contains("computer_unknown"));
+    rig.close().await
+}
+
+#[tokio::test]
+async fn owner_renames_computer_and_name_survives_daemon_and_runtime_restart() -> Result<()> {
+    use lankide_client::{ClientError, ManagementEventKind};
+    let mut rig = SystemRig::start(config()).await?;
+    let device = pair_rig(&rig).await?;
+    rig.start_paired_computer()?;
+    rig.wait_computer_online().await?;
+    let client = rig.management().clone();
+    let mut events = client.subscribe_management_events(None, 0).await?;
+    client
+        .rename_computer(&device.computer_id, "  Studio Mac  ")
+        .await?;
+    loop {
+        let event = timeout(Duration::from_secs(5), events.next())
+            .await?
+            .ok_or("events ended")??;
+        if event.kind == ManagementEventKind::ComputerCatalogChanged {
+            break;
+        }
+    }
+    assert_eq!(
+        client.get_computer_catalog(None).await?[0].name,
+        "Studio Mac"
+    );
+    for name in [" ".to_owned(), "a".repeat(81)] {
+        assert!(matches!(
+            client.rename_computer(&device.computer_id, &name).await,
+            Err(ClientError::ComputerNameInvalid)
+        ));
+    }
+    rig.stop_computer()?;
+    wait_offline(&rig, &device.computer_id).await?;
+    client
+        .rename_computer(&device.computer_id, "Office Mac")
+        .await?;
+    rig.restart_runtime().await?;
+    rig.start_paired_computer()?;
+    rig.wait_computer_online().await?;
+    let catalog = client.get_computer_catalog(None).await?;
+    assert_eq!(catalog[0].name, "Office Mac");
+    client.revoke_computer(&device.computer_id).await?;
+    assert!(
+        rig.await_terminal_computer()
+            .await?
+            .contains("computer_revoked")
+    );
+    assert!(
+        client
+            .rename_computer(&device.computer_id, "Removed")
+            .await
+            .is_err()
+    );
     rig.close().await
 }

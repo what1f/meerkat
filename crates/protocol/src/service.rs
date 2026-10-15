@@ -495,6 +495,17 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
             self.peer.create_pairing_code(request.into_inner()).await?,
         ))
     }
+    pub async fn rename_computer(
+        &self,
+        request: Request<RenameComputerRequest>,
+    ) -> Result<Response<ComputerCatalog>, Status> {
+        validate_request_id(&request.get_ref().request_id)?;
+        require_text(&request.get_ref().computer_id, "computer_id")?;
+        Ok(Response::new(
+            self.peer.rename_computer(request.into_inner()).await?,
+        ))
+    }
+
     pub async fn revoke_computer(
         &self,
         request: Request<RevokeComputerRequest>,

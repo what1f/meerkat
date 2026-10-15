@@ -271,6 +271,7 @@ impl RuntimeApplication {
             created_at: now,
             updated_at: now,
         };
+        let _registration = self.inner.computer_registration.lock().await;
         self.validate_placement(&candidate).await?;
         let record = AgentLifecycle::new(self)
             .create(workspace, candidate, provider_agent_secrets)
@@ -342,6 +343,7 @@ impl RuntimeApplication {
         if let Some(value) = request.provider_agent_config_json {
             record.provider_agent_config = parse_json(&value)?;
         }
+        let _registration = self.inner.computer_registration.lock().await;
         self.validate_placement(&record).await?;
         let avatar_update = request
             .avatar

@@ -86,6 +86,7 @@ async fn shutdown_with_computer_and_provider(
     use sha2::Digest;
     Storage::open(DatabaseConfig::new(&paths.database))?.pair_computer(
         &lankide_storage::ComputerRecord {
+            is_local: false,
             computer_id: "shutdown-computer".into(),
             display_name: "Computer".into(),
             credential_hash: sha2::Sha256::digest(b"fixture-shutdown")

@@ -686,8 +686,14 @@ impl ManagementClient for MockManagementClient {
             agent_id: None,
             kind: ManagementEventKind::CatalogChanged,
         };
-        Ok(ManagementSubscription::from_stream(tokio_stream::iter(
-            vec![Ok(e)],
-        )))
+        // A management subscription stays open until its owner disconnects.
+        // Keep this legacy UI fixture open too, so unrelated UI actions cannot
+        // consume a save failure through an artificial reconnect.
+        Ok(ManagementSubscription::from_stream(
+            tokio_stream::StreamExt::chain(
+                tokio_stream::iter(vec![Ok(e)]),
+                tokio_stream::pending(),
+            ),
+        ))
     }
 }

@@ -111,7 +111,7 @@ CREATE TABLE "chats"(chat_id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id TEXT
 CREATE TABLE chat_receivers(workspace_id TEXT NOT NULL,agent_id TEXT NOT NULL,chat_id INTEGER NOT NULL REFERENCES chats(chat_id),PRIMARY KEY(workspace_id,agent_id,chat_id),FOREIGN KEY(workspace_id,agent_id)REFERENCES agents(workspace_id,agent_id));
 CREATE TABLE failure_notices(notice_id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id TEXT NOT NULL,agent_id TEXT NOT NULL,chat_id INTEGER NOT NULL,fingerprint TEXT NOT NULL,content TEXT NOT NULL,created_at INTEGER NOT NULL,sent_at INTEGER);
 CREATE INDEX failure_notice_dedupe ON failure_notices(workspace_id,agent_id,chat_id,fingerprint,created_at);
-CREATE TABLE computers(computer_id TEXT PRIMARY KEY,display_name TEXT NOT NULL,credential_hash TEXT NOT NULL UNIQUE,paired_at INTEGER NOT NULL,revoked_at INTEGER,last_seen_at INTEGER,os TEXT NOT NULL,version TEXT NOT NULL,inventory_json TEXT NOT NULL DEFAULT '[]');
+CREATE TABLE computers(computer_id TEXT PRIMARY KEY,is_local INTEGER NOT NULL DEFAULT 0,display_name TEXT NOT NULL,credential_hash TEXT NOT NULL UNIQUE,paired_at INTEGER NOT NULL,revoked_at INTEGER,last_seen_at INTEGER,os TEXT NOT NULL,version TEXT NOT NULL,inventory_json TEXT NOT NULL DEFAULT '[]');
 CREATE TABLE pairing_codes(code_hash TEXT PRIMARY KEY,issued_at INTEGER NOT NULL,used_at INTEGER);
 CREATE TRIGGER agent_placement_changed AFTER UPDATE OF computer_id,harness_id ON agents
 WHEN OLD.computer_id != NEW.computer_id OR OLD.harness_id != NEW.harness_id

@@ -63,6 +63,7 @@ impl RuntimeApplication {
             .pair_computer(
                 &ComputerRecord {
                     computer_id: computer_id.clone(),
+                    is_local: local,
                     display_name: request.display_name,
                     credential_hash: credential_hash(&device_credential),
                     paired_at: application::now_millis(),
@@ -108,13 +109,24 @@ impl RuntimeApplication {
         Err(CloseReason::ComputerUnknown)
     }
 
+    pub async fn rename_computer(&self, computer_id: &str, name: &str) -> Result<(), RuntimeError> {
+        self.runtime()?
+            .database()
+            .rename_computer(computer_id, name)
+            .await
+            .map_err(computer_management_error)?;
+        self.emit_computer_catalog_changed();
+        Ok(())
+    }
+
     pub async fn revoke_computer(&self, computer_id: &str) -> Result<(), RuntimeError> {
         // Serialize revocation against authenticated hello registration.
         let _guard = self.inner.computer_registration.lock().await;
         self.runtime()?
             .database()
             .revoke_computer(computer_id, application::now_millis())
-            .await?;
+            .await
+            .map_err(computer_management_error)?;
         self.computer_broker().revoke(computer_id)?;
         self.emit_computer_catalog_changed();
         Ok(())
@@ -133,4 +145,21 @@ fn random_secret() -> Result<String, RuntimeError> {
         .and_then(|mut file| file.read_exact(&mut bytes))
         .map_err(|error| RuntimeError::Application(error.to_string()))?;
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn computer_management_error(error: lankide_storage::StorageError) -> RuntimeError {
+    match error {
+        lankide_storage::StorageError::Invalid(code) if code == "computer_has_assigned_agents" => {
+            RuntimeError::ComputerHasAssignedAgents
+        }
+        lankide_storage::StorageError::Invalid(code)
+            if code == "local_computer_cannot_be_removed" =>
+        {
+            RuntimeError::LocalComputerCannotBeRemoved
+        }
+        lankide_storage::StorageError::Invalid(code) if code == "computer_name_invalid" => {
+            RuntimeError::ComputerNameInvalid
+        }
+        error => error.into(),
+    }
 }

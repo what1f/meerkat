@@ -74,6 +74,7 @@ enum Modal {
     CreateWorkspace { step: usize },
     CreateAgent,
     PairComputer,
+    RemoveComputer(String),
     EditAgent(String),
     DeleteAgent(String),
     AgentOnboarding(AgentOnboardingState),
@@ -82,6 +83,7 @@ enum Modal {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BusyOperation {
     DeleteAgent,
+    RemoveComputer,
     CreateWorkspace,
     SaveAgent,
     SaveWorkspace,
@@ -216,6 +218,10 @@ pub struct LankideApp {
     agent_provider_handle_error: Option<UiMessage>,
     agent_secret_error: Option<UiMessage>,
     local_computer_id: Option<String>,
+    computer_renaming: Option<String>,
+    computer_name_input: Entity<InputState>,
+    computer_rename_saving: bool,
+    computer_choices_changed: bool,
     pairing_address: Option<String>,
     pairing_pin: Option<String>,
     pairing_address_input: Entity<InputState>,
@@ -585,6 +591,17 @@ impl LankideApp {
         )
         .detach();
 
+        let computer_name_input = cx.new(|cx| InputState::new(window, cx));
+        cx.subscribe_in(
+            &computer_name_input,
+            window,
+            |this, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::PressEnter { .. }) {
+                    this.save_computer_name(cx);
+                }
+            },
+        )
+        .detach();
         let has_initial_state = initial_state.is_some();
         let initial_state = initial_state.unwrap_or_else(|| InitialUiState {
             workspaces: Vec::new(),
@@ -657,6 +674,10 @@ impl LankideApp {
             agent_provider_handle_error: None,
             agent_secret_error: None,
             local_computer_id: None,
+            computer_renaming: None,
+            computer_name_input,
+            computer_rename_saving: false,
+            computer_choices_changed: false,
             pairing_address: None,
             pairing_pin: None,
             pairing_address_input: cx
@@ -850,6 +871,11 @@ impl Render for LankideApp {
         if !self.started {
             self.started = true;
             self.reload_workspaces(cx);
+        }
+        if self.computer_choices_changed {
+            self.computer_choices_changed = false;
+            let selected = self.agent_computer.read(cx).selected_value().cloned();
+            self.update_computer_choices(selected, window, cx);
         }
         self.sync_modal(window, cx);
         let theme = self.theme();

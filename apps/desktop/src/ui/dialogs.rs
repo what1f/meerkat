@@ -43,6 +43,7 @@ impl LankideApp {
             Some(Modal::CreateWorkspace { step }) => {
                 self.workspace_dialog(dialog, app, step, window, cx)
             }
+            Some(Modal::RemoveComputer(id)) => self.remove_computer_dialog(dialog, app, id, window),
             Some(Modal::PairComputer) => self.pair_computer_dialog(dialog, app, window),
             Some(Modal::CreateAgent) => self.agent_dialog(dialog, app, None, window, cx),
             Some(Modal::EditAgent(id)) => self.agent_dialog(dialog, app, Some(id), window, cx),

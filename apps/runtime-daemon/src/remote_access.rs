@@ -89,6 +89,16 @@ impl RemoteComputers {
 }
 #[async_trait::async_trait]
 impl RemoteAccessControl for RemoteComputers {
+    async fn enable(&self) -> Result<RemoteAccess, Status> {
+        let access = self.get().await?;
+        if access.address.is_some() {
+            return Ok(access);
+        }
+        let Some(address) = primary_lan_ipv4() else {
+            return Ok(access);
+        };
+        self.set(Some(format!("{address}:7443"))).await
+    }
     async fn get(&self) -> Result<RemoteAccess, Status> {
         Ok(self.state.lock().await.access.clone())
     }
@@ -245,4 +255,51 @@ fn bind_all(port: u16) -> io::Result<tokio::net::TcpListener> {
     socket.bind(&std::net::SocketAddr::new(std::net::Ipv6Addr::UNSPECIFIED.into(), port).into())?;
     socket.listen(128)?;
     tokio::net::TcpListener::from_std(socket.into())
+}
+
+/// Prefer the interface selected by the routing table. Enumerating interfaces
+/// also covers LANs without a default route. UDP connect sends no packets.
+fn primary_lan_ipv4() -> Option<std::net::Ipv4Addr> {
+    let preferred = std::net::UdpSocket::bind("0.0.0.0:0")
+        .ok()
+        .and_then(|socket| {
+            socket.connect("192.0.2.1:9").ok()?;
+            match socket.local_addr().ok()?.ip() {
+                std::net::IpAddr::V4(ip) => Some(ip),
+                _ => None,
+            }
+        });
+    let addresses: Vec<_> = nix::ifaddrs::getifaddrs()
+        .ok()?
+        .filter(|interface| {
+            !["utun", "tun", "tap"]
+                .iter()
+                .any(|prefix| interface.interface_name.starts_with(prefix))
+                && interface
+                    .flags
+                    .contains(nix::net::if_::InterfaceFlags::IFF_UP)
+                && !interface.flags.intersects(
+                    nix::net::if_::InterfaceFlags::IFF_LOOPBACK
+                        | nix::net::if_::InterfaceFlags::IFF_POINTOPOINT,
+                )
+        })
+        .filter_map(|interface| {
+            interface
+                .address?
+                .as_sockaddr_in()
+                .map(|address| address.ip())
+        })
+        .filter(|ip| {
+            let octets = ip.octets();
+            !ip.is_loopback()
+                && !ip.is_unspecified()
+                && !ip.is_link_local()
+                && !(octets[0] == 198 && matches!(octets[1], 18 | 19))
+        })
+        .collect();
+    preferred
+        .filter(|ip| ip.is_private() && addresses.contains(ip))
+        .or_else(|| addresses.iter().copied().find(|ip| ip.is_private()))
+        .or_else(|| preferred.filter(|ip| addresses.contains(ip)))
+        .or_else(|| addresses.first().copied())
 }

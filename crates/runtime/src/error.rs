@@ -37,6 +37,9 @@ pub enum RuntimeError {
     InvalidExecutionToken,
     ComputerNotRegistered,
     ComputerRevoked,
+    ComputerHasAssignedAgents,
+    LocalComputerCannotBeRemoved,
+    ComputerNameInvalid,
     HarnessUnavailableOnComputer,
     ProviderMismatch {
         workspace_id: WorkspaceId,
@@ -97,6 +100,11 @@ impl fmt::Display for RuntimeError {
             Self::Application(error) => write!(formatter, "runtime_application: {error}"),
             Self::ActionRequired(message) => formatter.write_str(message),
             Self::ComputerNotRegistered => formatter.write_str("computer_not_registered"),
+            Self::ComputerHasAssignedAgents => formatter.write_str("computer_has_assigned_agents"),
+            Self::LocalComputerCannotBeRemoved => {
+                formatter.write_str("local_computer_cannot_be_removed")
+            }
+            Self::ComputerNameInvalid => formatter.write_str("computer_name_invalid"),
             Self::ComputerRevoked => formatter.write_str("computer_revoked"),
             Self::HarnessUnavailableOnComputer => {
                 formatter.write_str("harness_unavailable_on_computer")

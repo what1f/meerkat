@@ -383,6 +383,13 @@ pub struct ReactionCatalogItem {
 pub use crate::link::ResourceRef;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RenameComputerRequest {
+    pub request_id: String,
+    pub computer_id: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RevokeComputerRequest {
     pub request_id: String,
     pub computer_id: String,
@@ -621,5 +628,6 @@ pub struct SetRemoteAccessRequest {
 #[async_trait::async_trait]
 pub trait RemoteAccessControl: Send + Sync {
     async fn get(&self) -> Result<RemoteAccess, crate::Status>;
+    async fn enable(&self) -> Result<RemoteAccess, crate::Status>;
     async fn set(&self, address: Option<String>) -> Result<RemoteAccess, crate::Status>;
 }

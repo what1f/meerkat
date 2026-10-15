@@ -153,6 +153,11 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
         "create_pairing_code" => {
             call!(json::CatalogRequest, json::PairingCode, create_pairing_code)
         }
+        "rename_computer" => call!(
+            json::RenameComputerRequest,
+            json::ComputerCatalog,
+            rename_computer
+        ),
         "revoke_computer" => call!(
             json::RevokeComputerRequest,
             json::ComputerCatalog,

@@ -78,6 +78,9 @@ impl HttpManagementTransport {
         serde_json::from_slice(&bytes).map_err(|e| Status::internal(e.to_string()))
     }
 
+    pub async fn enable_remote_access(&self) -> Result<json::RemoteAccess, Status> {
+        self.call("enable_remote_access", &()).await
+    }
     pub async fn get_remote_access(&self) -> Result<json::RemoteAccess, Status> {
         self.call("get_remote_access", &()).await
     }
@@ -257,6 +260,13 @@ impl HttpManagementTransport {
         request: wire::CatalogRequest,
     ) -> Result<Response<wire::PairingCode>, Status> {
         let response: json::PairingCode = self.call("create_pairing_code", &request).await?;
+        Ok(Response::new(response))
+    }
+    pub async fn rename_computer(
+        &self,
+        request: wire::RenameComputerRequest,
+    ) -> Result<Response<wire::ComputerCatalog>, Status> {
+        let response: json::ComputerCatalog = self.call("rename_computer", &request).await?;
         Ok(Response::new(response))
     }
     pub async fn revoke_computer(

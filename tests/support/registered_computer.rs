@@ -6,6 +6,7 @@ pub fn register(storage: &lankide_storage::Storage, ids: &[&str]) -> lankide_sto
         }
         storage.pair_computer(
             &lankide_storage::ComputerRecord {
+                is_local: false,
                 computer_id: (*id).into(),
                 display_name: (*id).into(),
                 credential_hash: format!("scenario-credential-{id}"),

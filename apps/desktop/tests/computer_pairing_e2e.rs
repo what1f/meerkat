@@ -206,6 +206,35 @@ fn local_online_offline_selection_and_pairing_dialog() {
         assert!(cx.debug_bounds(online_selector).is_some());
         assert!(cx.debug_bounds(offline_selector).is_some());
         assert!(cx.debug_bounds(revoked_selector).is_none());
+        // The local row offers Rename only.
+        let row = cx.debug_bounds(local_selector).unwrap();
+        cx.simulate_mouse_move(row.center(), None, Modifiers::default());
+        draw(cx);
+        click(cx, &format!("computer-menu-{local}"));
+        cx.simulate_keystrokes("down down enter");
+        wait(cx, |cx| cx.debug_bounds("computer-name-input").is_some());
+        cx.simulate_keystrokes("escape");
+        wait(cx, |cx| cx.debug_bounds("computer-name-input").is_none());
+        let row = cx.debug_bounds(remote_selector).unwrap();
+        cx.simulate_mouse_move(row.center(), None, Modifiers::default());
+        draw(cx);
+        click(cx, &format!("computer-menu-{}", remote.computer_id));
+        cx.simulate_keystrokes("down enter");
+        fill(cx, "computer-name-input", "  Studio Mac  ");
+        cx.simulate_keystrokes("enter");
+        wait(cx, |cx| {
+            cx.debug_bounds("computer-name-Studio Mac").is_some()
+        });
+        assert_eq!(
+            runtime
+                .block_on(client.get_computer_catalog(None))
+                .unwrap()
+                .iter()
+                .find(|c| c.id == remote.computer_id)
+                .unwrap()
+                .name,
+            "Studio Mac"
+        );
         // Status and registration changes reach the visible Settings card.
         let executable = std::env::current_exe()
             .unwrap()
@@ -248,12 +277,24 @@ fn local_online_offline_selection_and_pairing_dialog() {
         let added_selector: &'static str =
             Box::leak(format!("computer-{}", added.computer_id).into_boxed_str());
         wait(cx, |cx| cx.debug_bounds(added_selector).is_some());
-        runtime
-            .block_on(client.revoke_computer(&added.computer_id))
-            .unwrap();
+        // Offline Computers can be removed through the row menu.
+        let row = cx.debug_bounds(added_selector).unwrap();
+        cx.simulate_mouse_move(row.center(), None, Modifiers::default());
+        draw(cx);
+        click(cx, &format!("computer-menu-{}", added.computer_id));
+        cx.simulate_keystrokes("down down enter");
+        click(cx, "confirm-remove-computer");
         wait(cx, |cx| cx.debug_bounds(added_selector).is_none());
 
         click(cx, "pair-computer");
+        wait(cx, |cx| cx.debug_bounds("pairing-command").is_some());
+        assert!(cx.debug_bounds("pairing-address-input").is_none());
+        click(cx, "copy-pairing-command");
+        let automatic = cx.update(|_, cx| cx.read_from_clipboard().unwrap().text().unwrap());
+        let endpoint = automatic.split_whitespace().nth(2).unwrap();
+        assert!(!endpoint.starts_with("wss://198.18.") && !endpoint.starts_with("wss://198.19."));
+        assert!(endpoint.ends_with(":7443"));
+        click(cx, "change-pairing-address");
         wait(cx, |cx| cx.debug_bounds("pairing-address-input").is_some());
         let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = socket.local_addr().unwrap().to_string();
@@ -292,7 +333,7 @@ fn local_online_offline_selection_and_pairing_dialog() {
             .parent()
             .unwrap()
             .join("lankide-computer-daemon");
-        let _paired = OwnedComputer(
+        let mut paired_process = OwnedComputer(
             std::process::Command::new(executable)
                 .args(&args[1..])
                 .arg("--home")
@@ -306,6 +347,20 @@ fn local_online_offline_selection_and_pairing_dialog() {
         );
         wait(cx, |cx| cx.debug_bounds("pairing-connected").is_some());
         wait(cx, |cx| cx.debug_bounds("pairing-connected").is_none());
+        // Removing the idle online Computer removes its row and stops its daemon.
+        let paired = lankide_computer_daemon::read_credentials(paired_home.path())
+            .unwrap()
+            .unwrap();
+        let paired_selector: &'static str =
+            Box::leak(format!("computer-{}", paired.computer_id).into_boxed_str());
+        let row = cx.debug_bounds(paired_selector).unwrap();
+        cx.simulate_mouse_move(row.center(), None, Modifiers::default());
+        draw(cx);
+        click(cx, &format!("computer-menu-{}", paired.computer_id));
+        cx.simulate_keystrokes("down down enter");
+        click(cx, "confirm-remove-computer");
+        wait(cx, |cx| cx.debug_bounds(paired_selector).is_none());
+        wait(cx, |_| paired_process.0.try_wait().unwrap().is_some());
         click(cx, "language-select");
         cx.simulate_keystrokes("down enter");
         draw(cx);
@@ -331,6 +386,13 @@ fn local_online_offline_selection_and_pairing_dialog() {
         draw(cx);
         click(cx, "edit-agent-0");
         click(cx, "agent-computer-select");
+        assert!(cx.debug_bounds("computer-choice-name-Studio Mac").is_some());
+        runtime
+            .block_on(client.rename_computer(&remote.computer_id, "Office Mac"))
+            .unwrap();
+        wait(cx, |cx| {
+            cx.debug_bounds("computer-choice-name-Office Mac").is_some()
+        });
         click(cx, &format!("computer-choice-{}", remote.computer_id));
         click(cx, "save-agent");
         wait(cx, |cx| cx.debug_bounds("agent-computer-select").is_none());
@@ -358,6 +420,16 @@ fn local_online_offline_selection_and_pairing_dialog() {
                 .computer_id,
             remote.computer_id
         );
+        click(cx, "nav-settings");
+        let row = cx.debug_bounds(remote_selector).unwrap();
+        cx.simulate_mouse_move(row.center(), None, Modifiers::default());
+        draw(cx);
+        click(cx, &format!("computer-menu-{}", remote.computer_id));
+        cx.simulate_keystrokes("down down enter");
+        click(cx, "confirm-remove-computer");
+        wait(cx, |cx| cx.debug_bounds("computer-remove-error").is_some());
+        assert!(cx.debug_bounds(remote_selector).is_some());
+        click(cx, "cancel-remove-computer");
         cx.update(|_, cx| cx.quit());
     });
     gpui::run_test(1, &[], 0, &mut |dispatcher, _| scenario(dispatcher), None);

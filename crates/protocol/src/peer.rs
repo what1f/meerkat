@@ -152,6 +152,12 @@ pub trait RuntimePeer: Send + Sync + 'static {
     async fn create_pairing_code(&self, _request: CatalogRequest) -> Result<PairingCode, Status> {
         Err(Status::unimplemented("create_pairing_code"))
     }
+    async fn rename_computer(
+        &self,
+        _request: RenameComputerRequest,
+    ) -> Result<ComputerCatalog, Status> {
+        Err(Status::unimplemented("rename_computer"))
+    }
     async fn revoke_computer(
         &self,
         _request: RevokeComputerRequest,
