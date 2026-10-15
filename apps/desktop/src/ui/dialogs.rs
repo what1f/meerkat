@@ -765,7 +765,7 @@ impl LankideApp {
                     );
                 }
                 form = form.child(DesktopFormField::new(
-                    theme, language.text("电脑", "Computer"),
+                    theme, language.text("机器", "Machine"),
                     div().debug_selector(|| "agent-computer-select".into())
                         .child(DesktopSelect::large(&computer).w_full()),
                 ));

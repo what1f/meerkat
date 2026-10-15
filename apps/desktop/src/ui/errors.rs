@@ -52,12 +52,12 @@ pub(super) fn friendly_error(error: &ClientError, language: DesktopLanguage) -> 
         }
         ClientError::ComputerHasAssignedAgents => language
             .text(
-                "请先将这台电脑上的 Agent 移到其他电脑。",
-                "Move this computer’s Agents to another computer first.",
+                "请先将这台机器上的 Agent 移到其他机器。",
+                "Move this machine’s Agents to another machine first.",
             )
             .into(),
         ClientError::LocalComputerCannotBeRemoved => language
-            .text("无法移除本机。", "This computer cannot be removed.")
+            .text("无法移除本机。", "This machine cannot be removed.")
             .into(),
         ClientError::ComputerNameInvalid => language
             .text(

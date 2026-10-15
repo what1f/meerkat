@@ -529,7 +529,7 @@ impl LankideApp {
                     .any(|c| &c.id == id && c.registered && c.revoked_at.is_none())
             })
         else {
-            self.error = Some(UiMessage::localized("请选择电脑。", "Choose a Computer."));
+            self.error = Some(UiMessage::localized("请选择机器。", "Choose a machine."));
             cx.notify();
             return;
         };

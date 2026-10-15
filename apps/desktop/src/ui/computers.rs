@@ -600,11 +600,11 @@ impl LankideApp {
                     .justify_between()
                     .text_size(px(14.))
                     .font_weight(gpui::FontWeight::MEDIUM)
-                    .child(self.tr("电脑", "Computers"))
+                    .child(self.tr("机器", "Machines"))
                     .child(
                         DesktopButton::icon("pair-computer")
                             .debug_selector(|| "pair-computer".into())
-                            .tooltip(self.tr("添加电脑", "Add Computer"))
+                            .tooltip(self.tr("添加机器", "Add Machine"))
                             .child(muted_themed_icon("icons/lucide/plus.svg", 16., theme))
                             .on_click(cx.listener(|this, _, _, cx| this.open_pair_computer(cx))),
                     ),
@@ -688,7 +688,7 @@ impl LankideApp {
                                     div()
                                         .text_size(px(12.))
                                         .text_color(theme.text_tertiary)
-                                        .child(self.tr("本机", "This computer")),
+                                        .child(self.tr("本机", "This machine")),
                                 )
                             })
                             .when(!editing, |row| {
@@ -806,7 +806,7 @@ impl LankideApp {
                 let copy_app = copy_app.clone();
                 content
                     .child(DesktopDialogHeader::new(
-                        language.text("添加电脑", "Add Computer"),
+                        language.text("添加机器", "Add Machine"),
                     ))
                     .child(
                         div()
@@ -827,8 +827,8 @@ impl LankideApp {
                                 body.when_some(command_lines.clone(), |body, lines| {
                                     body.child(div().text_color(theme.text_secondary).child(
                                         language.text(
-                                            "在要添加的电脑上运行",
-                                            "Run this on the computer you want to add",
+                                            "在要添加的机器上运行",
+                                            "Run this on the machine you want to add",
                                         ),
                                     ))
                                     .child(pairing_command_block(
