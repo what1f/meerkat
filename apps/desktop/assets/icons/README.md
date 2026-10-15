@@ -13,3 +13,4 @@ The LobeHub variants intentionally match the earlier registry:
 - Models: Anthropic/Grok/Moonshot/OpenAI `Mono`; Claude/DeepSeek/Gemini/Meta/Mistral/Qwen `Color`.
 
 Do not replace these files with the current `latest` CDN output without an explicit visual migration.
+- `lucide/monitor.svg`: `lucide-static@1.57.0`, normalized to the same single-line form.

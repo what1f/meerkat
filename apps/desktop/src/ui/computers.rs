@@ -2,13 +2,42 @@ use super::*;
 use gpui_component::text::TextView;
 use std::path::Path;
 
-fn computer_status_dot(theme: DesktopTheme, available: bool) -> Div {
-    let dot = div().size(px(8.)).flex_none().rounded_full();
-    if available {
-        dot.bg(theme.success)
+/// A device glyph with a presence badge in its corner. Offline Computers dim
+/// the glyph and gray the badge. The badge ring matches the surface behind it.
+fn computer_glyph(theme: DesktopTheme, available: bool, size: f32, surface: Hsla) -> Div {
+    let badge = div()
+        .absolute()
+        .right(px(-3.))
+        .bottom(px(-3.))
+        .size(px((size * 0.34).round()))
+        .rounded_full()
+        .border_2()
+        .border_color(surface);
+    let badge = if available {
+        badge.bg(theme.success)
     } else {
-        dot.border_1().border_color(theme.text_tertiary)
-    }
+        badge.bg(theme.text_tertiary)
+    };
+    div()
+        .relative()
+        .flex_none()
+        .size(px(size))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px((size * 0.28).round()))
+        .bg(theme.raised)
+        .child(
+            Icon::default()
+                .path("icons/lucide/monitor.svg")
+                .size(px((size * 0.5).round()))
+                .text_color(if available {
+                    theme.text_secondary
+                } else {
+                    theme.text_tertiary
+                }),
+        )
+        .child(badge)
 }
 
 pub(crate) fn local_computer_id(home: &Path) -> Option<String> {
@@ -26,12 +55,12 @@ pub(super) struct ComputerChoice {
     theme: DesktopTheme,
 }
 impl ComputerChoice {
-    fn label(&self) -> Div {
+    fn label(&self, surface: Hsla) -> Div {
         div()
             .flex()
             .items_center()
-            .gap(px(8.))
-            .child(computer_status_dot(self.theme, self.available))
+            .gap(px(10.))
+            .child(computer_glyph(self.theme, self.available, 22., surface))
             .child(self.name.clone())
     }
 }
@@ -41,11 +70,11 @@ impl SelectItem for ComputerChoice {
         self.name.clone()
     }
     fn display_title(&self) -> Option<AnyElement> {
-        Some(self.label().into_any_element())
+        Some(self.label(self.theme.content).into_any_element())
     }
     fn render(&self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let id = self.id.clone();
-        self.label()
+        self.label(self.theme.elevated)
             .debug_selector(move || format!("computer-choice-{id}"))
     }
     fn value(&self) -> &String {
@@ -378,64 +407,71 @@ impl LankideApp {
 
     pub(super) fn computer_settings(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme();
+        let local = self.local_computer_id.as_deref();
         div()
-            .child(desktop_settings_section_title(
-                self.tr("电脑", "Computers"),
-                false,
-            ))
             .child(
-                desktop_settings_group(theme)
-                    .children(self.computers.iter().map(|computer| {
+                div()
+                    .mt(px(32.))
+                    .mb(px(10.))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .text_size(px(14.))
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .child(self.tr("电脑", "Computers"))
+                    .child(
+                        DesktopButton::icon("pair-computer")
+                            .debug_selector(|| "pair-computer".into())
+                            .tooltip(self.tr("添加电脑", "Add Computer"))
+                            .child(muted_themed_icon("icons/lucide/plus.svg", 16., theme))
+                            .on_click(cx.listener(|this, _, _, cx| this.open_pair_computer(cx))),
+                    ),
+            )
+            .when(!self.computers.is_empty(), |section| {
+                section.child(desktop_settings_group(theme).children(
+                    self.computers.iter().enumerate().map(|(index, computer)| {
+                        let id = computer.id.clone();
+                        let state = if computer.available {
+                            "online"
+                        } else {
+                            "offline"
+                        };
                         div()
                             .debug_selector({
-                                let id = computer.id.clone();
+                                let id = id.clone();
                                 move || format!("computer-{id}")
                             })
                             .px(px(18.))
-                            .py(px(16.))
+                            .py(px(12.))
                             .flex()
                             .items_center()
+                            .gap(px(12.))
+                            .when(index > 0, |row| row.border_t_1().border_color(theme.border))
+                            .child(
+                                computer_glyph(theme, computer.available, 32., theme.content)
+                                    .debug_selector(move || format!("computer-{state}-{id}")),
+                            )
                             .child(
                                 div()
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(10.))
-                                    .child(
-                                        computer_status_dot(theme, computer.available)
-                                            .debug_selector({
-                                                let id = computer.id.clone();
-                                                let state = if computer.available {
-                                                    "online"
-                                                } else {
-                                                    "offline"
-                                                };
-                                                move || format!("computer-{state}-{id}")
-                                            }),
-                                    )
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .when(!computer.available, |name| {
+                                        name.text_color(theme.text_secondary)
+                                    })
                                     .child(computer.name.clone()),
                             )
-                    }))
-                    .child(
-                        div()
-                            .px(px(18.))
-                            .py(px(14.))
-                            .flex()
-                            .justify_end()
-                            .when(!self.computers.is_empty(), |row| {
-                                row.border_t_1().border_color(theme.border)
-                            })
-                            .child(
-                                DesktopButton::outline(
-                                    "pair-computer",
-                                    self.tr("添加电脑", "Add Computer"),
+                            .when(local == Some(computer.id.as_str()), |row| {
+                                row.child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .text_color(theme.text_tertiary)
+                                        .child(self.tr("本机", "This computer")),
                                 )
-                                .debug_selector(|| "pair-computer".into())
-                                .on_click(
-                                    cx.listener(|this, _, _, cx| this.open_pair_computer(cx)),
-                                ),
-                            ),
-                    ),
-            )
+                            })
+                    }),
+                ))
+            })
             .into_any_element()
     }
 
@@ -550,7 +586,7 @@ impl LankideApp {
                                         .flex()
                                         .items_center()
                                         .gap(px(8.))
-                                        .child(computer_status_dot(theme, true))
+                                        .child(computer_glyph(theme, true, 22., theme.elevated))
                                         .child(name),
                                 )
                             })

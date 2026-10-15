@@ -21,6 +21,7 @@ embedded_assets! {
     "icons/lucide/rotate-cw.svg" => "../assets/icons/lucide/rotate-cw.svg",
     "icons/lucide/check.svg" => "../assets/icons/lucide/check.svg",
     "icons/lucide/x.svg" => "../assets/icons/lucide/x.svg",
+    "icons/lucide/monitor.svg" => "../assets/icons/lucide/monitor.svg",
     "icons/lucide/chevron-down.svg" => "../assets/icons/lucide/chevron-down.svg",
     "icons/feishu.svg" => "../assets/icons/feishu.svg",
     "icons/telegram.svg" => "../assets/icons/telegram.svg",
