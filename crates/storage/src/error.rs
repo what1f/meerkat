@@ -5,6 +5,7 @@ pub enum StorageError {
     Sqlite(rusqlite::Error),
     Json(serde_json::Error),
     Invalid(String),
+    UnsupportedSchemaVersion(i64),
     Conflict(String),
     LockPoisoned,
     Busy(String),
@@ -14,6 +15,10 @@ impl fmt::Display for StorageError {
         match self {
             Self::Sqlite(e) => write!(f, "storage_sqlite: {e}"),
             Self::Json(e) => write!(f, "storage_json: {e}"),
+            Self::UnsupportedSchemaVersion(version) => write!(
+                f,
+                "unsupported storage schema version {version}; expected 1"
+            ),
             Self::Invalid(e) => write!(f, "storage_invalid: {e}"),
             Self::Conflict(e) => write!(f, "storage_conflict: {e}"),
             Self::LockPoisoned => f.write_str("storage_lock_poisoned"),

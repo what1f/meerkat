@@ -32,7 +32,7 @@ pub use peer::{
 pub use service::ValidatedRuntimeService;
 pub use transport::{
     AgentClient, TransportConfig, TransportError, connect_uds, connect_uds_lazy,
-    serve_agent_listener, serve_uds, socket_path,
+    serve_agent_listener, serve_uds,
 };
 pub use validation::{validate_computer_hello, validate_runtime_frame};
 

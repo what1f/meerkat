@@ -197,16 +197,13 @@ fn durable_event_kind(kind: &str) -> bool {
     )
 }
 
-fn event_final_output(payload: &[u8]) -> String {
-    serde_json::from_slice::<Value>(payload)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("final_output")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        })
-        .unwrap_or_else(|| String::from_utf8_lossy(payload).into_owned())
+fn event_final_output(payload: &[u8]) -> Result<String> {
+    let value: Value = serde_json::from_slice(payload)?;
+    value
+        .get("final_output")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| StorageError::Invalid("completed event requires final_output".into()))
 }
 
 impl Storage {
@@ -606,7 +603,7 @@ impl Storage {
         }
         let disposition = match event.kind.as_str() {
             "completed" => {
-                let output = event_final_output(&event.payload);
+                let output = event_final_output(&event.payload)?;
                 commit_execution_transaction(
                     &transaction,
                     event.execution_id,

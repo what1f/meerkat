@@ -62,10 +62,8 @@ fn seed_workspace(paths: &RuntimePaths) -> Result<(), AppError> {
 }
 
 async fn assert_serving(paths: &RuntimePaths) -> Result<(), AppError> {
-    let client = lankide_client::http::HttpManagementTransport::local(
-        &paths.socket,
-        DEFAULT_MAX_MESSAGE_BYTES,
-    );
+    let client =
+        lankide_client::http::HttpManagementTransport::local(&paths.run, DEFAULT_MAX_MESSAGE_BYTES);
     let response = client
         .list_workspaces(ListWorkspacesRequest {
             request_id: "shutdown-scenario".into(),
@@ -121,7 +119,7 @@ async fn shutdown_with_computer_and_provider(
         })
         .await
         .map_err(|_| AppError::Invariant("Computer input closed"))?;
-    let mut frames = ws::connect_stream(&paths.socket, ReceiverStream::new(receiver))
+    let mut frames = ws::connect_stream(&paths.run, ReceiverStream::new(receiver))
         .await
         .map_err(AppError::Status)?
         .into_inner();
@@ -147,7 +145,7 @@ async fn shutdown_with_computer_and_provider(
     let logs = daemon.logs()?;
     fs::write(artifacts.join("S3.1.log"), &logs)?;
     shutdown?;
-    if logs.contains("still_shared") || paths.socket.exists() || paths.instance_lock.exists() {
+    if logs.contains("still_shared") || paths.instance_lock.exists() {
         return Err(AppError::Invariant(
             "shutdown did not release Runtime ownership",
         ));
@@ -212,8 +210,7 @@ async fn sigkill_restart_recovers(paths: &RuntimePaths, artifacts: &Path) -> Res
     assert_serving(paths).await?;
     let lock = fs::read(&paths.instance_lock)?;
     first.kill()?;
-    if paths.socket.exists()
-        || !paths.instance_lock.exists()
+    if !paths.instance_lock.exists()
         || !paths
             .run
             .join(lankide_protocol::management::URL_FILE)
@@ -233,7 +230,7 @@ async fn sigkill_restart_recovers(paths: &RuntimePaths, artifacts: &Path) -> Res
     }
     recovered.terminate()?;
     fs::write(artifacts.join("S3.3.log"), recovered.logs()?)?;
-    if paths.socket.exists() || paths.instance_lock.exists() {
+    if paths.instance_lock.exists() {
         return Err(AppError::Invariant(
             "recovered Runtime did not stop cleanly",
         ));

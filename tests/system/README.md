@@ -165,9 +165,8 @@ cargo test -p lankide-system-e2e --test pairing_e2e
 ```
 
 Prefixes `s12_1_` through `s12_5_` select the five acceptance scenarios.
-`local_self_pairing_moves_legacy_agents_and_reuses_credentials` starts without
-credentials or a code, discovers the local Runtime, verifies legacy Agent
-placement through management, receives a reply, and reuses its credentials
+`local_self_pairing_places_new_agents_and_reuses_credentials` starts without
+credentials or a code, discovers the local Runtime, creates a new Agent on that Computer through management, receives a reply, and reuses its credentials
 across a Runtime restart. The final scenario rejects the local pairing secret
 as a link credential and rejects a credential used with another device ID.
 

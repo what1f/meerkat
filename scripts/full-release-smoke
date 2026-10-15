@@ -47,13 +47,13 @@ wait_runtime() {
   local n
   for n in {1..200}; do
     kill -0 "$RUNTIME_PID" 2>/dev/null || { FAIL_REASON='Runtime exited before readiness'; return 1; }
-    if [[ -S "$RUNTIME_SOCKET" ]] && python3 - "$RUNTIME_LOG" "$RUNTIME_SOCKET" <<'PY'
+    if [[ -f "$RUNTIME_URL_FILE" ]] && python3 - "$RUNTIME_LOG" "$RUNTIME_URL_FILE" <<'PY'
 import json,sys
 from pathlib import Path
 for line in Path(sys.argv[1]).read_text(errors="replace").splitlines():
  try: item=json.loads(line)
  except json.JSONDecodeError: continue
- if item.get("event")=="ready" and item.get("management_ready") is True and item.get("socket_path")==sys.argv[2]: raise SystemExit(0)
+ if item.get("event")=="ready" and item.get("management_ready") is True and item.get("management_url"): raise SystemExit(0)
 raise SystemExit(1)
 PY
     then return 0; fi
@@ -89,16 +89,16 @@ run_smoke() {
   # under /tmp rather than the much longer per-user TMPDIR.
   TEMP_ROOT="$(mktemp -d "/tmp/lkfr.XXXXXX")" || return 1
   LANKIDE_HOME="$TEMP_ROOT/home"; export LANKIDE_HOME
-  RUNTIME_SOCKET="$LANKIDE_HOME/run/runtime.sock"; RUNTIME_LOG="$ARTIFACT_DIR/runtime.log"
+  RUNTIME_URL_FILE="$LANKIDE_HOME/run/management.url"; RUNTIME_LOG="$ARTIFACT_DIR/runtime.log"
   "$RUNTIME_BIN" --home "$LANKIDE_HOME" > "$RUNTIME_LOG" 2>&1 &
   RUNTIME_PID=$!; printf 'spawned\truntime\t%s\n' "$RUNTIME_PID" >> "$PID_JOURNAL"
   wait_runtime || return $?; RUNTIME_READY=1
   "$COMPUTER_BIN" --home "$LANKIDE_HOME" --instance-id "release-$RUN_ID" > "$ARTIFACT_DIR/computer.log" 2>&1 &
   COMPUTER_PID=$!; printf 'spawned\tcomputer\t%s\n' "$COMPUTER_PID" >> "$PID_JOURNAL"
   sleep 1; kill -0 "$COMPUTER_PID" 2>/dev/null || { FAIL_REASON='Computer exited before connecting'; return 1; }; COMPUTER_STARTED=1
-  LANKIDE_RUNTIME_SOCKET="$RUNTIME_SOCKET" LANKIDE_EXECUTION_ID=1 LANKIDE_EXECUTION_ATTEMPT=1 LANKIDE_EXECUTION_TOKEN=invalid-e2e-token "$CLI_BIN" capabilities > "$ARTIFACT_DIR/cli-boundary.log" 2>&1
+  env -u LANKIDE_AGENT_SOCKET LANKIDE_EXECUTION_ID=1 LANKIDE_EXECUTION_ATTEMPT=1 LANKIDE_EXECUTION_TOKEN=invalid-e2e-token "$CLI_BIN" capabilities > "$ARTIFACT_DIR/cli-boundary.log" 2>&1
   cli_status=$?
-  if (( cli_status == 0 )) || grep -Fq 'Runtime is unavailable' "$ARTIFACT_DIR/cli-boundary.log" || ! grep -Eiq 'authorized|permission' "$ARTIFACT_DIR/cli-boundary.log"; then FAIL_REASON='execution-scoped CLI did not reach Runtime authorization boundary'; return 1; fi
+  if (( cli_status == 0 )) || ! grep -Fxq 'LANKIDE_AGENT_SOCKET' "$ARTIFACT_DIR/cli-boundary.log"; then FAIL_REASON='execution-scoped CLI accepted a call without an Agent socket'; return 1; fi
   CLI_BOUNDARY=1
   desktop_contract
 }
@@ -111,14 +111,14 @@ from pathlib import Path
 import sys
 r=Path(sys.argv[1]); files={
 "lankide-runtime-daemon":'''#!/usr/bin/env python3
-import json,os,signal,socket,sys,time
-h=sys.argv[sys.argv.index("--home")+1]; p=os.path.join(h,"run","runtime.sock"); os.makedirs(os.path.dirname(p),exist_ok=True)
-s=socket.socket(socket.AF_UNIX); s.bind(p); s.listen(1); print(json.dumps({"event":"ready","management_ready":True,"socket_path":p}),flush=True)
+import json,os,signal,sys,time
+h=sys.argv[sys.argv.index("--home")+1]; p=os.path.join(h,"run","management.url"); os.makedirs(os.path.dirname(p),exist_ok=True)
+open(p,"w").write("http://127.0.0.1:12345"); print(json.dumps({"event":"ready","management_ready":True,"management_url":"http://127.0.0.1:12345"}),flush=True)
 signal.signal(signal.SIGTERM,lambda *_:sys.exit(0))
 while True: time.sleep(1)
 ''',
 "lankide-computer-daemon":"#!/bin/sh\ntrap 'exit 0' TERM INT\nwhile :; do sleep 1; done\n",
-"lankide":"#!/bin/sh\necho 'PermissionDenied: action is not authorized' >&2\nexit 2\n",
+"lankide":"#!/bin/sh\necho 'LANKIDE_AGENT_SOCKET' >&2\nexit 2\n",
 "lankide-desktop":'''#!/usr/bin/env python3
 # --local-bootstrap-smoke
 import json,sys
@@ -160,7 +160,7 @@ while (( $# )); do case "$1" in --release-bin-dir) RELEASE_BIN_DIR="${2:-}"; shi
 [[ ! -e "$ARTIFACT_DIR" ]] || { printf 'artifact reservation already exists: %s\n' "$ARTIFACT_DIR" >&2; exit 5; }
 mkdir -p "$ARTIFACT_DIR" || exit 1
 RUNTIME_BIN="$RELEASE_BIN_DIR/lankide-runtime-daemon"; COMPUTER_BIN="$RELEASE_BIN_DIR/lankide-computer-daemon"; CLI_BIN="$RELEASE_BIN_DIR/lankide"; DESKTOP_BIN="$RELEASE_BIN_DIR/lankide-desktop"
-PID_JOURNAL="$ARTIFACT_DIR/pids.tsv"; TEMP_ROOT=""; RUNTIME_SOCKET=""; RUNTIME_LOG=""; RUNTIME_PID=""; COMPUTER_PID=""; DESKTOP_PID=""
+PID_JOURNAL="$ARTIFACT_DIR/pids.tsv"; TEMP_ROOT=""; RUNTIME_URL_FILE=""; RUNTIME_LOG=""; RUNTIME_PID=""; COMPUTER_PID=""; DESKTOP_PID=""
 RUNTIME_READY=0; COMPUTER_STARTED=0; CLI_BOUNDARY=0; DESKTOP_CONTRACT=0; FAIL_REASON=""
 trap cleanup EXIT INT TERM
 run_smoke

@@ -386,7 +386,6 @@ impl ComputerBroker {
             computer_frame::Frame::AssignmentResult(v) => v.execution.as_ref(),
             computer_frame::Frame::ExecutionEvent(v) => v.execution.as_ref(),
             computer_frame::Frame::DeliveryResult(v) => v.execution.as_ref(),
-            computer_frame::Frame::ToolCall(v) => v.execution.as_ref(),
             _ => None,
         };
         if let Some(execution) = execution
@@ -812,7 +811,7 @@ impl ComputerBroker {
                     });
                 }
             }
-            computer_frame::Frame::ToolCall(_) | computer_frame::Frame::CapabilityRequest(_) => {}
+            computer_frame::Frame::CapabilityRequest(_) => {}
             computer_frame::Frame::Hello(_) => {
                 return Err(RuntimeError::Application("duplicate computer hello".into()));
             }

@@ -365,11 +365,8 @@ async fn accept_link<
     Ok(())
 }
 
-/// Local discovery uses the same private run directory as the management socket.
-pub fn discover(socket: &Path) -> Result<(String, String), std::io::Error> {
-    let run = socket
-        .parent()
-        .ok_or_else(|| std::io::Error::other("missing_run_directory"))?;
+/// Read local pairing discovery from the private run directory.
+pub fn discover(run: &Path) -> Result<(String, String), std::io::Error> {
     Ok((
         std::fs::read_to_string(run.join("computer-link.url"))?
             .trim()

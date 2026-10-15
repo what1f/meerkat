@@ -1,11 +1,9 @@
 # Remote Computer design
 
-Status: draft for review.
+Status: implemented.
 
-This document describes how Lankide moves from "Runtime and Computer share one
-machine" to "many Computers register with one Runtime that may run in the
-cloud". It replaces the gRPC transport with WebSocket and HTTP and fixes the
-reliability gaps found while reviewing the current implementation.
+Many Computers register with one Runtime, which can run locally or in the
+cloud. Computer links use WebSocket; management and resources use HTTP.
 
 ## Goals
 
@@ -21,7 +19,7 @@ reliability gaps found while reviewing the current implementation.
 
 - Agent files (memory, skills, work files, native Harness sessions) stay on the
   Computer that owns the Agent. The Runtime does not back them up or sync them.
-  Moving an Agent between Computers is a later, explicit migration feature.
+  Moving Agent files between Computers requires an explicit transfer.
 - Mounting Agent or Workspace files into a Harness through FUSE. Agents on a
   Computer read local files: chat content arrives in the assignment snapshot,
   attachments are downloaded into the Agent home, and further content is
@@ -68,18 +66,17 @@ execution token inside each frame.
 
 ## Computer wire protocol
 
-The current `protocol_version` is 2. Version 2 replaces protobuf capability
-payloads with UTF-8 JSON bytes; incompatible peers are rejected during hello.
-Management, pairing, and the outer link JSON shapes are unchanged.
+The current `protocol_version` is 2. Capability payloads contain UTF-8 JSON
+bytes. Any unequal protocol version is rejected during hello.
 
 Frames are JSON objects with a `type` field, sent as WS text frames. The frame
 set keeps the current semantics of `ComputerFrame` and `RuntimeFrame`:
 
 - Computer to Runtime: `hello`, `heartbeat`, `assignment_result`,
-  `execution_event`, `delivery_result`, `tool_call`, `capability_request`,
+  `execution_event`, `delivery_result`, `capability_request`,
   `inventory_changed`, `delete_agent_files_result`.
 - Runtime to Computer: `hello`, `assign_execution`, `deliver_steer`,
-  `cancel_execution`, `tool_result`, `capability_response`,
+  `cancel_execution`, `capability_response`,
   `execution_event_ack`, `execution_committed`, `shutdown`,
   `delete_agent_files`.
 
@@ -104,7 +101,8 @@ Delivery rules:
 1. The Desktop asks the Runtime for a pairing code. Codes are single-use and
    expire after ten minutes.
 2. The Computer runs `lankide-computer-daemon pair <runtime-url> <code>`. On
-   first start it generates a random `computer_id` and stores it with the device
+   successful pairing the Runtime generates a random `computer_id`. The Computer
+   stores it with the device
    credential in its home directory, readable only by its owner.
 3. The Runtime stores the Computer in a `computers` table: `computer_id`,
    display name, credential hash, `paired_at`, `revoked_at`, `last_seen_at`,
@@ -125,12 +123,6 @@ The local setup uses the same flow. On first launch the Desktop pairs its own
 Computer automatically, so the user never sees a code.
 
 ## Agent capability path
-
-Today the Computer passes the Runtime socket path to the Agent and
-`lankide-cli` dials the Runtime directly. That path cannot reach a remote
-Runtime and bypasses the Computer.
-
-New path:
 
 1. For each attempt, the Computer opens a private local socket inside the
    Agent's run directory and passes its path to the Harness.
@@ -160,9 +152,8 @@ already issued.
 
 ## Resources
 
-Upload and download move from gRPC streams to HTTP. Downloads support `Range`
-for resume. The Computer verifies size and SHA-256 before an atomic rename into
-the Agent home, as it does today.
+Upload and download use HTTP. Downloads support `Range` for resume. The
+Computer verifies size and SHA-256 before an atomic rename into the Agent home.
 
 ## Agent files
 
@@ -263,3 +254,34 @@ Runtime and Computer act on those declarations instead of on Harness IDs.
 
 Each phase keeps `just check` and `just test` green and updates the module E2E
 contracts in `tests/e2e-modules.tsv`.
+
+## Fresh storage and local placement
+
+`crates/storage/src/schema.rs` defines the single version-1 baseline. A fresh
+SQLite database receives this schema. Version 1 opens without conversion; every
+other non-zero version returns `StorageError::UnsupportedSchemaVersion`.
+
+`agents.computer_id` references `computers.computer_id`; there is no implicit
+placement. Management requires a registered, non-revoked Computer with the
+selected Harness. The Desktop selects its locally paired Computer for a new
+Agent. First start pairs the Computer using the private local pairing secret,
+registers a random Computer ID and credential hash, and writes
+`computer-credentials.json` in the Computer home with mode 0600. The local
+credential uses `local_discovery: true` to rediscover the Runtime after restart.
+
+Local clients read `management.url` and `management-owner.secret` from the run
+directory. `LANKIDE_RUNTIME_RUN` selects that directory for an externally managed
+Desktop connection. Native Agent calls use only their private attempt socket.
+
+Live Telegram scenarios read an owner-only JSON fixture selected by
+`LANKIDE_TELEGRAM_E2E_FIXTURE`. Its fields are `provider_id`, `agent_id`,
+`account_id`, `username`, `token`, `manager_account_id`, `manager_token`, and
+`chat_ids` (an array of authorized chat IDs). The Feishu team scenario reads two
+application objects from the owner-only JSON array selected by
+`LANKIDE_FEISHU_E2E_APPS`: `app_id`, `app_secret`, `domain`, `bot_open_id`, and
+`bot_name`. These fixtures belong to isolated live test accounts.
+
+The Feishu provider fixture root (`LANKIDE_E2E_TEAM_ROOT`) contains
+`feishu-app.json` (`app_id`, `app_secret`, `domain`) and `feishu-e2e.json`
+(test chat, Agent, task list, and user OAuth metadata). These are scenario
+fixtures, separate from application configuration.

@@ -1,3 +1,5 @@
+#[path = "../../../tests/support/registered_computer.rs"]
+mod registered_computer;
 #[path = "../../protocol/tests/support/ws.rs"]
 mod ws;
 use lankide_core::{
@@ -68,7 +70,7 @@ async fn runtime_e2e() {
     let attempt_db = temp.path().join("attempt.db");
     let pause_db = temp.path().join("pause.db");
     let collaboration_db = temp.path().join("collaboration.db");
-    let socket = temp.path().join("runtime.sock");
+    let socket = temp.path().join("run");
     let result = tokio::time::timeout(Duration::from_secs(60), async {
         scenario(&db).await.map_err(|e| format!("scenario: {e}"))?;
         attempt_recovery_scenario(&attempt_db)
@@ -139,7 +141,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
         database: DatabaseConfig::new(db),
         retry: Default::default(),
     };
-    let mut runtime = Runtime::new(config.clone()).map_err(err)?;
+    let mut runtime = scenario_runtime(config.clone()).map_err(err)?;
     for (workspace, agent) in [(&workspace_a, &agent_a), (&workspace_b, &agent_b)] {
         runtime
             .storage()
@@ -156,6 +158,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
         runtime
             .storage()
             .create_agent(AgentSpec {
+                computer_id: "fixture-computer".into(),
                 workspace_id: workspace.clone(),
                 id: agent.clone(),
                 name: agent.to_string(),
@@ -667,7 +670,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
     runtime.shutdown().await.map_err(err)?;
     drop(runtime);
 
-    let mut restarted = Runtime::new(config).map_err(err)?;
+    let mut restarted = scenario_runtime(config).map_err(err)?;
     register(
         &mut restarted,
         workspace_a.clone(),
@@ -796,7 +799,7 @@ async fn pause_drain_scenario(db: &Path) -> Result<(), String> {
     let agent = AgentId::new("pause_agent").map_err(err)?;
     let channel = ChannelId::new("chat").map_err(err)?;
     let state = Arc::new(FakeState::default());
-    let mut runtime = Runtime::new(RuntimeConfig {
+    let mut runtime = scenario_runtime(RuntimeConfig {
         database: DatabaseConfig::new(db),
         retry: Default::default(),
     })
@@ -816,6 +819,7 @@ async fn pause_drain_scenario(db: &Path) -> Result<(), String> {
     runtime
         .storage()
         .create_agent(AgentSpec {
+            computer_id: "fixture-computer".into(),
             workspace_id: workspace.clone(),
             id: agent.clone(),
             name: "Pause Agent".into(),
@@ -919,7 +923,7 @@ async fn collaboration_fencing_scenario(db: &Path) -> Result<(), String> {
     let bruce = AgentId::new("bruce").map_err(err)?;
     let clark = AgentId::new("clark").map_err(err)?;
     let channel = ChannelId::new("chat").map_err(err)?;
-    let mut runtime = Runtime::new(RuntimeConfig {
+    let mut runtime = scenario_runtime(RuntimeConfig {
         database: DatabaseConfig::new(db),
         retry: Default::default(),
     })
@@ -940,6 +944,7 @@ async fn collaboration_fencing_scenario(db: &Path) -> Result<(), String> {
         runtime
             .storage()
             .create_agent(AgentSpec {
+                computer_id: "fixture-computer".into(),
                 workspace_id: workspace.clone(),
                 id: agent.clone(),
                 name: agent.to_string(),
@@ -1111,7 +1116,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
     let agent_id = AgentId::new("attempt_agent").map_err(err)?;
     let provider_id = ProviderId::new("fixture").map_err(err)?;
     let channel_id = ChannelId::new("chat").map_err(err)?;
-    let runtime = Runtime::new(RuntimeConfig {
+    let runtime = scenario_runtime(RuntimeConfig {
         database: DatabaseConfig::new(db),
         retry: Default::default(),
     })
@@ -1131,6 +1136,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
     runtime
         .storage()
         .create_agent(AgentSpec {
+            computer_id: "fixture-computer".into(),
             workspace_id: workspace_id.clone(),
             id: agent_id.clone(),
             name: "Attempt Agent".into(),
@@ -1522,6 +1528,35 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     let channel_id = ChannelId::new("chat").map_err(err)?;
     let token = "application-token";
     let storage = Storage::open(DatabaseConfig::new(db)).map_err(err)?;
+    registered_computer::register(&storage, &["fixture-computer"]).map_err(err)?;
+    for computer_id in ["computer-a", "computer-b", "computer-delete"] {
+        storage
+            .pair_computer(
+                &lankide_storage::ComputerRecord {
+                    computer_id: computer_id.into(),
+                    display_name: computer_id.into(),
+                    credential_hash: Sha256::digest(format!("fixture-{computer_id}").as_bytes())
+                        .iter()
+                        .map(|b| format!("{b:02x}"))
+                        .collect(),
+                    paired_at: 1,
+                    revoked_at: None,
+                    last_seen_at: None,
+                    os: "test".into(),
+                    version: "1".into(),
+                    inventory_json: serde_json::to_string(&vec![
+                        lankide_protocol::link::HarnessInfo {
+                            harness_id: "fixture".into(),
+                            ..Default::default()
+                        },
+                    ])
+                    .unwrap(),
+                },
+                None,
+                600_000,
+            )
+            .map_err(err)?;
+    }
     storage
         .create_workspace(WorkspaceSpec {
             id: workspace_id.clone(),
@@ -1535,6 +1570,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .map_err(err)?;
     storage
         .create_agent(AgentSpec {
+            computer_id: "fixture-computer".into(),
             workspace_id: workspace_id.clone(),
             id: agent_id.clone(),
             name: "Application Agent".into(),
@@ -1709,36 +1745,6 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         database: DatabaseConfig::new(db),
         retry: Default::default(),
     };
-    let registration_storage = Storage::open(config.database.clone()).map_err(err)?;
-    for computer_id in ["computer-a", "computer-b", "computer-delete"] {
-        registration_storage
-            .pair_computer(
-                &lankide_storage::ComputerRecord {
-                    computer_id: computer_id.into(),
-                    display_name: computer_id.into(),
-                    credential_hash: Sha256::digest(format!("fixture-{computer_id}").as_bytes())
-                        .iter()
-                        .map(|b| format!("{b:02x}"))
-                        .collect(),
-                    paired_at: 1,
-                    revoked_at: None,
-                    last_seen_at: None,
-                    os: "test".into(),
-                    version: "1".into(),
-                    inventory_json: serde_json::to_string(&vec![
-                        lankide_protocol::link::HarnessInfo {
-                            harness_id: "fixture".into(),
-                            ..Default::default()
-                        },
-                    ])
-                    .unwrap(),
-                },
-                None,
-                600_000,
-            )
-            .map_err(err)?;
-    }
-    registration_storage.close().map_err(err)?;
     let application = RuntimeApplication::open(config.clone(), factories.clone())
         .await
         .map_err(err)?;
@@ -1944,12 +1950,15 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .await
     });
     for _ in 0..100 {
-        if socket.exists() {
+        if socket.join("agent.sock").exists() {
             break;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    ensure(socket.exists(), "runtime UDS started")?;
+    ensure(
+        socket.join("agent.sock").exists(),
+        "scenario Agent socket started",
+    )?;
     let client =
         lankide_client::http::HttpManagementTransport::local(socket, DEFAULT_MAX_MESSAGE_BYTES);
     let listed = client
@@ -2273,9 +2282,10 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         }),
         execution_token: token.into(),
     };
-    let mut agent_client = lankide_protocol::connect_uds(socket, DEFAULT_MAX_MESSAGE_BYTES)
-        .await
-        .map_err(err)?;
+    let mut agent_client =
+        lankide_protocol::connect_uds(socket.join("agent.sock"), DEFAULT_MAX_MESSAGE_BYTES)
+            .await
+            .map_err(err)?;
     let denied = agent_client
         .get_content(ContentRequest {
             context: Some(AgentRunContext {
@@ -2500,13 +2510,20 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     computer_frames
         .send(ComputerFrame {
             protocol_version: lankide_protocol::PROTOCOL_VERSION,
-            frame: Some(computer_frame::Frame::ToolCall(
-                lankide_protocol::ToolCall {
-                    execution: context.execution.clone(),
-                    execution_token: token.into(),
-                    tool_call_id: "slow-echo".into(),
-                    tool_name: "echo".into(),
-                    arguments_json: json!({"value":"delayed"}).to_string(),
+            frame: Some(computer_frame::Frame::CapabilityRequest(
+                lankide_protocol::CapabilityRequest {
+                    request_id: "slow-echo".into(),
+                    method: "invoke_capability".into(),
+                    context: Some(context.clone()),
+                    offset: 0,
+                    eof: true,
+                    payload: lankide_protocol::agent::encode(&CapabilityInvokeRequest {
+                        context: Some(context.clone()),
+                        invocation_id: "slow-echo".into(),
+                        capability_name: "echo".into(),
+                        arguments_json: json!({"value":"delayed"}).to_string(),
+                    })
+                    .unwrap(),
                 },
             )),
         })
@@ -2570,7 +2587,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .map_err(err)?
         .ok_or("tool stream closed")?;
     ensure(
-        matches!(tool_result.frame, Some(runtime_frame::Frame::ToolResult(result)) if result.success),
+        matches!(tool_result.frame, Some(runtime_frame::Frame::CapabilityResponse(result)) if result.error_code == 0 && lankide_protocol::agent::decode::<lankide_protocol::CapabilityInvokeResult>(&result.payload).unwrap().success),
         "delayed tool result delivered after heartbeat",
     )?;
     let provider_lookup = agent_client
@@ -2786,13 +2803,20 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         computer_frames
             .send(ComputerFrame {
                 protocol_version: lankide_protocol::PROTOCOL_VERSION,
-                frame: Some(computer_frame::Frame::ToolCall(
-                    lankide_protocol::ToolCall {
-                        execution: context.execution.clone(),
-                        execution_token: token.into(),
-                        tool_call_id: id.into(),
-                        tool_name: "message_edit".into(),
-                        arguments_json: arguments.to_string(),
+                frame: Some(computer_frame::Frame::CapabilityRequest(
+                    lankide_protocol::CapabilityRequest {
+                        request_id: id.into(),
+                        method: "invoke_capability".into(),
+                        context: Some(context.clone()),
+                        offset: 0,
+                        eof: true,
+                        payload: lankide_protocol::agent::encode(&CapabilityInvokeRequest {
+                            context: Some(context.clone()),
+                            invocation_id: id.into(),
+                            capability_name: "message_edit".into(),
+                            arguments_json: arguments.to_string(),
+                        })
+                        .unwrap(),
                     },
                 )),
             })
@@ -2803,12 +2827,21 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             .map_err(err)?
             .map_err(err)?
             .ok_or("tool failure stream closed")?;
-        let Some(runtime_frame::Frame::ToolResult(result)) = response.frame else {
+        let Some(runtime_frame::Frame::CapabilityResponse(response)) = response.frame else {
             return Err("tool failure was not returned to Computer".into());
         };
+        if expected_code == "tool_unavailable" {
+            ensure(
+                response.error_code != 0,
+                "invalid capability input is rejected",
+            )?;
+            continue;
+        }
+        let result: lankide_protocol::CapabilityInvokeResult =
+            lankide_protocol::agent::decode(&response.payload).map_err(err)?;
         ensure(
             !result.success
-                && result.tool_call_id == id
+                && result.invocation_id == id
                 && result
                     .error
                     .as_ref()
@@ -3183,6 +3216,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             let storage = Storage::open(DatabaseConfig::new(db)).map_err(err)?;
+            registered_computer::register(&storage, &["fixture-computer"]).map_err(err)?;
             let pending = storage
                 .pending_agent_file_deletions("computer-delete")
                 .map_err(err)?;
@@ -3385,7 +3419,7 @@ fn agent_config(
             role: "tester".into(),
             bio: "runtime e2e".into(),
         },
-        computer_id: "local".into(),
+        computer_id: "fixture-computer".into(),
         harness: HarnessConfig {
             harness_id: "scripted".into(),
             executable_path: "/fixture".into(),
@@ -4066,6 +4100,7 @@ async fn profile_application() -> (tempfile::TempDir, RuntimeApplication, Arc<Fa
     let a = AgentId::new("profile_agent").unwrap();
     let p = ProviderId::new("fixture").unwrap();
     let storage = Storage::open(DatabaseConfig::new(&db)).unwrap();
+    registered_computer::register(&storage, &["fixture-computer"]).unwrap();
     storage
         .create_workspace(WorkspaceSpec {
             id: w.clone(),
@@ -4079,6 +4114,7 @@ async fn profile_application() -> (tempfile::TempDir, RuntimeApplication, Arc<Fa
         .unwrap();
     storage
         .create_agent(AgentSpec {
+            computer_id: "fixture-computer".into(),
             workspace_id: w.clone(),
             id: a.clone(),
             name: "Before".into(),
@@ -4325,7 +4361,7 @@ impl ComputerExecutor for NeverAssignedComputer {
 }
 async fn prompt_failure_recovery_scenario() {
     let temp = tempfile::tempdir().unwrap();
-    let runtime = Runtime::new(RuntimeConfig {
+    let runtime = scenario_runtime(RuntimeConfig {
         database: DatabaseConfig::new(temp.path().join("runtime.db")),
         retry: Default::default(),
     })
@@ -4349,6 +4385,7 @@ async fn prompt_failure_recovery_scenario() {
     runtime
         .storage()
         .create_agent(AgentSpec {
+            computer_id: "fixture-computer".into(),
             workspace_id: w.clone(),
             id: a.clone(),
             name: "Audit".into(),
@@ -4402,7 +4439,7 @@ async fn prompt_failure_recovery_scenario() {
 async fn durable_ingress_retry_scenario() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("runtime.db");
-    let runtime = Runtime::new(RuntimeConfig {
+    let runtime = scenario_runtime(RuntimeConfig {
         database: DatabaseConfig::new(&path),
         retry: Default::default(),
     })
@@ -4426,6 +4463,7 @@ async fn durable_ingress_retry_scenario() {
     runtime
         .storage()
         .create_agent(AgentSpec {
+            computer_id: "fixture-computer".into(),
             workspace_id: w.clone(),
             id: a.clone(),
             name: "Receipt".into(),
@@ -4615,4 +4653,10 @@ async fn configured_assignment_scenario() {
             "changing a native setting must invalidate the old session configuration"
         );
     }
+}
+
+fn scenario_runtime(config: RuntimeConfig) -> Result<Runtime, lankide_runtime::RuntimeError> {
+    let runtime = Runtime::new(config)?;
+    registered_computer::register(runtime.storage(), &["fixture-computer", "computer-attempt"])?;
+    Ok(runtime)
 }

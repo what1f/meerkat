@@ -8,8 +8,7 @@ async fn computer_start_expires_records_and_preserves_sessions()
     let root = tempfile::tempdir()?;
     let expired = root.path().join(".computer/diagnostics/1-1");
     let recent = root.path().join(".computer/diagnostics/2-1");
-    let legacy = root.path().join("team/agents/agent/.lankide/pi/sessions");
-    for directory in [&expired, &recent, &legacy] {
+    for directory in [&expired, &recent] {
         fs::create_dir_all(directory)?;
     }
     let old = SystemTime::now() - Duration::from_secs(60);
@@ -17,15 +16,15 @@ async fn computer_start_expires_records_and_preserves_sessions()
         expired.join("rpc.jsonl"),
         expired.join("rpc.jsonl.1"),
         expired.join("diagnostics.json"),
-        legacy.join("pi-old.rpc.jsonl"),
     ] {
         fs::write(&path, "old record")?;
         File::open(path)?.set_times(FileTimes::new().set_modified(old))?;
     }
-    let native = legacy.join("native-session.jsonl");
-    fs::write(&native, "native session")?;
-    File::open(&native)?.set_times(FileTimes::new().set_modified(old))?;
     fs::write(recent.join("rpc.jsonl"), "recent record")?;
+    let session = root.path().join(".lankide/pi/sessions/current.jsonl");
+    fs::create_dir_all(session.parent().unwrap())?;
+    fs::write(&session, "native session")?;
+    File::open(&session)?.set_times(FileTimes::new().set_modified(old))?;
     // Cleanup must not follow links to unrelated data.
     let outside = tempfile::tempdir()?;
     let external = outside.path().join("rpc.jsonl");
@@ -35,14 +34,6 @@ async fn computer_start_expires_records_and_preserves_sessions()
         outside.path(),
         root.path().join(".computer/diagnostics/link"),
     )?;
-    let linked_agent = root.path().join("other/agents/linked");
-    fs::create_dir_all(&linked_agent)?;
-    let external_sessions = outside.path().join("pi/sessions");
-    fs::create_dir_all(&external_sessions)?;
-    let external_legacy = external_sessions.join("pi-old.rpc.jsonl");
-    fs::write(&external_legacy, "external legacy record")?;
-    File::open(&external_legacy)?.set_times(FileTimes::new().set_modified(old))?;
-    std::os::unix::fs::symlink(outside.path(), linked_agent.join(".lankide"))?;
     let handle = Computer::new(ComputerConfig {
         computer_id: "retention-computer".into(),
         instance_id: "retention-instance".into(),
@@ -53,20 +44,15 @@ async fn computer_start_expires_records_and_preserves_sessions()
         max_bytes: 2048,
         retention: Duration::from_secs(30),
     })
-    .spawn(root.path().join("runtime.sock"))
+    .spawn(root.path().join("run"))
     .await?;
     assert!(!expired.exists());
-    assert!(!legacy.join("pi-old.rpc.jsonl").exists());
     assert_eq!(
         fs::read_to_string(recent.join("rpc.jsonl"))?,
         "recent record"
     );
-    assert_eq!(fs::read_to_string(native)?, "native session");
     assert_eq!(fs::read_to_string(external)?, "external record");
-    assert_eq!(
-        fs::read_to_string(external_legacy)?,
-        "external legacy record"
-    );
+    assert_eq!(fs::read_to_string(session)?, "native session");
     handle.shutdown("scenario_complete").await;
     handle.join().await?;
     Ok(())

@@ -560,8 +560,7 @@ impl Inner {
         }
         command
             .envs(&self.request.config.environment)
-            .env_remove("LANKIDE_RUNTIME_SOCKET")
-            .env_remove("LANKIDE_RUNTIME_URL")
+            .env_remove("LANKIDE_RUNTIME_RUN")
             .env("CLAUDE_CONFIG_DIR", &self.paths.config_dir)
             .current_dir(&self.request.working_directory)
             .stdin(Stdio::piped())

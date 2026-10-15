@@ -60,7 +60,7 @@ def main():
             env = {**os.environ, "LANKIDE_HOME": str(home)}
             # An explicit socket tells Desktop to connect to an existing
             # Runtime rather than start the helpers under test.
-            env.pop("LANKIDE_RUNTIME_SOCKET", None)
+            env.pop("LANKIDE_RUNTIME_RUN", None)
             with (artifacts / "desktop.log").open("w") as log:
                 process = subprocess.Popen([str(extracted / "Contents/MacOS/Lankide"), "--local-bootstrap-smoke", "--result", str(bootstrap_result)],
                     env=env,

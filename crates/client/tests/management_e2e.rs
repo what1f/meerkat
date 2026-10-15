@@ -547,7 +547,7 @@ impl wire::RuntimePeer for Peer {
     ) -> Result<wire::ComputerCatalog, Status> {
         Ok(wire::ComputerCatalog {
             computers: vec![wire::ComputerCatalogItem {
-                computer_id: "local".into(),
+                computer_id: "fixture-computer".into(),
                 display_name: "Local Computer".into(),
                 observed_state: wire::ObservedState::Running as i32,
                 harnesses: vec![],
@@ -683,23 +683,23 @@ impl wire::ComputerPeer for Peer {
 
 struct Fixture {
     _root: TempDir,
-    socket: std::path::PathBuf,
     peer: Peer,
     stop: Option<oneshot::Sender<()>>,
     task: tokio::task::JoinHandle<Result<(), wire::link::LinkError>>,
 }
 impl Fixture {
     async fn start(root: TempDir) -> Result<Self, String> {
-        let socket = root.path().join("runtime.sock");
+        let run = root.path().join("run");
+        std::fs::create_dir_all(&run).map_err(|e| e.to_string())?;
         let peer = Peer::default();
         let (tx, rx) = oneshot::channel();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .map_err(|e| e.to_string())?;
-        let owner = wire::management::OwnerCredential::load_or_create(root.path())
-            .map_err(|e| e.to_string())?;
+        let owner =
+            wire::management::OwnerCredential::load_or_create(&run).map_err(|e| e.to_string())?;
         std::fs::write(
-            root.path().join(wire::management::URL_FILE),
+            run.join(wire::management::URL_FILE),
             format!(
                 "http://{}",
                 listener.local_addr().map_err(|e| e.to_string())?
@@ -723,7 +723,6 @@ impl Fixture {
         });
         Ok(Self {
             _root: root,
-            socket,
             peer,
             stop: Some(tx),
             task,
@@ -735,9 +734,6 @@ impl Fixture {
             .await
             .map_err(|e| e.to_string())?
             .map_err(|e| e.to_string())?;
-        if self.socket.exists() {
-            return Err("socket was not cleaned up".into());
-        }
         Ok(())
     }
 }
@@ -816,7 +812,7 @@ async fn common_contract<C: ManagementClient>(client: &C, prefix: &str) -> Resul
         bio: "Ships".into(),
         avatar: lankide_client::Avatar::Custom("B".into()),
         soul: "Care about quality".into(),
-        computer_id: "local".into(),
+        computer_id: "fixture-computer".into(),
         harness_id: "claude_code".into(),
         model: "deepseek-v4-flash".into(),
         thinking_level: ThinkingLevel::High,
@@ -923,7 +919,7 @@ async fn common_contract<C: ManagementClient>(client: &C, prefix: &str) -> Resul
             .await
             .map_err(|e| e.to_string())?[0]
             .id
-            == "local",
+            == "fixture-computer",
         "computer catalog",
     )?;
     need(
@@ -938,7 +934,7 @@ async fn common_contract<C: ManagementClient>(client: &C, prefix: &str) -> Resul
         "harness catalog",
     )?;
     let models = client
-        .get_model_catalog(Some(&workspace_id), "local", "claude_code")
+        .get_model_catalog(Some(&workspace_id), "fixture-computer", "claude_code")
         .await
         .map_err(|e| e.to_string())?;
     need(
@@ -1020,7 +1016,7 @@ async fn common_contract<C: ManagementClient>(client: &C, prefix: &str) -> Resul
 
 async fn runtime_scenario() -> Result<(), String> {
     let root = tempfile::tempdir().map_err(|e| e.to_string())?;
-    let client = RuntimeManagementClient::connect_lazy(root.path().join("runtime.sock"));
+    let client = RuntimeManagementClient::connect_local_lazy(root.path().join("run"));
     need(
         client.list_workspaces().await.is_err(),
         "initial unavailable Runtime should be reported",

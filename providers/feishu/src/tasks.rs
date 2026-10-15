@@ -257,11 +257,7 @@ pub struct CreateTask {
     pub summary: String,
     pub description: String,
     pub due: Option<Value>,
-    pub assignee_ids: Vec<String>,
-    pub collaborator_ids: Vec<String>,
-    /// Typed Task identities.  Use `MemberIdentity::app` for an Agent App and
-    /// `MemberIdentity::user` for a human; the legacy `*_ids` fields remain
-    /// user identities for callers that already have provider IDs.
+    /// Typed Task identities for Agent Apps and human users.
     pub assignees: Vec<MemberIdentity>,
     pub followers: Vec<MemberIdentity>,
     pub tasklist_guid: Option<String>,
@@ -279,18 +275,6 @@ impl CreateTask {
             body["due"] = due.clone();
         }
         let mut members = Vec::new();
-        for id in &self.assignee_ids {
-            let identity = MemberIdentity::user(id);
-            if let Some(member) = identity.as_json("assignee") {
-                members.push(member);
-            }
-        }
-        for id in &self.collaborator_ids {
-            let identity = MemberIdentity::user(id);
-            if let Some(member) = identity.as_json("follower") {
-                members.push(member);
-            }
-        }
         for identity in &self.assignees {
             if let Some(member) = identity.as_json("assignee") {
                 members.push(member);

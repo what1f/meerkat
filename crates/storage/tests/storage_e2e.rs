@@ -1,3 +1,5 @@
+#[path = "../../../tests/support/registered_computer.rs"]
+mod registered_computer;
 use lankide_core::{
     AgentId, ChannelId, MessageAuthorType, PersonId, ProviderId, ResourceId, WorkspaceId,
 };
@@ -114,7 +116,9 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     let config = DatabaseConfig::new(&db_path);
 
     let storage = Storage::open(config.clone()).map_err(|error| error.to_string())?;
-    assert_eq!(storage.schema_version().unwrap(), 20);
+    registered_computer::register(&storage, &["fixture-computer", "computer-a", "computer-b"])
+        .unwrap();
+    assert_eq!(storage.schema_version().unwrap(), 1);
     assert_eq!(storage.sqlite_settings().unwrap().journal_mode, "wal");
     assert!(storage.sqlite_settings().unwrap().foreign_keys);
 
@@ -141,6 +145,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
             .unwrap();
         storage
             .create_agent(AgentSpec {
+                computer_id: "fixture-computer".into(),
                 workspace_id: workspace_id.clone(),
                 id: agent_id.clone(),
                 name: "Same visible name".to_owned(),
@@ -246,7 +251,12 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     let ordinary = serde_json::to_string(&storage.workspace(&workspace_a).unwrap()).unwrap();
     assert!(!ordinary.contains("secret-Alpha"));
     assert!(
-        storage.provider_secret(&workspace_a).unwrap() == json!({ "token": "secret-Alpha" }),
+        storage
+            .read_secret(&workspace_a, "token")
+            .unwrap()
+            .unwrap()
+            .expose_secret()
+            == "secret-Alpha",
         "explicit secret retrieval mismatch"
     );
 
@@ -355,7 +365,9 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     assert!(storage.delete_agent(&workspace_a, &departed_id).unwrap());
     assert!(storage.agent_record(&workspace_a, &departed_id).is_err());
     assert_eq!(
-        storage.pending_agent_file_deletions("local").unwrap(),
+        storage
+            .pending_agent_file_deletions("fixture-computer")
+            .unwrap(),
         vec![(workspace_a.clone(), departed_id.clone())]
     );
     assert!(
@@ -371,7 +383,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     );
     assert!(
         storage
-            .pending_agent_file_deletions("local")
+            .pending_agent_file_deletions("fixture-computer")
             .unwrap()
             .is_empty()
     );
@@ -399,7 +411,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
             1_120,
         )
         .unwrap();
-    assert_eq!(secret_ref.revision, 1);
+    assert_eq!(secret_ref.revision, 2);
     let secret = storage
         .read_secret(&workspace_a, "bot_token")
         .unwrap()
@@ -417,7 +429,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
             .secret_ref
             .unwrap()
             .revision,
-        1
+        2
     );
 
     storage
@@ -1132,7 +1144,14 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         .unwrap()
         .unwrap();
     storage
-        .offer_execution_attempt(lost.execution_id, 1, "local", "instance-a", 4_300, 4_201)
+        .offer_execution_attempt(
+            lost.execution_id,
+            1,
+            "fixture-computer",
+            "instance-a",
+            4_300,
+            4_201,
+        )
         .unwrap();
     assert!(
         storage
@@ -1148,7 +1167,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         .record_execution_event(RecordExecutionEvent {
             execution_id: lost.execution_id,
             attempt: 1,
-            computer_id: "local".into(),
+            computer_id: "fixture-computer".into(),
             computer_instance_id: "instance-a".into(),
             sequence: 1,
             kind: "started".into(),
@@ -1163,7 +1182,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         .unwrap();
     let continued = storage
         .reconcile_computer_heartbeat(
-            "local",
+            "fixture-computer",
             "instance-a",
             &[(lost.execution_id, 1)],
             4_206,
@@ -1172,14 +1191,14 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         .unwrap();
     assert_eq!(continued.continued, vec![(lost.execution_id, 1)]);
     let replaced = storage
-        .reconcile_computer_heartbeat("local", "instance-b", &[], 4_207, 4_500)
+        .reconcile_computer_heartbeat("fixture-computer", "instance-b", &[], 4_207, 4_500)
         .unwrap();
     assert_eq!(replaced.lost, vec![(lost.execution_id, 1)]);
     let late_completed = storage
         .record_execution_event(RecordExecutionEvent {
             execution_id: lost.execution_id,
             attempt: 1,
-            computer_id: "local".into(),
+            computer_id: "fixture-computer".into(),
             computer_instance_id: "instance-a".into(),
             sequence: 2,
             kind: "completed".into(),
@@ -1208,7 +1227,14 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         .unwrap()
         .unwrap();
     storage
-        .offer_execution_attempt(resumed.execution_id, 1, "local", "instance-b", 4_500, 4_211)
+        .offer_execution_attempt(
+            resumed.execution_id,
+            1,
+            "fixture-computer",
+            "instance-b",
+            4_500,
+            4_211,
+        )
         .unwrap();
     storage
         .accept_execution_attempt(resumed.execution_id, 1, true, 4_212)
@@ -1228,7 +1254,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
             .record_execution_event(RecordExecutionEvent {
                 execution_id: resumed.execution_id,
                 attempt: 1,
-                computer_id: "local".into(),
+                computer_id: "fixture-computer".into(),
                 computer_instance_id: "instance-b".into(),
                 sequence,
                 kind: kind.into(),
@@ -1246,7 +1272,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         .record_execution_event(RecordExecutionEvent {
             execution_id: resumed.execution_id,
             attempt: 1,
-            computer_id: "local".into(),
+            computer_id: "fixture-computer".into(),
             computer_instance_id: "instance-b".into(),
             sequence: 2,
             kind: "completed".into(),
@@ -1295,7 +1321,14 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         .unwrap()
         .unwrap();
     storage
-        .offer_execution_attempt(leased.execution_id, 1, "local", "instance-b", 4_219, 4_218)
+        .offer_execution_attempt(
+            leased.execution_id,
+            1,
+            "fixture-computer",
+            "instance-b",
+            4_219,
+            4_218,
+        )
         .unwrap();
     storage
         .accept_execution_attempt(leased.execution_id, 1, true, 4_218)
@@ -1691,7 +1724,6 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         !wal_path.exists() || fs::metadata(&wal_path).unwrap().len() == 0,
         "close must checkpoint the WAL"
     );
-    verify_v14_hard_delete_migration(temp_home.path())?;
     drop(temp_home);
     assert!(
         !db_path.exists(),
@@ -1699,94 +1731,6 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     );
     let _ = artifact_dir;
     Ok(summary)
-}
-
-fn verify_v14_hard_delete_migration(root: &Path) -> Result<(), String> {
-    let database = root.join("schema-14.sqlite3");
-    let workspace_id = WorkspaceId::new("legacy_workspace").unwrap();
-    let agent_id = AgentId::new("legacy_agent").unwrap();
-    let storage =
-        Storage::open(DatabaseConfig::new(&database)).map_err(|error| error.to_string())?;
-    storage
-        .create_workspace(WorkspaceSpec {
-            id: workspace_id.clone(),
-            name: "Legacy workspace".into(),
-            provider_id: ProviderId::new("telegram").unwrap(),
-            provider_config: json!({}),
-            provider_secret: json!({}),
-            active: true,
-            now: 1,
-        })
-        .map_err(|error| error.to_string())?;
-    storage
-        .commit_agent_record(
-            agent_record(&workspace_id, &agent_id, "legacy_sender", 2),
-            &json!({"bot_token":"legacy-secret"}),
-        )
-        .map_err(|error| error.to_string())?;
-    storage.close().map_err(|error| error.to_string())?;
-
-    let legacy = rusqlite::Connection::open(&database).map_err(|error| error.to_string())?;
-    legacy
-        .execute_batch(
-            "ALTER TABLE execution_attempts DROP COLUMN failure_json;
-             ALTER TABLE agents ADD COLUMN deleted_at INTEGER;
-             DROP TABLE agent_file_deletions;
-             CREATE TABLE agent_file_deletions(
-                 workspace_id TEXT NOT NULL,
-                 agent_id TEXT NOT NULL,
-                 computer_id TEXT NOT NULL,
-                 created_at INTEGER NOT NULL,
-                 PRIMARY KEY(workspace_id,agent_id),
-                 FOREIGN KEY(workspace_id,agent_id)
-                     REFERENCES agents(workspace_id,agent_id) ON DELETE RESTRICT
-             );
-             UPDATE agents SET deleted_at=3
-                 WHERE workspace_id='legacy_workspace' AND agent_id='legacy_agent';
-             INSERT INTO agent_file_deletions(workspace_id,agent_id,computer_id,created_at)
-                 VALUES('legacy_workspace','legacy_agent','local',3);
-             ALTER TABLE agents DROP COLUMN pause_reason;
-             ALTER TABLE agents DROP COLUMN failure_fingerprint;
-             ALTER TABLE agents DROP COLUMN failure_streak;
-             ALTER TABLE agent_inbox_items DROP COLUMN retry_batch_id;
-             ALTER TABLE agent_inbox_items DROP COLUMN failure_count;
-             ALTER TABLE executions DROP COLUMN retry_policy_applied;
-             DROP TABLE failure_notices;
-             DROP TRIGGER agent_placement_changed; ALTER TABLE agents DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_computer_id; DROP TABLE computers;
-             DROP TABLE pairing_codes;
-             PRAGMA user_version=14;",
-        )
-        .map_err(|error| error.to_string())?;
-    drop(legacy);
-
-    let migrated =
-        Storage::open(DatabaseConfig::new(&database)).map_err(|error| error.to_string())?;
-    assert_eq!(migrated.schema_version().unwrap(), 20);
-    assert!(migrated.agent_record(&workspace_id, &agent_id).is_err());
-    assert_eq!(
-        migrated.pending_agent_file_deletions("local").unwrap(),
-        vec![(workspace_id, agent_id)]
-    );
-    migrated.close().map_err(|error| error.to_string())?;
-
-    let verified = rusqlite::Connection::open(&database).map_err(|error| error.to_string())?;
-    let deleted_at_columns: i64 = verified
-        .query_row(
-            "SELECT count(*) FROM pragma_table_info('agents') WHERE name='deleted_at'",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|error| error.to_string())?;
-    let cleanup_foreign_keys: i64 = verified
-        .query_row(
-            "SELECT count(*) FROM pragma_foreign_key_list('agent_file_deletions')",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|error| error.to_string())?;
-    assert_eq!(deleted_at_columns, 0);
-    assert_eq!(cleanup_foreign_keys, 0);
-    Ok(())
 }
 
 fn message(
@@ -1838,7 +1782,7 @@ fn agent_record(
         bio: "Helps the team".to_owned(),
         avatar: Some("avatar.png".to_owned()),
         soul: "Be useful".to_owned(),
-        computer_id: "local".to_owned(),
+        computer_id: "fixture-computer".to_owned(),
         placement_generation: 1,
         harness_id: "codex".to_owned(),
         model: "gpt-5.6-luna".to_owned(),
@@ -1929,588 +1873,7 @@ fn write_result(
 }
 
 #[test]
-fn legacy_direct_chat_keeps_its_history_and_ids_after_receiver_migration() {
-    let home = tempfile::tempdir().unwrap();
-    let database = home.path().join("legacy.sqlite3");
-    let workspace = WorkspaceId::new("team").unwrap();
-    let provider = ProviderId::new("telegram").unwrap();
-    let channel = ChannelId::new("private_chat").unwrap();
-    let bruce = AgentId::new("bruce").unwrap();
-    let clark = AgentId::new("clark").unwrap();
-    let diana = AgentId::new("diana").unwrap();
-    let storage = Storage::open(DatabaseConfig::new(&database)).unwrap();
-    storage
-        .create_workspace(WorkspaceSpec {
-            id: workspace.clone(),
-            name: "Team".into(),
-            provider_id: provider.clone(),
-            provider_config: json!({}),
-            provider_secret: json!({}),
-            active: true,
-            now: 1,
-        })
-        .unwrap();
-    for agent in [&bruce, &clark, &diana] {
-        storage
-            .commit_agent_record(
-                agent_record(&workspace, agent, agent.as_str(), 2),
-                &json!({}),
-            )
-            .unwrap();
-    }
-    let dispatch = |agent: &AgentId| InboxDispatch {
-        agent_id: agent.clone(),
-        available_at: 3,
-        trigger_reason: DispatchReason::DirectMessage,
-    };
-    let legacy = storage
-        .ingest_event(event(
-            &workspace,
-            &provider,
-            &channel,
-            "alice",
-            "1",
-            "Bruce history",
-            3,
-            vec![dispatch(&bruce)],
-        ))
-        .unwrap();
-    let ambiguous = storage
-        .ingest_event(event(
-            &workspace,
-            &provider,
-            &channel,
-            "bob",
-            "1",
-            "Ambiguous history",
-            3,
-            vec![dispatch(&bruce), dispatch(&clark)],
-        ))
-        .unwrap();
-    let contaminated = storage
-        .ingest_event(event(
-            &workspace,
-            &provider,
-            &channel,
-            "feishu-p2p",
-            "1",
-            "Shared DM history",
-            3,
-            vec![dispatch(&bruce), dispatch(&clark), dispatch(&diana)],
-        ))
-        .unwrap();
-    storage.close().unwrap();
-    // A v15 database is the persistent outer boundary. Recreate its actual chat schema.
-    let fixture = rusqlite::Connection::open(&database).unwrap();
-    fixture.execute_batch("PRAGMA foreign_keys=OFF;
-        CREATE TABLE chats_v15(chat_id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id TEXT NOT NULL,channel_id TEXT NOT NULL,provider_chat_id TEXT NOT NULL,name TEXT,first_message_id INTEGER,last_message_id INTEGER,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,FOREIGN KEY(workspace_id,channel_id)REFERENCES channels(workspace_id,channel_id),UNIQUE(workspace_id,channel_id,provider_chat_id));
-        INSERT INTO chats_v15 SELECT chat_id,workspace_id,channel_id,provider_chat_id,name,first_message_id,last_message_id,created_at,updated_at FROM chats;
-        DROP TABLE chats; ALTER TABLE chats_v15 RENAME TO chats;
-        ALTER TABLE execution_attempts DROP COLUMN failure_json;
-        ALTER TABLE agents DROP COLUMN pause_reason;
-             ALTER TABLE agents DROP COLUMN failure_fingerprint;
-             ALTER TABLE agents DROP COLUMN failure_streak;
-             ALTER TABLE agent_inbox_items DROP COLUMN retry_batch_id;
-             ALTER TABLE agent_inbox_items DROP COLUMN failure_count;
-             ALTER TABLE executions DROP COLUMN retry_policy_applied;
-             DROP TABLE failure_notices;
-             DROP TRIGGER agent_placement_changed; ALTER TABLE agents DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_computer_id; DROP TABLE computers;
-             DROP TABLE pairing_codes;
-             PRAGMA user_version=15;").unwrap();
-    // Production shape: all three Agents dispatched and tried to reply; only
-    // Bruce's bot could send (5 sent, 8 failed, 13 failed).
-    for (agent, count, state) in [
-        (&bruce, 5, "sent"),
-        (&clark, 8, "failed"),
-        (&diana, 13, "failed"),
-    ] {
-        for attempt in 0..count {
-            fixture.execute(
-                "INSERT INTO messages(chat_id,direction,sender_kind,sender_id,content_markdown,send_status,occurred_at,created_at,updated_at) VALUES(?1,'outbound','agent',?2,'Reply',?3,3,3,3)",
-                rusqlite::params![contaminated.chat_id, agent.as_str(), state],
-            ).unwrap();
-            fixture.execute(
-                "INSERT INTO message_send_attempts(message_id,request_key,state,started_at,finished_at) VALUES(?1,?2,?3,3,3)",
-                rusqlite::params![fixture.last_insert_rowid(), format!("legacy-{}-{attempt}", agent.as_str()), state],
-            ).unwrap();
-        }
-    }
-    drop(fixture);
-    verify_migration_sample(database.as_os_str());
-    let storage = Storage::open(DatabaseConfig::new(&database)).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 20);
-    assert!(storage.sqlite_settings().unwrap().foreign_keys);
-    for agent in [&clark, &diana] {
-        assert!(
-            storage
-                .create_execution(&workspace, agent, "queued DM", 4)
-                .unwrap()
-                .is_none()
-        );
-    }
-
-    let mut incoming = event(
-        &workspace,
-        &provider,
-        &channel,
-        "alice",
-        "2",
-        "Bruce followup",
-        4,
-        vec![dispatch(&bruce)],
-    );
-    incoming.receiving_agent_id = Some(bruce.clone());
-    assert_eq!(
-        storage.ingest_event(incoming.clone()).unwrap().chat_id,
-        legacy.chat_id
-    );
-    incoming.receiving_agent_id = Some(clark.clone());
-    incoming.message.content = "Clark conversation".into();
-    incoming.dispatch = vec![dispatch(&clark)];
-    let separate = storage.ingest_event(incoming).unwrap();
-    assert_ne!(separate.chat_id, legacy.chat_id);
-    assert_eq!(
-        storage
-            .find_message_for_receiver(&workspace, &channel, "alice", "2", Some(&clark))
-            .unwrap(),
-        Some(separate.message_id)
-    );
-    assert_ne!(
-        storage
-            .find_message_for_receiver(&workspace, &channel, "alice", "2", Some(&bruce))
-            .unwrap(),
-        Some(separate.message_id)
-    );
-    assert!(
-        storage
-            .inbox_items(&workspace, &bruce)
-            .unwrap()
-            .iter()
-            .filter(|item| item.chat_id == ambiguous.chat_id)
-            .all(|item| item.state == InboxState::Consumed)
-    );
-    let mut new_bob = event(
-        &workspace,
-        &provider,
-        &channel,
-        "bob",
-        "2",
-        "Only Bruce",
-        4,
-        vec![dispatch(&bruce)],
-    );
-    new_bob.receiving_agent_id = Some(bruce.clone());
-    assert_ne!(
-        storage.ingest_event(new_bob).unwrap().chat_id,
-        ambiguous.chat_id
-    );
-    let mut followup = event(
-        &workspace,
-        &provider,
-        &channel,
-        "feishu-p2p",
-        "2",
-        "Bruce followup",
-        4,
-        vec![dispatch(&bruce)],
-    );
-    followup.receiving_agent_id = Some(bruce.clone());
-    assert_eq!(
-        storage.ingest_event(followup.clone()).unwrap().chat_id,
-        contaminated.chat_id
-    );
-    for agent in [&clark, &diana] {
-        let items = storage.inbox_items(&workspace, agent).unwrap();
-        let wrong_items: Vec<_> = items
-            .iter()
-            .filter(|item| item.chat_id == contaminated.chat_id)
-            .collect();
-        assert_eq!(wrong_items.len(), 1);
-        assert!(
-            wrong_items
-                .iter()
-                .all(|item| item.state == InboxState::Consumed)
-        );
-        followup.receiving_agent_id = Some(agent.clone());
-        followup.dispatch = vec![dispatch(agent)];
-        assert_ne!(
-            storage.ingest_event(followup.clone()).unwrap().chat_id,
-            contaminated.chat_id
-        );
-    }
-    assert!(
-        storage
-            .inbox_items(&workspace, &bruce)
-            .unwrap()
-            .iter()
-            .filter(|item| item.chat_id == contaminated.chat_id)
-            .all(|item| item.state == InboxState::Pending)
-    );
-    let resumed = storage
-        .create_execution(&workspace, &bruce, "queued DM", 4)
-        .unwrap()
-        .unwrap();
-    assert!(resumed.snapshot.chats.iter().any(|chat| {
-        chat.chat.chat_id == contaminated.chat_id
-            && chat
-                .trigger_messages
-                .iter()
-                .any(|message| message.message_id == contaminated.message_id)
-    }));
-    storage.cancel_execution(resumed.execution_id, 4).unwrap();
-    assert_eq!(storage.message_count(&workspace).unwrap(), 35);
-    storage.close().unwrap();
-    let verified = rusqlite::Connection::open(database).unwrap();
-    assert_eq!(
-        verified
-            .query_row(
-                "SELECT content_markdown FROM messages WHERE message_id=?1",
-                [contaminated.message_id],
-                |row| row.get::<_, String>(0)
-            )
-            .unwrap(),
-        "Shared DM history"
-    );
-    assert_eq!(
-        verified
-            .query_row(
-                "SELECT content_markdown FROM messages WHERE message_id=?1",
-                [legacy.message_id],
-                |row| row.get::<_, String>(0)
-            )
-            .unwrap(),
-        "Bruce history"
-    );
-    assert_eq!(
-        verified
-            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
-                row.get::<_, i64>(0)
-            })
-            .unwrap(),
-        0
-    );
-    verify_optional_migration_sample();
-}
-
-// Exercise Storage::open against a consistent copy, never the supplied database.
-fn verify_optional_migration_sample() {
-    let Some(sample) = std::env::var_os("LANKIDE_MIGRATION_SAMPLE") else {
-        return;
-    };
-    verify_migration_sample(&sample);
-}
-
-fn verify_migration_sample(sample: &std::ffi::OsStr) {
-    let home = tempfile::tempdir().unwrap();
-    let database = home.path().join("sample.sqlite3");
-    let source =
-        rusqlite::Connection::open_with_flags(sample, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .unwrap();
-    source
-        .execute("VACUUM INTO ?1", [database.to_str().unwrap()])
-        .unwrap();
-    drop(source);
-    let before = rusqlite::Connection::open(&database).unwrap();
-    assert_eq!(
-        before
-            .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
-            .unwrap(),
-        15,
-        "migration sample must use the legacy v15 schema"
-    );
-    let messages = |connection: &rusqlite::Connection| {
-        let mut query = connection
-            .prepare("SELECT * FROM messages ORDER BY message_id")
-            .unwrap();
-        let columns = query.column_count();
-        query
-            .query_map([], |row| {
-                (0..columns)
-                    .map(|column| row.get::<_, rusqlite::types::Value>(column))
-                    .collect::<rusqlite::Result<Vec<_>>>()
-            })
-            .unwrap()
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .unwrap()
-    };
-    let history = messages(&before);
-    let chats = before
-        .prepare("SELECT chat_id,channel_id FROM chats ORDER BY chat_id")
-        .unwrap()
-        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
-        .unwrap()
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .unwrap();
-    let mut expected = Vec::new();
-    for (chat_id, channel) in &chats {
-        let mut owner = String::new();
-        if channel == "private_chat" {
-            let senders = before.prepare("SELECT DISTINCT m.sender_id FROM message_send_attempts a JOIN messages m USING(message_id) WHERE m.chat_id=?1 AND m.sender_kind='agent' AND m.direction='outbound' AND a.state='sent' AND m.sender_id IS NOT NULL").unwrap()
-                .query_map([chat_id], |r| r.get::<_, String>(0)).unwrap().collect::<rusqlite::Result<Vec<_>>>().unwrap();
-            if senders.len() == 1 {
-                owner = senders[0].clone();
-            } else if senders.is_empty() {
-                let inbox_agents = before
-                    .prepare("SELECT DISTINCT agent_id FROM agent_inbox_items WHERE chat_id=?1")
-                    .unwrap()
-                    .query_map([chat_id], |r| r.get::<_, String>(0))
-                    .unwrap()
-                    .collect::<rusqlite::Result<Vec<_>>>()
-                    .unwrap();
-                if inbox_agents.len() == 1 {
-                    owner = inbox_agents[0].clone();
-                }
-            }
-        }
-        expected.push((*chat_id, owner));
-    }
-    let inbox = before.prepare("SELECT inbox_item_id,chat_id,agent_id,state FROM agent_inbox_items ORDER BY inbox_item_id").unwrap()
-        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?))).unwrap()
-        .collect::<rusqlite::Result<Vec<_>>>().unwrap();
-    drop(before);
-    let storage = Storage::open(DatabaseConfig::new(&database)).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 20);
-    storage.close().unwrap();
-    let after = rusqlite::Connection::open(database).unwrap();
-    assert_eq!(
-        history,
-        messages(&after),
-        "migration must preserve every history row"
-    );
-    assert_eq!(
-        after
-            .query_row("SELECT count(*) FROM chats", [], |r| r.get::<_, i64>(0))
-            .unwrap(),
-        chats.len() as i64
-    );
-    for (chat_id, owner) in &expected {
-        assert_eq!(
-            &after
-                .query_row(
-                    "SELECT receiving_agent_id FROM chats WHERE chat_id=?1",
-                    [chat_id],
-                    |r| r.get::<_, String>(0)
-                )
-                .unwrap(),
-            owner
-        );
-    }
-    for (id, chat_id, agent, state) in inbox {
-        let direct = chats
-            .iter()
-            .any(|(id, channel)| *id == chat_id && channel == "private_chat");
-        let owner = &expected.iter().find(|(id, _)| *id == chat_id).unwrap().1;
-        let expected_state = if direct && state == "pending" && agent != *owner {
-            "consumed"
-        } else {
-            &state
-        };
-        assert_eq!(
-            after
-                .query_row(
-                    "SELECT state FROM agent_inbox_items WHERE inbox_item_id=?1",
-                    [id],
-                    |r| r.get::<_, String>(0)
-                )
-                .unwrap(),
-            expected_state
-        );
-    }
-    assert_eq!(
-        after
-            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| r
-                .get::<_, i64>(
-                0
-            ))
-            .unwrap(),
-        0
-    );
-}
-
-#[test]
-fn v17_database_migrates_and_preserves_queued_work() {
-    let home = tempfile::tempdir().unwrap();
-    let config = DatabaseConfig::new(home.path().join("runtime.db"));
-    let storage = Storage::open(config.clone()).unwrap();
-    let w = WorkspaceId::new("migration").unwrap();
-    let a = AgentId::new("bruce").unwrap();
-    let provider = ProviderId::new("im").unwrap();
-    let channel = ChannelId::new("chat").unwrap();
-    storage
-        .create_workspace(WorkspaceSpec {
-            id: w.clone(),
-            name: "Migration".into(),
-            provider_id: provider.clone(),
-            provider_config: json!({}),
-            provider_secret: json!({}),
-            active: true,
-            now: 1,
-        })
-        .unwrap();
-    storage
-        .create_agent(AgentSpec {
-            workspace_id: w.clone(),
-            id: a.clone(),
-            name: "Bruce".into(),
-            now: 1,
-        })
-        .unwrap();
-    storage
-        .ingest_event(IngestEvent {
-            receiving_agent_id: None,
-            workspace_id: w.clone(),
-            provider_id: provider,
-            channel_id: channel,
-            channel_name: "Chat".into(),
-            provider_chat_id: "alice".into(),
-            chat_name: "Alice".into(),
-            provider_event_id: Some("event".into()),
-            provider_message_id: "m1".into(),
-            message: MessageInput {
-                sender_kind: MessageAuthorType::Human,
-                sender_id: "alice".into(),
-                sender_name: "Alice".into(),
-                content: "hello".into(),
-                mentions: vec![],
-                reply_to_provider_message_id: None,
-                resources: vec![],
-                occurred_at: 2,
-            },
-            dispatch: vec![InboxDispatch {
-                agent_id: a.clone(),
-                trigger_reason: DispatchReason::DirectMessage,
-                available_at: 2,
-            }],
-            now: 2,
-        })
-        .unwrap();
-    storage.close().unwrap();
-    let fixture = rusqlite::Connection::open(&config.path).unwrap();
-    fixture
-        .execute_batch(
-            "ALTER TABLE agents DROP COLUMN pause_reason;
-        ALTER TABLE agents DROP COLUMN failure_fingerprint;
-        ALTER TABLE agents DROP COLUMN failure_streak;
-        ALTER TABLE agent_inbox_items DROP COLUMN retry_batch_id;
-        ALTER TABLE agent_inbox_items DROP COLUMN failure_count;
-        ALTER TABLE executions DROP COLUMN retry_policy_applied;
-        DROP TABLE failure_notices;
-             DROP TRIGGER agent_placement_changed; ALTER TABLE agents DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_computer_id; DROP TABLE computers;
-             DROP TABLE pairing_codes;
-        PRAGMA user_version=17;",
-        )
-        .unwrap();
-    drop(fixture);
-    let storage = Storage::open(config).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 20);
-    assert!(storage.agent_pause_reason(&w, &a).unwrap().is_none());
-    let execution = storage
-        .create_execution(&w, &a, "queued message", 3)
-        .unwrap()
-        .unwrap();
-    assert_eq!(execution.inbox_item_ids.len(), 1);
-    assert!(storage.pending_failure_notices(&w, &a).unwrap().is_empty());
-    storage.close().unwrap();
-}
-
-#[test]
-fn v18_to_v19_registers_computers_without_losing_legacy_agents() {
-    let home = tempfile::tempdir().unwrap();
-    let config = DatabaseConfig::new(home.path().join("runtime.db"));
-    let storage = Storage::open(config.clone()).unwrap();
-    let workspace = WorkspaceId::new("team").unwrap();
-    let agent = AgentId::new("bruce").unwrap();
-    storage
-        .create_workspace(WorkspaceSpec {
-            id: workspace.clone(),
-            name: "Team".into(),
-            provider_id: ProviderId::new("fixture").unwrap(),
-            provider_config: json!({}),
-            provider_secret: json!({}),
-            active: true,
-            now: 1,
-        })
-        .unwrap();
-    storage
-        .create_agent(AgentSpec {
-            workspace_id: workspace.clone(),
-            id: agent.clone(),
-            name: "Bruce".into(),
-            now: 2,
-        })
-        .unwrap();
-    storage.close().unwrap();
-    // Downgrade only the new empty registration tables to the v18 layout.
-    let connection = rusqlite::Connection::open(&config.path).unwrap();
-    connection.execute_batch("DROP TRIGGER agent_placement_changed; ALTER TABLE agents DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_computer_id; DROP TABLE computers; DROP TABLE pairing_codes; UPDATE agents SET computer_id='local'; PRAGMA user_version=18;").unwrap();
-    drop(connection);
-    let storage = Storage::open(config.clone()).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 20);
-    assert_eq!(
-        storage.list_agent_records(&workspace).unwrap()[0].computer_id,
-        "local"
-    );
-    assert!(storage.registered_computers().unwrap().is_empty());
-    let device = lankide_storage::ComputerRecord {
-        computer_id: "paired-device".into(),
-        display_name: "Desk".into(),
-        credential_hash: "credential-hash".into(),
-        paired_at: 100,
-        revoked_at: None,
-        last_seen_at: None,
-        os: "macos".into(),
-        version: "1".into(),
-        inventory_json: "[]".into(),
-    };
-    storage.issue_pairing_code("code-hash", 90).unwrap();
-    let remote = lankide_storage::ComputerRecord {
-        computer_id: "remote".into(),
-        credential_hash: "remote-hash".into(),
-        ..device.clone()
-    };
-    storage
-        .pair_computer(&remote, Some("code-hash"), 600_000)
-        .unwrap();
-    assert!(
-        storage
-            .pair_computer(&remote, Some("code-hash"), 600_000)
-            .is_err()
-    );
-    assert_eq!(
-        storage.list_agent_records(&workspace).unwrap()[0].computer_id,
-        "local"
-    );
-    storage.pair_computer(&device, None, 600_000).unwrap();
-    assert_eq!(
-        storage.list_agent_records(&workspace).unwrap()[0].computer_id,
-        device.computer_id
-    );
-    storage
-        .observe_computer(
-            &device.computer_id,
-            101,
-            Some("[]"),
-            Some("macos"),
-            Some("2"),
-        )
-        .unwrap();
-    storage.revoke_computer(&device.computer_id, 102).unwrap();
-    storage.close().unwrap();
-    let reopened = Storage::open(config).unwrap();
-    let devices = reopened.registered_computers().unwrap();
-    let persisted = devices
-        .iter()
-        .find(|c| c.computer_id == device.computer_id)
-        .unwrap();
-    assert_eq!(persisted.last_seen_at, Some(101));
-    assert_eq!(persisted.revoked_at, Some(102));
-    assert_eq!(persisted.version, "2");
-    assert_eq!(reopened.list_agents(&workspace).unwrap()[0].name, "Bruce");
-    reopened.close().unwrap();
-}
-
-#[test]
-fn placement_migration_preserves_queued_work_and_invalidates_old_authorizations() {
+fn placement_changes_preserve_queued_work_and_invalidates_old_authorizations() {
     let home = tempfile::tempdir().unwrap();
     let config = DatabaseConfig::new(home.path().join("runtime.db"));
     let workspace = WorkspaceId::new("placement").unwrap();
@@ -2528,6 +1891,7 @@ fn placement_migration_preserves_queued_work_and_invalidates_old_authorizations(
             now: 1,
         })
         .unwrap();
+    registered_computer::register(&storage, &["computer-a"]).unwrap();
     let mut record = agent_record(&workspace, &agent, "bot-bruce", 2);
     record.computer_id = "computer-a".into();
     storage.upsert_agent_record(record).unwrap();
@@ -2544,12 +1908,10 @@ fn placement_migration_preserves_queued_work_and_invalidates_old_authorizations(
         ))
         .unwrap();
     storage.close().unwrap();
-    // Reconstruct the immediately preceding schema with its queued inbox intact.
-    let database = rusqlite::Connection::open(&config.path).unwrap();
-    database.execute_batch("DROP TRIGGER agent_placement_changed; ALTER TABLE agents DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_generation; ALTER TABLE executions DROP COLUMN placement_computer_id; PRAGMA user_version=19;").unwrap();
-    drop(database);
     let storage = Storage::open(config.clone()).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 20);
+    registered_computer::register(&storage, &["fixture-computer", "computer-a", "computer-b"])
+        .unwrap();
+    assert_eq!(storage.schema_version().unwrap(), 1);
     assert_eq!(storage.inbox_items(&workspace, &agent).unwrap().len(), 1);
     let run = storage
         .create_execution_with_auth(
@@ -2632,5 +1994,98 @@ fn placement_migration_preserves_queued_work_and_invalidates_old_authorizations(
             .is_none()
     );
     assert_eq!(storage.inbox_items(&workspace, &agent).unwrap().len(), 1);
+    storage.close().unwrap();
+}
+
+#[test]
+fn baseline_reopens_and_unsupported_versions_are_refused() {
+    let home = tempfile::tempdir().unwrap();
+    let config = DatabaseConfig::new(home.path().join("runtime.db"));
+    let storage = Storage::open(config.clone()).unwrap();
+    registered_computer::register(&storage, &["fixture-computer", "computer-a", "computer-b"])
+        .unwrap();
+    assert_eq!(storage.schema_version().unwrap(), 1);
+    storage.close().unwrap();
+    Storage::open(config.clone()).unwrap().close().unwrap();
+    for version in [-1, 2, 15, 20, 21] {
+        let connection = rusqlite::Connection::open(&config.path).unwrap();
+        connection
+            .pragma_update(None, "user_version", version)
+            .unwrap();
+        drop(connection);
+        assert!(matches!(Storage::open(config.clone()),
+            Err(lankide_storage::StorageError::UnsupportedSchemaVersion(found)) if found == version));
+        let connection = rusqlite::Connection::open(&config.path).unwrap();
+        assert_eq!(
+            connection
+                .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            version
+        );
+    }
+}
+
+#[test]
+fn direct_conversations_stay_separate_after_reopening() {
+    let home = tempfile::tempdir().unwrap();
+    let config = DatabaseConfig::new(home.path().join("runtime.db"));
+    let storage = Storage::open(config.clone()).unwrap();
+    registered_computer::register(&storage, &["fixture-computer"]).unwrap();
+    let workspace = WorkspaceId::new("team").unwrap();
+    let provider = ProviderId::new("fixture").unwrap();
+    let channel = ChannelId::new("private_chat").unwrap();
+    storage
+        .create_workspace(WorkspaceSpec {
+            id: workspace.clone(),
+            name: "Team".into(),
+            provider_id: provider.clone(),
+            provider_config: json!({}),
+            provider_secret: json!({}),
+            active: true,
+            now: 1,
+        })
+        .unwrap();
+    let agents = [
+        AgentId::new("bruce").unwrap(),
+        AgentId::new("clark").unwrap(),
+    ];
+    let mut incoming = Vec::new();
+    let mut messages = Vec::new();
+    for agent in &agents {
+        storage
+            .insert_new_agent_record(
+                agent_record(&workspace, agent, agent.as_str(), 2),
+                &json!({}),
+            )
+            .unwrap();
+        let mut message = event(
+            &workspace,
+            &provider,
+            &channel,
+            "alice",
+            "one",
+            agent.as_str(),
+            3,
+            vec![dispatch(agent, DispatchReason::DirectMessage, 3)],
+        );
+        message.receiving_agent_id = Some(agent.clone());
+        messages.push(storage.ingest_event(message.clone()).unwrap());
+        incoming.push(message);
+    }
+    assert_ne!(messages[0].chat_id, messages[1].chat_id);
+    assert_ne!(messages[0].message_id, messages[1].message_id);
+    storage.close().unwrap();
+    let storage = Storage::open(config).unwrap();
+    for (index, message) in incoming.into_iter().enumerate() {
+        let replay = storage.ingest_event(message).unwrap();
+        assert!(replay.duplicate);
+        assert_eq!(replay.chat_id, messages[index].chat_id);
+        let run = storage
+            .create_execution(&workspace, &agents[index], "direct message", 4)
+            .unwrap()
+            .unwrap();
+        assert_eq!(run.snapshot.chats.len(), 1);
+        assert_eq!(run.snapshot.chats[0].chat.chat_id, messages[index].chat_id);
+    }
     storage.close().unwrap();
 }

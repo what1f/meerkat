@@ -14,7 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Clone)]
+#[derive(Clone, serde::Deserialize)]
 struct FeishuAgentFixture {
     app_id: String,
     app_secret: String,
@@ -63,8 +63,8 @@ async fn real_feishu_team_lifecycle_queue_steer_and_reply() {
     let result = live::scenario(async move {
     live::preflight(GateSelection::FeishuLive);
     let fixture_db = PathBuf::from(
-        env::var("LANKIDE_FEISHU_E2E_DATABASE")
-            .expect("LANKIDE_FEISHU_E2E_DATABASE is required"),
+        env::var("LANKIDE_FEISHU_E2E_APPS")
+            .expect("LANKIDE_FEISHU_E2E_APPS is required"),
     );
     require_owner_only(&fixture_db).expect("Feishu fixture must be owner-only");
     let mut apps = load_feishu_apps(&fixture_db).expect("load two Feishu Agent applications");
@@ -77,7 +77,7 @@ async fn real_feishu_team_lifecycle_queue_steer_and_reply() {
     hydrate_group_bots(&lark_cli, &oauth_dir, &chat_id, &mut apps)
         .expect("both Feishu Apps must already be members of the E2E group");
 
-    let socket = home.join("run/runtime.sock");
+    let socket = home.join("run");
     let runtime_log = private_log(&artifact_dir.join("runtime.log"));
     let runtime = live::Daemon::spawn(Command::new(live::runtime_binary())
         .args(["--home", home.to_str().expect("utf-8 home")])
@@ -104,7 +104,7 @@ async fn real_feishu_team_lifecycle_queue_steer_and_reply() {
         .stderr(Stdio::from(computer_log)));
     owned.lock().unwrap().daemons.push(computer);
 
-    let client = RuntimeManagementClient::connect(&socket)
+    let client = RuntimeManagementClient::connect_local(&socket)
         .await
         .expect("connect real Runtime UDS");
     client
@@ -295,7 +295,7 @@ fn agent_draft(id: &str, name: &str, fixture: &FeishuAgentFixture) -> AgentDraft
         bio: String::new(),
         avatar: Avatar::Custom(name.into()),
         soul: "完成群聊中的协作请求，简洁回复。".into(),
-        computer_id: "local".into(),
+        computer_id: "fixture-computer".into(),
         harness_id: "pi".into(),
         model: "deepseek-v4-flash".into(),
         thinking_level: ThinkingLevel::Low,
@@ -649,53 +649,26 @@ async fn wait_for_path(path: &Path, timeout: Duration) -> Result<(), String> {
 }
 
 fn load_feishu_apps(path: &Path) -> Result<BTreeMap<String, FeishuAgentFixture>, String> {
-    let db = Connection::open_with_flags(
-        path,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .map_err(|error| format!("open legacy DB: {error}"))?;
-    let mut statement = db
-        .prepare(
-            "SELECT p.app_id,p.credential_secret,p.provider_domain,i.external_bot_id,i.agent_id \
-             FROM provider_namespaces p JOIN agent_provider_identities i ON i.provider_id=p.provider_id \
-             WHERE p.provider_type='feishu' AND p.enabled=1 AND i.enabled=1 \
-             AND p.app_id IN ('cli_aae5c090ee389d2e','cli_aafa1b0f80b8dd24')",
-        )
-        .map_err(|error| format!("prepare legacy query: {error}"))?;
-    let rows = statement
-        .query_map([], |row| {
-            let app_id: String = row.get(0)?;
-            let secret: Vec<u8> = row.get(1)?;
-            let domain: String = row.get(2)?;
-            let bot_open_id: String = row.get(3)?;
-            let name: String = row.get(4)?;
-            Ok((app_id, secret, domain, bot_open_id, name))
-        })
-        .map_err(|error| format!("query legacy apps: {error}"))?;
-    let mut apps = BTreeMap::new();
-    for row in rows {
-        let (app_id, secret, domain, bot_open_id, name) =
-            row.map_err(|error| format!("read legacy app: {error}"))?;
-        apps.insert(
-            app_id.clone(),
-            FeishuAgentFixture {
-                app_id,
-                app_secret: String::from_utf8(secret)
-                    .map_err(|_| "legacy Feishu secret is not UTF-8".to_owned())?,
-                domain: if domain.trim().eq_ignore_ascii_case("lark") {
-                    "lark".into()
-                } else {
-                    "feishu".into()
-                },
-                bot_open_id,
-                bot_name: name,
-            },
-        );
+    use std::os::unix::fs::PermissionsExt;
+    if fs::metadata(path)
+        .map_err(|e| e.to_string())?
+        .permissions()
+        .mode()
+        & 0o077
+        != 0
+    {
+        return Err("Feishu fixture permissions are too broad".into());
     }
+    let apps: Vec<FeishuAgentFixture> =
+        serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?)
+            .map_err(|_| "invalid Feishu applications fixture".to_owned())?;
     if apps.len() != 2 {
-        return Err("two enabled Feishu Agent Apps are required".into());
+        return Err("two Feishu Agent Apps are required".into());
     }
-    Ok(apps)
+    Ok(apps
+        .into_iter()
+        .map(|app| (app.app_id.clone(), app))
+        .collect())
 }
 
 fn hydrate_group_bots(

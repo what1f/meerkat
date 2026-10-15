@@ -22,9 +22,7 @@ pub(crate) enum SessionRecovery {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct PersistedState {
     pub sessions: BTreeMap<String, PersistedSession>,
-    #[serde(default)]
     pub accepted_assignments: BTreeMap<String, PersistedAssignment>,
-    #[serde(default)]
     pub pending_events: BTreeMap<String, BTreeMap<u64, PersistedEvent>>,
 }
 

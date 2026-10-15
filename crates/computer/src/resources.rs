@@ -50,7 +50,7 @@ pub fn resolve_content_file(agent_home: &Path, value: &str) -> Result<PathBuf, C
 }
 
 pub(crate) async fn download_resource(
-    socket: &Path,
+    runtime_run: &Path,
     endpoint: Option<&str>,
     resource: &ResourceRef,
     context: AgentRunContext,
@@ -74,7 +74,7 @@ pub(crate) async fn download_resource(
     let temporary = path.with_extension("part");
     let runtime_url = match endpoint {
         Some(url) => url.to_owned(),
-        None => lankide_protocol::link::discover(socket)?.0,
+        None => lankide_protocol::link::discover(runtime_run)?.0,
     };
     let mut url = reqwest::Url::parse(&runtime_url)
         .map_err(|_| ComputerError::Resource("invalid_runtime_url".into()))?;

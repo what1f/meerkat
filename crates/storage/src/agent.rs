@@ -31,6 +31,7 @@ type StoredAgentRow = (
 );
 #[derive(Clone, Debug)]
 pub struct AgentSpec {
+    pub computer_id: String,
     pub workspace_id: WorkspaceId,
     pub id: AgentId,
     pub name: String,
@@ -211,8 +212,8 @@ pub(super) fn aid(s: String) -> rusqlite::Result<AgentId> {
 impl Storage {
     pub fn create_agent(&self, s: AgentSpec) -> Result<()> {
         self.conn()?.execute(
-            "INSERT INTO agents(workspace_id,agent_id,name,created_at,updated_at) VALUES(?1,?2,?3,?4,?4)",
-            params![s.workspace_id.as_str(), s.id.as_str(), s.name, s.now],
+            "INSERT INTO agents(workspace_id,agent_id,name,created_at,updated_at,computer_id) VALUES(?1,?2,?3,?4,?4,?5)",
+            params![s.workspace_id.as_str(), s.id.as_str(), s.name, s.now, s.computer_id],
         )?;
         Ok(())
     }

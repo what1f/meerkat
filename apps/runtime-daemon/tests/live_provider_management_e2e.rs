@@ -14,14 +14,7 @@ use std::{
 };
 
 #[derive(Deserialize)]
-struct FeishuBootstrap {
-    providers: Vec<FeishuProvider>,
-}
-
-#[derive(Deserialize)]
 struct FeishuProvider {
-    #[serde(rename = "type")]
-    provider_type: String,
     app_id: String,
     app_secret: String,
     #[serde(default)]
@@ -64,7 +57,7 @@ async fn real_runtime_creates_feishu_and_telegram_agents() {
             live::preflight(GateSelection::FeishuLive);
             live::preflight(GateSelection::TelegramLiveMutating);
             let fixture = load_fixture().expect("load owner-only live fixtures");
-            let socket = home_path.join("run/runtime.sock");
+            let socket = home_path.join("run");
             let child = live::Daemon::spawn(
                 Command::new(live::runtime_binary())
                     .args(["--home", home_path.to_str().expect("utf-8 home")])
@@ -81,7 +74,7 @@ async fn real_runtime_creates_feishu_and_telegram_agents() {
             }
             assert!(socket.exists(), "Runtime UDS did not become ready");
 
-            let client = RuntimeManagementClient::connect(&socket)
+            let client = RuntimeManagementClient::connect_local(&socket)
                 .await
                 .expect("connect real Runtime UDS");
             client
@@ -210,7 +203,7 @@ fn agent(id: &str, config: Value, secrets: Value) -> AgentDraft {
         bio: String::new(),
         avatar: Avatar::Custom("E2E".into()),
         soul: String::new(),
-        computer_id: "local".into(),
+        computer_id: "fixture-computer".into(),
         harness_id: "pi".into(),
         model: "deepseek/deepseek-v4-flash".into(),
         thinking_level: ThinkingLevel::Low,
@@ -227,50 +220,16 @@ fn load_fixture() -> Result<Fixture, String> {
     let feishu_root = std::env::var_os("LANKIDE_E2E_TEAM_ROOT")
         .map(PathBuf::from)
         .ok_or("LANKIDE_E2E_TEAM_ROOT is required")?;
-    let bootstrap_path = feishu_root.join(".lankide/bootstrap/feishu-main.json");
+    let bootstrap_path = feishu_root.join("feishu-app.json");
     require_owner_only(&bootstrap_path)?;
-    let bootstrap: FeishuBootstrap = serde_json::from_slice(
+    let feishu: FeishuProvider = serde_json::from_slice(
         &fs::read(&bootstrap_path).map_err(|_| "Feishu fixture is unavailable")?,
     )
     .map_err(|_| "Feishu fixture is invalid")?;
-    let feishu = bootstrap
-        .providers
-        .into_iter()
-        .find(|provider| provider.provider_type == "feishu")
-        .ok_or("Feishu provider fixture is missing")?;
-
-    let telegram_db = std::env::var_os("LANKIDE_TELEGRAM_E2E_DATABASE")
+    let path = std::env::var_os("LANKIDE_TELEGRAM_E2E_FIXTURE")
         .map(PathBuf::from)
-        .ok_or("LANKIDE_TELEGRAM_E2E_DATABASE is required")?;
-    require_owner_only(&telegram_db)?;
-    let db = Connection::open_with_flags(
-        &telegram_db,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .map_err(|_| "Telegram fixture is unavailable")?;
-    let (account_id, token, options): (String, Vec<u8>, Vec<u8>) = db
-        .query_row(
-            "SELECT p.app_id,p.credential_secret,i.options_json FROM provider_namespaces p JOIN agent_provider_identities i ON i.provider_id=p.provider_id WHERE p.provider_type='telegram' AND p.enabled=1 AND i.enabled=1 ORDER BY p.provider_id LIMIT 1",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .map_err(|_| "Telegram Agent fixture is incomplete")?;
-    let username = serde_json::from_slice::<Value>(&options)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("username")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        })
-        .unwrap_or_default();
-    let manager_token: Vec<u8> = db
-        .query_row(
-            "SELECT credential_secret FROM managed_integrations WHERE kind_id='telegram'",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|_| "Telegram Manager Bot fixture is incomplete")?;
+        .ok_or("LANKIDE_TELEGRAM_E2E_FIXTURE is required")?;
+    let telegram = lankide_testkit::read_telegram_fixture(&path)?;
     Ok(Fixture {
         feishu_app_id: feishu.app_id,
         feishu_app_secret: feishu.app_secret,
@@ -279,11 +238,10 @@ fn load_fixture() -> Result<Fixture, String> {
         } else {
             feishu.domain
         },
-        telegram_account_id: account_id,
-        telegram_username: username,
-        telegram_token: String::from_utf8(token).map_err(|_| "Telegram token is invalid")?,
-        telegram_manager_token: String::from_utf8(manager_token)
-            .map_err(|_| "Telegram Manager Bot token is invalid")?,
+        telegram_account_id: telegram.account_id,
+        telegram_username: telegram.username,
+        telegram_token: telegram.token,
+        telegram_manager_token: telegram.manager_token,
     })
 }
 

@@ -106,7 +106,7 @@ impl MockManagementClient {
             .into(),
             avatar: Avatar::Custom(name.into()),
             soul: String::new(),
-            computer_id: "local".into(),
+            computer_id: "fixture-computer".into(),
             harness_id: "pi".into(),
             model: "deepseek/deepseek-v4-flash".into(),
             thinking_level: ThinkingLevel::High,
@@ -591,7 +591,7 @@ impl ManagementClient for MockManagementClient {
         drop(self.lock().await?);
         Ok(vec![ComputerOption {
             registered: true,
-            id: "local".into(),
+            id: "fixture-computer".into(),
             name: "Local Computer".into(),
             available: true,
             ..ComputerOption::default()

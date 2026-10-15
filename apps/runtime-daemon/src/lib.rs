@@ -13,20 +13,16 @@ use serde::Serialize;
 use std::fs;
 use std::future::Future;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::oneshot;
-
-#[cfg(unix)]
-use std::os::unix::fs::{FileTypeExt, MetadataExt};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimePaths {
     pub home: PathBuf,
     pub workspaces: PathBuf,
     pub run: PathBuf,
-    pub socket: PathBuf,
     pub database: PathBuf,
     pub instance_lock: PathBuf,
 }
@@ -40,7 +36,6 @@ impl RuntimePaths {
         Ok(Self {
             workspaces: home.join("workspaces"),
             run: home.join("run"),
-            socket: home.join("run/runtime.sock"),
             database: home.join("runtime.db"),
             instance_lock: home.join("run/runtime.lock"),
             home,
@@ -70,34 +65,6 @@ impl RuntimePaths {
         }
         Ok(self.workspaces.join(workspace_id))
     }
-}
-
-/// Refuses symlinks and non-socket entries. A stale socket is removed only
-/// when it has the same owner as its private parent directory.
-pub fn prepare_socket_path(path: &Path) -> Result<(), AppError> {
-    let parent = path.parent().ok_or(AppError::InvalidSocketPath)?;
-    create_private_directory(parent)?;
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(error.into()),
-    };
-    #[cfg(unix)]
-    {
-        if !metadata.file_type().is_socket() {
-            return Err(AppError::UnsafeSocketEntry);
-        }
-        if std::os::unix::net::UnixStream::connect(path).is_ok() {
-            return Err(AppError::AlreadyRunning);
-        }
-        if metadata.uid() != fs::metadata(parent)?.uid() {
-            return Err(AppError::UnsafeSocketEntry);
-        }
-    }
-    #[cfg(not(unix))]
-    return Err(AppError::UnsupportedPlatform);
-    fs::remove_file(path)?;
-    Ok(())
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -156,7 +123,8 @@ where
             // before treating this launch as a successful no-op.
             tokio::time::timeout(Duration::from_secs(2), async {
                 use lankide_client::ManagementClient;
-                let client = lankide_client::RuntimeManagementClient::connect_lazy(&paths.socket);
+                let client =
+                    lankide_client::RuntimeManagementClient::connect_local_lazy(&paths.run);
                 client
                     .list_workspaces()
                     .await
@@ -170,7 +138,6 @@ where
         }
         Err(error) => return Err(error.into()),
     };
-    prepare_socket_path(&paths.socket)?;
     let application = RuntimeApplication::open(
         RuntimeConfig {
             database: DatabaseConfig::new(&paths.database),
@@ -427,10 +394,8 @@ pub enum AppError {
     MissingHome,
     InvalidHome(&'static str),
     InvalidWorkspaceId,
-    InvalidSocketPath,
     InvalidInstanceLock,
     UnsafeDirectory,
-    UnsafeSocketEntry,
     UnsafeInstanceLock,
     AlreadyRunning,
     UnsupportedPlatform,
@@ -452,12 +417,10 @@ impl std::fmt::Display for AppError {
                 write!(formatter, "runtime_daemon_invalid_home: {message}")
             }
             Self::InvalidWorkspaceId => formatter.write_str("runtime_daemon_invalid_workspace_id"),
-            Self::InvalidSocketPath => formatter.write_str("runtime_daemon_invalid_socket_path"),
             Self::InvalidInstanceLock => {
                 formatter.write_str("runtime_daemon_invalid_instance_lock")
             }
             Self::UnsafeDirectory => formatter.write_str("runtime_daemon_unsafe_directory"),
-            Self::UnsafeSocketEntry => formatter.write_str("runtime_daemon_unsafe_socket_entry"),
             Self::UnsafeInstanceLock => formatter.write_str("runtime_daemon_unsafe_instance_lock"),
             Self::AlreadyRunning => formatter.write_str("runtime_daemon_already_running"),
             Self::UnsupportedPlatform => formatter.write_str("runtime_daemon_unsupported_platform"),

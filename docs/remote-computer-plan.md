@@ -3,6 +3,9 @@
 Status: Tasks 0–17 implemented; see "Open items" at the end. Design rationale
 lives in `docs/remote-computer.md`.
 
+Historical compatibility code has been removed. Storage uses one version-1
+baseline; Agents use registered Computers, and unequal protocol versions are rejected.
+
 This plan splits the refactor into tasks that one implementer can finish and
 that a reviewer can accept by running business scenarios, without reading the
 code.
@@ -413,7 +416,7 @@ Contract:
   only. The Runtime stores only the credential hash.
 - `hello` authenticates. Unknown or revoked credentials close the link with a
   terminal reason and the Computer stops reconnecting.
-- Remove the hard-coded `computer_id: "local"`.
+- Agent placement uses a registered Computer ID. New Agent forms select the locally paired Computer.
 
 Acceptance scenarios:
 

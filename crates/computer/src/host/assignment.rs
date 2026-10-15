@@ -307,7 +307,7 @@ async fn prepare_assignment(
             continue;
         }
         let path = download_resource(
-            &inner.socket_path,
+            &inner.runtime_run,
             inner.link_endpoint.as_ref().map(|(url, _)| url.as_str()),
             resource,
             context.clone(),

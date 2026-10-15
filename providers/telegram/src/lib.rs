@@ -12,8 +12,6 @@ pub mod normalize;
 mod onboarding;
 mod person_profile;
 pub mod polling;
-pub mod preflight;
-
 pub use adapter::TelegramProvider;
 pub use client::{
     Client as TelegramClient, Credentials, MAX_DOWNLOAD_BYTES, ManagedBotCredential,
@@ -32,6 +30,3 @@ pub use normalize::{
 };
 pub use onboarding::agent_onboarding;
 pub use polling::{PollBatch, PollError, Poller};
-pub use preflight::{
-    GuardError, LegacyConsumerProbe, LegacyConsumerState, MutationPermit, ProbeError, require_clear,
-};

@@ -83,7 +83,6 @@ use tokio::sync::{Mutex, RwLock};
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct RuntimeConfig {
     pub database: DatabaseConfig,
-    #[serde(default)]
     pub retry: RetryConfig,
 }
 

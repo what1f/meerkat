@@ -23,8 +23,7 @@ impl Storage {
         Ok(())
     }
 
-    /// Consumes a code and registers its device atomically. The first local
-    /// pairing also moves legacy Agent placement and deferred file cleanup.
+    /// Consumes a code and registers its device atomically.
     pub fn pair_computer(
         &self,
         computer: &ComputerRecord,
@@ -39,23 +38,7 @@ impl Storage {
                 return Err(StorageError::Invalid("pairing_code_invalid".into()));
             }
         }
-        let first_local = code_hash.is_none()
-            && !transaction.query_row(
-                "SELECT EXISTS(SELECT 1 FROM computers WHERE local_pair=1)",
-                [],
-                |r| r.get::<_, bool>(0),
-            )?;
-        transaction.execute("INSERT INTO computers(computer_id,display_name,credential_hash,paired_at,os,version,inventory_json,local_pair) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", params![computer.computer_id,computer.display_name,computer.credential_hash,computer.paired_at,computer.os,computer.version,computer.inventory_json,code_hash.is_none()])?;
-        if first_local {
-            transaction.execute(
-                "UPDATE agents SET computer_id=?1 WHERE computer_id='local'",
-                [&computer.computer_id],
-            )?;
-            transaction.execute(
-                "UPDATE agent_file_deletions SET computer_id=?1 WHERE computer_id='local'",
-                [&computer.computer_id],
-            )?;
-        }
+        transaction.execute("INSERT INTO computers(computer_id,display_name,credential_hash,paired_at,os,version,inventory_json) VALUES(?1,?2,?3,?4,?5,?6,?7)", params![computer.computer_id,computer.display_name,computer.credential_hash,computer.paired_at,computer.os,computer.version,computer.inventory_json])?;
         transaction.commit()?;
         Ok(())
     }

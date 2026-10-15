@@ -280,7 +280,7 @@ validate_database() {
   if ! schema_version="$(sqlite3 -readonly "$database" "PRAGMA user_version;" 2>/dev/null)"; then
     die "could not read Runtime database: $database"
   fi
-  [ "$schema_version" = "15" ] || die "unsupported Runtime database schema $schema_version; this reset contract requires schema 15"
+  [ "$schema_version" = "1" ] || die "unsupported Runtime database schema $schema_version; this reset contract requires schema 1"
 
   if ! integrity="$(sqlite3 -readonly "$database" "PRAGMA integrity_check;" 2>/dev/null)"; then
     die "could not check Runtime database integrity: $database"
@@ -288,7 +288,7 @@ validate_database() {
   [ "$integrity" = "ok" ] || die "Runtime database failed PRAGMA integrity_check: $integrity"
 
   for table in \
-    workspaces workspace_provider_secrets workspace_named_secrets agent_named_secrets provider_kv \
+    workspaces workspace_named_secrets agent_named_secrets provider_kv \
     resource_metadata workspace_resource_counters agents agent_file_deletions people channels chats messages reactions \
     agent_inbox_items agent_chat_cursors agent_chat_attention unread_snapshots \
     unread_snapshot_chats unread_snapshot_messages unread_snapshot_triggers executions \
@@ -416,7 +416,6 @@ workspace_sql() {
 configuration_hash() {
   sqlite3 -readonly "$database" <<'SQL' | shasum -a 256 | awk '{print $1}'
 .dump workspaces
-.dump workspace_provider_secrets
 .dump workspace_named_secrets
 .dump agent_named_secrets
 .dump provider_kv
@@ -928,7 +927,7 @@ remove_sqlite_sidecars() {
 service_ready() {
   local label="$1" binary="$2" lock="$3"
   launchctl print "$service_domain/$label" >/dev/null 2>&1 || return 1
-  [ -S "$lankide_home/run/runtime.sock" ] || return 1
+  [ -f "$lankide_home/run/management.url" ] || return 1
   if [ -e "$lock" ]; then
     local pid
     pid="$(lock_pid "$lock")"

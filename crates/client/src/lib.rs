@@ -151,7 +151,6 @@ impl ThinkingLevel {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Agent {
-    #[serde(default)]
     pub pause_reason: Option<String>,
     pub workspace_id: String,
     pub id: String,
@@ -533,23 +532,14 @@ pub struct RuntimeManagementClient {
 impl RuntimeManagementClient {
     /// Discover the HTTP listener and owner credential in a shared local run directory.
     pub fn connect_local_lazy(run: impl AsRef<Path>) -> Self {
-        Self::connect_lazy(run.as_ref().join("runtime.sock"))
-    }
-
-    pub async fn connect_local(run: impl AsRef<Path>) -> Result<Self, ClientError> {
-        Self::connect(run.as_ref().join("runtime.sock")).await
-    }
-
-    /// Compatibility locator: only the parent directory is used; no UDS is dialled.
-    pub fn connect_lazy(path: impl AsRef<Path>) -> Self {
         Self {
-            client: http::HttpManagementTransport::local(path, wire::DEFAULT_MAX_MESSAGE_BYTES),
+            client: http::HttpManagementTransport::local(run, wire::DEFAULT_MAX_MESSAGE_BYTES),
             requests: Arc::new(AtomicU64::new(0)),
         }
     }
 
-    pub async fn connect(path: impl AsRef<Path>) -> Result<Self, ClientError> {
-        let client = Self::connect_lazy(path);
+    pub async fn connect_local(run: impl AsRef<Path>) -> Result<Self, ClientError> {
+        let client = Self::connect_local_lazy(run);
         client.list_workspaces().await?;
         Ok(client)
     }

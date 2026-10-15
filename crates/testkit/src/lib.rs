@@ -10,18 +10,12 @@
 mod artifacts;
 pub use artifacts::ScenarioArtifact;
 
-use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::Duration;
-
-const OLD_RUNTIME_PATTERNS: &[&str] = &["[c]om\\.lankide\\.daemon", "[l]ankide-daemon --port"];
-const OLD_DESKTOP_PATTERNS: &[&str] = &["[l]ankide-desktop"];
-const OLD_LAUNCH_LABELS: &[&str] = &["com.lankide.daemon", "com.lankide.desktop"];
 
 pub const CRATE_NAME: &str = "lankide-testkit";
 
@@ -200,7 +194,7 @@ pub struct ProbeConfig {
     pub selected_gate: GateSelection,
     pub run_live_checks: bool,
     pub feishu_fixture_root: PathBuf,
-    pub telegram_database: PathBuf,
+    pub telegram_fixture: PathBuf,
     pub telegram_mutating_chat_id: Option<String>,
     pub authorized_telegram_chat_id: String,
     pub pi_path: Option<PathBuf>,
@@ -219,7 +213,7 @@ impl Default for ProbeConfig {
 impl ProbeConfig {
     pub fn from_environment(selected_gate: GateSelection, run_live_checks: bool) -> Self {
         let fixture_root = env_path("LANKIDE_E2E_TEAM_ROOT");
-        let telegram_database = env::var_os("LANKIDE_TELEGRAM_E2E_DATABASE")
+        let telegram_fixture = env::var_os("LANKIDE_TELEGRAM_E2E_FIXTURE")
             .map(PathBuf::from)
             .unwrap_or_default();
 
@@ -227,7 +221,7 @@ impl ProbeConfig {
             selected_gate,
             run_live_checks,
             feishu_fixture_root: fixture_root,
-            telegram_database,
+            telegram_fixture,
             telegram_mutating_chat_id: env::var("LANKIDE_TELEGRAM_E2E_CHAT_ID")
                 .ok()
                 .filter(|value| !value.trim().is_empty()),
@@ -272,33 +266,6 @@ pub fn run_prerequisite_probe(config: &ProbeConfig) -> ProbeReport {
             .push(feishu.scopes_check(config.run_live_checks));
         report.checks.push(feishu.test_chat_check());
         report.checks.push(feishu.tasklist_check());
-        report.checks.push(if !config.run_live_checks {
-            not_run(
-                "feishu_runtime_exclusive",
-                Gate::FeishuLive,
-                "live mutation exclusivity check was not requested",
-            )
-        } else {
-            match legacy_runtime_blocker(&config.telegram_database) {
-                Ok(None) => pass(
-                    "feishu_runtime_exclusive",
-                    Gate::FeishuLive,
-                    "legacy Lankide consumers are not running",
-                ),
-                Ok(Some(blocker)) => missing(
-                    "feishu_runtime_exclusive",
-                    Gate::FeishuLive,
-                    format!("{blocker} is running; shared Bot mutation is blocked"),
-                    Some("stop the old consumer before an authorized exclusive Feishu E2E"),
-                ),
-                Err(_) => missing(
-                    "feishu_runtime_exclusive",
-                    Gate::FeishuLive,
-                    "could not prove that shared Bot consumers are stopped",
-                    Some("check the local process/service inspection tools before live E2E"),
-                ),
-            }
-        });
     } else {
         report.checks.extend(not_run_checks(
             [
@@ -308,7 +275,6 @@ pub fn run_prerequisite_probe(config: &ProbeConfig) -> ProbeReport {
                 "required_scopes",
                 "test_chat",
                 "tasklist",
-                "feishu_runtime_exclusive",
             ],
             Gate::FeishuLive,
             "Feishu gate was not selected",
@@ -316,12 +282,11 @@ pub fn run_prerequisite_probe(config: &ProbeConfig) -> ProbeReport {
     }
 
     if config.selected_gate.includes(Gate::TelegramLiveReadonly) {
-        let telegram = inspect_telegram_database(&config.telegram_database, config);
+        let telegram = inspect_telegram_fixture(&config.telegram_fixture, config);
         report.checks.push(telegram.workspace_check());
         report.checks.push(telegram.agent_bots_check());
         report.checks.push(telegram.manager_bot_check());
         report.checks.push(telegram.mutating_chat_check(config));
-        report.checks.push(telegram.legacy_runtime_check(config));
     } else {
         report.checks.extend(not_run_checks(
             ["telegram_workspace", "agent_bots", "manager_bot"],
@@ -330,11 +295,6 @@ pub fn run_prerequisite_probe(config: &ProbeConfig) -> ProbeReport {
         ));
         report.checks.push(not_run(
             "telegram_mutating_chat_explicit",
-            Gate::TelegramLiveMutating,
-            "Telegram mutating gate was not selected",
-        ));
-        report.checks.push(not_run(
-            "legacy_runtime_exclusive",
             Gate::TelegramLiveMutating,
             "Telegram mutating gate was not selected",
         ));
@@ -377,7 +337,7 @@ impl FeishuFixture {
                 self.issue
                     .clone()
                     .unwrap_or_else(|| "required fixture files are missing".to_owned()),
-                Some("provide LANKIDE_E2E_TEAM_ROOT with the bootstrap fixture"),
+                Some("provide LANKIDE_E2E_TEAM_ROOT with the application fixture"),
             )
         }
     }
@@ -388,7 +348,7 @@ impl FeishuFixture {
                 "feishu_app_credentials_valid",
                 Gate::FeishuLive,
                 "app credential fields are incomplete",
-                Some("repair the owner-only Feishu bootstrap fixture"),
+                Some("repair the owner-only Feishu application fixture"),
             );
         }
         if !run_live {
@@ -491,8 +451,8 @@ impl FeishuFixture {
 
 #[derive(Clone, Debug, Default)]
 struct TelegramFixture {
-    database_exists: bool,
-    database_readable: bool,
+    fixture_exists: bool,
+    fixture_readable: bool,
     workspace_ready: bool,
     agent_bot_count: usize,
     manager_bot_present: bool,
@@ -507,7 +467,7 @@ impl TelegramFixture {
             pass(
                 "telegram_workspace",
                 Gate::TelegramLiveReadonly,
-                "Telegram workspace database and enabled provider are available",
+                "Telegram workspace fixture and enabled provider are available",
             )
         } else {
             missing(
@@ -516,7 +476,7 @@ impl TelegramFixture {
                 self.issue
                     .clone()
                     .unwrap_or_else(|| "Telegram workspace metadata is incomplete".to_owned()),
-                Some("provide LANKIDE_TELEGRAM_E2E_DATABASE for an isolated test workspace"),
+                Some("provide LANKIDE_TELEGRAM_E2E_FIXTURE for an isolated test workspace"),
             )
         }
     }
@@ -566,12 +526,12 @@ impl TelegramFixture {
                 "Telegram mutating gate was not selected",
             );
         }
-        if !self.database_exists || !self.database_readable {
+        if !self.fixture_exists || !self.fixture_readable {
             return missing(
                 "telegram_mutating_chat_explicit",
                 Gate::TelegramLiveMutating,
                 "Telegram workspace cannot be inspected",
-                Some("repair the Telegram workspace database before any write test"),
+                Some("repair the Telegram workspace fixture before any write test"),
             );
         }
         match self.explicit_chat_present {
@@ -600,48 +560,11 @@ impl TelegramFixture {
             ),
         }
     }
-
-    fn legacy_runtime_check(&self, config: &ProbeConfig) -> CheckResult {
-        if !config.run_live_checks || !config.selected_gate.includes(Gate::TelegramLiveMutating) {
-            return not_run(
-                "legacy_runtime_exclusive",
-                Gate::TelegramLiveMutating,
-                "live mutation exclusivity check was not requested",
-            );
-        }
-        if !self.database_exists {
-            return missing(
-                "legacy_runtime_exclusive",
-                Gate::TelegramLiveMutating,
-                "Telegram workspace is unavailable for the exclusivity gate",
-                Some("stop the old Runtime and provide the isolated Telegram workspace"),
-            );
-        }
-        match legacy_runtime_blocker(&config.telegram_database) {
-            Ok(None) => pass(
-                "legacy_runtime_exclusive",
-                Gate::TelegramLiveMutating,
-                "legacy Lankide daemon and Desktop are not running",
-            ),
-            Ok(Some(blocker)) => missing(
-                "legacy_runtime_exclusive",
-                Gate::TelegramLiveMutating,
-                format!("{blocker} is running; mutation is blocked"),
-                Some("stop the old Lankide daemon and Desktop before a Telegram mutating E2E"),
-            ),
-            Err(_) => missing(
-                "legacy_runtime_exclusive",
-                Gate::TelegramLiveMutating,
-                "could not prove that the legacy Lankide daemon and Desktop are stopped",
-                Some("install pgrep, launchctl, and lsof, then stop the old daemon and Desktop"),
-            ),
-        }
-    }
 }
 
 fn inspect_feishu_fixture(root: &Path) -> FeishuFixture {
-    let main_path = root.join(".lankide/bootstrap/feishu-main.json");
-    let metadata_path = root.join(".lankide/bootstrap/feishu-e2e.json");
+    let main_path = root.join("feishu-app.json");
+    let metadata_path = root.join("feishu-e2e.json");
     let mut fixture = FeishuFixture {
         fixture_root: root.to_path_buf(),
         ..Default::default()
@@ -662,20 +585,12 @@ fn inspect_feishu_fixture(root: &Path) -> FeishuFixture {
     };
     fixture.fixture_exists = true;
 
-    let provider = main
-        .get("providers")
-        .and_then(Value::as_array)
-        .and_then(|providers| {
-            providers
-                .iter()
-                .find(|provider| provider.get("type").and_then(Value::as_str) == Some("feishu"))
-        });
-    let app_id = provider
-        .and_then(|provider| provider.get("app_id"))
+    let app_id = main
+        .get("app_id")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let app_secret = provider
-        .and_then(|provider| provider.get("app_secret"))
+    let app_secret = main
+        .get("app_secret")
         .and_then(Value::as_str)
         .unwrap_or_default();
     fixture.app_id_matches =
@@ -741,65 +656,51 @@ fn inspect_feishu_fixture(root: &Path) -> FeishuFixture {
     fixture
 }
 
-fn inspect_telegram_database(path: &Path, config: &ProbeConfig) -> TelegramFixture {
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct TelegramLiveFixture {
+    pub provider_id: String,
+    pub agent_id: String,
+    pub account_id: String,
+    pub username: String,
+    pub token: String,
+    pub manager_account_id: String,
+    pub manager_token: String,
+    pub chat_ids: Vec<String>,
+}
+
+pub fn read_telegram_fixture(path: &Path) -> Result<TelegramLiveFixture, String> {
+    serde_json::from_value(read_owner_only_json(path)?)
+        .map_err(|_| "Telegram fixture is invalid".into())
+}
+
+fn inspect_telegram_fixture(path: &Path, config: &ProbeConfig) -> TelegramFixture {
     let mut fixture = TelegramFixture {
-        database_exists: path.is_file(),
+        fixture_exists: path.is_file(),
         ..Default::default()
     };
-    if !fixture.database_exists {
-        fixture.issue = Some(format!(
-            "Telegram workspace database not found at {}",
-            path.display()
-        ));
-        return fixture;
-    }
-    let database = match rusqlite::Connection::open_with_flags(
-        path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    ) {
-        Ok(database) => database,
-        Err(_) => {
-            fixture.issue = Some("Telegram fixture database could not be opened read-only".into());
+    let data = match read_telegram_fixture(path) {
+        Ok(data) => data,
+        Err(issue) => {
+            fixture.issue = Some(issue);
             return fixture;
         }
     };
-    let _ = database.busy_timeout(Duration::from_secs(2));
-    fixture.database_readable = true;
-    fixture.workspace_ready = sqlite_bool(
-        &database,
-        "SELECT CASE WHEN EXISTS (SELECT 1 FROM team_metadata WHERE im_adapter_id = 'telegram') AND EXISTS (SELECT 1 FROM provider_namespaces WHERE provider_type = 'telegram' AND enabled = 1) THEN 'yes' ELSE 'no' END;",
-    ) == Some(true);
-    fixture.agent_bot_count = sqlite_count(
-        &database,
-        "SELECT COUNT(*) FROM agent_provider_identities AS api JOIN provider_namespaces AS p ON p.provider_id = api.provider_id WHERE p.provider_type = 'telegram' AND api.enabled = 1;",
-    )
-    .unwrap_or_default();
-    fixture.manager_bot_present = sqlite_bool(
-        &database,
-        "SELECT CASE WHEN EXISTS (SELECT 1 FROM managed_integrations WHERE kind_id = 'telegram' AND account_id <> '' AND username <> '') THEN 'yes' ELSE 'no' END;",
-    ) == Some(true);
-    fixture.authorized_fixture_chat_present = is_telegram_chat_id(
-        &config.authorized_telegram_chat_id,
-    ) && database
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sources WHERE external_id = ?1 AND source_type = 'group')",
-            params![config.authorized_telegram_chat_id],
-            |row| row.get::<_, bool>(0),
-        )
-        .unwrap_or(false);
-    let target_chat_id = config
+    fixture.fixture_readable = true;
+    fixture.workspace_ready = !data.provider_id.is_empty();
+    fixture.agent_bot_count = usize::from(
+        !data.agent_id.is_empty() && !data.account_id.is_empty() && !data.token.is_empty(),
+    );
+    fixture.manager_bot_present =
+        !data.manager_account_id.is_empty() && !data.manager_token.is_empty();
+    fixture.authorized_fixture_chat_present =
+        is_telegram_chat_id(&config.authorized_telegram_chat_id)
+            && data.chat_ids.contains(&config.authorized_telegram_chat_id);
+    let target = config
         .telegram_mutating_chat_id
-        .as_deref()
+        .as_ref()
         .unwrap_or(&config.authorized_telegram_chat_id);
-    if is_telegram_chat_id(target_chat_id) {
-        let query = format!(
-            "SELECT CASE WHEN EXISTS (SELECT 1 FROM sources WHERE external_id = '{}' AND source_type = 'group') THEN 'yes' ELSE 'no' END;",
-            target_chat_id
-        );
-        fixture.explicit_chat_present = sqlite_bool(&database, &query);
-    } else {
-        fixture.explicit_chat_present = Some(false);
-    }
+    fixture.explicit_chat_present =
+        Some(is_telegram_chat_id(target) && data.chat_ids.contains(target));
     fixture
 }
 
@@ -946,108 +847,6 @@ fn claude_code_check(path: Option<&Path>) -> CheckResult {
             Some("use the configured Claude Code CLI Path with a model option"),
         )
     }
-}
-
-fn sqlite_bool(database: &rusqlite::Connection, query: &str) -> Option<bool> {
-    match sqlite_query(database, query)?.as_str() {
-        "yes" => Some(true),
-        "no" => Some(false),
-        _ => None,
-    }
-}
-
-fn sqlite_count(database: &rusqlite::Connection, query: &str) -> Option<usize> {
-    sqlite_query(database, query)?.parse().ok()
-}
-
-fn sqlite_query(database: &rusqlite::Connection, query: &str) -> Option<String> {
-    database
-        .query_row(query, [], |row| match row.get_ref(0)? {
-            rusqlite::types::ValueRef::Integer(value) => Ok(value.to_string()),
-            rusqlite::types::ValueRef::Text(value) => {
-                String::from_utf8(value.to_vec()).map_err(|_| rusqlite::Error::InvalidQuery)
-            }
-            _ => Err(rusqlite::Error::InvalidQuery),
-        })
-        .ok()
-}
-
-fn legacy_runtime_blocker(database: &Path) -> Result<Option<&'static str>, ()> {
-    let pgrep = resolve_executable("pgrep").ok_or(())?;
-    for pattern in OLD_RUNTIME_PATTERNS {
-        let status = Command::new(&pgrep)
-            .args(["-f", pattern])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map_err(|_| ())?;
-        if status.success() {
-            return Ok(Some("legacy Lankide daemon"));
-        }
-    }
-    for pattern in OLD_DESKTOP_PATTERNS {
-        let status = Command::new(&pgrep)
-            .args(["-f", pattern])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map_err(|_| ())?;
-        if status.success() {
-            return Ok(Some("legacy Lankide Desktop"));
-        }
-    }
-    let launchctl = resolve_executable("launchctl").ok_or(())?;
-    let uid = current_uid()?;
-    for label in OLD_LAUNCH_LABELS {
-        let target = format!("gui/{uid}/{label}");
-        let status = Command::new(&launchctl)
-            .args(["print", &target])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map_err(|_| ())?;
-        if status.success() {
-            return Ok(Some(if *label == "com.lankide.desktop" {
-                "legacy Lankide Desktop service"
-            } else {
-                "legacy Lankide daemon service"
-            }));
-        }
-    }
-    let lsof = resolve_executable("lsof").ok_or(())?;
-    let output = Command::new(lsof)
-        .args(["-t", "--"])
-        .arg(database)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .map_err(|_| ())?;
-    if output.status.success() && !output.stdout.is_empty() {
-        return Ok(Some("Telegram workspace database handle"));
-    }
-    if output.status.code() != Some(1) {
-        return Err(());
-    }
-    Ok(None)
-}
-
-fn current_uid() -> Result<String, ()> {
-    let id = resolve_executable("id").ok_or(())?;
-    let output = Command::new(id)
-        .arg("-u")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .map_err(|_| ())?;
-    if !output.status.success() {
-        return Err(());
-    }
-    let uid = String::from_utf8(output.stdout).map_err(|_| ())?;
-    let uid = uid.trim();
-    if uid.is_empty() || !uid.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err(());
-    }
-    Ok(uid.to_owned())
 }
 
 fn read_owner_only_json(path: &Path) -> Result<Value, String> {

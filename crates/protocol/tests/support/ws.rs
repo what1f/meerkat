@@ -25,16 +25,11 @@ where
     let socket = socket.as_ref().to_owned();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let url = format!("ws://{}", listener.local_addr()?);
-    let secret = link::publish(socket.parent().expect("run directory"), &url)?;
+    let secret = link::publish(&socket, &url)?;
     let (stop, stopped) = tokio::sync::oneshot::channel();
-    let owner = lankide_protocol::management::OwnerCredential::load_or_create(
-        socket.parent().expect("run directory"),
-    )?;
+    let owner = lankide_protocol::management::OwnerCredential::load_or_create(&socket)?;
     std::fs::write(
-        socket
-            .parent()
-            .unwrap()
-            .join(lankide_protocol::management::URL_FILE),
+        socket.join(lankide_protocol::management::URL_FILE),
         url.replacen("ws://", "http://", 1),
     )?;
     let ws = tokio::spawn(lankide_protocol::resources::serve_with_management(
@@ -48,7 +43,8 @@ where
             let _ = stopped.await;
         },
     ));
-    let result = lankide_protocol::serve_uds(socket, peer, config, shutdown).await;
+    let result =
+        lankide_protocol::serve_uds(socket.join("agent.sock"), peer, config, shutdown).await;
     let _ = stop.send(());
     let _ = ws.await;
     result

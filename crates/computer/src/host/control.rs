@@ -177,7 +177,7 @@ pub(super) async fn route_tool_result(inner: &Inner, result: lankide_protocol::T
     let mut local_resources = Vec::new();
     for resource in &result.resources {
         match download_resource(
-            &inner.socket_path,
+            &inner.runtime_run,
             inner.link_endpoint.as_ref().map(|(url, _)| url.as_str()),
             resource,
             context.clone(),

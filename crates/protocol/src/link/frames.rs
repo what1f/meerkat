@@ -80,7 +80,6 @@ pub struct ComputerHeartbeat {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct ComputerHello {
-    #[serde(default)]
     pub device_credential: String,
     pub protocol_version: u32,
     pub computer_id: String,
@@ -243,15 +242,6 @@ pub struct Shutdown {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
-pub struct ToolCall {
-    pub execution: Option<ExecutionRef>,
-    pub tool_call_id: String,
-    pub tool_name: String,
-    pub arguments_json: String,
-    pub execution_token: String,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct ToolDefinition {
     pub name: String,
     pub description: String,
@@ -291,7 +281,6 @@ pub enum ComputerPayload {
     AssignmentResult(AssignmentResult),
     ExecutionEvent(ExecutionEvent),
     DeliveryResult(DeliveryResult),
-    ToolCall(ToolCall),
     ResourceTransferResult(ResourceTransferResult),
     InventoryChanged(InventoryChanged),
     DeleteAgentFilesResult(DeleteAgentFilesResult),
@@ -306,7 +295,6 @@ pub enum RuntimePayload {
     AssignExecution(AssignExecution),
     DeliverSteer(DeliverSteer),
     CancelExecution(CancelExecution),
-    ToolResult(ToolResult),
     ExecutionEventAck(ExecutionEventAck),
     ExecutionCommitted(ExecutionCommitted),
     Shutdown(Shutdown),

@@ -525,7 +525,7 @@ async fn complete_protocol_scenario() {
     assert_eq!(status.message(), "invalid_tool_name");
 
     let temp = TempDir::new().expect("temporary protocol home");
-    let path = socket_path(temp.path());
+    let path = temp.path().join("run");
     let peer = TestPeer::default();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let server_peer = peer.clone();
@@ -562,7 +562,7 @@ async fn complete_protocol_scenario() {
     shutdown_tx.send(()).expect("shutdown server");
     server.await.expect("join protocol server");
     assert!(
-        !path.exists(),
+        !path.join("agent.sock").exists(),
         "server removes its owned socket on shutdown"
     );
 }
@@ -747,7 +747,7 @@ async fn exchange_resource_chunks(path: &std::path::Path) -> ResourceRef {
             descriptor: None,
         },
     ];
-    let mut client = connect_uds(path, CLIENT_LIMIT)
+    let mut client = connect_uds(path.join("agent.sock"), CLIENT_LIMIT)
         .await
         .expect("resource client");
     let uploaded = client
@@ -788,7 +788,7 @@ async fn exchange_attachment_only_message(
     peer: &TestPeer,
     attachment: ResourceRef,
 ) {
-    let mut client = connect_uds(path, CLIENT_LIMIT)
+    let mut client = connect_uds(path.join("agent.sock"), CLIENT_LIMIT)
         .await
         .expect("attachment-only message client");
     let sent = client
@@ -820,7 +820,7 @@ async fn exchange_attachment_only_message(
 }
 
 async fn reject_empty_message(path: &std::path::Path) {
-    let mut client = connect_uds(path, CLIENT_LIMIT)
+    let mut client = connect_uds(path.join("agent.sock"), CLIENT_LIMIT)
         .await
         .expect("empty message client");
     let error = client
@@ -992,7 +992,9 @@ async fn exchange_management_and_cli(path: &std::path::Path) {
     assert_eq!(listed.request_id, "list_1");
     assert_eq!(listed.workspaces, vec![resumed]);
 
-    let mut cli = connect_uds(path, CLIENT_LIMIT).await.expect("Agent client");
+    let mut cli = connect_uds(path.join("agent.sock"), CLIENT_LIMIT)
+        .await
+        .expect("Agent client");
     let allowed = cli
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(run_context("execution_token_17")),
@@ -1078,7 +1080,7 @@ async fn reject_out_of_order_resource_offset(path: &std::path::Path) {
             descriptor: None,
         },
     ];
-    let mut client = connect_uds(path, CLIENT_LIMIT)
+    let mut client = connect_uds(path.join("agent.sock"), CLIENT_LIMIT)
         .await
         .expect("offset test client");
     let error = client
@@ -1152,7 +1154,10 @@ async fn wait_for_socket(path: &std::path::Path) {
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             // A socket pathname can exist before the listener is ready.
-            if connect_uds(path, CLIENT_LIMIT).await.is_ok() {
+            if connect_uds(path.join("agent.sock"), CLIENT_LIMIT)
+                .await
+                .is_ok()
+            {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -1173,7 +1178,7 @@ fn computer_hello() -> ComputerHello {
     ComputerHello {
         device_credential: String::new(),
         protocol_version: PROTOCOL_VERSION,
-        computer_id: "local".into(),
+        computer_id: "fixture-computer".into(),
         instance_id: "computer_instance_1".into(),
         computer_version: "0.1.0".into(),
         os: "macos".into(),
@@ -1385,7 +1390,11 @@ async fn exchange_agent_json_socket(path: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     assert_eq!(
-        fs::metadata(path).unwrap().permissions().mode() & 0o777,
+        fs::metadata(path.join("agent.sock"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
         0o600
     );
     let context = run_context("execution_token_17");
@@ -1414,7 +1423,9 @@ async fn exchange_agent_json_socket(path: &std::path::Path) {
             "failed_precondition" => call["protocol_version"] = (PROTOCOL_VERSION - 1).into(),
             _ => {}
         }
-        let mut socket = tokio::net::UnixStream::connect(path).await.unwrap();
+        let mut socket = tokio::net::UnixStream::connect(path.join("agent.sock"))
+            .await
+            .unwrap();
         if expected == "resource_exhausted" {
             socket
                 .write_u32((agent::MAX_CALL_BYTES + 1) as u32)

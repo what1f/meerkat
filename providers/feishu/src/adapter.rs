@@ -559,14 +559,9 @@ impl Provider for FeishuProvider {
                 }
                 Err(error) => return Err(error),
             };
-            // `app_id` is the stable Agent identity. Older Desktop builds could
-            // erase the editable config copy while the verified Provider state
-            // remained intact. Prefer the config, but recover from that durable
-            // verified identity instead of making the whole Workspace unusable.
             let saved_state = context.storage().agent_state(&context.agent_id).await?;
             let app_id = config_text(config, "app_id")
                 .or_else(|| config_text(config, "provider_handle"))
-                .or_else(|| config_text(&saved_state, "app_id"))
                 .ok_or(ProviderError::InvalidInput { field: "app_id" })?;
             if app_secret.is_empty() {
                 return Err(ProviderError::InvalidInput {
@@ -804,7 +799,6 @@ fn agent_state_key(workspace_id: &str, agent_id: &str) -> String {
 fn config_text(config: &Value, key: &str) -> Option<String> {
     config
         .get(key)
-        .or_else(|| config.get("provider").and_then(|value| value.get(key)))
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -1483,7 +1477,7 @@ async fn resolved_attachments(
 /// Provider attachment kind is intentionally broader (`file`, `audio`, etc.)
 /// and is used to choose the outgoing message type; it is not a valid
 /// `file_type` value for the upload endpoint.  Derive the API value from the
-/// filename, matching the legacy adapter and the local Lark SDK behavior.
+/// filename, matching the local Lark SDK behavior.
 fn feishu_file_type(file_name: &str, kind: &str) -> &'static str {
     let extension = file_name
         .rsplit_once('.')

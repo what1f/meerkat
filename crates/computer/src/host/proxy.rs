@@ -16,7 +16,6 @@ use tokio::sync::{oneshot, watch};
 pub(super) struct PendingCall {
     pub bytes: Vec<u8>,
     pub response: oneshot::Sender<Result<Vec<u8>, Status>>,
-    pub native_call: Option<(ExecutionRef, String)>,
 }
 // Remove the correlation entry even when a caller drops its socket mid-call.
 struct PendingGuard {
@@ -62,20 +61,6 @@ impl CapabilityTransport for LocalTransport {
             inner: Arc::downgrade(&self.inner),
             id: id.clone(),
         };
-        let native_call = if method == "invoke_capability" {
-            lankide_protocol::agent::decode::<lankide_protocol::CapabilityInvokeRequest>(
-                payload.as_slice(),
-            )
-            .ok()
-            .and_then(|request| {
-                context
-                    .execution
-                    .clone()
-                    .map(|execution| (execution, request.invocation_id))
-            })
-        } else {
-            None
-        };
         let mut stopped = self.stopped.clone();
         let result = tokio::time::timeout(agent::CALL_TIMEOUT, async {
             let sender = self
@@ -96,7 +81,6 @@ impl CapabilityTransport for LocalTransport {
                     PendingCall {
                         bytes: Vec::new(),
                         response: tx,
-                        native_call,
                     },
                 );
             }
@@ -231,36 +215,6 @@ pub(super) async fn disconnected(inner: &Inner) {
             .response
             .send(Err(Status::unavailable("computer_link_down")));
     }
-}
-/// Continue to accept native ToolResult delivery frames from an older peer.
-/// New peers answer the correlated capability_request instead.
-pub(super) async fn legacy_tool_response(inner: &Inner, result: &ToolResult) -> bool {
-    let Some(execution) = result.execution.as_ref() else {
-        return false;
-    };
-    let mut calls = inner.capability_calls.lock().await;
-    let id = calls
-        .iter()
-        .find(|(_, call)| {
-            call.native_call
-                .as_ref()
-                .is_some_and(|(run, id)| run == execution && id == &result.tool_call_id)
-        })
-        .map(|(id, _)| id.clone());
-    let Some(call) = id.and_then(|id| calls.remove(&id)) else {
-        return false;
-    };
-    let payload = lankide_protocol::agent::encode(&CapabilityInvokeResult {
-        invocation_id: result.tool_call_id.clone(),
-        success: result.success,
-        content_markdown: result.content_markdown.clone(),
-        structured_content_json: result.structured_content_json.clone(),
-        resources: result.resources.clone(),
-        error: result.error.clone(),
-    })
-    .expect("capability JSON");
-    let _ = call.response.send(Ok(payload));
-    true
 }
 /// Native MCP and Pi calls enter through the public Harness event contract.
 /// Their bridge on the Computer uses the same attempt socket as the CLI.

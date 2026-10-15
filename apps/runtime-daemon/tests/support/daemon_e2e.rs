@@ -1,3 +1,5 @@
+#[path = "../../../../tests/support/registered_computer.rs"]
+mod registered_computer;
 #[path = "../../../../crates/protocol/tests/support/ws.rs"]
 mod ws;
 use lankide_core::{AgentId, AttentionLevel, ChannelAbility, ChannelId, ProviderId, WorkspaceId};
@@ -30,7 +32,7 @@ use tokio_stream::wrappers::ReceiverStream;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-use lankide_runtime_daemon::{AppError, InstanceGuard, RuntimePaths, prepare_socket_path};
+use lankide_runtime_daemon::{AppError, InstanceGuard, RuntimePaths};
 const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
 const PRIVATE_FILE_MODE: u32 = 0o600;
 
@@ -82,7 +84,7 @@ pub async fn run_e2e(selected: Option<&str>) -> Result<PathBuf, AppError> {
             None => vec![
                 "temporary_home",
                 "private_directories",
-                "sqlite_migration",
+                "sqlite_baseline",
                 "single_instance_lock",
                 "second_instance_preserves_socket",
                 "stale_instance_lock_removed",
@@ -172,25 +174,6 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
             return Err(AppError::Invariant("stale instance lock was not released"));
         }
     }
-    let unsafe_entry = paths.run.join("unsafe.sock");
-    File::create(&unsafe_entry)?;
-    if !matches!(
-        prepare_socket_path(&unsafe_entry),
-        Err(AppError::UnsafeSocketEntry)
-    ) {
-        return Err(AppError::Invariant("unsafe socket entry was accepted"));
-    }
-    fs::remove_file(unsafe_entry)?;
-    #[cfg(unix)]
-    {
-        let stale = std::os::unix::net::UnixListener::bind(&paths.socket)?;
-        drop(stale);
-        prepare_socket_path(&paths.socket)?;
-        if paths.socket.exists() {
-            return Err(AppError::Invariant("stale socket was not removed"));
-        }
-    }
-
     let fixture = ProviderId::new("fixture").map_err(|_| AppError::Invariant("fixture id"))?;
     let active_workspace = WorkspaceId::new("active_fixture")
         .map_err(|_| AppError::Invariant("active workspace id"))?;
@@ -203,9 +186,28 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         ChannelId::new("chat").map_err(|_| AppError::Invariant("fixture channel id"))?;
     let provider_log = paths.home.join("fixture-provider.log");
     let storage = Storage::open(DatabaseConfig::new(&paths.database))?;
+    registered_computer::register(&storage, &["fixture-computer"])?;
+    storage.pair_computer(
+        &lankide_storage::ComputerRecord {
+            computer_id: "computer-a".into(),
+            display_name: "Computer A".into(),
+            credential_hash: Sha256::digest(b"fixture-computer-a")
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect(),
+            paired_at: 1,
+            revoked_at: None,
+            last_seen_at: None,
+            os: "test".into(),
+            version: "1".into(),
+            inventory_json: "[]".into(),
+        },
+        None,
+        600_000,
+    )?;
     let settings = storage.sqlite_settings()?;
     if settings.journal_mode != "wal" || !settings.foreign_keys {
-        return Err(AppError::Invariant("SQLite migration settings are invalid"));
+        return Err(AppError::Invariant("SQLite baseline settings are invalid"));
     }
     for (workspace_id, active) in [(&active_workspace, true), (&paused_workspace, false)] {
         storage.create_workspace(WorkspaceSpec {
@@ -235,12 +237,14 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         })?;
     }
     storage.create_agent(AgentSpec {
+        computer_id: "fixture-computer".into(),
         workspace_id: active_workspace.clone(),
         id: agent_id.clone(),
         name: "Agent A".into(),
         now: 2,
     })?;
     storage.create_agent(AgentSpec {
+        computer_id: "fixture-computer".into(),
         workspace_id: active_workspace.clone(),
         id: deletable_agent_id.clone(),
         name: "Deletable Agent".into(),
@@ -302,20 +306,13 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
 
     let mut child = DaemonChild::spawn(paths)?;
     let ready_elapsed = child.wait_ready()?;
-    if paths.socket.exists() {
-        return Err(AppError::Invariant(
-            "Runtime must serve management through HTTP without a UDS listener",
-        ));
-    }
     if ready_elapsed >= Duration::from_millis(1500) {
         return Err(AppError::Invariant(
             "management readiness waited for Provider startup",
         ));
     }
-    let management = lankide_client::http::HttpManagementTransport::local(
-        &paths.socket,
-        DEFAULT_MAX_MESSAGE_BYTES,
-    );
+    let management =
+        lankide_client::http::HttpManagementTransport::local(&paths.run, DEFAULT_MAX_MESSAGE_BYTES);
     let listed = management
         .list_workspaces(ListWorkspacesRequest {
             request_id: "daemon-list-1".into(),
@@ -332,10 +329,8 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
             "second daemon instance did not exit cleanly",
         ));
     }
-    let second_connection = lankide_client::http::HttpManagementTransport::local(
-        &paths.socket,
-        DEFAULT_MAX_MESSAGE_BYTES,
-    );
+    let second_connection =
+        lankide_client::http::HttpManagementTransport::local(&paths.run, DEFAULT_MAX_MESSAGE_BYTES);
     second_connection
         .list_workspaces(ListWorkspacesRequest {
             request_id: "daemon-list-after-second-instance".into(),
@@ -373,24 +368,6 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         .await
         .map_err(AppError::Status)?;
 
-    Storage::open(DatabaseConfig::new(&paths.database))?.pair_computer(
-        &lankide_storage::ComputerRecord {
-            computer_id: "computer-a".into(),
-            display_name: "Computer A".into(),
-            credential_hash: Sha256::digest(b"fixture-computer-a")
-                .iter()
-                .map(|b| format!("{b:02x}"))
-                .collect(),
-            paired_at: 1,
-            revoked_at: None,
-            last_seen_at: None,
-            os: "test".into(),
-            version: "1".into(),
-            inventory_json: "[]".into(),
-        },
-        None,
-        600_000,
-    )?;
     let (computer_tx, computer_rx) = mpsc::channel(16);
     computer_tx
         .send(ComputerFrame {
@@ -408,7 +385,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         })
         .await
         .map_err(|_| AppError::Invariant("Computer hello channel closed"))?;
-    let mut runtime_frames = ws::connect_stream(&paths.socket, ReceiverStream::new(computer_rx))
+    let mut runtime_frames = ws::connect_stream(&paths.run, ReceiverStream::new(computer_rx))
         .await
         .map_err(AppError::Status)?
         .into_inner();
@@ -571,7 +548,11 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
                     sequence,
                     occurred_at: now_millis(),
                     kind: kind as i32,
-                    payload: Vec::new(),
+                    payload: if kind == ExecutionEventKind::Completed {
+                        br#"{"kind":"completed","final_output":"OK"}"#.to_vec()
+                    } else {
+                        br#"{"kind":"started"}"#.to_vec()
+                    },
                 })),
             })
             .await
@@ -665,7 +646,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     child.terminate()?;
     drop(computer_tx);
     drop(runtime_frames);
-    if paths.socket.exists() || paths.instance_lock.exists() {
+    if paths.instance_lock.exists() {
         return Err(AppError::Invariant("graceful shutdown left runtime files"));
     }
     let log = fs::read_to_string(&provider_log)?;
@@ -696,10 +677,8 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     storage.close()?;
     let mut restarted = DaemonChild::spawn(paths)?;
     restarted.wait_ready()?;
-    let restart_client = lankide_client::http::HttpManagementTransport::local(
-        &paths.socket,
-        DEFAULT_MAX_MESSAGE_BYTES,
-    );
+    let restart_client =
+        lankide_client::http::HttpManagementTransport::local(&paths.run, DEFAULT_MAX_MESSAGE_BYTES);
     if restart_client
         .list_workspaces(ListWorkspacesRequest {
             request_id: "daemon-list-restart".into(),

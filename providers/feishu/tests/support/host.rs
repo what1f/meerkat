@@ -1,4 +1,6 @@
 //! Host services backed by the real SQLite and Runtime resource stores.
+#[path = "../../../../tests/support/registered_computer.rs"]
+mod registered_computer;
 use lankide_core::{
     AgentId, ChannelId, MessageId, PersonId, ProviderId, ResourceId, ResourceRef, WorkspaceId,
 };
@@ -37,6 +39,7 @@ impl Services {
         let db = Arc::new(
             Storage::open(DatabaseConfig::new(directory.path().join("runtime.sqlite"))).unwrap(),
         );
+        registered_computer::register(&db, &["fixture-computer"]).unwrap();
         let workspace = WorkspaceId::new("im_scenarios").unwrap();
         let provider = ProviderId::new(provider).unwrap();
         db.create_workspace(lankide_storage::WorkspaceSpec {
@@ -60,6 +63,7 @@ impl Services {
     pub fn agent(&self, id: &AgentId, secret_name: &str, secret: &str) {
         self.db
             .create_agent(lankide_storage::AgentSpec {
+                computer_id: "fixture-computer".into(),
                 workspace_id: self.workspace.clone(),
                 id: id.clone(),
                 name: id.to_string(),

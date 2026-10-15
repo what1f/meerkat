@@ -126,7 +126,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
         lankide_protocol::Code::Unauthenticated
     );
     assert!(
-        !rig.runtime_socket().exists(),
+        !rig.runtime_run().join("runtime.sock").exists(),
         "Runtime uses HTTP discovery"
     );
     // Stall replies at the network boundary: the call must fail as retryable

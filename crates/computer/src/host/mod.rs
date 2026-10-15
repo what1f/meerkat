@@ -252,13 +252,13 @@ impl Computer {
     /// Runs until the supplied shutdown future completes.
     pub async fn run<F>(
         self,
-        socket_path: impl Into<PathBuf>,
+        runtime_run: impl Into<PathBuf>,
         shutdown: F,
     ) -> Result<(), ComputerError>
     where
         F: Future<Output = ()> + Send,
     {
-        let handle = self.spawn(socket_path).await?;
+        let handle = self.spawn(runtime_run).await?;
         tokio::select! {
             result = handle.join() => result,
             _ = shutdown => {
@@ -270,9 +270,9 @@ impl Computer {
 
     pub async fn spawn(
         self,
-        socket_path: impl Into<PathBuf>,
+        runtime_run: impl Into<PathBuf>,
     ) -> Result<ComputerHandle, ComputerError> {
-        let socket_path = socket_path.into();
+        let runtime_run = runtime_run.into();
         let root = expanded_root(&self.config.workspace_root)?;
         std::fs::create_dir_all(&root)?;
         if self.output_records.max_bytes < 256 {
@@ -333,7 +333,7 @@ impl Computer {
             output_records: self.output_records,
             capability_cli: self.capability_cli,
             root,
-            socket_path,
+            runtime_run,
             link_endpoint: self.link_endpoint,
             device_credential: self.device_credential,
             state_path,
@@ -474,7 +474,7 @@ struct Inner {
     capability_cli: Option<PathBuf>,
     config: ComputerConfig,
     root: PathBuf,
-    socket_path: PathBuf,
+    runtime_run: PathBuf,
     link_endpoint: Option<(String, String)>,
     device_credential: String,
     state_path: PathBuf,

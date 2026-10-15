@@ -19,7 +19,7 @@ pub struct ComputerDaemonPaths {
     pub home: PathBuf,
     pub workspaces: PathBuf,
     pub run: PathBuf,
-    pub runtime_socket: PathBuf,
+    pub runtime_run: PathBuf,
     pub instance_lock: PathBuf,
 }
 
@@ -32,7 +32,7 @@ impl ComputerDaemonPaths {
         Ok(Self {
             workspaces: home.join("workspaces"),
             run: home.join("run"),
-            runtime_socket: home.join("run/runtime.sock"),
+            runtime_run: home.join("run"),
             instance_lock: home.join("run/computer.lock"),
             home,
         })
@@ -200,7 +200,7 @@ pub async fn run_with_harnesses(
                     async {
                         loop {
                             if let Ok(endpoint) =
-                                lankide_protocol::link::discover(&config.paths.runtime_socket)
+                                lankide_protocol::link::discover(&config.paths.runtime_run)
                             {
                                 break endpoint;
                             }
@@ -237,7 +237,7 @@ pub async fn run_with_harnesses(
             .map_err(AppError::Computer)?;
     }
     computer
-        .run(&config.paths.runtime_socket, async {
+        .run(&config.paths.runtime_run, async {
             let _ = wait_for_shutdown().await;
         })
         .await
@@ -358,7 +358,6 @@ pub struct DeviceCredentials {
     pub computer_id: String,
     pub device_credential: String,
     pub runtime_url: String,
-    #[serde(default)]
     pub local_discovery: bool,
 }
 

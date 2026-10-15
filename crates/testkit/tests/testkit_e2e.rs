@@ -107,7 +107,7 @@ fn prerequisite_probe_runs_complete_hermetic_business_scenario_without_leaking_s
 }
 
 #[test]
-fn hermetic_gate_does_not_require_live_fixture_database_or_harness_configuration() {
+fn hermetic_gate_does_not_require_live_fixtures_or_harness_configuration() {
     let sentinel = std::env::temp_dir().join(format!(
         "lankide-testkit-live-prerequisites-must-not-be-read-{}",
         std::process::id()
@@ -116,7 +116,7 @@ fn hermetic_gate_does_not_require_live_fixture_database_or_harness_configuration
         selected_gate: GateSelection::Hermetic,
         run_live_checks: false,
         feishu_fixture_root: sentinel.join("feishu-fixture"),
-        telegram_database: sentinel.join("telegram.db"),
+        telegram_fixture: sentinel.join("telegram.json"),
         telegram_mutating_chat_id: None,
         authorized_telegram_chat_id: "-1001234567890".to_owned(),
         pi_path: Some(sentinel.join("pi")),
@@ -143,7 +143,7 @@ fn hermetic_gate_does_not_require_live_fixture_database_or_harness_configuration
 
 fn run_scenario(fixture: &Path) -> Result<(), String> {
     create_feishu_fixture(fixture)?;
-    create_telegram_fixture(&fixture.join("telegram.db"))?;
+    create_telegram_fixture(&fixture.join("telegram.json"))?;
     create_harness_fixture(fixture)?;
 
     let secret_marker = "fixture-secret-must-not-appear";
@@ -151,7 +151,7 @@ fn run_scenario(fixture: &Path) -> Result<(), String> {
         selected_gate: GateSelection::Hermetic,
         run_live_checks: false,
         feishu_fixture_root: fixture.to_path_buf(),
-        telegram_database: fixture.join("telegram.db"),
+        telegram_fixture: fixture.join("telegram.json"),
         telegram_mutating_chat_id: None,
         authorized_telegram_chat_id: "-1001234567890".to_owned(),
         pi_path: Some(fixture.join("pi")),
@@ -160,22 +160,20 @@ fn run_scenario(fixture: &Path) -> Result<(), String> {
         codex_config_path: fixture.join("codex.toml"),
         claude_code_path: fixture.join("claude-code"),
     };
-    let original_database =
-        fs::read(&config.telegram_database).map_err(|_| "read fixture bytes")?;
+    let original_fixture = fs::read(&config.telegram_fixture).map_err(|_| "read fixture bytes")?;
     let mut readonly = config.clone();
     readonly.selected_gate = GateSelection::TelegramLiveReadonly;
     let stopped = run_prerequisite_probe(&readonly);
     for name in ["telegram_workspace", "agent_bots", "manager_bot"] {
         if !stopped.has_status(name, CheckStatus::Pass) {
             return Err(format!(
-                "stopped WAL database probe failed: {}",
+                "read-only JSON fixture probe failed: {}",
                 stopped.render_text()
             ));
         }
     }
-    if fs::read(&config.telegram_database).map_err(|_| "read probed fixture")? != original_database
-    {
-        return Err("read-only prerequisite probe modified database bytes".into());
+    if fs::read(&config.telegram_fixture).map_err(|_| "read probed fixture")? != original_fixture {
+        return Err("read-only prerequisite probe modified fixture bytes".into());
     }
     let report = run_prerequisite_probe(&config);
     let text = report.render_text();
@@ -198,12 +196,10 @@ fn run_scenario(fixture: &Path) -> Result<(), String> {
         "required_scopes",
         "test_chat",
         "tasklist",
-        "feishu_runtime_exclusive",
         "telegram_workspace",
         "agent_bots",
         "manager_bot",
         "telegram_mutating_chat_explicit",
-        "legacy_runtime_exclusive",
         "pi_executable",
         "pi_model_config",
         "codex_executable",
@@ -239,55 +235,46 @@ fn temporary_fixture_root() -> tempfile::TempDir {
         .prefix("lankide-testkit-e2e-")
         .tempdir()
         .expect("reserve private fixture directory");
-    fs::create_dir_all(root.path().join(".lankide/bootstrap")).expect("create temporary fixture");
     root
 }
 
 fn create_feishu_fixture(root: &Path) -> Result<(), String> {
-    let bootstrap = root.join(".lankide/bootstrap");
     fs::write(
-        bootstrap.join("feishu-main.json"),
-        r#"{"schema_version":1,"providers":[{"type":"feishu","app_id":"fixture-app","app_secret":"fixture-secret-must-not-appear","domain":"feishu"}]}"#,
+        root.join("feishu-app.json"),
+        r#"{"app_id":"fixture-app","app_secret":"fixture-secret-must-not-appear","domain":"feishu"}"#,
     )
     .map_err(|error| format!("write Feishu main fixture: {error}"))?;
     fs::write(
-        bootstrap.join("feishu-e2e.json"),
-        r#"{"schema_version":1,"provider_id":"feishu-main","app_id":"fixture-app","brand":"feishu","test_chat":{"chat_id":"oc_fixture","name":"Lankide E2E","chat_type":"private_group"},"test_actor":{"kind":"feishu_user_oauth","user_open_id":"ou_fixture","oauth_config_dir":".lankide/lark-cli-oauth","cli_source_dir":".lankide/cli","required_scopes":["im:message","task:task:read"]},"task":{"tasklist_guid":"tasklist-fixture","tasklist_name":"Lankide E2E"}}"#,
+        root.join("feishu-e2e.json"),
+        r#"{"provider_id":"feishu-main","app_id":"fixture-app","brand":"feishu","test_chat":{"chat_id":"oc_fixture","name":"Lankide E2E","chat_type":"private_group"},"test_actor":{"kind":"feishu_user_oauth","user_open_id":"ou_fixture","oauth_config_dir":".lankide/lark-cli-oauth","cli_source_dir":".lankide/cli","required_scopes":["im:message","task:task:read"]},"task":{"tasklist_guid":"tasklist-fixture","tasklist_name":"Lankide E2E"}}"#,
     )
     .map_err(|error| format!("write Feishu E2E fixture: {error}"))?;
     fs::create_dir_all(root.join(".lankide/lark-cli-oauth"))
         .map_err(|error| format!("create OAuth fixture: {error}"))?;
     fs::create_dir_all(root.join(".lankide/cli"))
         .map_err(|error| format!("create CLI fixture: {error}"))?;
-    set_owner_only(&bootstrap.join("feishu-main.json"))?;
-    set_owner_only(&bootstrap.join("feishu-e2e.json"))?;
+    set_owner_only(&root.join("feishu-app.json"))?;
+    set_owner_only(&root.join("feishu-e2e.json"))?;
     Ok(())
 }
 
 fn create_telegram_fixture(path: &Path) -> Result<(), String> {
-    let schema = r#"
-CREATE TABLE team_metadata (im_adapter_id TEXT);
-CREATE TABLE provider_namespaces (provider_id TEXT, provider_type TEXT, enabled INTEGER);
-CREATE TABLE agent_provider_identities (agent_id TEXT, provider_id TEXT, enabled INTEGER);
-CREATE TABLE managed_integrations (kind_id TEXT, account_id TEXT, username TEXT);
-CREATE TABLE sources (external_id TEXT, source_type TEXT, display_name TEXT);
-INSERT INTO team_metadata VALUES ('telegram');
-INSERT INTO provider_namespaces VALUES ('telegram-main', 'telegram', 1);
-INSERT INTO agent_provider_identities VALUES ('agent', 'telegram-main', 1);
-INSERT INTO managed_integrations VALUES ('telegram', 'manager', 'manager_bot');
-INSERT INTO sources VALUES ('-1001234567890', 'group', 'Example Team');
-"#;
-    let database = rusqlite::Connection::open(path).map_err(|_| "create Telegram fixture")?;
-    database
-        .execute_batch("PRAGMA journal_mode=WAL;")
-        .map_err(|_| "enable WAL")?;
-    database
-        .execute_batch(schema)
-        .map_err(|_| "write Telegram metadata")?;
-    drop(database);
-    if path.with_extension("db-wal").exists() {
-        return Err("closed fixture must not retain a WAL file".into());
-    }
+    fs::write(
+        path,
+        serde_json::to_vec(&lankide_testkit::TelegramLiveFixture {
+            provider_id: "telegram-main".into(),
+            agent_id: "agent".into(),
+            account_id: "bot".into(),
+            username: "agent_bot".into(),
+            token: "fixture-token".into(),
+            manager_account_id: "manager".into(),
+            manager_token: "fixture-manager-token".into(),
+            chat_ids: vec!["-1001234567890".into()],
+        })
+        .map_err(|_| "encode Telegram fixture")?,
+    )
+    .map_err(|_| "write Telegram fixture")?;
+    set_owner_only(path)?;
     Ok(())
 }
 

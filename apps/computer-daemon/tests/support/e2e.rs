@@ -17,7 +17,7 @@ use lankide_protocol::{
     ExecutionEventAck, ExecutionEventKind, ExecutionRef, HarnessConfig, ResourceChunk,
     ResourceChunkStream, ResourceDescriptor, ResourceRef, ResourceRequest, RuntimeFrame,
     RuntimeFrameStream, RuntimeHello, RuntimePeer, SessionAction, SessionDirective, ToolDefinition,
-    ToolResult, TransportConfig, WorkspaceRef, computer_frame, runtime_frame,
+    TransportConfig, WorkspaceRef, computer_frame, runtime_frame,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -265,24 +265,24 @@ pub async fn run() -> Result<PathBuf, AppError> {
         .insert(7, ("brief.txt".into(), b"resource-body".to_vec()));
     let (server_stop_tx, server_stop_rx) = oneshot::channel();
     let server_peer = peer.clone();
-    let socket = paths.runtime_socket.clone();
+    let socket = paths.runtime_run.clone();
     let server = tokio::spawn(async move {
         ws::serve_local(socket, server_peer, TransportConfig::default(), async {
             let _ = server_stop_rx.await;
         })
         .await
     });
-    wait_socket(&paths.runtime_socket).await?;
+    wait_socket(&paths.runtime_run).await?;
 
     let outcome = timeout(HARD_TIMEOUT, async {
         let first = build_computer(&paths, "daemon-e2e-first", &executable, &pid_journal)?;
         let handle = first
-            .spawn(&paths.runtime_socket)
+            .spawn(&paths.runtime_run)
             .await
             .map_err(AppError::Computer)?;
         wait_for("first Computer hello", || peer.state.hellos.lock().expect("hello lock").len() >= 1).await?;
         let hello = peer.state.hellos.lock().expect("hello lock")[0].clone();
-        require(hello.computer_id == "local", "computer id was not local")?;
+        require(hello.computer_id == "fixture-computer", "computer id was not local")?;
         require(
             hello.instance_id == "daemon-e2e-first",
             "instance id mismatch",
@@ -417,8 +417,8 @@ pub async fn run() -> Result<PathBuf, AppError> {
         ))
         .await?;
         wait_assignment(&mut incoming_rx, 7, true).await?;
-        wait_tool_call(&mut incoming_rx, 7).await?;
-        peer.send(tool_result(7)).await?;
+        let request_id = wait_tool_call(&mut incoming_rx, 7).await?;
+        peer.send(tool_result(request_id)).await?;
         wait_tool_receipt(&mut incoming_rx, 7).await?;
         peer.send(steer(7, "finish-tool")).await?;
         collect_remaining_terminal(&mut incoming_rx, 7).await?;
@@ -492,7 +492,7 @@ pub async fn run() -> Result<PathBuf, AppError> {
             .map_err(AppError::Computer)?;
         let second = build_computer(&paths, "daemon-e2e-second", &executable, &pid_journal)?;
         let second_handle = second
-            .spawn(&paths.runtime_socket)
+            .spawn(&paths.runtime_run)
             .await
             .map_err(AppError::Computer)?;
         wait_for("restarted Computer hello", || peer.state.hellos.lock().expect("hello lock").len() >= 3).await?;
@@ -529,9 +529,9 @@ pub async fn run() -> Result<PathBuf, AppError> {
             .await
             .map_err(|_| AppError::Invariant("shutdown timeout"))?
             .map_err(AppError::Computer)?;
-        let (url, credential) = lankide_protocol::link::discover(&paths.runtime_socket)?;
+        let (url, credential) = lankide_protocol::link::discover(&paths.runtime_run)?;
         fs::write(paths.home.join("computer-credentials.json"), serde_json::to_vec(&lankide_computer_daemon::DeviceCredentials {
-            computer_id:"local".into(),device_credential:credential,runtime_url:url,local_discovery:true,
+            computer_id:"fixture-computer".into(),device_credential:credential,runtime_url:url,local_discovery:true,
         })?)?;
         let mut child = Command::new(&executable)
             .arg("--home")
@@ -577,7 +577,7 @@ pub async fn run() -> Result<PathBuf, AppError> {
     let _ = server_stop_tx.send(());
     let _ = timeout(STEP, server).await;
     let processes_clean = verify_pids(&pid_journal);
-    let socket_clean = !paths.runtime_socket.exists();
+    let socket_clean = !paths.runtime_run.join("agent.sock").exists();
     let status = scenario.is_ok() && processes_clean && socket_clean;
     let report = json!({
         "run_id": run_id,
@@ -621,7 +621,7 @@ fn build_computer(
         std::os::unix::fs::symlink(executable, &pi_executable)?;
     }
     let mut computer = Computer::new(ComputerConfig {
-        computer_id: "local".into(),
+        computer_id: "fixture-computer".into(),
         instance_id: instance_id.into(),
         workspace_root: paths.workspaces.display().to_string(),
         reconnect: ReconnectPolicy {
@@ -631,7 +631,7 @@ fn build_computer(
             ..Default::default()
         },
     })
-    .with_device_credential(lankide_protocol::link::discover(&paths.runtime_socket)?.1)
+    .with_device_credential(lankide_protocol::link::discover(&paths.runtime_run)?.1)
     .with_execution_liveness(lankide_computer::ExecutionLiveness {
         cancel_grace: Duration::from_millis(150),
         ..Default::default()
@@ -783,18 +783,27 @@ fn steer(id: i64, input: &str) -> RuntimeFrame {
         })),
     }
 }
-fn tool_result(id: i64) -> RuntimeFrame {
+fn tool_result(request_id: String) -> RuntimeFrame {
     RuntimeFrame {
         protocol_version: lankide_protocol::PROTOCOL_VERSION,
-        frame: Some(runtime_frame::Frame::ToolResult(ToolResult {
-            execution: Some(execution(id)),
-            tool_call_id: "call-1".into(),
-            success: true,
-            content_markdown: "done".into(),
-            structured_content_json: "{}".into(),
-            resources: Vec::new(),
-            error: None,
-        })),
+        frame: Some(runtime_frame::Frame::CapabilityResponse(
+            lankide_protocol::CapabilityResponse {
+                request_id,
+                eof: true,
+                payload: lankide_protocol::agent::encode(
+                    &lankide_protocol::CapabilityInvokeResult {
+                        invocation_id: "call-1".into(),
+                        success: true,
+                        content_markdown: "done".into(),
+                        structured_content_json: "{}".into(),
+                        resources: Vec::new(),
+                        error: None,
+                    },
+                )
+                .unwrap(),
+                ..Default::default()
+            },
+        )),
     }
 }
 fn resource_ref(id: i64, bytes: &[u8]) -> ResourceRef {
@@ -808,7 +817,10 @@ fn resource_ref(id: i64, bytes: &[u8]) -> ResourceRef {
 }
 
 async fn wait_socket(path: &Path) -> Result<(), AppError> {
-    wait_for("Runtime socket readiness", || path.exists()).await
+    wait_for("Runtime socket readiness", || {
+        path.join("agent.sock").exists()
+    })
+    .await
 }
 async fn wait_for(
     description: &'static str,
@@ -960,7 +972,7 @@ async fn collect_parallel_terminals(
 async fn wait_tool_call(
     receiver: &mut mpsc::UnboundedReceiver<ComputerFrame>,
     id: i64,
-) -> Result<(), AppError> {
+) -> Result<String, AppError> {
     loop {
         if let Some(computer_frame::Frame::CapabilityRequest(call)) =
             next_frame(receiver).await?.frame
@@ -972,7 +984,7 @@ async fn wait_tool_call(
                     .and_then(|context| context.execution.as_ref())
                     .is_some_and(|value| value.execution_id == id)
             {
-                return Ok(());
+                return Ok(call.request_id);
             }
         }
     }

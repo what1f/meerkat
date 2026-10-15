@@ -82,8 +82,8 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                     native_config.display().to_string(),
                 ),
                 (
-                    "LANKIDE_RUNTIME_SOCKET".into(),
-                    home.path().join("runtime.sock").display().to_string(),
+                    "LANKIDE_RUNTIME_RUN".into(),
+                    home.path().join("run").display().to_string(),
                 ),
             ]),
         };

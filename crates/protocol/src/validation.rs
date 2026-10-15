@@ -87,9 +87,6 @@ impl ComputerFrameValidator {
             Some(computer_frame::Frame::DeliveryResult(result)) => {
                 validate_execution_ref(result.execution.as_ref())
             }
-            Some(computer_frame::Frame::ToolCall(call)) => {
-                validate_execution_ref(call.execution.as_ref())
-            }
             Some(computer_frame::Frame::DeleteAgentFilesResult(result)) => {
                 validate_request_id(&result.request_id)
             }

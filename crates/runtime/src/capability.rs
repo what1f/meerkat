@@ -638,7 +638,6 @@ async fn invoke_standard_tool(
             }
             let resources = object
                 .get("attachments")
-                .or_else(|| object.get("resources"))
                 .and_then(serde_json::Value::as_array)
                 .map(|values| {
                     values

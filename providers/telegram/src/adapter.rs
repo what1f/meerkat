@@ -880,7 +880,6 @@ fn agent_state_key(workspace_id: &str, agent_id: &str) -> String {
 fn config_text(config: &Value, key: &str) -> Option<String> {
     config
         .get(key)
-        .or_else(|| config.get("provider").and_then(|value| value.get(key)))
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -888,18 +887,11 @@ fn config_text(config: &Value, key: &str) -> Option<String> {
 }
 
 fn config_bool(config: &Value, key: &str, default: bool) -> bool {
-    config
-        .get(key)
-        .or_else(|| config.get("provider").and_then(|value| value.get(key)))
-        .and_then(Value::as_bool)
-        .unwrap_or(default)
+    config.get(key).and_then(Value::as_bool).unwrap_or(default)
 }
 
 fn config_u64(config: &Value, key: &str) -> Option<u64> {
-    config
-        .get(key)
-        .or_else(|| config.get("provider").and_then(|value| value.get(key)))
-        .and_then(Value::as_u64)
+    config.get(key).and_then(Value::as_u64)
 }
 
 fn parse_byte_array(config: &Value, key: &str) -> Option<Vec<u8>> {

@@ -15,13 +15,9 @@ pub struct HttpManagementTransport {
     limit: usize,
 }
 impl HttpManagementTransport {
-    pub fn local(socket: impl AsRef<Path>, limit: usize) -> Self {
+    pub fn local(run: impl AsRef<Path>, limit: usize) -> Self {
         Self {
-            run: socket
-                .as_ref()
-                .parent()
-                .unwrap_or(Path::new("."))
-                .to_owned(),
+            run: run.as_ref().to_owned(),
             http: reqwest::Client::builder()
                 .no_proxy()
                 .redirect(reqwest::redirect::Policy::none())

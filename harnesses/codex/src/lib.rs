@@ -272,8 +272,7 @@ impl CodexSession {
         command
             .args(["app-server", "--listen", "stdio://"])
             .envs(&request.config.environment)
-            .env_remove("LANKIDE_RUNTIME_SOCKET")
-            .env_remove("LANKIDE_RUNTIME_URL")
+            .env_remove("LANKIDE_RUNTIME_RUN")
             .env("CODEX_HOME", &codex_home)
             .current_dir(&request.working_directory)
             .stdin(Stdio::piped())

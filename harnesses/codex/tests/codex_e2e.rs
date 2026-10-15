@@ -469,7 +469,7 @@ fn display(error: impl std::fmt::Display) -> String {
 #[ignore = "requires installed Codex CLI; starts native sessions without running model turns"]
 async fn codex_default_home_is_agent_local() {
     let temp = tempfile::tempdir().unwrap();
-    let runtime_socket = temp.path().join("runtime.sock");
+    let agent_socket = temp.path().join("agent.sock");
     let config = HarnessConfig {
         harness_id: "codex".into(),
         model: ModelRef::new("gpt-5.6-luna", "Codex"),
@@ -477,7 +477,7 @@ async fn codex_default_home_is_agent_local() {
         cli_path: resolve_codex_path().unwrap(),
         environment: BTreeMap::from([(
             "LANKIDE_AGENT_SOCKET".into(),
-            runtime_socket.display().to_string(),
+            agent_socket.display().to_string(),
         )]),
         config_fingerprint: "isolation".into(),
     };

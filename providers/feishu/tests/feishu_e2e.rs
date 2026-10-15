@@ -4,7 +4,7 @@
 //! public wire/normalization surface and then drives the public ProviderHost
 //! through the native Feishu websocket and REST client, while the user OAuth
 //! actor is the independent inbound event producer. Credentials are read only
-//! from the owner-only bootstrap fixture and never enter an argument, log, or
+//! from the owner-only application fixture and never enter an argument, log, or
 //! artifact.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -246,10 +246,13 @@ async fn feishu_provider_exposes_im_reaction_and_optional_task_capabilities() {
         .put_workspace_state(json!({
             "tasklist_guid": "tasklist_e2e",
             "identity_directory": {
+                "unresolved_bots": {},
                 "agents": {
                     "agent_e2e": {
                         "app_id": "cli_e2e",
                         "tenant_key": "tenant_e2e",
+                        "union_id": "",
+                        "user_id": "",
                         "open_ids_by_app": {"cli_e2e": "ou_agent_e2e"},
                         "display_name": "E2E Agent"
                     }
@@ -300,7 +303,7 @@ async fn feishu_provider_exposes_im_reaction_and_optional_task_capabilities() {
             bio: String::new(),
             avatar: None,
             soul: String::new(),
-            computer_id: "local".into(),
+            computer_id: "fixture-computer".into(),
             harness_id: "pi".into(),
             model: "fixture".into(),
             thinking_level: "low".into(),
@@ -316,26 +319,6 @@ async fn feishu_provider_exposes_im_reaction_and_optional_task_capabilities() {
     )
     .await
     .expect("Feishu Agent connection");
-    host.create_agent(
-        agent_id.clone(),
-        AgentSpec {
-            name: "E2E Agent".into(),
-            role: "QA".into(),
-            bio: String::new(),
-            avatar: None,
-            soul: String::new(),
-            computer_id: "local".into(),
-            harness_id: "pi".into(),
-            model: "fixture".into(),
-            thinking_level: "low".into(),
-            auto_reaction: None,
-            cli_path: None,
-            environment_variables: Vec::new(),
-            provider_agent_config: json!({"mode":"new","app_id":""}),
-        },
-    )
-    .await
-    .expect("Feishu Agent connection recovers verified app identity");
     let prompt = host
         .system_prompt(agent_id.clone(), standalone_runtime_spec("cli_e2e"))
         .await
@@ -464,16 +447,20 @@ async fn feishu_task_flow_projects_the_typed_team_roster() {
     }
     storage
         .put_workspace_state(json!({
-            "identity_directory":{"agents":{
+            "identity_directory":{"unresolved_bots":{},"agents":{
                 "beta":{
                     "app_id":"cli_beta",
                     "tenant_key":"tenant_flow",
+                    "union_id":"",
+                    "user_id":"",
                     "open_ids_by_app":{"cli_alpha":"ou_beta"},
                     "display_name":"Beta"
                 },
                 "gamma":{
                     "app_id":"cli_gamma",
                     "tenant_key":"tenant_flow",
+                    "union_id":"",
+                    "user_id":"",
                     "open_ids_by_app":{"cli_alpha":"ou_gamma","cli_beta":"ou_gamma_beta"},
                     "display_name":"Gamma"
                 }
@@ -972,7 +959,7 @@ async fn feishu_provider_reconciles_one_agent_across_app_scoped_open_ids() {
                 bio: String::new(),
                 avatar: None,
                 soul: String::new(),
-                computer_id: "local".into(),
+                computer_id: "fixture-computer".into(),
                 harness_id: "pi".into(),
                 model: "fixture".into(),
                 thinking_level: "low".into(),
@@ -1170,7 +1157,7 @@ async fn feishu_provider_does_not_block_later_events_when_an_attachment_is_unava
             bio: String::new(),
             avatar: None,
             soul: String::new(),
-            computer_id: "local".into(),
+            computer_id: "fixture-computer".into(),
             harness_id: "pi".into(),
             model: "fixture".into(),
             thinking_level: "low".into(),
@@ -1289,14 +1276,7 @@ async fn feishu_live_gate() {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-struct BootstrapFile {
-    providers: Vec<BootstrapProvider>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-struct BootstrapProvider {
-    #[serde(rename = "type")]
-    provider_type: String,
+struct ApplicationFixture {
     app_id: String,
     app_secret: String,
     #[serde(default)]
@@ -1356,15 +1336,10 @@ fn load_fixture() -> Result<FeishuFixture, String> {
         .ok_or_else(|| "LANKIDE_E2E_TEAM_ROOT is required".to_owned())?;
     let root =
         fs::canonicalize(&root).map_err(|_| "Feishu fixture root is unavailable".to_owned())?;
-    let main_path = root.join(".lankide/bootstrap/feishu-main.json");
-    let metadata_path = root.join(".lankide/bootstrap/feishu-e2e.json");
-    let main: BootstrapFile = read_owner_only_json(&main_path)?;
+    let main_path = root.join("feishu-app.json");
+    let metadata_path = root.join("feishu-e2e.json");
+    let provider: ApplicationFixture = read_owner_only_json(&main_path)?;
     let metadata: E2EMetadata = read_owner_only_json(&metadata_path)?;
-    let provider = main
-        .providers
-        .into_iter()
-        .find(|provider| provider.provider_type == "feishu")
-        .ok_or_else(|| "Feishu bootstrap provider is missing".to_owned())?;
     if provider.app_id != metadata.app_id
         || provider.app_id.trim().is_empty()
         || provider.app_secret.trim().is_empty()
@@ -1433,7 +1408,7 @@ fn live_agent_spec(fixture: &FeishuFixture) -> AgentSpec {
         bio: String::new(),
         avatar: None,
         soul: String::new(),
-        computer_id: "local".into(),
+        computer_id: "fixture-computer".into(),
         harness_id: "pi".into(),
         model: "fixture".into(),
         thinking_level: "low".into(),
@@ -1455,7 +1430,7 @@ fn fixture_agent_spec(name: &str, app_id: &str) -> AgentSpec {
         bio: String::new(),
         avatar: None,
         soul: String::new(),
-        computer_id: "local".into(),
+        computer_id: "fixture-computer".into(),
         harness_id: "pi".into(),
         model: "fixture".into(),
         thinking_level: "low".into(),

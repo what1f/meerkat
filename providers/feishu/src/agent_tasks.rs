@@ -50,23 +50,7 @@ const TASK_PROMPT: &str = r#"## 飞书任务职责
 pub(crate) fn task_system_enabled(config: &Value) -> bool {
     config
         .get("task_system_enabled")
-        .or_else(|| {
-            config
-                .get("provider")
-                .and_then(|value| value.get("task_system_enabled"))
-        })
         .and_then(Value::as_bool)
-        .or_else(|| {
-            config
-                .get("task_system")
-                .or_else(|| {
-                    config
-                        .get("provider")
-                        .and_then(|value| value.get("task_system"))
-                })
-                .and_then(|value| value.get("enabled"))
-                .and_then(Value::as_bool)
-        })
         .unwrap_or(false)
 }
 
@@ -440,8 +424,6 @@ fn create_task(
         summary,
         description: text(input, "description").unwrap_or_default(),
         due: input.get("due").cloned(),
-        assignee_ids: Vec::new(),
-        collaborator_ids: Vec::new(),
         assignees,
         followers,
         tasklist_guid: Some(access.tasklist_id.clone()),
@@ -626,11 +608,7 @@ impl TaskAccess {
             auth,
         )
         .await?;
-        let saved_tasklist_id = text(&workspace_state, "tasklist_guid").or_else(|| {
-            workspace_state
-                .get("task_system")
-                .and_then(|value| text(value, "tasklist_guid"))
-        });
+        let saved_tasklist_id = text(&workspace_state, "tasklist_guid");
         let configured_name = tasklist_name(&context.workspace_config);
         let desired_members = directory.tasklist_members();
         let tasklist_id = ensure_tasklist(
@@ -952,16 +930,6 @@ fn missing_tasklist_members(
 
 fn tasklist_name(config: &Value) -> Option<String> {
     text(config, "task_list_name")
-        .or_else(|| {
-            config
-                .get("provider")
-                .and_then(|value| text(value, "task_list_name"))
-        })
-        .or_else(|| {
-            config
-                .get("task_system")
-                .and_then(|value| text(value, "name"))
-        })
 }
 
 fn task_contains_members(

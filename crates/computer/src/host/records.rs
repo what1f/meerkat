@@ -51,18 +51,7 @@ pub(super) fn expire(root: &Path, retention: Duration) -> Result<(), ComputerErr
     let root = root.canonicalize()?;
     let diagnostics = root.join(".computer/diagnostics");
     if contained_directory(&root, &diagnostics)? {
-        expire_directory(&diagnostics, retention, now, true)?;
-    }
-    // Old adapters put output beside native session history. Remove only records.
-    for workspace in directories(&root)? {
-        for agent in directories(&workspace.join("agents"))? {
-            for directory in [".lankide/pi/sessions", ".lankide/pi/records"] {
-                let directory = agent.join(directory);
-                if contained_directory(&root, &directory)? {
-                    expire_directory(&directory, retention, now, false)?;
-                }
-            }
-        }
+        expire_directory(&diagnostics, retention, now)?;
     }
     Ok(())
 }
@@ -74,52 +63,23 @@ fn contained_directory(root: &Path, path: &Path) -> std::io::Result<bool> {
     Ok(path.canonicalize()?.starts_with(root))
 }
 
-fn directories(path: &Path) -> std::io::Result<Vec<std::path::PathBuf>> {
-    if !path.try_exists()? || fs::symlink_metadata(path)?.file_type().is_symlink() {
-        return Ok(Vec::new());
-    }
-    fs::read_dir(path)?
-        .filter_map(|entry| match entry {
-            Ok(entry) => match entry.file_type() {
-                Ok(kind) if kind.is_dir() => Some(Ok(entry.path())),
-                Ok(_) => None,
-                Err(error) => Some(Err(error)),
-            },
-            Err(error) => Some(Err(error)),
-        })
-        .collect()
-}
-
-fn expire_directory(
-    path: &Path,
-    retention: Duration,
-    now: SystemTime,
-    owned: bool,
-) -> std::io::Result<()> {
+fn expire_directory(path: &Path, retention: Duration, now: SystemTime) -> std::io::Result<()> {
     if !path.try_exists()? || fs::symlink_metadata(path)?.file_type().is_symlink() {
         return Ok(());
     }
     for entry in fs::read_dir(path)? {
         let entry = entry?;
         let kind = entry.file_type()?;
-        if kind.is_dir() && owned {
-            expire_directory(&entry.path(), retention, now, owned)?;
+        if kind.is_dir() {
+            expire_directory(&entry.path(), retention, now)?;
             if fs::read_dir(entry.path())?.next().is_none() {
                 fs::remove_dir(entry.path())?;
             }
         } else if kind.is_file() {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            let record = owned
-                || (name.starts_with("pi-")
-                    && (name.ends_with(".rpc.jsonl")
-                        || name.ends_with(".rpc.jsonl.1")
-                        || name.ends_with(".stderr.log")));
-            if record
-                && now
-                    .duration_since(entry.metadata()?.modified()?)
-                    .unwrap_or_default()
-                    > retention
+            if now
+                .duration_since(entry.metadata()?.modified()?)
+                .unwrap_or_default()
+                > retention
             {
                 fs::remove_file(entry.path())?;
             }

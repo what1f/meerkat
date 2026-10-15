@@ -171,7 +171,6 @@ pub enum PermissionPolicy {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct SessionRequest {
-    #[serde(default)]
     pub permission_policy: PermissionPolicy,
     pub config: HarnessConfig,
     pub working_directory: PathBuf,
@@ -257,7 +256,6 @@ pub enum AgentEventKind {
     Failed {
         code: String,
         message: String,
-        #[serde(default)]
         failure: Option<HarnessFailure>,
     },
     Cancelled {

@@ -13,7 +13,7 @@ def write(value):
 def emit(value):
     print(json.dumps(value), flush=True)
 
-write({"argv": sys.argv[1:], "cwd": os.getcwd(), "environment": {key: os.environ[key] for key in ("HOME", "PI_CODING_AGENT_DIR", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "LANKIDE_RUNTIME_SOCKET") if key in os.environ}})
+write({"argv": sys.argv[1:], "cwd": os.getcwd(), "environment": {key: os.environ[key] for key in ("HOME", "PI_CODING_AGENT_DIR", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "LANKIDE_RUNTIME_RUN") if key in os.environ}})
 if "--version" in sys.argv:
     print("native-fixture")
     sys.exit(0)

@@ -17,19 +17,13 @@ use lankide_provider_telegram::{
     Credentials, NormalizationConfig, PollRequest, Poller, ReqwestTransport, TelegramClient,
     TelegramProvider, Transport, TransportError, normalize_update, render_html_with_mentions,
 };
-use lankide_provider_telegram::{
-    LegacyConsumerProbe, LegacyConsumerState, ProbeError, require_clear,
-};
 use lankide_provider_telegram::{MentionTarget, dto::User};
 use lankide_testkit::{
     GateSelection, ProbeConfig, ScenarioArtifact as Artifact, run_prerequisite_probe,
 };
-use rusqlite::{Connection, OpenFlags, params};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::env;
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -272,7 +266,7 @@ async fn telegram_provider_builds_cross_agent_mention_directory() {
             AgentRuntimeSpec {
                 agent_config: json!({}),
                 provider_agent_config: json!({}),
-                computer_id: "local".into(),
+                computer_id: "fixture-computer".into(),
                 harness_id: "pi".into(),
                 model: "fixture".into(),
                 thinking_level: "low".into(),
@@ -370,21 +364,16 @@ async fn telegram_live_gate() {
     artifact.finish(result).expect("Telegram live gate failed");
 }
 
-/// Bridge the shared testkit's machine-readable report into the provider's
-/// fail-closed mutation guard.  The guard never assumes that an incomplete
-/// report means the machine is clear: any non-green report becomes a probe
-/// error and blocks the mutation.
-struct TestkitLegacyProbe {
+struct LivePrerequisites {
     config: ProbeConfig,
 }
-
-impl LegacyConsumerProbe for TestkitLegacyProbe {
-    fn inspect(&self) -> Result<LegacyConsumerState, ProbeError> {
+impl LivePrerequisites {
+    fn recheck(&self) -> Result<(), String> {
         let report = run_prerequisite_probe(&self.config);
         if report.is_green() {
-            Ok(LegacyConsumerState::default())
+            Ok(())
         } else {
-            Err(ProbeError::Unavailable(report.render_text()))
+            Err(report.render_text())
         }
     }
 }
@@ -491,7 +480,7 @@ fn existing_agent_spec(name: &str, username: &str) -> AgentSpec {
         bio: String::new(),
         avatar: None,
         soul: String::new(),
-        computer_id: "local".into(),
+        computer_id: "fixture-computer".into(),
         harness_id: "pi".into(),
         model: String::new(),
         thinking_level: "low".into(),
@@ -533,13 +522,7 @@ struct TelegramFixture {
 
 fn load_fixture() -> Result<TelegramFixture, String> {
     let config = ProbeConfig::from_environment(GateSelection::TelegramLiveMutating, true);
-    let database = fs::canonicalize(&config.telegram_database)
-        .map_err(|_| "Telegram fixture database is unavailable".to_owned())?;
-    let metadata = fs::metadata(&database)
-        .map_err(|_| "Telegram fixture database metadata is unavailable".to_owned())?;
-    if metadata.permissions().mode() & 0o077 != 0 {
-        return Err("Telegram fixture database permissions are too broad".to_owned());
-    }
+    let fixture = lankide_testkit::read_telegram_fixture(&config.telegram_fixture)?;
     let chat_id = config
         .telegram_mutating_chat_id
         .as_deref()
@@ -552,84 +535,18 @@ fn load_fixture() -> Result<TelegramFixture, String> {
         return Err("Telegram E2E mutation is not explicitly authorized".to_owned());
     }
 
-    let connection = Connection::open_with_flags(
-        &database,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .map_err(|_| "Telegram fixture database cannot be opened read-only".to_owned())?;
-    connection
-        .pragma_update(None, "query_only", true)
-        .map_err(|_| "Telegram fixture database cannot enter query-only mode".to_owned())?;
-    let (provider_id, account_id, token, agent_id, external_bot_id, options): (
-        String,
-        String,
-        Vec<u8>,
-        String,
-        String,
-        Vec<u8>,
-    ) = connection
-        .query_row(
-            "SELECT p.provider_id,p.app_id,p.credential_secret,i.agent_id,i.external_bot_id,i.options_json \
-             FROM provider_namespaces p JOIN agent_provider_identities i ON i.provider_id=p.provider_id \
-             WHERE p.provider_type='telegram' AND p.enabled=1 AND i.enabled=1 \
-             ORDER BY p.provider_id LIMIT 1",
-            [],
-            |row| {
-                Ok((
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                    row.get(5)?,
-                ))
-            },
-        )
-        .map_err(|_| "Telegram Agent Bot fixture is incomplete".to_owned())?;
-    let (manager_account_id, manager_token): (String, Vec<u8>) = connection
-        .query_row(
-            "SELECT account_id,credential_secret FROM managed_integrations WHERE kind_id='telegram'",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(|_| "Telegram Manager Bot fixture is incomplete".to_owned())?;
-    let source_exists: bool = connection
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sources WHERE external_id=?1 AND source_type='group')",
-            params![chat_id.to_string()],
-            |row| row.get(0),
-        )
-        .map_err(|_| "Telegram authorized chat cannot be verified".to_owned())?;
-    if !source_exists {
-        return Err("Telegram authorized chat is not present in the fixture".to_owned());
+    if !fixture.chat_ids.contains(&chat_id.to_string()) {
+        return Err("Telegram authorized chat is not present in the fixture".into());
     }
-    drop(connection);
-
-    let token = String::from_utf8(token)
-        .map_err(|_| "Telegram Agent Bot credential encoding is invalid".to_owned())?;
-    let manager_token = String::from_utf8(manager_token)
-        .map_err(|_| "Telegram Manager Bot credential encoding is invalid".to_owned())?;
-    if token.trim().is_empty() || manager_token.trim().is_empty() {
-        return Err("Telegram Bot credential is empty".to_owned());
-    }
-    let username = serde_json::from_slice::<Value>(&options)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("username")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        })
-        .unwrap_or_else(|| format!("bot_{external_bot_id}"));
     Ok(TelegramFixture {
         chat_id,
-        provider_id,
-        agent_id,
-        account_id,
-        username,
-        token,
-        manager_account_id,
-        manager_token,
+        provider_id: fixture.provider_id,
+        agent_id: fixture.agent_id,
+        account_id: fixture.account_id,
+        username: fixture.username,
+        token: fixture.token,
+        manager_account_id: fixture.manager_account_id,
+        manager_token: fixture.manager_token,
     })
 }
 
@@ -829,14 +746,10 @@ async fn run_telegram_scenario(
     artifact: &Artifact,
 ) -> Result<(), String> {
     let fixture = load_fixture()?;
-    let probe = TestkitLegacyProbe {
+    let probe = LivePrerequisites {
         config: ProbeConfig::from_environment(GateSelection::TelegramLiveMutating, true),
     };
-    let permit = require_clear(&probe, run_id.to_owned())
-        .map_err(|error| format!("Telegram mutation preflight failed: {error}"))?;
-    if permit.marker() != marker {
-        return Err("Telegram mutation marker does not match the guarded run".to_owned());
-    }
+    probe.recheck()?;
     exercise_telegram_contract()?;
 
     let agent_client = TelegramClient::new(
@@ -918,7 +831,7 @@ async fn run_telegram_scenario(
             bio: String::new(),
             avatar: None,
             soul: String::new(),
-            computer_id: "local".into(),
+            computer_id: "fixture-computer".into(),
             harness_id: "pi".into(),
             model: String::new(),
             thinking_level: "low".into(),
@@ -942,8 +855,8 @@ async fn run_telegram_scenario(
 
     let mut sent_ids = Vec::<String>::new();
     let scenario = tokio::time::timeout(Duration::from_secs(360), async {
-        permit
-            .recheck(&probe)
+        probe
+            .recheck()
             .map_err(|error| format!("Telegram mutation recheck failed: {error}"))?;
         let first = host
             .send_message(
@@ -999,8 +912,8 @@ async fn run_telegram_scenario(
         .map_err(|_| "Telegram Provider message edit failed".to_owned())?;
         artifact.record("provider_edit", &first_id, "ok");
 
-        permit
-            .recheck(&probe)
+        probe
+            .recheck()
             .map_err(|error| format!("Telegram mutation recheck failed: {error}"))?;
         let reply = host
             .send_message(
@@ -1030,8 +943,8 @@ async fn run_telegram_scenario(
         sent_ids.push(reply_id.clone());
         artifact.record("provider_reply", &reply_id, "ok");
 
-        permit
-            .recheck(&probe)
+        probe
+            .recheck()
             .map_err(|error| format!("Telegram mutation recheck failed: {error}"))?;
         let attachment_bytes = format!("{marker} attachment").into_bytes();
         let attachment_resource = ResourceRef {
@@ -1073,8 +986,8 @@ async fn run_telegram_scenario(
         sent_ids.push(attachment_id.clone());
         artifact.record("provider_attachment", &attachment_id, "ok");
 
-        permit
-            .recheck(&probe)
+        probe
+            .recheck()
             .map_err(|error| format!("Telegram mutation recheck failed: {error}"))?;
         host.auto_reaction(
             agent_id.clone(),
@@ -1120,7 +1033,7 @@ async fn run_telegram_scenario(
         );
     }
     for (index, provider_message_id) in sent_ids.iter().rev().enumerate() {
-        let result = if permit.recheck(&probe).is_ok() {
+        let result = if probe.recheck().is_ok() {
             host.recall_message(
                 agent_id.clone(),
                 RecallMessageSpec {

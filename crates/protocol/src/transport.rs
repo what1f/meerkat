@@ -285,6 +285,3 @@ impl<T: Unpin> Stream for Messages<T> {
         Pin::new(&mut self.0).poll_next(cx)
     }
 }
-pub fn socket_path(home: impl AsRef<Path>) -> PathBuf {
-    home.as_ref().join("run/runtime.sock")
-}

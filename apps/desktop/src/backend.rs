@@ -8,7 +8,7 @@ use std::{
 };
 
 const HOME_ENV: &str = "LANKIDE_HOME";
-const SOCKET_ENV: &str = "LANKIDE_RUNTIME_SOCKET";
+const RUN_ENV: &str = "LANKIDE_RUNTIME_RUN";
 
 pub struct DesktopBackend {
     pub client: Arc<dyn ManagementClient>,
@@ -23,25 +23,25 @@ impl DesktopBackend {
     pub fn launch() -> Self {
         let tokio = tokio::runtime::Runtime::new().expect("failed to create desktop Tokio runtime");
         let home = lankide_home();
-        let configured_socket = env::var_os(SOCKET_ENV);
-        let socket = configured_socket
+        let configured_run = env::var_os(RUN_ENV);
+        let run = configured_run
             .clone()
             .map(PathBuf::from)
-            .unwrap_or_else(|| home.join("run/runtime.sock"));
+            .unwrap_or_else(|| home.join("run"));
         let services = Arc::new(Mutex::new(BackgroundServices::new(
-            configured_socket.is_none(),
+            configured_run.is_none(),
         )));
         let client = {
             let _guard = tokio.enter();
-            RuntimeManagementClient::connect_local_lazy(socket.parent().unwrap_or(Path::new(".")))
+            RuntimeManagementClient::connect_local_lazy(&run)
         };
         let (startup_tx, startup_result) = tokio::sync::oneshot::channel();
 
         let worker_services = services.clone();
         let worker_home = home.clone();
-        let worker_socket = socket.clone();
+        let worker_run = run.clone();
         let runtime = tokio.handle().clone();
-        let manage_services = configured_socket.is_none();
+        let manage_services = configured_run.is_none();
         std::thread::Builder::new()
             .name("lankide-service-bootstrap".into())
             .spawn(move || {
@@ -49,7 +49,7 @@ impl DesktopBackend {
                     &runtime,
                     &worker_services,
                     &worker_home,
-                    &worker_socket,
+                    &worker_run,
                     manage_services,
                 );
                 if let Err(error) = &result {
@@ -72,11 +72,11 @@ impl DesktopBackend {
     pub fn bootstrap() -> Self {
         let tokio = tokio::runtime::Runtime::new().expect("failed to create desktop Tokio runtime");
         let home = lankide_home();
-        let configured_socket = env::var_os(SOCKET_ENV);
-        let socket = configured_socket
+        let configured_run = env::var_os(RUN_ENV);
+        let run = configured_run
             .clone()
             .map(PathBuf::from)
-            .unwrap_or_else(|| home.join("run/runtime.sock"));
+            .unwrap_or_else(|| home.join("run"));
         // A private home keeps bundled smoke runs on transient helpers.
         // Unbundled runs use transient helpers even with the default home.
         let services = Arc::new(Mutex::new(BackgroundServices::new(
@@ -86,14 +86,11 @@ impl DesktopBackend {
             tokio.handle(),
             &services,
             &home,
-            &socket,
-            configured_socket.is_none(),
+            &run,
+            configured_run.is_none(),
         );
-        let client = startup.and_then(|_| {
-            tokio.block_on(RuntimeManagementClient::connect_local(
-                socket.parent().unwrap_or(Path::new(".")),
-            ))
-        });
+        let client =
+            startup.and_then(|_| tokio.block_on(RuntimeManagementClient::connect_local(&run)));
 
         match client {
             Ok(client) => Self {
@@ -108,9 +105,7 @@ impl DesktopBackend {
                 // Computer can wait for a Runtime that becomes available later.
                 let client = {
                     let _guard = tokio.enter();
-                    RuntimeManagementClient::connect_local_lazy(
-                        socket.parent().unwrap_or(Path::new(".")),
-                    )
+                    RuntimeManagementClient::connect_local_lazy(&run)
                 };
                 Self {
                     client: Arc::new(client),
@@ -146,13 +141,11 @@ fn start_services(
     runtime: &tokio::runtime::Handle,
     services: &Arc<Mutex<BackgroundServices>>,
     home: &Path,
-    socket: &Path,
+    run: &Path,
     manage_services: bool,
 ) -> Result<(), ClientError> {
     // Reuse a healthy owner before preparing or launching any local service.
-    let client = match runtime.block_on(RuntimeManagementClient::connect_local(
-        socket.parent().unwrap_or(Path::new(".")),
-    )) {
+    let client = match runtime.block_on(RuntimeManagementClient::connect_local(&run)) {
         Ok(client) => client,
         Err(_) if manage_services => {
             {
@@ -162,7 +155,7 @@ fn start_services(
                 services.prepare(home)?;
                 services.ensure_runtime(home)?;
             }
-            runtime.block_on(connect_with_retry(socket))?
+            runtime.block_on(connect_with_retry(run))?
         }
         Err(error) => return Err(error),
     };
@@ -244,12 +237,10 @@ fn lankide_home() -> PathBuf {
     })
 }
 
-async fn connect_with_retry(socket: &Path) -> Result<RuntimeManagementClient, ClientError> {
+async fn connect_with_retry(run: &Path) -> Result<RuntimeManagementClient, ClientError> {
     let mut last_error = ClientError::Unavailable("Lankide 尚未就绪".into());
     for _ in 0..50 {
-        match RuntimeManagementClient::connect_local(socket.parent().unwrap_or(Path::new(".")))
-            .await
-        {
+        match RuntimeManagementClient::connect_local(&run).await {
             Ok(client) => return Ok(client),
             Err(error) => last_error = error,
         }

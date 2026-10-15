@@ -6,8 +6,8 @@ pub use crate::link::{
     DeliverSteer, Delivery, DeliveryResult, EnvironmentVariable, ExecutionCommitted,
     ExecutionEvent, ExecutionEventAck, ExecutionRef, HarnessConfig, HarnessInfo, InventoryChanged,
     ModelCatalog, ModelCatalogItem, PairComputerRequest, PairComputerResponse, ResourceRef,
-    ResourceTransferResult, RuntimeHello, SessionDirective, Shutdown, ToolCall, ToolDefinition,
-    ToolError, ToolResult, WorkspaceRef,
+    ResourceTransferResult, RuntimeHello, SessionDirective, Shutdown, ToolDefinition, ToolError,
+    ToolResult, WorkspaceRef,
 };
 pub use crate::management::{
     AdvanceAgentOnboardingRequest, AdvanceProviderOnboardingRequest, Agent, AgentAttention,

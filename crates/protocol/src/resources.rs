@@ -13,7 +13,7 @@ use tokio_stream::StreamExt;
 type Body = Full<Bytes>;
 
 /// Resource requests use the attempt's token, never the Computer link secret.
-/// Legacy Agent resource RPCs retain the same business authorization boundary.
+/// Agent resource calls use the same business authorization boundary.
 pub async fn serve<P, F>(
     listener: TcpListener,
     secret: String,

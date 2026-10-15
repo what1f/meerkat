@@ -21,7 +21,7 @@ use lankide_protocol::{
     ExecutionEvent, ExecutionEventAck, ExecutionEventKind, ExecutionRef, HarnessConfig,
     ResourceChunk, ResourceChunkStream, ResourceDescriptor, ResourceRef, ResourceRequest,
     RuntimeFrame, RuntimeFrameStream, RuntimeHello, RuntimePeer, SessionAction, SessionDirective,
-    ToolDefinition, ToolResult, TransportConfig, WorkspaceRef, computer_frame, runtime_frame,
+    ToolDefinition, TransportConfig, WorkspaceRef, computer_frame, runtime_frame,
 };
 
 use lankide_protocol::Status;
@@ -145,6 +145,7 @@ struct PeerState {
     hellos: Mutex<Vec<ComputerHello>>,
     resources: Mutex<HashMap<i64, (String, Vec<u8>)>>,
     uploads: Mutex<Vec<Vec<u8>>>,
+    calls: Mutex<HashMap<String, String>>,
 }
 
 impl Peer {
@@ -156,11 +157,17 @@ impl Peer {
                 hellos: Mutex::new(Vec::new()),
                 resources: Mutex::new(HashMap::new()),
                 uploads: Mutex::new(Vec::new()),
+                calls: Mutex::new(HashMap::new()),
             }),
         }
     }
 
-    async fn send(&self, frame: RuntimeFrame) {
+    async fn send(&self, mut frame: RuntimeFrame) {
+        if let Some(runtime_frame::Frame::CapabilityResponse(response)) = frame.frame.as_mut() {
+            if let Some(id) = self.state.calls.lock().unwrap().get(&response.request_id) {
+                response.request_id = id.clone();
+            }
+        }
         for _ in 0..100 {
             let sender = self.state.runtime.lock().expect("runtime mutex").clone();
             if let Some(sender) = sender {
@@ -198,10 +205,11 @@ impl lankide_protocol::ComputerPeer for Peer {
     ) -> Result<RuntimeFrameStream, Status> {
         self.state.hellos.lock().expect("hello mutex").push(hello);
         let incoming = self.state.incoming.clone();
+        let state = self.state.clone();
         tokio::spawn(async move {
             while let Some(frame) = frames.next().await {
                 match frame {
-                    Ok(mut frame) => {
+                    Ok(frame) => {
                         if let Some(computer_frame::Frame::CapabilityRequest(request)) =
                             &frame.frame
                         {
@@ -212,15 +220,14 @@ impl lankide_protocol::ComputerPeer for Peer {
                             >(request.payload.as_slice())
                             .expect("capability request");
                             let context = call.context.expect("run context");
-                            frame.frame = Some(computer_frame::Frame::ToolCall(
-                                lankide_protocol::ToolCall {
-                                    execution: context.execution,
-                                    tool_call_id: call.invocation_id,
-                                    tool_name: call.capability_name,
-                                    arguments_json: call.arguments_json,
-                                    execution_token: context.execution_token,
-                                },
-                            ));
+                            let run = context.execution.unwrap();
+                            state.calls.lock().unwrap().insert(
+                                format!(
+                                    "{}:{}:{}",
+                                    run.execution_id, run.attempt, call.invocation_id
+                                ),
+                                request.request_id.clone(),
+                            );
                         }
                         let _ = incoming.send(frame);
                     }
@@ -330,7 +337,7 @@ async fn computer_e2e() {
     let _ = fs::remove_dir_all(&temp);
     fs::create_dir_all(&temp).expect("temp root");
     let workspace_root = temp.join("workspaces");
-    let socket = temp.join("run/runtime.sock");
+    let socket = temp.join("run");
     let artifact_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/e2e-artifacts/computer")
         .join(&run_id);
@@ -380,7 +387,7 @@ async fn computer_e2e() {
         fs::set_permissions(&capability_cli, fs::Permissions::from_mode(0o700)).unwrap();
     }
     let mut computer = Computer::new(ComputerConfig {
-        computer_id: "local".into(),
+        computer_id: "fixture-computer".into(),
         instance_id: format!("computer-e2e-{run_id}"),
         workspace_root: workspace_root.display().to_string(),
         reconnect: ReconnectPolicy {
@@ -452,7 +459,7 @@ async fn computer_e2e() {
     let outcome = timeout(Duration::from_secs(30), async {
         wait_for(|| peer.state.hellos.lock().expect("hello mutex").len() >= 1).await;
         let hello = peer.state.hellos.lock().expect("hello mutex")[0].clone();
-        assert_eq!(hello.computer_id, "local");
+        assert_eq!(hello.computer_id, "fixture-computer");
         assert_eq!(
             hello
                 .harnesses
@@ -891,8 +898,6 @@ async fn computer_e2e() {
         peer.send(applied.clone()).await;
         assert_tool_receipt(&mut incoming_rx, 13, 1, "call-1", true, "").await;
         peer.send(applied).await;
-        let duplicate = assert_tool_receipt(&mut incoming_rx, 13, 1, "call-1", true, "").await;
-        assert_eq!(duplicate.error_message, "already_applied");
 
         peer.send(runtime_tool_result(
             execution(13),
@@ -901,30 +906,12 @@ async fn computer_e2e() {
             vec![tool_resource.clone()],
         ))
         .await;
-        assert_tool_receipt(
-            &mut incoming_rx,
-            13,
-            1,
-            "call-1",
-            false,
-            "tool_result_rejected",
-        )
-        .await;
         peer.send(runtime_tool_result(
             execution(13),
             "unknown-call",
             "unknown",
             vec![],
         ))
-        .await;
-        assert_tool_receipt(
-            &mut incoming_rx,
-            13,
-            1,
-            "unknown-call",
-            false,
-            "unknown_tool_call",
-        )
         .await;
         peer.send(runtime_tool_result(
             ExecutionRef {
@@ -935,15 +922,6 @@ async fn computer_e2e() {
             "wrong attempt",
             vec![],
         ))
-        .await;
-        assert_tool_receipt(
-            &mut incoming_rx,
-            13,
-            2,
-            "call-1",
-            false,
-            "execution_not_active",
-        )
         .await;
         let tool_ops = fs::read_to_string(&harness_log).expect("tool harness log");
         assert_eq!(
@@ -971,15 +949,6 @@ async fn computer_e2e() {
         assert_eq!(tool_terminal[1].kind, ExecutionEventKind::Completed as i32);
         peer.send(runtime_tool_result(execution(13), "call-1", "late", vec![]))
             .await;
-        assert_tool_receipt(
-            &mut incoming_rx,
-            13,
-            1,
-            "call-1",
-            false,
-            "execution_not_active",
-        )
-        .await;
 
         peer.send(runtime_assign(
             14,
@@ -1000,15 +969,6 @@ async fn computer_e2e() {
             "late after cancel",
             vec![],
         ))
-        .await;
-        assert_tool_receipt(
-            &mut incoming_rx,
-            14,
-            1,
-            "call-1",
-            false,
-            "execution_not_active",
-        )
         .await;
 
         peer.send(runtime_assign(
@@ -1366,15 +1326,27 @@ fn runtime_tool_result(
 ) -> RuntimeFrame {
     RuntimeFrame {
         protocol_version: lankide_protocol::PROTOCOL_VERSION,
-        frame: Some(runtime_frame::Frame::ToolResult(ToolResult {
-            execution: Some(execution),
-            tool_call_id: tool_call_id.into(),
-            success: true,
-            content_markdown: content_markdown.into(),
-            structured_content_json: r#"{"from_runtime":true}"#.into(),
-            resources,
-            error: None,
-        })),
+        frame: Some(runtime_frame::Frame::CapabilityResponse(
+            lankide_protocol::CapabilityResponse {
+                request_id: format!(
+                    "{}:{}:{}",
+                    execution.execution_id, execution.attempt, tool_call_id
+                ),
+                eof: true,
+                payload: lankide_protocol::agent::encode(
+                    &lankide_protocol::CapabilityInvokeResult {
+                        invocation_id: tool_call_id.into(),
+                        success: true,
+                        content_markdown: content_markdown.into(),
+                        structured_content_json: r#"{"from_runtime":true}"#.into(),
+                        resources,
+                        error: None,
+                    },
+                )
+                .unwrap(),
+                ..Default::default()
+            },
+        )),
     }
 }
 
@@ -1393,13 +1365,16 @@ async fn wait_tool_prefix(
             .expect("tool prefix timeout")
             .expect("computer stream");
         match frame.frame {
-            Some(computer_frame::Frame::ToolCall(call))
+            Some(computer_frame::Frame::CapabilityRequest(call))
                 if call
-                    .execution
+                    .context
                     .as_ref()
+                    .and_then(|context| context.execution.as_ref())
                     .is_some_and(|execution| execution.execution_id == id) =>
             {
-                assert_eq!(call.tool_call_id, "call-1");
+                let call: lankide_protocol::CapabilityInvokeRequest =
+                    lankide_protocol::agent::decode(&call.payload).unwrap();
+                assert_eq!(call.invocation_id, "call-1");
                 saw_call = true;
             }
             Some(computer_frame::Frame::ExecutionEvent(event))
@@ -1433,13 +1408,16 @@ async fn wait_specific_tool_call(
             .expect("tool call timeout")
             .expect("computer stream");
         match frame.frame {
-            Some(computer_frame::Frame::ToolCall(call))
+            Some(computer_frame::Frame::CapabilityRequest(call))
                 if call
-                    .execution
+                    .context
                     .as_ref()
+                    .and_then(|context| context.execution.as_ref())
                     .is_some_and(|execution| execution.execution_id == id) =>
             {
-                assert_eq!(call.tool_name, tool_name);
+                let call: lankide_protocol::CapabilityInvokeRequest =
+                    lankide_protocol::agent::decode(&call.payload).unwrap();
+                assert_eq!(call.capability_name, tool_name);
                 return serde_json::from_str(&call.arguments_json).expect("tool arguments JSON");
             }
             Some(computer_frame::Frame::ExecutionEvent(event))
@@ -1472,10 +1450,11 @@ async fn finish_local_tool_error(
         }
         if let Ok(Some(frame)) = timeout(Duration::from_millis(10), receiver.recv()).await {
             match frame.frame {
-                Some(computer_frame::Frame::ToolCall(call))
+                Some(computer_frame::Frame::CapabilityRequest(call))
                     if call
-                        .execution
+                        .context
                         .as_ref()
+                        .and_then(|context| context.execution.as_ref())
                         .is_some_and(|execution| execution.execution_id == id) =>
                 {
                     panic!("invalid local content_file reached Runtime")
@@ -1698,7 +1677,7 @@ fn payloads(events: &[ExecutionEvent]) -> String {
 }
 
 async fn wait_socket(path: &Path) {
-    wait_for(|| path.exists()).await;
+    wait_for(|| path.join("agent.sock").exists()).await;
 }
 async fn wait_for(mut condition: impl FnMut() -> bool) {
     timeout(STEP, async {

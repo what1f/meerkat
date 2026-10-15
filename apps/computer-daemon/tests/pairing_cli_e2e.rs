@@ -24,7 +24,7 @@ async fn pair_command_registers_a_device_and_stores_private_credentials()
         let management = timeout(Duration::from_secs(5), async {
             loop {
                 let client = lankide_client::http::HttpManagementTransport::local(
-                    &paths.socket,
+                    &paths.run,
                     DEFAULT_MAX_MESSAGE_BYTES,
                 );
                 if client
@@ -47,7 +47,7 @@ async fn pair_command_registers_a_device_and_stores_private_credentials()
             })
             .await?
             .into_inner();
-        let (url, _) = lankide_protocol::link::discover(&paths.socket)?;
+        let (url, _) = lankide_protocol::link::discover(&paths.run)?;
         let http_url = url.replacen("ws://", "http://", 1);
         let output = timeout(
             Duration::from_secs(5),
@@ -74,7 +74,7 @@ async fn pair_command_registers_a_device_and_stores_private_credentials()
         );
         let credentials = lankide_computer_daemon::read_credentials(computer_home.path())?.unwrap();
         assert_eq!(credentials.runtime_url, url);
-        assert_ne!(credentials.computer_id, "local");
+        assert_ne!(credentials.computer_id, "fixture-computer");
         let catalog = management
             .get_computer_catalog(CatalogRequest {
                 request_id: "cli-catalog".into(),

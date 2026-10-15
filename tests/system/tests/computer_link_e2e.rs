@@ -61,7 +61,7 @@ async fn s9_1_newer_computer_gets_a_typed_rejection_visible_in_management() -> R
         "{result:?}"
     );
     let management = lankide_client::http::HttpManagementTransport::local(
-        rig.runtime_socket(),
+        rig.runtime_run(),
         DEFAULT_MAX_MESSAGE_BYTES,
     );
     let catalog = management
@@ -189,7 +189,7 @@ async fn ws_rejects_unauthorized_and_invalid_connections_without_disrupting_a_co
     use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest};
     let rig = SystemRig::start(config()).await?;
     let (url, secret) = rig.computer_endpoint()?;
-    let run = rig.runtime_socket().parent().unwrap();
+    let run = rig.runtime_run();
     for name in ["computer-link.url", "computer-link.secret"] {
         assert_eq!(
             std::fs::metadata(run.join(name))?.permissions().mode() & 0o777,

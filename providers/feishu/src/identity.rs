@@ -16,25 +16,17 @@ const STATE_KEY: &str = "identity_directory";
 /// Lankide Agent ID remains the only identity that leaves this Provider.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 pub(crate) struct IdentityDirectory {
-    #[serde(default)]
     pub agents: BTreeMap<String, AgentIdentity>,
-    #[serde(default)]
     unresolved_bots: BTreeMap<String, BotObservation>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 pub(crate) struct AgentIdentity {
-    #[serde(default)]
     pub app_id: String,
-    #[serde(default)]
     pub tenant_key: String,
-    #[serde(default)]
     pub union_id: String,
-    #[serde(default)]
     pub user_id: String,
-    #[serde(default)]
     pub open_ids_by_app: BTreeMap<String, String>,
-    #[serde(default)]
     pub display_name: String,
 }
 

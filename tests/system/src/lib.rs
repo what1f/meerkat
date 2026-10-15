@@ -201,7 +201,7 @@ impl SystemRig {
             proxy: None,
             runtime: Some(runtime),
             shutdown: Some(shutdown),
-            client: RuntimeManagementClient::connect_lazy(&paths.socket),
+            client: RuntimeManagementClient::connect_local_lazy(&paths.run),
             home,
             computer_home,
             paths,
@@ -260,7 +260,7 @@ impl SystemRig {
         )?;
         let mut config = DaemonConfig::for_home(self.computer_home.path())?;
         config.paths.prepare()?;
-        let (url, secret) = lankide_protocol::link::discover(&self.paths.socket)?;
+        let (url, secret) = lankide_protocol::link::discover(&self.paths.run)?;
         let secret_path = self.computer_home.path().join("run/computer-link.secret");
         {
             use std::io::Write;
@@ -274,7 +274,7 @@ impl SystemRig {
             file.write_all(secret.as_bytes())?;
         }
         if !self.config.computer_ws_only {
-            config.paths.runtime_socket = self.paths.socket.clone();
+            config.paths.runtime_run = self.paths.run.clone();
         }
         config.runtime_url = if self.config.local_discovery {
             None
@@ -288,7 +288,7 @@ impl SystemRig {
                     .arg(self.computer_home.path())
                     .arg(config.runtime_url.as_ref().expect("URL"))
                     .arg(config.link_secret_file.as_ref().expect("secret"))
-                    .arg(&self.paths.socket)
+                    .arg(&self.paths.run)
                     .arg(&self.config.harness_executable)
                     .arg(serde_json::to_string(&self.config.harness_capabilities)?)
                     .spawn()?,
@@ -347,13 +347,13 @@ impl SystemRig {
             .any(|c| c.registered && c.available))
     }
     pub fn computer_endpoint(&self) -> Result<(String, String)> {
-        let (url, _) = lankide_protocol::link::discover(&self.paths.socket)?;
+        let (url, _) = lankide_protocol::link::discover(&self.paths.run)?;
         let credentials = lankide_computer_daemon::read_credentials(self.computer_home.path())?
             .ok_or("Computer is unpaired")?;
         Ok((url, credentials.device_credential))
     }
     pub fn local_pairing_endpoint(&self) -> Result<(String, String)> {
-        Ok(lankide_protocol::link::discover(&self.paths.socket)?)
+        Ok(lankide_protocol::link::discover(&self.paths.run)?)
     }
     pub fn management(&self) -> &RuntimeManagementClient {
         &self.client
@@ -376,7 +376,7 @@ impl SystemRig {
         .await?;
         let mut config = DaemonConfig::for_home(home.path())?;
         config.runtime_url = Some(url);
-        config.paths.runtime_socket = self.paths.socket.clone();
+        config.paths.runtime_run = self.paths.run.clone();
         let daemon = ComputerThread::start(
             config,
             self.config.harness_executable.clone(),
@@ -412,8 +412,8 @@ impl SystemRig {
         self.wait_for_computer().await
     }
 
-    pub fn runtime_socket(&self) -> &std::path::Path {
-        &self.paths.socket
+    pub fn runtime_run(&self) -> &std::path::Path {
+        &self.paths.run
     }
     pub fn homes_are_separate(&self) -> bool {
         self.home.path() != self.computer_home.path()
@@ -470,7 +470,7 @@ impl SystemRig {
             })
             .await
         }));
-        self.client = RuntimeManagementClient::connect_lazy(&self.paths.socket);
+        self.client = RuntimeManagementClient::connect_local_lazy(&self.paths.run);
         // The daemon's graceful shutdown frame ends its managed Computer peer.
         // Reopen the same Computer home, as a service supervisor does.
         if let Some(mut computer) = self.computer.take() {
@@ -1016,7 +1016,7 @@ impl Agent<'_> {
     }
     pub async fn group_attention(&self, mode: lankide_protocol::AttentionMode) -> Result<()> {
         let client = lankide_client::http::HttpManagementTransport::local(
-            &self.rig.paths.socket,
+            &self.rig.paths.run,
             lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES,
         );
         client
@@ -1188,7 +1188,7 @@ pub async fn run_scripted_computer(
     let mut config = DaemonConfig::for_home(&home)?;
     config.runtime_url = Some(url);
     config.link_secret_file = Some(secret);
-    config.paths.runtime_socket = socket;
+    config.paths.runtime_run = socket;
     let registration = RegisteredHarness::new(
         ScriptedHarness::new(home.join("harness-pids.tsv")),
         HarnessConfig {

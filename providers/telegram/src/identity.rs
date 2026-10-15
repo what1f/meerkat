@@ -8,16 +8,13 @@ const STATE_KEY: &str = "identity_directory";
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 pub(crate) struct IdentityDirectory {
-    #[serde(default)]
     pub agents: BTreeMap<String, AgentIdentity>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 pub(crate) struct AgentIdentity {
     pub account_id: i64,
-    #[serde(default)]
     pub username: String,
-    #[serde(default)]
     pub display_name: String,
 }
 

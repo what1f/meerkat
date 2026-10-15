@@ -106,14 +106,7 @@ fn load_workspace_record(c: &Connection, id: &WorkspaceId) -> Result<WorkspaceRe
         [id.as_str()],
         |r| r.get(0),
     )?;
-    let legacy: Option<i64> = c
-        .query_row(
-            "SELECT updated_at FROM workspace_provider_secrets WHERE workspace_id=?1",
-            [id.as_str()],
-            |r| r.get(0),
-        )
-        .optional()?;
-    let revision = named.or(legacy);
+    let revision = named;
     let (rules, cover_resource_id, setup_status, setup_error_code, provider_state_json): (
         String,
         Option<i64>,
@@ -200,14 +193,16 @@ impl Storage {
                 s.now
             ],
         )?;
-        t.execute(
-            "INSERT INTO workspace_provider_secrets VALUES(?1,?2,?3)",
-            params![
-                s.id.as_str(),
-                serde_json::to_string(&s.provider_secret)?,
-                s.now
-            ],
-        )?;
+        let secrets = s
+            .provider_secret
+            .as_object()
+            .ok_or_else(|| StorageError::Invalid("workspace secrets must be an object".into()))?;
+        for (index, (name, value)) in secrets.iter().enumerate() {
+            let value = value
+                .as_str()
+                .ok_or_else(|| StorageError::Invalid("workspace secret must be text".into()))?;
+            t.execute("INSERT INTO workspace_named_secrets(workspace_id,name,value,revision,updated_at) VALUES(?1,?2,?3,?4,?5)", params![s.id.as_str(),name,value,index as i64+1,s.now])?;
+        }
         t.commit()?;
         Ok(())
     }
@@ -377,10 +372,6 @@ impl Storage {
             [id.as_str()],
         )?;
         transaction.execute(
-            "DELETE FROM workspace_provider_secrets WHERE workspace_id=?1",
-            [id.as_str()],
-        )?;
-        transaction.execute(
             "DELETE FROM workspaces WHERE workspace_id=?1",
             [id.as_str()],
         )?;
@@ -419,14 +410,6 @@ impl Storage {
             return Err(StorageError::Conflict("workspace setup update".into()));
         }
         self.workspace_record(workspace_id)
-    }
-    pub fn provider_secret(&self, id: &WorkspaceId) -> Result<Value> {
-        let s: String = self.conn()?.query_row(
-            "SELECT secret_json FROM workspace_provider_secrets WHERE workspace_id=?1",
-            [id.as_str()],
-            |r| r.get(0),
-        )?;
-        Ok(serde_json::from_str(&s)?)
     }
     pub fn put_secret(
         &self,

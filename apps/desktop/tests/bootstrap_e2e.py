@@ -23,7 +23,7 @@ def reuse_running_services(binaries, artifact_dir):
         home = Path(directory) / ".lankide"
         env = {**os.environ, "HOME": directory}
         env.pop("LANKIDE_HOME", None)
-        env.pop("LANKIDE_RUNTIME_SOCKET", None)
+        env.pop("LANKIDE_RUNTIME_RUN", None)
         owners = []
         with (artifact_dir / "existing-owner.log").open("w") as log:
             try:
@@ -38,7 +38,7 @@ def reuse_running_services(binaries, artifact_dir):
                     assert time.monotonic() < deadline, "service owner did not start"
                     probe = subprocess.run(
                         [str(binaries["lankide-desktop"]), "--local-bootstrap-smoke", "--result", str(artifact_dir / "existing-owner-ready.json")],
-                        env={**env, "LANKIDE_RUNTIME_SOCKET": str(home / "run/runtime.sock")},
+                        env={**env, "LANKIDE_RUNTIME_RUN": str(home / "run")},
                         stdout=log, stderr=subprocess.STDOUT, timeout=10,
                     )
                     if probe.returncode == 0:
@@ -112,7 +112,7 @@ def run(binary_dir, artifact_dir):
             env.pop("LANKIDE_HOME", None)
             if not default_home:
                 env["LANKIDE_HOME"] = str(home)
-            env.pop("LANKIDE_RUNTIME_SOCKET", None)
+            env.pop("LANKIDE_RUNTIME_RUN", None)
             with (artifact_dir / f"{scenario}.log").open("w") as log:
                 process = subprocess.Popen(
                     [str(bundle / "lankide-desktop"), "--local-bootstrap-smoke", "--result", str(output)],

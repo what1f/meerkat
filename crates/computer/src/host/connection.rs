@@ -1,7 +1,5 @@
 use super::assignment::{handle_assignment, handle_delete_agent_files};
-use super::control::{
-    active_attempts, handle_cancel, handle_steer, replay_pending, route_tool_result,
-};
+use super::control::{active_attempts, handle_cancel, handle_steer, replay_pending};
 use super::events::terminal_protocol_event;
 use super::{ComputerError, ComputerHandle, Inner, now_millis};
 use crate::STANDARD_HARNESS_IDS;
@@ -75,7 +73,7 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, ComputerError> {
     let (url, secret) = match &inner.link_endpoint {
         Some(endpoint) => endpoint.clone(),
         None => {
-            let (url, _) = lankide_protocol::link::discover(&inner.socket_path)?;
+            let (url, _) = lankide_protocol::link::discover(&inner.runtime_run)?;
             (url, inner.device_credential.clone())
         }
     };
@@ -331,11 +329,6 @@ async fn dispatch(inner: Arc<Inner>, frame: RuntimeFrame) -> Result<(), Computer
                     }
                     state.save(&inner.state_path)?;
                 }
-            }
-        }
-        Some(runtime_frame::Frame::ToolResult(result)) => {
-            if !super::proxy::legacy_tool_response(&inner, &result).await {
-                route_tool_result(&inner, result).await;
             }
         }
         Some(runtime_frame::Frame::ExecutionCommitted(committed)) => {

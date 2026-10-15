@@ -46,7 +46,7 @@ async fn s12_1_pair_fresh_code_register_and_connect() -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let mut rig = SystemRig::start(config()).await?;
     let credentials = pair_rig(&rig).await?;
-    assert_ne!(credentials.computer_id, "local");
+    assert_ne!(credentials.computer_id, "fixture-computer");
     assert_eq!(credentials.device_credential.len(), 64);
     let file = rig.computer_home().join("computer-credentials.json");
     assert_eq!(
@@ -203,7 +203,7 @@ async fn s12_5_copied_revoked_home_cannot_connect() -> Result<()> {
         .arg(copied.path())
         .arg(&device.runtime_url)
         .arg(copied.path().join("unused-secret"))
-        .arg(rig.runtime_socket())
+        .arg(rig.runtime_run())
         .arg(env!("CARGO_BIN_EXE_system-harness"))
         .arg(r#"["system_prompt","streaming","resume","cancel","tools"]"#)
         .stderr(std::process::Stdio::piped())
@@ -229,60 +229,22 @@ async fn s12_5_copied_revoked_home_cannot_connect() -> Result<()> {
 }
 
 #[tokio::test]
-async fn local_self_pairing_moves_legacy_agents_and_reuses_credentials() -> Result<()> {
+async fn local_self_pairing_places_new_agents_and_reuses_credentials() -> Result<()> {
     let mut rig = SystemRig::start(RigConfig {
         local_discovery: true,
         ..config()
     })
     .await?;
     rig.workspace("team").await?;
-    // Seed a pre-registration Agent through Storage. New management requests
-    // must no longer be able to create this legacy placement.
-    let storage = lankide_storage::Storage::open(lankide_storage::DatabaseConfig::new(
-        rig.runtime_home().join("runtime.db"),
-    ))?;
-    let workspace = lankide_core::WorkspaceId::new("team")?;
-    let agent = lankide_core::AgentId::new("bruce")?;
-    storage.create_agent(lankide_storage::AgentSpec {
-        workspace_id: workspace.clone(),
-        id: agent.clone(),
-        name: "bruce".into(),
-        now: 1,
-    })?;
-    let mut record = storage.agent_record(&workspace, &agent)?;
-    record.computer_id = "local".into();
-    record.harness_id = "pi".into();
-    record.model = "scripted".into();
-    record.thinking = "low".into();
-    record.cli_path = Some(env!("CARGO_BIN_EXE_system-harness").into());
-    record.env.insert(
-        "LANKIDE_SYSTEM_SCRIPT".into(),
-        serde_json::to_string(&Script::reply("hi"))?,
-    );
-    for (key, file) in [
-        ("LANKIDE_SYSTEM_CONTROLS", "controls-team-bruce.jsonl"),
-        ("LANKIDE_SYSTEM_INPUTS", "inputs-team-bruce.jsonl"),
-        ("LANKIDE_SYSTEM_STEERS", "steers-team-bruce.jsonl"),
-    ] {
-        record.env.insert(
-            key.into(),
-            rig.computer_home().join(file).display().to_string(),
-        );
-    }
-    record.provider_agent_config = serde_json::json!({"account":"bot-bruce"});
-    storage.update_agent_record(record)?;
-    storage.close()?;
-    assert_eq!(
-        rig.management()
-            .get_agent("team", "bruce")
-            .await?
-            .computer_id,
-        "local"
-    );
     rig.restart_runtime().await?;
+    let team = rig.existing_workspace("team");
     let credentials = read_credentials(rig.computer_home())?.unwrap();
     assert!(credentials.local_discovery);
-    assert_ne!(credentials.computer_id, "local");
+    let agent = team
+        .agent("bruce")
+        .harness(Script::reply("hi"))
+        .create()
+        .await?;
     assert_eq!(
         rig.management()
             .get_agent("team", "bruce")
@@ -290,8 +252,6 @@ async fn local_self_pairing_moves_legacy_agents_and_reuses_credentials() -> Resu
             .computer_id,
         credentials.computer_id
     );
-    let team = rig.existing_workspace("team");
-    let agent = team.existing_agent("bruce");
     team.direct_message(&agent, "alice", "hello").await?;
     rig.settle().await?;
     assert_eq!(team.dm_transcript(&agent, "alice"), ["hello", "hi"]);
