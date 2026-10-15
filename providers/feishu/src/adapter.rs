@@ -1264,11 +1264,7 @@ async fn normalized_event_to_provider(
                     provider_data["chat_name"] = serde_json::json!(chat.name);
                 }
             }
-            let receiving_agent_id = if message.channel_id == "private_chat" {
-                receiving_agent(context, &message.app_id).await?
-            } else {
-                None
-            };
+            let receiving_agent_id = receiving_agent(context, &message.app_id).await?;
             Ok(ProviderEvent {
                 receiving_agent_id,
                 channel_id: channel(&message.channel_id),

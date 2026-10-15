@@ -65,6 +65,7 @@ async fn a_group_message_mentioning_a_bot_reaches_its_agent() {
             .unwrap()
             .into_parts();
         assert_eq!(event.provider_chat_id, "-1001");
+        assert_eq!(event.receiving_agent_id, Some(bot.clone()));
         let ProviderEventKind::Message(message) = event.kind else {
             panic!("expected message")
         };

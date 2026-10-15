@@ -216,12 +216,13 @@ pub(super) fn expand_execution_chat_boundary(
     };
 
     let mut pending = transaction.prepare(
-        "SELECT inbox_item_id FROM agent_inbox_items WHERE workspace_id=(SELECT workspace_id FROM executions WHERE execution_id=?1) AND agent_id=(SELECT agent_id FROM executions WHERE execution_id=?1) AND chat_id=?2 AND state='pending' AND available_at<=?3 ORDER BY inbox_item_id",
+        "SELECT inbox_item_id FROM agent_inbox_items WHERE workspace_id=(SELECT workspace_id FROM executions WHERE execution_id=?1) AND agent_id=(SELECT agent_id FROM executions WHERE execution_id=?1) AND chat_id=?2 AND state='pending' AND available_at<=?3 AND ((source_kind='message' AND source_id<=?4) OR (source_kind='reaction' AND (SELECT target_message_id FROM reactions WHERE reaction_id=-source_id)<=?4)) ORDER BY inbox_item_id",
     )?;
     let pending_ids = pending
-        .query_map(params![execution_id, chat_id, now], |row| {
-            row.get::<_, i64>(0)
-        })?
+        .query_map(
+            params![execution_id, chat_id, now, read_to_message_id],
+            |row| row.get::<_, i64>(0),
+        )?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     drop(pending);
     for inbox_item_id in pending_ids {

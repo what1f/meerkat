@@ -181,6 +181,21 @@ impl Runtime {
                         now,
                     })
                     .await?;
+                if receiving_agent_id.is_none()
+                    && let Some(receiver) = event
+                        .receiving_agent_id
+                        .as_ref()
+                        .filter(|id| agents.contains_key(*id))
+                {
+                    self.storage
+                        .record_chat_receiver(
+                            workspace_id,
+                            receiver,
+                            &event.channel_id,
+                            &event.provider_chat_id,
+                        )
+                        .await?;
+                }
                 // Keep new messages pending for the next execution. Injecting only
                 // their text into a running execution would not expand that run's
                 // readable messages, reply scope, or cursor boundary.

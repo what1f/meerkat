@@ -11,7 +11,7 @@ pub(crate) fn standard_tool_definitions() -> Vec<ToolDefinition> {
     [
         (
             "message_send",
-            "Send to a conversation in the current task, or start a direct message with a human team member using recipient_id.",
+            "Send to a conversation you belong to. Read it with chat_messages first. Or start a direct message with a human team member using recipient_id.",
             r#"{"type":"object","oneOf":[{"required":["channel_id","chat_id"]},{"required":["recipient_id"]}],"anyOf":[{"required":["content"]},{"required":["content_file"]},{"required":["attachments"]}],"properties":{"recipient_id":{"type":"string","description":"人类团队成员 ID；发送私信时使用，与 channel_id/chat_id 二选一。"},"channel_id":{"type":"string"},"chat_id":{"type":"string"},"content":{"type":"string"},"content_file":{"type":"string"},"attachments":{"description":"先用 lankide upload --file PATH 上传本地文件，再原样传入返回的资源对象。Markdown 本地路径不支持。","type":"array","minItems":1,"items":{"type":"object","required":["resource_id","file_name","media_type","size_bytes","sha256"],"properties":{"resource_id":{"type":"integer","minimum":1},"file_name":{"type":"string"},"media_type":{"type":"string"},"size_bytes":{"type":"integer","minimum":0},"sha256":{"type":"string"}},"additionalProperties":false}},"reply_to":{"type":"integer"},"force":{"type":"boolean","description":"强制发送。使用前必须读取当前可获取的最新消息，重新判断待发送内容。仅当内容仍然有效、此刻有必要发出，且继续等待会妨碍沟通时使用。禁止因发送被拒绝、图省事或机械重试而启用；尚未读取新消息时不得使用。"}},"additionalProperties":false}"#,
         ),
         (
@@ -26,7 +26,7 @@ pub(crate) fn standard_tool_definitions() -> Vec<ToolDefinition> {
         ),
         (
             "chat_messages",
-            "Read messages from a conversation at the current task boundary.",
+            "Read messages from a conversation you belong to, adding it to the current task if needed.",
             r#"{"type":"object","required":["channel_id","chat_id"],"properties":{"channel_id":{"type":"string"},"chat_id":{"type":"string"},"before_message_id":{"type":"integer"},"limit":{"type":"integer","minimum":1,"maximum":100}},"additionalProperties":false}"#,
         ),
         (
@@ -375,9 +375,20 @@ impl RuntimeApplication {
             chat.chat.channel_id == channel_id && chat.chat.provider_chat_id == request.chat_id
         });
         if snapshot_chat.is_none() && direct_person.is_none() {
-            return Err(RuntimeError::Application(
-                "Choose a conversation included in the current task.".into(),
-            ));
+            let accessible = runtime
+                .database()
+                .agent_can_access_chat(
+                    &validated.workspace_id,
+                    &validated.agent_id,
+                    &channel_id,
+                    &request.chat_id,
+                )
+                .await?;
+            return Err(RuntimeError::Application(if accessible {
+                "Read this conversation with chat_messages before sending a message.".into()
+            } else {
+                "You do not have access to this conversation.".into()
+            }));
         }
         if let Some(message_id) = request.reply_to_message_id
             && !runtime
@@ -730,6 +741,23 @@ async fn invoke_standard_tool(
                 .unwrap_or(50) as usize;
             let channel = ChannelId::new(channel_id)
                 .map_err(|error| RuntimeError::InvalidCore(error.to_string()))?;
+            if !validated.snapshot.chats.iter().any(|chat| {
+                chat.chat.channel_id == channel && chat.chat.provider_chat_id == chat_id
+            }) && !application
+                .runtime()?
+                .database()
+                .agent_can_access_chat(
+                    &validated.workspace_id,
+                    &validated.agent_id,
+                    &channel,
+                    chat_id,
+                )
+                .await?
+            {
+                return Err(RuntimeError::Application(
+                    "You do not have access to this conversation.".into(),
+                ));
+            }
             let messages = application
                 .runtime()?
                 .database()
@@ -739,6 +767,7 @@ async fn invoke_standard_tool(
                     chat_id,
                     before_message_id,
                     limit,
+                    now_millis(),
                 )
                 .await?;
             serde_json::json!({

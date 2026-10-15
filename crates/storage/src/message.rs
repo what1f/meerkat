@@ -824,6 +824,34 @@ impl Storage {
         )?;
         Ok(changed == 1)
     }
+    /// Record which Agent account received a group conversation, independently
+    /// of its attention policy or whether the message wakes it.
+    pub fn record_chat_receiver(
+        &self,
+        workspace: &WorkspaceId,
+        agent: &AgentId,
+        channel: &ChannelId,
+        chat: &str,
+    ) -> Result<()> {
+        self.conn()?.execute(
+            "INSERT OR IGNORE INTO chat_receivers(workspace_id,agent_id,chat_id) SELECT workspace_id,?2,chat_id FROM chats WHERE workspace_id=?1 AND channel_id=?3 AND provider_chat_id=?4 AND receiving_agent_id=''",
+            params![workspace.as_str(), agent.as_str(), channel.as_str(), chat],
+        )?;
+        Ok(())
+    }
+    pub fn agent_can_access_chat(
+        &self,
+        workspace: &WorkspaceId,
+        agent: &AgentId,
+        channel: &ChannelId,
+        chat: &str,
+    ) -> Result<bool> {
+        Ok(self.read_conn()?.query_row(
+            "SELECT EXISTS(SELECT 1 FROM chats c WHERE c.workspace_id=?1 AND c.channel_id=?3 AND c.provider_chat_id=?4 AND (c.receiving_agent_id=?2 OR EXISTS(SELECT 1 FROM chat_receivers r WHERE r.chat_id=c.chat_id AND r.workspace_id=?1 AND r.agent_id=?2)))",
+            params![workspace.as_str(), agent.as_str(), channel.as_str(), chat],
+            |row| row.get(0),
+        )?)
+    }
     pub fn snapshot_chat_messages(
         &self,
         snapshot_id: i64,
@@ -831,33 +859,64 @@ impl Storage {
         provider_chat_id: &str,
         before_message_id: Option<i64>,
         limit: usize,
+        now: i64,
     ) -> Result<Vec<MessageView>> {
-        let connection = self.read_conn()?;
-        let boundary: Option<(i64, i64)> = connection
+        let mut connection = self.conn()?;
+        let transaction = connection.transaction()?;
+        let boundary: Option<(i64, i64)> = transaction
             .query_row(
                 "SELECT sc.chat_id,sc.read_to_message_id FROM unread_snapshot_chats sc JOIN chats ch USING(chat_id) WHERE sc.snapshot_id=?1 AND ch.channel_id=?2 AND ch.provider_chat_id=?3",
                 params![snapshot_id, channel_id.as_str(), provider_chat_id],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?;
-        let Some((chat_id, read_to_message_id)) = boundary else {
-            return Err(StorageError::Invalid("snapshot chat not found".into()));
+        let (chat_id, read_to_message_id) = match boundary {
+            Some(boundary) => boundary,
+            None => transaction.query_row(
+                "SELECT c.chat_id,coalesce(max(m.message_id),0) FROM unread_snapshots s JOIN chats c ON c.workspace_id=s.workspace_id JOIN messages m ON m.chat_id=c.chat_id WHERE s.snapshot_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND (c.receiving_agent_id=s.agent_id OR EXISTS(SELECT 1 FROM chat_receivers r WHERE r.chat_id=c.chat_id AND r.workspace_id=s.workspace_id AND r.agent_id=s.agent_id)) AND m.send_status IN ('received','sent') GROUP BY c.chat_id ORDER BY c.receiving_agent_id DESC LIMIT 1",
+                params![snapshot_id, channel_id.as_str(), provider_chat_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            ).optional()?.ok_or_else(|| StorageError::Invalid("conversation is not available to this Agent".into()))?,
         };
         let upper = before_message_id
             .map(|message_id| message_id.saturating_sub(1))
             .unwrap_or(read_to_message_id)
             .min(read_to_message_id);
         let limit = limit.clamp(1, 100) as i64;
-        let mut statement = connection.prepare(
+        let mut statement = transaction.prepare(
             "SELECT message_id FROM messages WHERE chat_id=?1 AND message_id<=?2 AND send_status IN ('received','sent') ORDER BY message_id DESC LIMIT ?3",
         )?;
         let mut ids = statement
             .query_map(params![chat_id, upper, limit], |row| row.get::<_, i64>(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
+        drop(statement);
         ids.reverse();
-        ids.into_iter()
-            .map(|message_id| load_message(&connection, message_id))
-            .collect()
+        let messages = ids
+            .iter()
+            .map(|id| load_message(&transaction, *id))
+            .collect::<Result<Vec<_>>>()?;
+        if boundary.is_none()
+            && let Some(latest_read) = ids.last()
+        {
+            transaction.execute(
+                "INSERT INTO unread_snapshot_chats(snapshot_id,chat_id,read_from_message_id,read_to_message_id,unread_count,trigger_summary) SELECT snapshot_id,?2,(SELECT read_to_message_id FROM agent_chat_cursors WHERE workspace_id=s.workspace_id AND agent_id=s.agent_id AND chat_id=?2),?3,0,'' FROM unread_snapshots s WHERE snapshot_id=?1",
+                params![snapshot_id, chat_id, latest_read],
+            )?;
+            let execution_id = transaction.query_row(
+                "SELECT execution_id FROM executions WHERE snapshot_id=?1 ORDER BY execution_id DESC LIMIT 1",
+                [snapshot_id], |row| row.get(0),
+            )?;
+            crate::execution::expand_execution_chat_boundary(
+                &transaction,
+                execution_id,
+                snapshot_id,
+                chat_id,
+                *latest_read,
+                now,
+            )?;
+        }
+        transaction.commit()?;
+        Ok(messages)
     }
     pub fn snapshot_message(
         &self,
