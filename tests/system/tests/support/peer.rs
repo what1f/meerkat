@@ -113,6 +113,20 @@ fn main() {
                         }
                         (text, *delay_ms)
                     }
+                    Script::OfflineEvents { count, bytes, text } => {
+                        let release =
+                            std::env::var("LANKIDE_SYSTEM_RELEASE").expect("release gate");
+                        while !std::path::Path::new(&release).exists() {
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        for _ in 0..*count {
+                            event(
+                                &mut sequence,
+                                json!({"kind":"assistant_delta", "text":"x".repeat(*bytes)}),
+                            );
+                        }
+                        (text, 0)
+                    }
                     Script::LinkReply { text } | Script::ReplyBeforeTerminal { text } => (text, 0),
                     Script::BufferedReply { text } => {
                         let release =
@@ -258,20 +272,27 @@ fn main() {
                         continue;
                     }
                     let result = runtime
-                        .block_on(retry_capability(vec![
-                            "send".into(),
-                            "--channel".into(),
-                            channel.into(),
-                            "--chat".into(),
-                            chat.into(),
-                            "--content".into(),
-                            text.clone(),
-                            "--reply-to".into(),
-                            message.into(),
-                            "--force".into(),
-                            "--idempotency-key".into(),
-                            format!("system-reply-{message}"),
-                        ]))
+                        .block_on(retry_capability(
+                            vec![
+                                "send".into(),
+                                "--channel".into(),
+                                channel.into(),
+                                "--chat".into(),
+                                chat.into(),
+                                "--content".into(),
+                                text.clone(),
+                                "--reply-to".into(),
+                                message.into(),
+                                "--force".into(),
+                                "--idempotency-key".into(),
+                                format!("system-reply-{message}"),
+                            ],
+                            if matches!(script, Script::OfflineEvents { .. }) {
+                                Duration::from_secs(60)
+                            } else {
+                                Duration::from_secs(10)
+                            },
+                        ))
                         .expect("send through Agent capability");
                     assert_eq!(result["accepted"], true, "reply rejected: {result}");
                 }
@@ -314,8 +335,11 @@ fn main() {
 
 // A native Agent may retry typed transport failures. Keep retries at the outer
 // Harness boundary and reuse the send idempotency key across an unknown reply.
-async fn retry_capability(arguments: Vec<String>) -> Result<Value, lankide_cli::CliError> {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+async fn retry_capability(
+    arguments: Vec<String>,
+    budget: Duration,
+) -> Result<Value, lankide_cli::CliError> {
+    let deadline = tokio::time::Instant::now() + budget;
     loop {
         let result = lankide_cli::execute_from_environment(arguments.clone()).await;
         let retryable = match &result {

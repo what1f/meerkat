@@ -1,4 +1,4 @@
-use crate::execution::load_recoverable_executions;
+use crate::execution::{abandon_execution, load_recoverable_executions};
 use crate::send::load_recoverable_sends;
 use crate::{
     DatabaseConfig, RecoverableExecutionView, RecoverableSendView, Result, Storage, StorageError,
@@ -138,6 +138,22 @@ impl Storage {
         )?;
         t.execute("UPDATE tool_invocations SET state='unknown',finished_at=coalesce(finished_at,?1) WHERE state='running'",[now])?;
         let transitioned_executions=t.execute("UPDATE executions SET state='recovering',updated_at=?1 WHERE state IN('queued','assigning','running')",[now])?;
+        // Preparation has no Computer owner to reconcile. Release its frozen
+        // inbox batch so startup can prepare it again.
+        let mut query = t.prepare("SELECT execution_id FROM executions e WHERE state='recovering' AND NOT EXISTS(SELECT 1 FROM execution_attempts a WHERE a.execution_id=e.execution_id AND a.attempt=e.attempt)")?;
+        let unassigned = query
+            .query_map([], |row| row.get::<_, i64>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        drop(query);
+        for id in unassigned {
+            abandon_execution(
+                &t,
+                id,
+                crate::ExecutionState::Failed,
+                Some("input_preparation_interrupted"),
+                now,
+            )?;
+        }
         t.commit()?;
         let executions = load_recoverable_executions(&c, None)?;
         let sends = load_recoverable_sends(&c, None)?;

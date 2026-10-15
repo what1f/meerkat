@@ -44,6 +44,7 @@ pub struct Incoming {
 #[derive(Default)]
 pub(crate) struct ImState {
     pub order: AtomicU64,
+    pub preparation_gate: Mutex<Option<std::path::PathBuf>>,
     pub resource_contexts: Mutex<BTreeMap<String, InitContext>>,
     pub sinks: Mutex<BTreeMap<String, EventSink>>,
     pub accounts: Mutex<BTreeMap<(String, String), String>>,
@@ -141,6 +142,22 @@ impl Provider for ScriptedProvider {
                     .unwrap_or_else(|| format!("bot-{}", context.agent_id)),
             );
             Ok(())
+        })
+    }
+    fn system_prompt<'a>(&'a self, _: AgentRuntimeContext) -> ProviderFuture<'a, String> {
+        Box::pin(async move {
+            let gate = self
+                .state
+                .preparation_gate
+                .lock()
+                .expect("preparation gate")
+                .clone();
+            if let Some(gate) = gate {
+                while !gate.exists() {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+            }
+            Ok(String::new())
         })
     }
     fn send_message<'a>(

@@ -60,6 +60,38 @@ async fn s11_1_image_reaches_the_remote_agent_snapshot_with_the_right_hash() -> 
 }
 
 #[tokio::test]
+async fn captioned_image_keeps_caption_and_local_path_together() -> Result<()> {
+    let rig = SystemRig::start(config()).await?;
+    let team = rig.workspace("team").await?;
+    let agent = team
+        .agent("bruce")
+        .harness(Script::LinkReply {
+            text: "seen".into(),
+        })
+        .create()
+        .await?;
+    let bytes = image(0);
+    let resource = team
+        .captioned_image_message(&agent, "images", "Check this photo", bytes.clone())
+        .await?;
+    rig.settle().await?;
+    let path = agent
+        .resource_directory()?
+        .join(format!("{}-photo.png", resource.resource_id));
+    assert_eq!(std::fs::read(&path)?, bytes);
+    let inputs = agent.harness_inputs()?;
+    let line = inputs[0]
+        .lines()
+        .find(|line| line.contains("Check this photo"))
+        .ok_or("caption missing")?;
+    assert!(
+        line.contains(path.to_str().unwrap()),
+        "caption has no attachment: {line}"
+    );
+    rig.close().await
+}
+
+#[tokio::test]
 async fn s11_2_cut_download_resumes_from_the_partial_file() -> Result<()> {
     let mut rig = SystemRig::start(config()).await?;
     let (url, _) = rig.computer_endpoint()?;

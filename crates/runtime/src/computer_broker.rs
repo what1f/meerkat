@@ -922,7 +922,7 @@ impl ComputerBroker {
     /// Management cancellation retains the pending attempt until the Computer
     /// reports its terminal outcome after native process cleanup.
     pub async fn request_cancellation(&self, execution_id: i64) -> Result<(), RuntimeError> {
-        let destination = self
+        let mut destination = self
             .inner
             .pending
             .lock()
@@ -936,6 +936,35 @@ impl ComputerBroker {
                     pending.harness_id.clone(),
                 )
             });
+        // A surviving attempt has no in-memory waiter after Runtime restart.
+        // Its durable ownership still identifies where cancellation must go.
+        if destination.is_none() {
+            let storage = self.storage()?;
+            if let Some(attempt) = storage.execution_attempts(execution_id)?.into_iter().last()
+                && matches!(
+                    attempt.state,
+                    lankide_storage::ExecutionAttemptState::Offered
+                        | lankide_storage::ExecutionAttemptState::Accepted
+                        | lankide_storage::ExecutionAttemptState::Running
+                )
+                && let Some(context) =
+                    storage.execution_auth_context(execution_id, attempt.attempt)?
+                && matches!(
+                    context.state,
+                    lankide_storage::ExecutionState::Assigning
+                        | lankide_storage::ExecutionState::Running
+                        | lankide_storage::ExecutionState::Recovering
+                )
+            {
+                let agent = storage.agent_record(&context.workspace_id, &context.agent_id)?;
+                destination = Some((
+                    attempt.computer_id,
+                    attempt.computer_instance_id,
+                    attempt.attempt,
+                    agent.harness_id,
+                ));
+            }
+        }
         if let Some((computer, instance, attempt, harness_id)) = destination {
             let force_close = self
                 .inner

@@ -35,6 +35,16 @@ impl Workspace<'_> {
         chat: &str,
         bytes: Vec<u8>,
     ) -> Result<lankide_core::ResourceRef> {
+        self.captioned_image_message(agent, chat, "", bytes).await
+    }
+
+    pub async fn captioned_image_message(
+        &self,
+        agent: &Agent<'_>,
+        chat: &str,
+        caption: &str,
+        bytes: Vec<u8>,
+    ) -> Result<lankide_core::ResourceRef> {
         let context = self
             .rig
             .im
@@ -59,7 +69,7 @@ impl Workspace<'_> {
                 },
                 kind: ProviderEventKind::Message(MessageEvent {
                     provider_message_id: format!("incoming-{id}"),
-                    content: format!("Look at ![photo](resource://{})", resource.resource_id),
+                    content: caption.into(),
                     reply_to_provider_message_id: None,
                     mentioned_agent_ids: vec![AgentId::new(&agent.id)?],
                     attachments: vec![resource.clone()],

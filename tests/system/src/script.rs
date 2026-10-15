@@ -16,6 +16,11 @@ pub enum Script {
         deltas: Vec<String>,
         held: bool,
     },
+    OfflineEvents {
+        count: usize,
+        bytes: usize,
+        text: String,
+    },
     ReplyBeforeTerminal {
         text: String,
     },

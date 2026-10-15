@@ -1525,6 +1525,16 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         .unwrap()
         .unwrap();
     storage
+        .offer_execution_attempt(
+            recovering.execution_id,
+            1,
+            "fixture-computer",
+            "instance-restart",
+            6_000,
+            5_201,
+        )
+        .unwrap();
+    storage
         .mark_execution_running(recovering.execution_id, 5_201)
         .unwrap();
     drop(storage);

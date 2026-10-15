@@ -106,7 +106,7 @@ impl ComputerThread {
             // Dropping this executor is a process-crash boundary: all Computer
             // tasks and their sessions stop together, without an OS-wide signal.
             let runtime = tokio::runtime::Runtime::new()?;
-            runtime.block_on(async move {
+            let result = runtime.block_on(async move {
                 let registration = RegisteredHarness::new(ScriptedHarness::new(journal), HarnessConfig {
                     harness_id: "pi".into(), model: ModelRef::new("scripted", "scripted"), thinking_level: "low".into(),
                     cli_path: executable, environment: BTreeMap::from([("LANKIDE_SYSTEM_CAPABILITIES".into(), serde_json::to_string(&capabilities)?)]), config_fingerprint: "system-rig".into(),
@@ -115,7 +115,9 @@ impl ComputerThread {
                     result = lankide_computer_daemon::run_with_harnesses(config, vec![registration]) => result.map_err(Into::into),
                     _ = stopped => Ok(()),
                 }
-            })
+            });
+            runtime.shutdown_timeout(Duration::from_secs(1));
+            result
         });
         Self {
             stop: Some(stop),
@@ -138,6 +140,36 @@ impl Drop for ComputerThread {
     }
 }
 
+// Drop a dedicated executor to model a Runtime process crash, including all
+// spawned daemon tasks. The Computer executor and native Harness stay alive.
+fn spawn_runtime(
+    paths: RuntimePaths,
+    factories: ProviderFactoryRegistry,
+    stopped: oneshot::Receiver<()>,
+) -> (
+    JoinHandle<std::result::Result<(), lankide_runtime_daemon::AppError>>,
+    oneshot::Sender<()>,
+) {
+    let (kill, killed) = oneshot::channel();
+    let task = tokio::task::spawn_blocking(move || {
+        let executor = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("Runtime executor");
+        executor.block_on(async move {
+            tokio::select! {
+                result = run_daemon(paths, factories, async move {
+                    let _ = stopped.await;
+                    Ok(ShutdownReason::Internal)
+                }) => result,
+                _ = killed => Ok(()),
+            }
+        })
+    });
+    (task, kill)
+}
+
 /// A second independently paired daemon, with its own durable home.
 pub struct PairedComputer {
     // Stop the daemon before removing its home (fields drop in declaration order).
@@ -153,6 +185,7 @@ pub struct SystemRig {
     pub proxy: Option<net_proxy::NetProxy>,
     runtime: Option<JoinHandle<std::result::Result<(), lankide_runtime_daemon::AppError>>>,
     shutdown: Option<oneshot::Sender<()>>,
+    runtime_kill: Option<oneshot::Sender<()>>,
     home: TempDir,
     computer_home: TempDir,
     paths: RuntimePaths,
@@ -184,22 +217,13 @@ impl SystemRig {
         let factories = factories(im.clone())?;
         let (shutdown, stopped) = oneshot::channel();
         let daemon_paths = paths.clone();
-        let runtime = tokio::spawn(async move {
-            let result = run_daemon(daemon_paths, factories, async move {
-                let _ = stopped.await;
-                Ok(ShutdownReason::Internal)
-            })
-            .await;
-            if let Err(error) = &result {
-                eprintln!("system Runtime: {error:?}");
-            }
-            result
-        });
+        let (runtime, runtime_kill) = spawn_runtime(daemon_paths, factories, stopped);
         let mut rig = Self {
             computer: None,
             child_computer: None,
             proxy: None,
             runtime: Some(runtime),
+            runtime_kill: Some(runtime_kill),
             shutdown: Some(shutdown),
             client: RuntimeManagementClient::connect_local_lazy(&paths.run),
             home,
@@ -463,13 +487,9 @@ impl SystemRig {
         let paths = self.paths.clone();
         let (shutdown, stopped) = oneshot::channel();
         self.shutdown = Some(shutdown);
-        self.runtime = Some(tokio::spawn(async move {
-            run_daemon(paths, factories, async move {
-                let _ = stopped.await;
-                Ok(ShutdownReason::Internal)
-            })
-            .await
-        }));
+        let (runtime, kill) = spawn_runtime(paths, factories, stopped);
+        self.runtime = Some(runtime);
+        self.runtime_kill = Some(kill);
         self.client = RuntimeManagementClient::connect_local_lazy(&self.paths.run);
         // The daemon's graceful shutdown frame ends its managed Computer peer.
         // Reopen the same Computer home, as a service supervisor does.
@@ -490,6 +510,42 @@ impl SystemRig {
         self.start_computer()?;
         self.wait_for_computer().await
     }
+    /// Hold the scripted IM platform's prompt response during preparation.
+    pub fn hold_preparation(&self) -> PathBuf {
+        let gate = self.home.path().join("release-preparation");
+        *self.im.preparation_gate.lock().expect("preparation gate") = Some(gate.clone());
+        gate
+    }
+
+    pub async fn crash_and_restart_runtime(&mut self) -> Result<()> {
+        if let Some(kill) = self.runtime_kill.take() {
+            let _ = kill.send(());
+        }
+        if let Some(runtime) = self.runtime.take() {
+            timeout(self.config.timeout, runtime).await???;
+        }
+        self.shutdown.take();
+        let (shutdown, stopped) = oneshot::channel();
+        let (runtime, kill) =
+            spawn_runtime(self.paths.clone(), factories(self.im.clone())?, stopped);
+        self.runtime = Some(runtime);
+        self.runtime_kill = Some(kill);
+        self.shutdown = Some(shutdown);
+        self.client = RuntimeManagementClient::connect_local_lazy(&self.paths.run);
+        timeout(self.config.timeout, async {
+            loop {
+                self.check_daemons()?;
+                if self.client.list_workspaces().await.is_ok() {
+                    return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .map_err(|_| "Runtime crash restart timed out")??;
+        self.wait_for_computer().await
+    }
+
     pub fn stop_computer(&mut self) -> Result<()> {
         if let Some(mut computer) = self.computer.take() {
             computer.stop()?;

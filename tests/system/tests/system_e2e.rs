@@ -91,7 +91,16 @@ async fn s7_1_a_message_received_without_steer_waits_for_the_next_run() -> Resul
 
 #[tokio::test]
 async fn restarting_the_computer_during_a_run_delivers_the_reply_exactly_once() -> Result<()> {
-    let mut rig = SystemRig::start(config()).await?;
+    let mut rig = SystemRig::start(RigConfig {
+        retry: lankide_runtime::RetryConfig {
+            base_ms: 50,
+            max_ms: 100,
+            poll_ms: 10,
+            ..Default::default()
+        },
+        ..config()
+    })
+    .await?;
     {
         let team = rig.workspace("team").await?;
         let bruce = team
@@ -118,6 +127,7 @@ async fn restarting_the_computer_during_a_run_delivers_the_reply_exactly_once() 
     assert_eq!(executions[0].state, "failed");
     assert_eq!(executions[0].error_code.as_deref(), Some("computer_lost"));
     assert_eq!(executions[1].state, "succeeded");
+    assert!(executions[1].created_at >= executions[0].completed_at.unwrap() + 50);
     assert_eq!(executions[1].trigger_messages, ["hello"]);
     rig.close().await
 }

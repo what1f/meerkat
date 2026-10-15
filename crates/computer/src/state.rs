@@ -29,6 +29,7 @@ pub(crate) struct PersistedState {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub(crate) struct PersistedAssignment {
     pub fingerprint: String,
+    pub delivery: lankide_protocol::DeliveryResult,
     pub lifecycle: AssignmentLifecycle,
 }
 

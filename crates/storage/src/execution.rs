@@ -324,7 +324,14 @@ pub(super) fn lose_attempt_transaction(
     attempt: i64,
     now: i64,
 ) -> Result<()> {
-    let changed = transaction.execute("UPDATE execution_attempts SET state='lost',error_code='computer_lost',finished_at=?3 WHERE execution_id=?1 AND attempt=?2 AND state IN('offered','accepted','running')", params![execution_id,attempt,now])? == 1;
+    let failure = serde_json::json!({
+        "code": "computer_lost",
+        "category": "transient",
+        "retryable": true,
+        "fingerprint": "computer_lost",
+        "detail": "Computer disconnected before the attempt completed",
+    });
+    let changed = transaction.execute("UPDATE execution_attempts SET state='lost',error_code='computer_lost',failure_json=?4,error_message=json_extract(?4,'$.detail'),finished_at=?3 WHERE execution_id=?1 AND attempt=?2 AND state IN('offered','accepted','running')", params![execution_id,attempt,now,failure.to_string()])? == 1;
     if changed {
         abandon_execution(
             transaction,

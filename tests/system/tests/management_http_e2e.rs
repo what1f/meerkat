@@ -157,3 +157,34 @@ async fn wildcard_listener_keeps_local_desktop_management_and_closes_events_on_s
     assert!(!paths.run.join(management::URL_FILE).exists());
     Ok(())
 }
+
+#[tokio::test]
+async fn paused_workspace_agent_can_be_renamed_and_runs_after_resume() -> Result<()> {
+    use lankide_client::WorkspaceStatus;
+    use lankide_system_e2e::Script;
+    let mut rig = SystemRig::start(RigConfig::default()).await?;
+    let team = rig.workspace("team").await?;
+    team.agent("bruce")
+        .harness(Script::reply("done"))
+        .create()
+        .await?;
+    rig.management()
+        .set_workspace_state("team", WorkspaceStatus::Paused)
+        .await?;
+    // Paused workspaces have no live Provider entry after startup.
+    rig.restart_runtime().await?;
+    let mut agent = rig.management().get_agent("team", "bruce").await?;
+    agent.name = "Bruce renamed".into();
+    let saved = rig.management().update_agent(agent, None).await?;
+    assert_eq!(saved.name, "Bruce renamed");
+    rig.management()
+        .set_workspace_state("team", WorkspaceStatus::Active)
+        .await?;
+    let team = rig.existing_workspace("team");
+    let agent = team.existing_agent("bruce");
+    team.direct_message(&agent, "alice", "hello").await?;
+    rig.settle().await?;
+    assert_eq!(agent.view().await?.name, "Bruce renamed");
+    assert_eq!(team.dm_transcript(&agent, "alice"), ["hello", "done"]);
+    rig.close().await
+}

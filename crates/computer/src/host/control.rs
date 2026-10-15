@@ -302,7 +302,35 @@ async fn send_tool_result_receipt(
 }
 
 pub(super) async fn replay_pending(inner: &Inner, sender: &mpsc::Sender<ComputerFrame>) {
-    let pending = inner.pending_events.lock().await;
+    let receipts = inner
+        .state
+        .lock()
+        .await
+        .accepted_assignments
+        .values()
+        .map(|assignment| assignment.delivery.clone())
+        .collect::<Vec<_>>();
+    for delivery in receipts {
+        let _ = sender
+            .send(ComputerFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                frame: Some(computer_frame::Frame::AssignmentResult(
+                    lankide_protocol::AssignmentResult {
+                        execution: delivery.execution.clone(),
+                        accepted: true,
+                        ..Default::default()
+                    },
+                )),
+            })
+            .await;
+        let _ = sender
+            .send(ComputerFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                frame: Some(computer_frame::Frame::DeliveryResult(delivery)),
+            })
+            .await;
+    }
+    let pending = inner.pending_events.lock().await.clone();
     for events in pending.values() {
         for event in events.values() {
             let _ = sender

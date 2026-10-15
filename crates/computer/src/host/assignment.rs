@@ -227,6 +227,14 @@ async fn prepare_assignment(
             },
         )
         .await;
+        send_frame(
+            &inner,
+            ComputerFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                frame: Some(computer_frame::Frame::DeliveryResult(remembered.delivery)),
+            },
+        )
+        .await;
         replay_assignment_pending(&inner, &key).await;
         return Ok(());
     }
@@ -439,6 +447,13 @@ async fn prepare_assignment(
             key.clone(),
             PersistedAssignment {
                 fingerprint,
+                delivery: DeliveryResult {
+                    execution: Some(execution.clone()),
+                    delivery_id: delivery.delivery_id,
+                    accepted: true,
+                    error_code: String::new(),
+                    error_message: String::new(),
+                },
                 lifecycle: AssignmentLifecycle::Active,
             },
         );

@@ -125,7 +125,9 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, ComputerError> {
     *inner.connection.write().await = Some(tx.clone());
     inner.connected.store(true, Ordering::Release);
     publish_inventory(&inner).await;
-    replay_pending(&inner, &tx).await;
+    let replay = replay_pending(&inner, &tx);
+    tokio::pin!(replay);
+    let mut replay_done = false;
     let mut heartbeat = tokio::time::interval(heartbeat_interval);
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     // The first tick is immediate: short reconnects must report live attempts
@@ -135,9 +137,10 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, ComputerError> {
     tokio::pin!(deadline);
     loop {
         tokio::select! {
+            _ = &mut replay, if !replay_done => replay_done = true,
             _ = &mut deadline => return Ok(started.elapsed()),
             _ = heartbeat.tick() => {
-                tx.send(ComputerFrame {
+                let frame = ComputerFrame {
                     protocol_version: lankide_protocol::PROTOCOL_VERSION,
                     frame: Some(computer_frame::Frame::Heartbeat(ComputerHeartbeat {
                         computer_id: inner.config.computer_id.clone(),
@@ -145,7 +148,13 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, ComputerError> {
                         sent_at: now_millis(),
                         active_attempts: active_attempts(&inner).await,
                     })),
-                }).await.map_err(|_| LinkError::Closed(CloseReason::Shutdown))?;
+                };
+                // Replay can fill the send queue. Keep draining ACKs instead
+                // of waiting for another slot; the next tick retries heartbeat.
+                match tx.try_send(frame) {
+                    Ok(()) | Err(mpsc::error::TrySendError::Full(_)) => {}
+                    Err(mpsc::error::TrySendError::Closed(_)) => return Err(LinkError::Closed(CloseReason::Shutdown).into()),
+                }
             }
             changed = stop_rx.changed() => {
                 let _ = changed;

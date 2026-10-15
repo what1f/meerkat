@@ -678,6 +678,7 @@ fn render_snapshot(snapshot: &SnapshotView) -> String {
             }
             markdown.push_str(": ");
             markdown.push_str(&truncate_message(&message.content));
+            render_attachment_links(&mut markdown, message);
         }
         if chat.unread_count > chat.recent_messages.len() {
             markdown.push_str("\n- 还有更早的未读内容，需要时使用 chat_messages 继续查看。");
@@ -692,10 +693,17 @@ fn render_snapshot(snapshot: &SnapshotView) -> String {
             markdown.push_str(&mentioned.message_id.to_string());
             markdown.push_str("] ");
             markdown.push_str(&truncate_message(&mentioned.content));
+            render_attachment_links(&mut markdown, mentioned);
         }
     }
     markdown.push_str("\n\n<system-reminder>以上是本轮冻结的未读会话。每个会话只展示最近几条内容；需要完整上下文时，用 chat_messages 主动读取。不要假装已经看过未展示的内容。</system-reminder>");
     markdown
+}
+
+fn render_attachment_links(markdown: &mut String, message: &lankide_storage::MessageView) {
+    for resource in &message.resources {
+        markdown.push_str(&format!(" resource://{}", resource.resource_id));
+    }
 }
 
 fn runtime_chats(snapshot: &SnapshotView) -> Vec<lankide_provider::AgentRuntimeChat> {
