@@ -23,13 +23,32 @@ def run():
         scripts = root / "scripts"
         scripts.mkdir()
         shutil.copy2(ROOT / "scripts/verify-all", scripts / "verify-all")
-        log = root / "cargo.log"
-        executable(root / "cargo", '#!/bin/sh\nprintf "%s\\n" "$*" >> "$AUDIT_CARGO_LOG"\n')
-        executable(scripts / "verify-e2e-contracts", "#!/bin/sh\nexit 42\n")
-        env = {**os.environ, "PATH": f"{root}:{os.environ['PATH']}", "AUDIT_CARGO_LOG": str(log)}
+        (root / "tests").mkdir()
+        (root / "tests/e2e-modules.tsv").write_text(
+            "# module_id\tpackage\tkind\tclassification\tcommand\tscenario\tprerequisites\tunattended\tstatus\n"
+            "pending\tproduct\tcrate\thermetic\tfalse\tUnfinished business scenario\tNone\tyes\tpending\n"
+        )
+        env = {**os.environ, "PATH": f"{root}:{os.environ['PATH']}"}
+        result = subprocess.run([str(scripts / "verify-all"), "--gate", "hermetic"], env=env, capture_output=True, text=True)
+        assert result.returncode == 3 and "PENDING" in result.stderr, result.stdout + result.stderr
+        (root / "tests/e2e-modules.tsv").write_text(
+            (root / "tests/e2e-modules.tsv").read_text().replace("\tpending\n", "\timplemented\n")
+        )
+        executable(root / "cargo", '#!/bin/sh\nexit 42\n')
         result = subprocess.run([str(scripts / "verify-all"), "--gate", "hermetic"], env=env, capture_output=True, text=True)
         assert result.returncode == 42, result.stdout + result.stderr
-        assert log.read_text().splitlines() == ["metadata --no-deps --format-version 1"]
+
+        # Release process checks must propagate failures at the public gate.
+        desktop_tests = root / "apps/desktop/tests"
+        desktop_tests.mkdir(parents=True)
+        bootstrap = desktop_tests / "bootstrap_e2e.py"
+        bootstrap.write_text("raise SystemExit(44)\n")
+        result = subprocess.run([str(scripts / "verify-all"), "--gate", "release-regressions"], env=env, capture_output=True, text=True)
+        assert result.returncode == 44, result.stdout + result.stderr
+        bootstrap.write_text("raise SystemExit(0)\n")
+        (root / "tests/verification_e2e.py").write_text("raise SystemExit(45)\n")
+        result = subprocess.run([str(scripts / "verify-all"), "--gate", "release-regressions"], env=env, capture_output=True, text=True)
+        assert result.returncode == 45, result.stdout + result.stderr
 
         # Composition is a required subgate, with live opt-in and exit propagation.
         composition_env = {**env, "LANKIDE_E2E_RUN_ID": "composition-negative", "LANKIDE_E2E_LOCK_ROOT": str(root / "locks")}

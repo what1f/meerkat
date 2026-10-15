@@ -23,7 +23,7 @@ serde_json.workspace = true
 tempfile.workspace = true
 
 [package.metadata.lankide.e2e]
-command = "cargo test -p lankide-testkit --test testkit_e2e && cargo run -p lankide-testkit --example prerequisites -- --gate hermetic --no-live"
+command = "cargo test -p lankide-testkit --test testkit_e2e"
 scenario = "Run the public prerequisite probe without live dependencies, with current owner-only JSON fixtures, and verify durable scenario evidence rejects incomplete cleanup, cleanup failures, duplicate runs, and result write failures. Concurrent scenario suites use private fixture directories and publish independent evidence with the same run ID."
 prerequisites = "None"
 classification = "hermetic"

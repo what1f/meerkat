@@ -40,7 +40,7 @@ async fn execute() -> Result<(), AppError> {
     }
     let mut arguments = std::env::args_os().skip(1);
     let mut home = None;
-    let mut e2e = false;
+    let mut e2e = raw.is_empty();
     let mut scripted_composition = false;
     let mut pid_journal = None;
     let mut instance_id = None;

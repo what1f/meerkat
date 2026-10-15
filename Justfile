@@ -34,6 +34,7 @@ verify-package: package
     ./scripts/verify-package
 
 release-local: check test verify-package
+    ./scripts/verify-all --gate release-regressions
     @echo "Local checks and macOS distribution verification passed."
 
 run: app

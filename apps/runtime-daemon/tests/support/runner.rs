@@ -8,7 +8,7 @@ use lankide_runtime_daemon::{RuntimePaths, run_daemon, wait_for_shutdown};
 #[tokio::main]
 async fn main() {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
-    if arguments.iter().any(|argument| argument == "--e2e") {
+    if arguments.is_empty() || arguments.iter().any(|argument| argument == "--e2e") {
         match tokio::time::timeout(
             std::time::Duration::from_secs(40),
             run_e2e(
