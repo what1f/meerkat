@@ -47,11 +47,15 @@ MISSING_LICENSE_ALLOWLIST = {"gpui_shared_string", "gpui_util"}
 COPYLEFT_LICENSES = ("GPL", "AGPL", "SSPL")
 
 
-def repository_files():
-    for path in ROOT.rglob("*"):
-        if not path.is_file() or any(part in {".git", "target"} for part in path.parts):
-            continue
-        yield path
+def repository_entries():
+    # Prune build/VCS trees before traversal, while still inspecting symlinks
+    # (including directory symlinks) without following them.
+    for directory, directories, files in os.walk(ROOT, followlinks=False):
+        directories[:] = [name for name in directories if name not in {".git", "target"}]
+        for name in directories + files:
+            if name in {".git", "target"}:
+                continue
+            yield Path(directory) / name
 
 
 def requires_copyleft(license_id: str) -> bool:
@@ -69,16 +73,12 @@ def main() -> int:
         if (ROOT / relative).exists():
             errors.append(f"private or non-redistributable path present: {relative}")
 
-    for path in ROOT.rglob("*"):
-        if any(part in {".git", "target"} for part in path.parts):
-            continue
+    for path in repository_entries():
         if path.is_symlink():
             target = os.readlink(path)
             if os.path.isabs(target) or not path.resolve().exists():
                 errors.append(f"non-portable symlink: {path.relative_to(ROOT)} -> {target}")
-
-    for path in repository_files():
-        if path.suffix.lower() not in TEXT_SUFFIXES:
+        if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES:
             continue
         try:
             content = path.read_text()

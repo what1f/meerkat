@@ -1,10 +1,6 @@
-#![recursion_limit = "256"]
-#[path = "../src/assets.rs"]
-mod assets;
+use crate::ui;
 #[path = "../../../crates/client/tests/support/management.rs"]
 mod management_fixture;
-#[path = "../src/ui/mod.rs"]
-mod ui;
 use desktop_ui::{DesktopLanguage, DesktopTheme, apply_component_theme};
 use gpui::{
     AppContext, Modifiers, ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext, point,

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import csv
 import json
+import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -41,6 +43,20 @@ def main() -> int:
     packages = {package["name"]: package for package in metadata["packages"]}
 
     errors = 0
+    for package in packages.values():
+        targets = [target for target in package["targets"] if "test" in target["kind"]]
+        if not targets:
+            continue
+        if len(targets) != 1 or targets[0]["name"] != "e2e":
+            fail(f"{package['name']}: expected one consolidated e2e target")
+            errors += 1
+            continue
+        suite = Path(targets[0]["src_path"])
+        modules = set(re.findall(r"^mod (\w+);", suite.read_text(), re.MULTILINE))
+        scenarios = {path.stem for path in suite.parent.parent.glob("*.rs")}
+        if scenarios - modules:
+            fail(f"{package['name']}: scenarios missing from suite: {sorted(scenarios - modules)}")
+            errors += 1
     module_ids: set[str] = set()
     package_names: set[str] = set()
     primary_packages: set[str] = set()
@@ -74,6 +90,26 @@ def main() -> int:
             fail(f"{module_id}: missing package.metadata.lankide.e2e")
             errors += 1
             continue
+        tokens = shlex.split(row["command"])
+        for index, token in enumerate(tokens):
+            if token != "--test":
+                continue
+            # A focused command can build a helper before starting Cargo tests.
+            prefix = tokens[:index]
+            package_index = max(i for i, value in enumerate(prefix) if value == "-p")
+            target_package = packages[prefix[package_index + 1]]
+            name = tokens[index + 1]
+            target = next((target for target in target_package["targets"]
+                           if "test" in target["kind"] and target["name"] == name), None)
+            if target is None:
+                fail(f"{module_id}: unknown test target {name}")
+                errors += 1
+            elif index + 2 < len(tokens) and tokens[index + 2].endswith("::"):
+                module = tokens[index + 2][:-2]
+                source = Path(target["src_path"]).read_text()
+                if not re.search(rf"^mod {re.escape(module)};", source, re.MULTILINE):
+                    fail(f"{module_id}: unknown scenario module {module}")
+                    errors += 1
         for field in FIELDS:
             manifest_value = row[field]
             metadata_value = contract.get(field)

@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "lankide-core"
 version.workspace = true
 edition.workspace = true
@@ -8,6 +9,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [lib]
+test = false
 name = "lankide_core"
 path = "src/lib.rs"
 
@@ -18,9 +20,13 @@ serde.workspace = true
 serde_json.workspace = true
 
 [package.metadata.lankide.e2e]
-command = "cargo test -p lankide-core --test core_e2e"
+command = "cargo test -p lankide-core --test e2e core_e2e::"
 scenario = "Validate canonical Tool names, Markdown mentions, attention levels, schedule boundaries, and identifier validation through public constructors and deserialization. Select short English or Simplified Chinese failure notices from the triggering message."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
 status = "implemented"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"

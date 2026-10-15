@@ -1,8 +1,4 @@
-#![recursion_limit = "256"]
-#[path = "../src/assets.rs"]
-mod assets;
-#[path = "../src/ui/mod.rs"]
-mod ui;
+use crate::{backend, ui};
 
 use desktop_ui::{DesktopTheme, apply_component_theme};
 use gpui::{AppContext, Modifiers, TestAppContext, VisualTestContext};
@@ -24,19 +20,26 @@ impl Drop for OwnedComputer {
     }
 }
 
-fn draw(cx: &mut VisualTestContext) {
+fn draw(cx: &mut VisualTestContext, clock: &std::cell::Cell<Instant>) {
+    let now = Instant::now();
+    let elapsed = now.duration_since(clock.replace(now));
     cx.run_until_parked();
-    cx.executor().advance_clock(Duration::from_secs(1));
+    cx.executor().advance_clock(elapsed);
     cx.run_until_parked();
     cx.update(|window, cx| {
         window.draw(cx).clear(cx);
         window.draw(cx).clear(cx);
     });
 }
-fn wait(cx: &mut VisualTestContext, mut ready: impl FnMut(&mut VisualTestContext) -> bool) {
+#[track_caller]
+fn wait(
+    cx: &mut VisualTestContext,
+    clock: &std::cell::Cell<Instant>,
+    mut ready: impl FnMut(&mut VisualTestContext) -> bool,
+) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        draw(cx);
+        draw(cx, &clock);
         if ready(cx) {
             return;
         }
@@ -44,21 +47,21 @@ fn wait(cx: &mut VisualTestContext, mut ready: impl FnMut(&mut VisualTestContext
             Instant::now() < deadline,
             "Desktop observable state timed out"
         );
-        std::thread::yield_now();
+        std::thread::sleep(Duration::from_millis(5));
     }
 }
-fn click(cx: &mut VisualTestContext, selector: &str) {
+fn click(cx: &mut VisualTestContext, clock: &std::cell::Cell<Instant>, selector: &str) {
     let selector: &'static str = Box::leak(selector.to_string().into_boxed_str());
-    wait(cx, |cx| cx.debug_bounds(selector).is_some());
+    wait(cx, &clock, |cx| cx.debug_bounds(selector).is_some());
     let bounds = cx.debug_bounds(selector).unwrap();
     cx.simulate_click(bounds.center(), Modifiers::default());
-    draw(cx);
+    draw(cx, &clock);
 }
-fn fill(cx: &mut VisualTestContext, selector: &str, value: &str) {
-    click(cx, selector);
+fn fill(cx: &mut VisualTestContext, clock: &std::cell::Cell<Instant>, selector: &str, value: &str) {
+    click(cx, &clock, selector);
     cx.simulate_keystrokes("cmd-a");
     cx.simulate_input(value);
-    draw(cx);
+    draw(cx, &clock);
 }
 
 #[test]
@@ -68,7 +71,7 @@ fn local_online_offline_selection_and_pairing_dialog() {
     let rig = runtime
         .block_on(SystemRig::start(RigConfig {
             local_discovery: true,
-            pairing_validity: Duration::from_secs(2),
+            pairing_validity: Duration::from_secs(1),
             harness_executable: "/usr/bin/false".into(),
             ..Default::default()
         }))
@@ -170,6 +173,7 @@ fn local_online_offline_selection_and_pairing_dialog() {
         Box::leak(format!("computer-online-{local}").into_boxed_str());
     let rig = std::cell::RefCell::new(rig);
     let scenario = std::panic::AssertUnwindSafe(|dispatcher: gpui::TestDispatcher| {
+        let clock = std::cell::Cell::new(Instant::now());
         let mut rig = rig.borrow_mut();
         let mut cx = TestAppContext::build(dispatcher.clone(), Some("computer_pairing"));
         let _refs = cx.app.borrow().ref_counts_drop_handle();
@@ -195,9 +199,11 @@ fn local_online_offline_selection_and_pairing_dialog() {
         cx.update(|window, cx| {
             observe_dialog_root(&mounted.lock().unwrap().take().unwrap(), &root, window, cx)
         });
-        wait(cx, |cx| cx.debug_bounds("empty-add-agent").is_some());
-        click(cx, "nav-settings");
-        wait(cx, |cx| cx.debug_bounds(local_selector).is_some());
+        wait(cx, &clock, |cx| {
+            cx.debug_bounds("empty-add-agent").is_some()
+        });
+        click(cx, &clock, "nav-settings");
+        wait(cx, &clock, |cx| cx.debug_bounds(local_selector).is_some());
         assert!(
             cx.debug_bounds("pairing-code").is_none(),
             "first launch showed a code"
@@ -209,20 +215,24 @@ fn local_online_offline_selection_and_pairing_dialog() {
         // The local row offers Rename only.
         let row = cx.debug_bounds(local_selector).unwrap();
         cx.simulate_mouse_move(row.center(), None, Modifiers::default());
-        draw(cx);
-        click(cx, &format!("computer-menu-{local}"));
+        draw(cx, &clock);
+        click(cx, &clock, &format!("computer-menu-{local}"));
         cx.simulate_keystrokes("down down enter");
-        wait(cx, |cx| cx.debug_bounds("computer-name-input").is_some());
+        wait(cx, &clock, |cx| {
+            cx.debug_bounds("computer-name-input").is_some()
+        });
         cx.simulate_keystrokes("escape");
-        wait(cx, |cx| cx.debug_bounds("computer-name-input").is_none());
+        wait(cx, &clock, |cx| {
+            cx.debug_bounds("computer-name-input").is_none()
+        });
         let row = cx.debug_bounds(remote_selector).unwrap();
         cx.simulate_mouse_move(row.center(), None, Modifiers::default());
-        draw(cx);
-        click(cx, &format!("computer-menu-{}", remote.computer_id));
+        draw(cx, &clock);
+        click(cx, &clock, &format!("computer-menu-{}", remote.computer_id));
         cx.simulate_keystrokes("down enter");
-        fill(cx, "computer-name-input", "  Studio Mac  ");
+        fill(cx, &clock, "computer-name-input", "  Studio Mac  ");
         cx.simulate_keystrokes("enter");
-        wait(cx, |cx| {
+        wait(cx, &clock, |cx| {
             cx.debug_bounds("computer-name-Studio Mac").is_some()
         });
         assert_eq!(
@@ -256,15 +266,15 @@ fn local_online_offline_selection_and_pairing_dialog() {
         );
         let remote_online: &'static str =
             Box::leak(format!("computer-online-{}", remote.computer_id).into_boxed_str());
-        wait(cx, |cx| cx.debug_bounds(remote_online).is_some());
+        wait(cx, &clock, |cx| cx.debug_bounds(remote_online).is_some());
         reconnected.0.kill().unwrap();
         reconnected.0.wait().unwrap();
-        wait(cx, |cx| cx.debug_bounds(offline_selector).is_some());
+        wait(cx, &clock, |cx| cx.debug_bounds(offline_selector).is_some());
         // Keep Settings open across a Runtime restart. The existing Desktop
         // subscription must reconnect and receive subsequent catalog changes.
         runtime.block_on(rig.restart_runtime()).unwrap();
         let (url, _) = rig.local_pairing_endpoint().unwrap();
-        wait(cx, |cx| cx.debug_bounds(online_selector).is_some());
+        wait(cx, &clock, |cx| cx.debug_bounds(online_selector).is_some());
         let added_home = tempfile::tempdir_in("/tmp").unwrap();
         let code = runtime.block_on(client.create_pairing_code()).unwrap();
         let added = runtime
@@ -276,43 +286,64 @@ fn local_online_offline_selection_and_pairing_dialog() {
             .unwrap();
         let added_selector: &'static str =
             Box::leak(format!("computer-{}", added.computer_id).into_boxed_str());
-        wait(cx, |cx| cx.debug_bounds(added_selector).is_some());
+        wait(cx, &clock, |cx| cx.debug_bounds(added_selector).is_some());
         // Offline Computers can be removed through the row menu.
         let row = cx.debug_bounds(added_selector).unwrap();
         cx.simulate_mouse_move(row.center(), None, Modifiers::default());
-        draw(cx);
-        click(cx, &format!("computer-menu-{}", added.computer_id));
+        draw(cx, &clock);
+        click(cx, &clock, &format!("computer-menu-{}", added.computer_id));
         cx.simulate_keystrokes("down down enter");
-        click(cx, "confirm-remove-computer");
-        wait(cx, |cx| cx.debug_bounds(added_selector).is_none());
+        click(cx, &clock, "confirm-remove-computer");
+        wait(cx, &clock, |cx| cx.debug_bounds(added_selector).is_none());
 
-        click(cx, "pair-computer");
-        wait(cx, |cx| cx.debug_bounds("pairing-command").is_some());
+        click(cx, &clock, "pair-computer");
+        wait(cx, &clock, |cx| {
+            cx.debug_bounds("pairing-command").is_some()
+        });
         assert!(cx.debug_bounds("pairing-address-input").is_none());
-        click(cx, "copy-pairing-command");
+        click(cx, &clock, "copy-pairing-command");
         let automatic = cx.update(|_, cx| cx.read_from_clipboard().unwrap().text().unwrap());
         let endpoint = automatic.split_whitespace().nth(2).unwrap();
         assert!(!endpoint.starts_with("wss://198.18.") && !endpoint.starts_with("wss://198.19."));
-        assert!(endpoint.ends_with(":7443"));
-        click(cx, "change-pairing-address");
-        wait(cx, |cx| cx.debug_bounds("pairing-address-input").is_some());
+        let advertised = endpoint
+            .strip_prefix("wss://")
+            .unwrap()
+            .parse::<std::net::SocketAddr>()
+            .unwrap();
+        assert!(!advertised.ip().is_loopback());
+        assert_ne!(advertised.port(), 0);
+        assert!(
+            runtime
+                .block_on(client.get_remote_access())
+                .unwrap()
+                .address
+                .is_some_and(|address| endpoint == format!("wss://{address}"))
+        );
+        click(cx, &clock, "change-pairing-address");
+        wait(cx, &clock, |cx| {
+            cx.debug_bounds("pairing-address-input").is_some()
+        });
         let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = socket.local_addr().unwrap().to_string();
         drop(socket);
-        fill(cx, "pairing-address-input", &address);
-        click(cx, "enable-computer-access");
-        wait(cx, |cx| cx.debug_bounds("pairing-command").is_some());
+        fill(cx, &clock, "pairing-address-input", &address);
+        click(cx, &clock, "enable-computer-access");
+        wait(cx, &clock, |cx| {
+            cx.debug_bounds("pairing-command").is_some()
+        });
         assert!(cx.debug_bounds("pairing-code").is_none());
         assert!(cx.debug_bounds("pairing-waiting-hint").is_none());
         cx.executor().advance_clock(Duration::from_secs(30));
-        wait(cx, |cx| cx.debug_bounds("pairing-waiting-hint").is_some());
-        click(cx, "copy-pairing-command");
+        wait(cx, &clock, |cx| {
+            cx.debug_bounds("pairing-waiting-hint").is_some()
+        });
+        click(cx, &clock, "copy-pairing-command");
         let copied = cx.update(|_, cx| cx.read_from_clipboard().unwrap().text().unwrap());
-        std::thread::sleep(Duration::from_millis(2100));
+        std::thread::sleep(Duration::from_millis(1100));
         let original = copied;
         let deadline = Instant::now() + Duration::from_secs(10);
         let copied = loop {
-            click(cx, "copy-pairing-command");
+            click(cx, &clock, "copy-pairing-command");
             let refreshed = cx.update(|_, cx| cx.read_from_clipboard().unwrap().text().unwrap());
             if refreshed != original {
                 break refreshed;
@@ -345,8 +376,12 @@ fn local_online_offline_selection_and_pairing_dialog() {
                 .spawn()
                 .unwrap(),
         );
-        wait(cx, |cx| cx.debug_bounds("pairing-connected").is_some());
-        wait(cx, |cx| cx.debug_bounds("pairing-connected").is_none());
+        wait(cx, &clock, |cx| {
+            cx.debug_bounds("pairing-connected").is_some()
+        });
+        wait(cx, &clock, |cx| {
+            cx.debug_bounds("pairing-connected").is_none()
+        });
         // Removing the idle online Computer removes its row and stops its daemon.
         let paired = lankide_computer_daemon::read_credentials(paired_home.path())
             .unwrap()
@@ -355,24 +390,28 @@ fn local_online_offline_selection_and_pairing_dialog() {
             Box::leak(format!("computer-{}", paired.computer_id).into_boxed_str());
         let row = cx.debug_bounds(paired_selector).unwrap();
         cx.simulate_mouse_move(row.center(), None, Modifiers::default());
-        draw(cx);
-        click(cx, &format!("computer-menu-{}", paired.computer_id));
+        draw(cx, &clock);
+        click(cx, &clock, &format!("computer-menu-{}", paired.computer_id));
         cx.simulate_keystrokes("down down enter");
-        click(cx, "confirm-remove-computer");
-        wait(cx, |cx| cx.debug_bounds(paired_selector).is_none());
-        wait(cx, |_| paired_process.0.try_wait().unwrap().is_some());
-        click(cx, "language-select");
+        click(cx, &clock, "confirm-remove-computer");
+        wait(cx, &clock, |cx| cx.debug_bounds(paired_selector).is_none());
+        wait(cx, &clock, |_| {
+            paired_process.0.try_wait().unwrap().is_some()
+        });
+        click(cx, &clock, "language-select");
         cx.simulate_keystrokes("down enter");
-        draw(cx);
-        click(cx, "nav-agents");
-        click(cx, "empty-add-agent");
-        fill(cx, "agent-id-input", "builder");
-        fill(cx, "agent-name-input", "Builder");
-        fill(cx, "agent-model-input", "scripted");
-        click(cx, "agent-computer-select");
+        draw(cx, &clock);
+        click(cx, &clock, "nav-agents");
+        click(cx, &clock, "empty-add-agent");
+        fill(cx, &clock, "agent-id-input", "builder");
+        fill(cx, &clock, "agent-name-input", "Builder");
+        fill(cx, &clock, "agent-model-input", "scripted");
+        click(cx, &clock, "agent-computer-select");
         cx.simulate_keystrokes("enter");
-        click(cx, "save-agent");
-        wait(cx, |cx| cx.debug_bounds("agent-card-builder").is_some());
+        click(cx, &clock, "save-agent");
+        wait(cx, &clock, |cx| {
+            cx.debug_bounds("agent-card-builder").is_some()
+        });
         assert_eq!(
             runtime
                 .block_on(client.get_agent("team", "builder"))
@@ -383,19 +422,25 @@ fn local_online_offline_selection_and_pairing_dialog() {
         // Edit through the same public form, choose the offline Computer.
         let card = cx.debug_bounds("agent-card-builder").unwrap();
         cx.simulate_mouse_move(card.center(), None, Modifiers::default());
-        draw(cx);
-        click(cx, "edit-agent-0");
-        click(cx, "agent-computer-select");
+        draw(cx, &clock);
+        click(cx, &clock, "edit-agent-0");
+        click(cx, &clock, "agent-computer-select");
         assert!(cx.debug_bounds("computer-choice-name-Studio Mac").is_some());
         runtime
             .block_on(client.rename_computer(&remote.computer_id, "Office Mac"))
             .unwrap();
-        wait(cx, |cx| {
+        wait(cx, &clock, |cx| {
             cx.debug_bounds("computer-choice-name-Office Mac").is_some()
         });
-        click(cx, &format!("computer-choice-{}", remote.computer_id));
-        click(cx, "save-agent");
-        wait(cx, |cx| cx.debug_bounds("agent-computer-select").is_none());
+        click(
+            cx,
+            &clock,
+            &format!("computer-choice-{}", remote.computer_id),
+        );
+        click(cx, &clock, "save-agent");
+        wait(cx, &clock, |cx| {
+            cx.debug_bounds("agent-computer-select").is_none()
+        });
         assert_eq!(
             runtime
                 .block_on(client.get_agent("team", "builder"))
@@ -403,14 +448,18 @@ fn local_online_offline_selection_and_pairing_dialog() {
                 .computer_id,
             remote.computer_id
         );
-        click(cx, "add-agent");
-        fill(cx, "agent-id-input", "remote_builder");
-        fill(cx, "agent-name-input", "Remote Builder");
-        fill(cx, "agent-model-input", "scripted");
-        click(cx, "agent-computer-select");
-        click(cx, &format!("computer-choice-{}", remote.computer_id));
-        click(cx, "save-agent");
-        wait(cx, |cx| {
+        click(cx, &clock, "add-agent");
+        fill(cx, &clock, "agent-id-input", "remote_builder");
+        fill(cx, &clock, "agent-name-input", "Remote Builder");
+        fill(cx, &clock, "agent-model-input", "scripted");
+        click(cx, &clock, "agent-computer-select");
+        click(
+            cx,
+            &clock,
+            &format!("computer-choice-{}", remote.computer_id),
+        );
+        click(cx, &clock, "save-agent");
+        wait(cx, &clock, |cx| {
             cx.debug_bounds("agent-card-remote_builder").is_some()
         });
         assert_eq!(
@@ -420,33 +469,33 @@ fn local_online_offline_selection_and_pairing_dialog() {
                 .computer_id,
             remote.computer_id
         );
-        click(cx, "nav-settings");
+        click(cx, &clock, "nav-settings");
         let row = cx.debug_bounds(remote_selector).unwrap();
         cx.simulate_mouse_move(row.center(), None, Modifiers::default());
-        draw(cx);
-        click(cx, &format!("computer-menu-{}", remote.computer_id));
+        draw(cx, &clock);
+        click(cx, &clock, &format!("computer-menu-{}", remote.computer_id));
         cx.simulate_keystrokes("down down enter");
-        click(cx, "confirm-remove-computer");
-        wait(cx, |cx| cx.debug_bounds("computer-remove-error").is_some());
+        click(cx, &clock, "confirm-remove-computer");
+        wait(cx, &clock, |cx| {
+            cx.debug_bounds("computer-remove-error").is_some()
+        });
         assert!(cx.debug_bounds(remote_selector).is_some());
-        click(cx, "cancel-remove-computer");
+        click(cx, &clock, "cancel-remove-computer");
         cx.update(|_, cx| cx.quit());
     });
     gpui::run_test(1, &[], 0, &mut |dispatcher, _| scenario(dispatcher), None);
     runtime.block_on(rig.into_inner().close()).unwrap();
 }
 
-#[path = "../src/backend.rs"]
-mod backend;
-#[path = "../src/background_services.rs"]
-mod background_services;
-
 /// Run the public Desktop bootstrap and app-quit lifecycle with real helpers.
 /// A subprocess provides private environment variables without mutating this test process.
 #[test]
 fn owned_helpers_stop_on_app_quit_while_reused_helpers_stay_running() {
     const CHILD: &str = "LANKIDE_QUIT_E2E_CHILD";
-    const NAME: &str = "owned_helpers_stop_on_app_quit_while_reused_helpers_stay_running";
+    const NAME: &str = concat!(
+        module_path!(),
+        "::owned_helpers_stop_on_app_quit_while_reused_helpers_stay_running"
+    );
     if std::env::var_os(CHILD).is_none() {
         let directory = tempfile::Builder::new()
             .prefix("lkq-")
@@ -462,7 +511,7 @@ fn owned_helpers_stop_on_app_quit_while_reused_helpers_stay_running() {
         let home = directory.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
         let output = std::process::Command::new(executable)
-            .args(["--exact", NAME, "--nocapture"])
+            .args(["--exact", NAME.split_once("::").unwrap().1, "--nocapture"])
             .env(CHILD, "1")
             .env("LANKIDE_HOME", &home)
             .env("HOME", &home)
@@ -494,6 +543,7 @@ fn owned_helpers_stop_on_app_quit_while_reused_helpers_stay_running() {
     let reused = backend::DesktopBackend::bootstrap();
     assert!(reused.startup_error.is_none());
     let scenario = std::panic::AssertUnwindSafe(|dispatcher: gpui::TestDispatcher| {
+        let clock = std::cell::Cell::new(Instant::now());
         let mut cx = TestAppContext::build(dispatcher.clone(), Some("reused_quit"));
         let cleanup = reused.quit_cleanup();
         cx.update(|cx| {

@@ -6,10 +6,19 @@ use std::{
 };
 
 pub fn cli(binary: &str, args: Vec<String>) -> Value {
+    use std::io::Write as _;
+    let home = std::env::var("LANKIDE_AGENT_HOME").expect("Agent home");
+    let mut journal = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(Path::new(&home).join("proxy-cli.log"))
+        .expect("CLI scenario journal");
+    writeln!(journal, "starting {args:?}").unwrap();
     let output = Command::new(binary)
         .args(&args)
         .output()
         .expect("run real lankide CLI");
+    writeln!(journal, "finished {args:?}: {}", output.status).unwrap();
     assert!(
         output.status.success(),
         "CLI {args:?}: {}",

@@ -451,7 +451,7 @@ impl Storage {
             return Err(StorageError::Invalid("empty sent chat id".into()));
         }
         let mut c = self.conn()?;
-        let t = c.transaction()?;
+        let t = c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let (chat,workspace,channel,agent,person):(i64,String,String,String,Option<String>)=t.query_row(
             "SELECT c.chat_id,c.workspace_id,c.channel_id,c.receiving_agent_id,c.recipient_person_id FROM messages m JOIN chats c USING(chat_id) WHERE message_id=?1",[message_id],
             |row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?)))?;
@@ -522,7 +522,7 @@ impl Storage {
         now: i64,
     ) -> Result<FinishSendResult> {
         let mut c = self.conn()?;
-        let t = c.transaction()?;
+        let t = c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let current = load_send(&t, request_key)?
             .ok_or_else(|| StorageError::Invalid("send not found".into()))?;
         let (next, provider_message_id, error_code) = match &outcome {

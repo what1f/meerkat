@@ -210,7 +210,7 @@ impl SystemRig {
         std::fs::write(
             home.path().join("runtime.json"),
             serde_json::to_vec(
-                &json!({"pairing_validity_ms":config.pairing_validity.as_millis(), "execution_token_lifetime_ms": config.execution_token_lifetime.as_millis(), "attempt_lease_ms": config.attempt_lease.as_millis(), "computer_link": config.link}),
+                &json!({"remote_access_port": 0, "pairing_validity_ms":config.pairing_validity.as_millis(), "execution_token_lifetime_ms": config.execution_token_lifetime.as_millis(), "attempt_lease_ms": config.attempt_lease.as_millis(), "computer_link": config.link}),
             )?,
         )?;
         let im = Arc::new(ImState::default());
@@ -356,12 +356,31 @@ impl SystemRig {
     pub fn restart_computer_process(&mut self) -> Result<()> {
         self.start_computer()
     }
+    fn computer_state_path(&self) -> PathBuf {
+        self.computer_home
+            .path()
+            .join("workspaces/.computer/state.json")
+    }
     pub fn computer_state(&self) -> Result<serde_json::Value> {
         Ok(serde_json::from_slice(&std::fs::read(
-            self.computer_home
-                .path()
-                .join("workspaces/.computer/state.json"),
+            self.computer_state_path(),
         )?)?)
+    }
+    /// Inspect durable queue lengths without allocating every payload byte as a JSON value.
+    pub fn pending_event_counts(&self) -> Result<Vec<usize>> {
+        #[derive(serde::Deserialize)]
+        struct Backlog {
+            pending_events: std::collections::BTreeMap<
+                String,
+                std::collections::BTreeMap<String, serde::de::IgnoredAny>,
+            >,
+        }
+        let state: Backlog = serde_json::from_slice(&std::fs::read(self.computer_state_path())?)?;
+        Ok(state
+            .pending_events
+            .values()
+            .map(|events| events.len())
+            .collect())
     }
     pub async fn computer_online(&self) -> Result<bool> {
         Ok(self

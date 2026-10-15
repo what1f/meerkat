@@ -120,8 +120,7 @@ run_hermetic() {
       return 3
     fi
   done < "$ROOT_DIR/tests/e2e-modules.tsv"
-  run_step 'Hermetic business E2Es (workspace, one feature set)' cargo test --workspace --tests --locked \
-    --features lankide-computer/test-support,lankide-harness/test-support
+  run_step 'Hermetic business E2Es (workspace, one feature set)' "$SCRIPT_DIR/run-hermetic-tests"
 }
 run_release_regressions() {
   run_step 'Desktop real process startup and cleanup' python3 "$ROOT_DIR/apps/desktop/tests/bootstrap_e2e.py" \

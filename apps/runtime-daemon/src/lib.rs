@@ -157,6 +157,8 @@ where
     struct LinkSettings {
         #[serde(default = "default_link_listen")]
         computer_link_listen: String,
+        #[serde(default = "default_remote_access_port")]
+        remote_access_port: u16,
         #[serde(default = "default_pairing_validity_ms")]
         pairing_validity_ms: u64,
         #[serde(default = "default_token_lifetime_ms")]
@@ -165,6 +167,9 @@ where
         attempt_lease_ms: u64,
         #[serde(default)]
         computer_link: lankide_protocol::link::LinkSettings,
+    }
+    fn default_remote_access_port() -> u16 {
+        7443
     }
     fn default_pairing_validity_ms() -> u64 {
         600_000
@@ -182,6 +187,7 @@ where
         Ok(bytes) => serde_json::from_slice::<LinkSettings>(&bytes)?,
         Err(error) if error.kind() == io::ErrorKind::NotFound => LinkSettings {
             computer_link_listen: default_link_listen(),
+            remote_access_port: default_remote_access_port(),
             pairing_validity_ms: default_pairing_validity_ms(),
             execution_token_lifetime_ms: default_token_lifetime_ms(),
             attempt_lease_ms: default_attempt_lease_ms(),
@@ -220,6 +226,7 @@ where
         RuntimePeerAdapter::new(application.clone()),
         secret.clone(),
         settings.computer_link.clone(),
+        settings.remote_access_port,
     )
     .await
     .map_err(AppError::Status)?;

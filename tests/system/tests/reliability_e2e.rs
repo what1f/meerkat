@@ -60,13 +60,10 @@ async fn large_offline_event_backlog_replays_and_delivers_once() -> Result<()> {
     agent.release_run().await?;
     timeout(Duration::from_secs(30), async {
         loop {
-            if rig.computer_state()?["pending_events"]
-                .as_object()
-                .is_some_and(|attempts| {
-                    attempts
-                        .values()
-                        .any(|events| events.as_object().unwrap().len() >= 300)
-                })
+            if rig
+                .pending_event_counts()?
+                .into_iter()
+                .any(|count| count >= 300)
             {
                 return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
             }
@@ -145,8 +142,8 @@ async fn repeated_computer_loss_uses_backoff_and_pauses_with_one_notice() -> Res
     let mut rig = SystemRig::start(RigConfig {
         attempt_lease: Duration::from_millis(350),
         retry: lankide_runtime::RetryConfig {
-            base_ms: 500,
-            max_ms: 1000,
+            base_ms: 100,
+            max_ms: 200,
             ..Default::default()
         },
         ..config()
@@ -163,7 +160,7 @@ async fn repeated_computer_loss_uses_backoff_and_pauses_with_one_notice() -> Res
             .await?;
         if n > 0 {
             let runs = agent.executions().await?;
-            let delay = if n == 1 { 500 } else { 1000 };
+            let delay = if n == 1 { 100 } else { 200 };
             assert!(
                 runs[n].created_at >= runs[n - 1].completed_at.unwrap() + delay,
                 "Computer loss bypassed retry backoff"

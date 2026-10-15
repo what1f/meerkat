@@ -12,7 +12,7 @@ fn config() -> RigConfig {
         reconnect: lankide_computer::ReconnectPolicy {
             initial: Duration::from_millis(50),
             maximum: Duration::from_millis(800),
-            healthy_duration: Duration::from_secs(3),
+            healthy_duration: Duration::from_secs(1),
             handshake_timeout: Duration::from_millis(400),
             multiplier: 2,
         },
@@ -159,7 +159,10 @@ async fn s10_3_sigkill_after_finish_before_ack_replays_once() -> Result<()> {
 #[tokio::test]
 async fn s10_4_ten_flaps_follow_backoff_and_complete() -> Result<()> {
     let mut cfg = config();
-    cfg.reconnect.maximum = Duration::from_secs(2);
+    cfg.reconnect.maximum = Duration::from_millis(250);
+    let maximum = cfg.reconnect.maximum;
+    let initial = cfg.reconnect.initial;
+    let healthy_duration = cfg.reconnect.healthy_duration;
     let rig = SystemRig::start(cfg).await?;
     let team = rig.workspace("team").await?;
     let agent = team
@@ -171,7 +174,7 @@ async fn s10_4_ten_flaps_follow_backoff_and_complete() -> Result<()> {
     agent.wait_until_running().await?;
     let proxy = rig.proxy.as_ref().unwrap();
     let start = Instant::now();
-    let mut nominal = Duration::from_millis(50);
+    let mut nominal = initial;
     for flap in 0..10 {
         let attempts = proxy.attempts().len();
         let cut_at = Instant::now();
@@ -182,35 +185,34 @@ async fn s10_4_ten_flaps_follow_backoff_and_complete() -> Result<()> {
             reconnect_gap >= nominal.mul_f64(0.70),
             "flap {flap}: {reconnect_gap:?} expected nominal {nominal:?}"
         );
-        nominal = (nominal * 4).min(Duration::from_secs(2));
+        nominal = (nominal * 4).min(maximum);
         wait(async || Ok(!rig.computer_online().await?)).await?;
         proxy.restore();
         wait(async || rig.computer_online().await).await?;
     }
-    assert!(start.elapsed() < Duration::from_secs(60));
+    assert!(start.elapsed() < maximum * 40 + healthy_duration);
     let attempts = proxy.attempts();
     // Failed short connections must not reset exponential backoff.
     let gaps: Vec<_> = attempts.windows(2).skip(2).map(|p| p[1] - p[0]).collect();
     assert!(
-        gaps.iter()
-            .skip(3)
-            .all(|gap| *gap >= Duration::from_millis(550)),
+        gaps.iter().skip(3).all(|gap| *gap >= maximum.mul_f64(0.70)),
         "connection gaps: {gaps:?}"
     );
     // Observe a healthy connection for the configured reset duration.
     let healthy_since = Instant::now();
     wait(async || {
-        Ok(rig.computer_online().await? && healthy_since.elapsed() >= Duration::from_millis(3200))
+        Ok(rig.computer_online().await?
+            && healthy_since.elapsed() >= healthy_duration + Duration::from_millis(100))
     })
     .await?;
     let before = proxy.attempts().len();
     let cut_at = Instant::now();
     proxy.cut();
     wait(async || Ok(proxy.attempts().len() > before)).await?;
-    // Without a reset the next attempt waits at least 75% of the 2 s maximum.
+    // Without a reset the next attempt waits at least 75% of the maximum.
     let gap = proxy.attempts()[before] - cut_at;
     assert!(
-        gap < Duration::from_millis(1000),
+        gap < maximum.mul_f64(0.70),
         "healthy connection did not reset backoff: {gap:?}"
     );
     proxy.restore();
@@ -227,7 +229,7 @@ async fn s10_4_ten_flaps_follow_backoff_and_complete() -> Result<()> {
 #[tokio::test]
 async fn offline_past_attempt_lease_fails_the_run() -> Result<()> {
     let mut cfg = config();
-    cfg.attempt_lease = Duration::from_secs(2);
+    cfg.attempt_lease = Duration::from_millis(600);
     let rig = SystemRig::start(cfg).await?;
     let team = rig.workspace("team").await?;
     let agent = team

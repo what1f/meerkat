@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "lankide-computer-daemon"
 version.workspace = true
 edition.workspace = true
@@ -23,15 +24,17 @@ serde_json = { workspace = true }
 tokio = { workspace = true, features = ["signal"] }
 
 [lib]
+test = false
 name = "lankide_computer_daemon"
 path = "src/lib.rs"
 
 [[bin]]
+test = false
 name = "lankide-computer-daemon"
 path = "src/main.rs"
 
 [package.metadata.lankide.e2e]
-command = "cargo test -p lankide-computer-daemon --test computer_daemon_e2e"
+command = "cargo build --locked -p lankide-computer-daemon --example computer_daemon_e2e && cargo test -p lankide-computer-daemon --test e2e computer_daemon_e2e::"
 scenario = "Run the local Computer daemon over a real authenticated Runtime JSON/WS link, with resources over HTTP and Agent calls through private local proxies with three standard Harness choices, interleaved parallel terminal delivery, reconnect/replay, restart, control, resources, and graceful process cleanup. Read idle timeout, total attempt budget, and cancellation grace from the private Computer home configuration with production defaults. Read reconnect backoff, healthy duration, and handshake timeout from computer.json with production defaults. Persist paired credentials and Runtime URL atomically with mode 0600, support pair RUNTIME_URL CODE, and self-pair through local discovery on first start; retain credentials across restarts. Run Agent capability calls over the private JSON socket (S17). Pair and stay in the foreground, persist the certificate pin, reconnect using it, reject non-loopback plaintext, and register the real machine name. Announce the authenticated connection through awaitable Computer readiness; the foreground pairing scenario observes the connected message."
 prerequisites = "None"
 classification = "hermetic"
@@ -47,14 +50,20 @@ tokio-stream = { workspace = true }
 sha2 = { workspace = true }
 
 [package.metadata.lankide.e2e-additional.computer-daemon-pairing]
-command = "cargo test -p lankide-computer-daemon --test pairing_cli_e2e"
+command = "cargo build --locked -p lankide-computer-daemon --example computer_daemon_e2e && cargo test -p lankide-computer-daemon --test e2e pairing_cli_e2e::"
 scenario = "Run the shipped foreground pair command against a private TLS listener: pair a second Computer using a 256-bit code and certificate pin; reject wrong pins, untrusted certificates, remote plaintext, used codes, and expired codes; reconnect after Runtime and Computer process restarts with the persisted pin; change and clear the address live while local discovery stays online; keep management and resources off the remote listener; verify owner-only identity and credential files and real machine names. Preserve timestamped pairing failure diagnostics in an owner-only home log while retaining foreground stderr."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
 status = "implemented"
 
-[[test]]
+[[example]]
+harness = false
 name = "computer_daemon_e2e"
 path = "tests/support/runner.rs"
-harness = false
+test = false
+bench = false
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"

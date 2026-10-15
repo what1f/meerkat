@@ -31,6 +31,7 @@ pub(super) struct RemoteComputers {
     peer: RuntimePeerAdapter,
     secret: String,
     settings: lankide_protocol::link::LinkSettings,
+    default_port: u16,
     state: Mutex<State>,
 }
 impl RemoteComputers {
@@ -39,6 +40,7 @@ impl RemoteComputers {
         peer: RuntimePeerAdapter,
         secret: String,
         settings: lankide_protocol::link::LinkSettings,
+        default_port: u16,
     ) -> Result<Arc<Self>, Status> {
         let address: Option<String> = match fs::read(home.join("remote-access.json")) {
             Ok(bytes) => serde_json::from_slice(&bytes).map_err(internal)?,
@@ -50,6 +52,7 @@ impl RemoteComputers {
             peer,
             secret,
             settings,
+            default_port,
             state: Mutex::new(State {
                 access: RemoteAccess::default(),
                 listener: None,
@@ -97,17 +100,39 @@ impl RemoteAccessControl for RemoteComputers {
         let Some(address) = primary_lan_ipv4() else {
             return Ok(access);
         };
-        self.set(Some(format!("{address}:7443"))).await
+        self.configure(Some(format!("{address}:{}", self.default_port)), true)
+            .await
     }
     async fn get(&self) -> Result<RemoteAccess, Status> {
         Ok(self.state.lock().await.access.clone())
     }
     async fn set(&self, address: Option<String>) -> Result<RemoteAccess, Status> {
-        let address = address
+        self.configure(address, false).await
+    }
+}
+impl RemoteComputers {
+    async fn configure(
+        &self,
+        address: Option<String>,
+        automatic: bool,
+    ) -> Result<RemoteAccess, Status> {
+        let mut address = address
             .map(|s| s.trim().to_owned())
             .filter(|s| !s.is_empty());
-        let port = address.as_deref().map(validate_address).transpose()?;
+        let port = address
+            .as_deref()
+            .map(|address| {
+                if automatic {
+                    Ok(self.default_port)
+                } else {
+                    validate_address(address)
+                }
+            })
+            .transpose()?;
         let mut state = self.state.lock().await;
+        if automatic && state.access.address.is_some() {
+            return Ok(state.access.clone());
+        }
         let mut next = RemoteAccess {
             address: address.clone(),
             cert_sha256: None,
@@ -147,6 +172,14 @@ impl RemoteAccessControl for RemoteComputers {
             let socket = bind_all(port).map_err(|_| {
                 Status::unavailable("This address cannot be used. Choose another port.")
             })?;
+            if port == 0 {
+                let host = address.as_deref().unwrap().rsplit_once(':').unwrap().0;
+                address = Some(format!(
+                    "{host}:{}",
+                    socket.local_addr().map_err(internal)?.port()
+                ));
+                next.address = address.clone();
+            }
             Some((socket, tokio_rustls::TlsAcceptor::from(Arc::new(config))))
         } else {
             None

@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "lankide-desktop"
 version = "0.1.0"
 edition = "2024"
@@ -36,6 +37,7 @@ gpui = { workspace = true, features = ["test-support"] }
 gpui_platform = { workspace = true, features = ["test-support"] }
 
 [[bin]]
+test = false
 name = "lankide-desktop"
 path = "src/main.rs"
 
@@ -48,9 +50,13 @@ unattended = "no; requires actual-window review"
 status = "implemented"
 
 [package.metadata.lankide.e2e-additional.desktop-computers]
-command = "cargo build --locked --bin lankide-runtime-daemon --bin lankide-computer-daemon && cargo test -p lankide-desktop --test computer_pairing_e2e"
+command = "cargo build --locked --bin lankide-runtime-daemon --bin lankide-computer-daemon && cargo test -p lankide-desktop --test e2e computer_pairing_e2e::"
 scenario = "Use the real system rig through the production Desktop UI: reflect local self-pairing without a code, retain an offline Computer, hide revoked Computers, create on the local default and edit placement to the offline Computer, enable remote access with a detected LAN address excluding tunnel and benchmark addresses, then correct the address, copy the pinned command, pair another Computer by running it, renew expired commands, show the connected state, and close automatically. Reuse the HTTP Runtime owner without a Runtime UDS listener (S17). Exercise real helper ownership through Desktop bootstrap and public app quit: owned children exit and reused children stay running. Refresh visible Settings after Computer online, offline, registration and revocation changes; replace the single localized status row after 30 seconds in the theme-matched pairing flow. Bootstrap reuses owners that already have daemon logs and observes early helper failures through inherited streams. Keep Settings open across Runtime restart and receive later Computer registration, presence and revocation changes through management events. Renew pairing commands at their expiry and await owned helper exit on app quit. Rename inline with Enter and cancel with Esc, omit local removal, remove an offline Computer, refuse removal of assigned Computers, and refresh renamed choices in an already open Agent form."
 prerequisites = "GPUI test platform; private daemon homes"
 classification = "hermetic"
 unattended = "yes"
 status = "implemented"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"

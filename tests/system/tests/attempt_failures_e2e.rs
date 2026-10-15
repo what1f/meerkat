@@ -16,10 +16,11 @@ async fn failed_details(
         loop {
             for execution in agent.executions().await? {
                 let details = rig.execution_details(execution.id).await?;
-                if details
-                    .attempts
-                    .iter()
-                    .any(|attempt| attempt.failure.is_some())
+                if details.state == "failed"
+                    && details
+                        .attempts
+                        .iter()
+                        .any(|attempt| attempt.failure.is_some())
                 {
                     assert_eq!(details.state, "failed");
                     return Ok(details);

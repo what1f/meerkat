@@ -25,6 +25,12 @@ members = [
     "apps/lankide-cli",
 ]
 
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 strip = "symbols"
 

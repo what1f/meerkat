@@ -15,6 +15,7 @@ gpui-component.workspace = true
 gpui-component-assets.workspace = true
 
 [[bin]]
+test = false
 name = "desktop-ui-preview"
 path = "src/main.rs"
 

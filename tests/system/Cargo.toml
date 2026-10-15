@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "lankide-system-e2e"
 version.workspace = true
 edition.workspace = true
@@ -44,7 +45,7 @@ unattended = "yes"
 status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-liveness]
-command = "cargo test -p lankide-system-e2e --test execution_liveness_e2e"
+command = "cargo test -p lankide-system-e2e --test e2e execution_liveness_e2e::"
 scenario = "Verify S6.1-S6.4 through real daemons: idle timeout releases the next queued message, progress extends idle but not the total budget, timeout kills the Harness and its child, and management cancellation stops the process tree within grace plus one second. Verify timeout backoff before the next queued message and close/kill fallback without native cancel when Cancel is absent."
 prerequisites = "None"
 classification = "hermetic"
@@ -52,7 +53,7 @@ unattended = "yes"
 status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-computer-link]
-command = "cargo test -p lankide-system-e2e --test computer_link_e2e"
+command = "cargo test -p lankide-system-e2e --test e2e computer_link_e2e::"
 scenario = "Verify S9.1: reject a newer Computer version with a typed close reason, expose it through the Computer error API and management catalog, and clear it on a compatible reconnect. Verify S9.2: separate Runtime and Computer homes reply once to a mention using only loopback WS and paired device credentials. Reject missing or wrong credentials, malformed JSON, unknown frame types, and oversized messages; keep local discovery files private and valid Computers working."
 prerequisites = "None"
 unattended = "yes"
@@ -60,7 +61,7 @@ status = "implemented"
 classification = "hermetic"
 
 [package.metadata.lankide.e2e-additional.system-resources-http]
-command = "cargo test -p lankide-system-e2e --test resources_http_e2e"
+command = "cargo test -p lankide-system-e2e --test e2e resources_http_e2e::"
 scenario = "Verify S11.1-S11.3 through real daemons on private separate homes: image-only and captioned messages reach the Agent snapshot with existing local file paths and the right hash, a byte-count network cut resumes with Range, and foreign or wall-clock-expired attempt tokens cannot fetch resources. Reject foreign workspace resources, invalid ranges, and corrupted bytes before Harness startup or atomic publication. Pair a pinned TLS Computer and deliver a large image through the existing Computer capability path with exact-byte and SHA-256 checks while the remote resource HTTP route remains closed. Deliver two sequential attachments on one Computer with their own exact bytes, hashes and Harness input paths."
 prerequisites = "None"
 classification = "hermetic"
@@ -74,7 +75,7 @@ test = false
 bench = false
 
 [package.metadata.lankide.e2e-additional.system-network-delivery]
-command = "cargo test -p lankide-system-e2e --test network_delivery_e2e"
+command = "cargo test -p lankide-system-e2e --test e2e network_delivery_e2e::"
 scenario = "Verify S10.1-S10.4 through real daemons and a reusable TCP proxy: cut mid-turn and replay one reply, detect stalled frames on both sides within three heartbeat intervals, SIGKILL the Computer after Harness completion before acknowledgement and drain its durable outbox once after restart, and flap ten times with connection timestamps proving exponential backoff and healthy-duration reset while the same held execution completes. A Computer offline past its configured attempt lease still loses the run. Bound silent WebSocket handshakes and hello waits."
 prerequisites = "None"
 classification = "hermetic"
@@ -82,7 +83,7 @@ unattended = "yes"
 status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-pairing]
-command = "cargo test -p lankide-system-e2e --test pairing_e2e"
+command = "cargo test -p lankide-system-e2e --test e2e pairing_e2e::"
 scenario = "Verify S12.1 fresh-code pairing and online registration; S12.2 single use and configurable ten-minute expiry; S12.3 offline registration and inventory; S12.4 immediate revocation and terminal daemon stop; S12.5 copied revoked home rejected. Verify local self-pairing with fresh homes, an Agent reply, new Agent placement on the paired Computer, credential reuse across Runtime restart, private atomic credential files, and rejection of local pairing secrets and mismatched device IDs as link credentials. Rename an online and offline Computer, preserve its trimmed name through daemon and Runtime restart, reject empty and overlong names, and refuse local Computer removal."
 prerequisites = "None"
 classification = "hermetic"
@@ -90,7 +91,7 @@ unattended = "yes"
 status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-agent-proxy]
-command = "cargo test -p lankide-system-e2e --test agent_proxy_e2e"
+command = "cargo test -p lankide-system-e2e --test e2e agent_proxy_e2e::"
 scenario = "Verify S15.1-S15.3 with the real lankide CLI and daemons on separate homes using only WS for Computer access: send content-file text with an attachment, read chat content, list and invoke capabilities, update a profile, transfer multi-frame resources, assert no Runtime address in recorded Harness environment, check owner-only socket permissions and removal, and reject wrong or finished credentials. Verify JSON capability payloads and the length-prefixed JSON Agent socket with no Runtime UDS listener (S17). Reject unsupported attachment objects and local Markdown paths with actionable invalid_input results through the real CLI, Computer proxy, and Runtime gateway."
 prerequisites = "None"
 classification = "hermetic"
@@ -98,7 +99,7 @@ unattended = "yes"
 status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-placement]
-command = "cargo test -p lankide-system-e2e --test placement_e2e"
+command = "cargo test -p lankide-system-e2e --test e2e placement_e2e::"
 scenario = "Verify S13.1-S13.4 through public management and real daemons: reject unknown or revoked Computers and missing Harnesses with typed errors, run two Agents only on their paired Computers, queue offline work until reconnect without failures or notices, refuse removal while Agents remain assigned and preserve their delayed results. Invalidate capability tokens, HTTP resources, and Computer events after a placement change; discard stale unacknowledged progress after restart while keeping the registered Computer connected. Move assigned Agents before removal; an attempted removal during a buffered reply is refused and the result is preserved."
 prerequisites = "None"
 classification = "hermetic"
@@ -106,7 +107,7 @@ unattended = "yes"
 status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-management-http]
-command = "cargo test -p lankide-system-e2e --test management_http_e2e"
+command = "cargo test -p lankide-system-e2e --test e2e management_http_e2e::"
 scenario = "Verify S16 through real daemons on private homes: owner-authenticated HTTP workspace calls and a scoped event WebSocket work, missing/wrong/device/pairing credentials receive 401 from HTTP and the event upgrade, the owner cannot open a Computer link, the owner file is 0600, and its credential is reused after Runtime restart. Verify loopback management closes open event subscriptions on shutdown and reject configuration that would expose management on a public plaintext listener. Rename an Agent in a paused workspace after restart, then resume and process a message. Subscribe through the management client before pairing, then observe registered-offline, online, offline and revoked catalog state after events, and resubscribe with the same client after Runtime restart, including a scoped subscription."
 prerequisites = "None"
 classification = "hermetic"
@@ -114,7 +115,7 @@ unattended = "yes"
 status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-reliability]
-command = "cargo test -p lankide-system-e2e --test reliability_e2e"
+command = "cargo test -p lankide-system-e2e --test e2e reliability_e2e::"
 scenario = "Replay 300 offline events under TCP backpressure and deliver one reply; replay lost initial delivery receipts for both completed and live runs without rerunning the batch. Crash Runtime during input preparation and requeue the message; preserve offline queued messages across restart. Cancel the same surviving Harness after Runtime crash. Repeated Computer loss follows exponential backoff, pauses after the existing fingerprint limit, and sends one notice. Observe the scripted Harness reply confirmation before disconnect, then recover the completed reply once after reconnect."
 prerequisites = "None"
 classification = "hermetic"
@@ -127,3 +128,10 @@ name = "system-cli"
 path = "../../apps/lankide-cli/src/main.rs"
 test = false
 bench = false
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"
+
+[lib]
+test = false

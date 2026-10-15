@@ -18,5 +18,5 @@ else
   LANKIDE_E2E_COMPUTER_BIN="${CARGO_TARGET_DIR:-$ROOT_DIR/target}/debug/lankide-computer-daemon"
 fi
 export LANKIDE_E2E_COMPUTER_BIN
-cargo test --locked "${profile[@]}" -p lankide-runtime-daemon --test live_provider_management_e2e -- --ignored --nocapture
-cargo test --locked "${profile[@]}" -p lankide-runtime-daemon --test feishu_team_live_e2e -- --ignored --nocapture
+cargo test --locked "${profile[@]}" -p lankide-runtime-daemon --test e2e live_provider_management_e2e:: -- --ignored --nocapture
+cargo test --locked "${profile[@]}" -p lankide-runtime-daemon --test e2e feishu_team_live_e2e:: -- --ignored --nocapture
