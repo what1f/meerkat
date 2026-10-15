@@ -192,6 +192,7 @@ struct State {
     deliveries: Vec<Delivery>,
     parents: BTreeMap<String, String>,
     messages: BTreeMap<(String, String), Value>,
+    chats: BTreeMap<String, String>,
 }
 pub struct FeishuServer {
     pub http: Server,
@@ -354,11 +355,17 @@ impl FeishuServer {
                         && !path.contains("/resources/") =>
                 {
                     let id = path.trim_start_matches("/open-apis/im/v1/messages/");
-                    state
+                    let message = state
                         .messages
                         .get(&(app.into(), id.into()))
-                        .expect("target belongs to receiving App")
-                        .clone()
+                        .expect("target belongs to receiving App");
+                    // The real endpoint reports the chat but not its type.
+                    json!({"items":[{"message_id":id,"chat_id":message["chat_id"],"msg_type":message["message_type"]}]})
+                }
+                ("GET", path) if path.starts_with("/open-apis/im/v1/chats/") => {
+                    let id = path.trim_start_matches("/open-apis/im/v1/chats/");
+                    let mode = state.chats.get(id).expect("chat was delivered");
+                    json!({"chat_id":id,"chat_mode":mode,"chat_type":"private"})
                 }
                 ("GET", "/open-apis/contact/v3/users/ou_alice") => {
                     json!({"user":{"open_id":"ou_alice","union_id":"on_alice","name":"Alice"}})
@@ -423,6 +430,10 @@ impl FeishuServer {
             state
                 .messages
                 .insert((app_id.into(), id.into()), message.clone());
+            state.chats.insert(
+                message["chat_id"].as_str().unwrap().into(),
+                message["chat_type"].as_str().unwrap().into(),
+            );
         }
         state
             .events

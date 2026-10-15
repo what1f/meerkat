@@ -360,6 +360,8 @@ pub struct ChatRecord {
     pub name: String,
     #[serde(default, deserialize_with = "nullable_string")]
     pub chat_type: String,
+    #[serde(default, deserialize_with = "nullable_string")]
+    pub chat_mode: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Eq, PartialEq)]

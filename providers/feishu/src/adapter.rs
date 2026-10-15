@@ -1161,20 +1161,16 @@ fn normalized_event_to_provider(
             let provider_data = serde_json::to_value(&reaction)
                 .map_err(|error| crate::events::SinkError(error.to_string()))?;
             let action = reaction.action;
-            // Feishu reaction callbacks omit chat identity. Resolve the target
-            // through the same App before choosing a channel or recipient.
+            // Feishu reaction callbacks omit chat identity, and the message
+            // lookup omits the chat kind. Resolve both through the same App
+            // before choosing a channel or recipient.
             let target = client
                 .get_message(&reaction.target_provider_message_id, auth)
                 .map_err(|error| crate::events::SinkError(error.to_string()))?;
-            let direct = match target.chat_type.as_str() {
-                "p2p" => true,
-                "group" => false,
-                _ => {
-                    return Err(crate::events::SinkError(
-                        "Feishu reaction target chat type is missing".into(),
-                    ));
-                }
-            };
+            let chat = client
+                .get_chat(&target.chat_id, auth)
+                .map_err(|error| crate::events::SinkError(error.to_string()))?;
+            let direct = chat.chat_mode == "p2p";
             let receiving_agent_id = if direct {
                 receiving_agent(context, handle, &reaction.app_id)?
             } else {

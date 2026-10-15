@@ -178,7 +178,7 @@ impl Runtime {
                         tasks.spawn(async move {
                             if let Err(error) = host.auto_reaction(agent_id.clone(), spec).await {
                                 log::error!(
-                                    "[runtime] workspace={workspace_id} agent={agent_id} auto reaction failed: {error}"
+                                    "[runtime] workspace={workspace_id} agent={agent_id} auto reaction failed: {error:?}"
                                 );
                             }
                         });

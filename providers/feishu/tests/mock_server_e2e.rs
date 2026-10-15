@@ -257,8 +257,22 @@ async fn s2_1_direct_messages_and_reactions_identify_the_receiving_agent() {
         let ProviderEventKind::Reaction(reaction) = event.kind else { panic!("expected DM reaction") };
         assert_eq!(reaction.target_provider_message_id, "om_dm_beta");
         ack.accept();
+        server.deliver("cli_beta", callback("group-beta", json!({"message_id":"om_group_beta","chat_id":"oc_group","chat_type":"group","create_time":"3000",
+            "message_type":"text","content":json!({"text":"team note"}).to_string()})));
+        let (event, ack) = tokio::time::timeout(Duration::from_secs(30), host.next_event()).await.unwrap().unwrap().into_parts();
+        assert_eq!(event.channel_id.as_str(), "group_chat");
+        ack.accept();
+        server.deliver("cli_beta", json!({"schema":"2.0","header":{"event_id":"group-reaction","event_type":"im.message.reaction.created_v1","app_id":"cli_beta","tenant_key":"tenant"},
+            "event":{"message_id":"om_group_beta","operator_type":"user","user_id":{"open_id":"ou_alice","union_id":"on_alice"},"reaction_type":{"emoji_type":"THUMBSUP"},"action_time":"4000"}}));
+        let (event, ack) = tokio::time::timeout(Duration::from_secs(30), host.next_event()).await.unwrap().unwrap().into_parts();
+        assert_eq!(event.receiving_agent_id, None);
+        assert_eq!(event.channel_id.as_str(), "group_chat");
+        assert_eq!(event.provider_chat_id, "oc_group");
+        let ProviderEventKind::Reaction(reaction) = event.kind else { panic!("expected group reaction") };
+        assert_eq!(reaction.target_provider_message_id, "om_group_beta");
+        ack.accept();
         tokio::time::timeout(Duration::from_secs(30), async {
-            while server.acknowledgements() < 2 {
+            while server.acknowledgements() < 4 {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
         }).await.expect("DM acknowledgements did not reach server");
