@@ -312,6 +312,14 @@ database_methods! {
     ] (&request, &code, now);
     false failure_history(id: i64) -> FailureHistory [] (id);
     true finish_failure_notice(id: i64, now: i64) -> () [] (id, now);
+    true begin_execution_send(execution_id: i64, request: SendRequest) -> SendAttemptView [] (execution_id,request);
+    true bind_sent_chat(message_id: i64, native_chat: &str) -> () [let native_chat=native_chat.to_owned();] (message_id,&native_chat);
+    true prepare_direct_chat(workspace: &WorkspaceId, agent: &AgentId, channel: &ChannelId, channel_name: &str, person: &PersonId, now: i64) -> String [let workspace=workspace.clone(); let agent=agent.clone(); let channel=channel.clone(); let channel_name=channel_name.to_owned(); let person=person.clone();] (&workspace,&agent,&channel,&channel_name,&person,now);
+    true record_outbound_resources(message_id: i64, resources: Vec<ResourceView>) -> () [] (message_id,resources);
+    true finish_message_send(
+        message_id: i64, outcome: SendOutcome, provider_message_ids: Vec<String>,
+        resources: Vec<ResourceView>, now: i64,
+    ) -> FinishSendResult [] (message_id, outcome, provider_message_ids, resources, now);
     true finish_send(
         request_key: &str,
         outcome: SendOutcome,

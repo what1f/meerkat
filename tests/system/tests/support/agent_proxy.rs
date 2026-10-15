@@ -112,6 +112,28 @@ pub fn run(binary: &str, input: &str) {
         ],
     );
     assert_eq!(std::fs::read(downloaded_path).unwrap(), bytes);
+    let mut invalid_attachments = Vec::new();
+    for key in [
+        "path",
+        "file",
+        "local_path",
+        "id",
+        "resourceId",
+        "resource_id",
+    ] {
+        let result = cli(binary,vec!["invoke".into(),"message_send".into(),"--arguments-json".into(),json!({"channel_id":channel,"chat_id":chat,"content":"Report","attachments":[{key:attachment.display().to_string()}]}).to_string()]);
+        invalid_attachments.push(result);
+    }
+    let local_markdown = cli(
+        binary,
+        vec![
+            "invoke".into(),
+            "message_send".into(),
+            "--arguments-json".into(),
+            json!({"channel_id":channel,"chat_id":chat,"content":"![x](./out/green55.png)"})
+                .to_string(),
+        ],
+    );
     let content_file = home.join("message.md");
     std::fs::write(&content_file, "Sent with an attachment").unwrap();
     let sent = cli(
@@ -131,7 +153,7 @@ pub fn run(binary: &str, input: &str) {
             "--force".into(),
         ],
     );
-    let report = json!({"env":env,"capabilities":capabilities,"profile":profile,"updated":updated,"invoked":invoked,"content":content,"uploaded":uploaded,"downloaded":downloaded,"sent":sent});
+    let report = json!({"env":env,"capabilities":capabilities,"profile":profile,"updated":updated,"invoked":invoked,"content":content,"uploaded":uploaded,"downloaded":downloaded,"sent":sent,"invalid_attachments":invalid_attachments,"local_markdown":local_markdown});
     let path = home.join("proxy-report.json");
     std::fs::write(
         path.with_extension("tmp"),

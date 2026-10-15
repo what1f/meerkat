@@ -347,7 +347,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
     pull(&runtime, &workspace_a, 15).await?;
     pull(&runtime, &workspace_a, 16).await?;
     ensure(
-        runtime.storage().message_count(&workspace_a).map_err(err)? == 6,
+        runtime.storage().message_count(&workspace_a).map_err(err)? == 5,
         "canonical dedup",
     )?;
     state_a.push_send(SendMode::Sent("provider_reply_1".into()));
@@ -395,8 +395,8 @@ async fn scenario(db: &Path) -> Result<(), String> {
             && rendered.contains("second")
             && rendered.contains(&format!("{}…", "x".repeat(199)))
             && !rendered.contains(&"x".repeat(200))
-            && rendered.contains("self echo")
-            && !rendered.contains("later two")
+            && !rendered.contains("self echo")
+            && rendered.contains("later two")
             && !rendered.contains("later one"),
         "multi-chat snapshot",
     )?;
@@ -1061,36 +1061,62 @@ async fn collaboration_fencing_scenario(db: &Path) -> Result<(), String> {
     state.emit(callback).await?;
     let callback = pull(&runtime, &workspace, 5).await?;
     ensure(
-        matches!(callback, lankide_runtime::CoordinatedEvent::Message { ref result, .. } if result.duplicate),
-        "Provider callback merges with the canonical outbound message",
+        matches!(callback, lankide_runtime::CoordinatedEvent::Dropped),
+        "an outbound echo neither creates a message nor wakes an Agent",
     )?;
-    let reader = ScriptComputer::new(state.clone(), None, no_reply_outcome());
     ensure(
         matches!(
             runtime
-                .execute_ready(&workspace, &clark, &reader, 6)
+                .execute_ready(
+                    &workspace,
+                    &clark,
+                    &ScriptComputer::new(state.clone(), None, no_reply_outcome()),
+                    6
+                )
                 .await
                 .map_err(err)?,
-            ExecutionProgress::Committed {
-                committed: true,
-                ..
-            }
+            ExecutionProgress::Idle
         ),
-        "next execution reads the merged Agent message",
+        "the echo does not start another turn",
     )?;
-    let assignments = reader.assignments.lock().map_err(err)?;
+    state
+        .emit(message(
+            &channel,
+            "team_chat",
+            "human-followup",
+            "please continue",
+            &clark,
+            "human",
+        ))
+        .await?;
+    pull(&runtime, &workspace, 6).await?;
+    let reader = ScriptComputer::new(state.clone(), None, no_reply_outcome());
+    let next = runtime
+        .execute_ready(&workspace, &clark, &reader, 6)
+        .await
+        .map_err(err)?;
+    let ExecutionProgress::Committed {
+        execution_id,
+        committed: true,
+    } = next
+    else {
+        return Err("human follow-up did not execute".into());
+    };
+    let snapshot_id = runtime
+        .storage()
+        .execution(execution_id)
+        .map_err(err)?
+        .snapshot_id;
+    let history = runtime
+        .storage()
+        .snapshot_chat_messages(snapshot_id, &channel, "team_chat", None, 50)
+        .map_err(err)?;
     ensure(
-        assignments
-            .first()
-            .and_then(|assignment| assignment.initial_delivery.as_ref())
-            .is_some_and(|delivery| {
-                delivery
-                    .rendered_markdown
-                    .contains("Bruce introduced himself")
-            }),
-        "other Agent outbound messages enter the readable snapshot",
+        history
+            .iter()
+            .any(|message| message.content == "Bruce introduced himself"),
+        "the next human-triggered turn can read the canonical Agent message through chat history",
     )?;
-    drop(assignments);
     let mut unmentioned_callback = message(
         &channel,
         "team_chat",
@@ -1102,11 +1128,17 @@ async fn collaboration_fencing_scenario(db: &Path) -> Result<(), String> {
     if let ProviderEventKind::Message(message) = &mut unmentioned_callback.kind {
         message.mentioned_agent_ids.clear();
     }
+    unmentioned_callback.sender.id = bruce.to_string();
+    unmentioned_callback.sender.kind = EventSenderType::Agent;
+    let before_echo = runtime.storage().message_count(&workspace).map_err(err)?;
     state.emit(unmentioned_callback).await?;
     let unmentioned_callback = pull(&runtime, &workspace, 7).await?;
     ensure(
-        matches!(unmentioned_callback, lankide_runtime::CoordinatedEvent::Message { ref result, .. } if result.new_inbox_items.is_empty()),
-        "an unmentioned Agent message must not start another Agent turn",
+        matches!(
+            unmentioned_callback,
+            lankide_runtime::CoordinatedEvent::Dropped
+        ) && runtime.storage().message_count(&workspace).map_err(err)? == before_echo,
+        "an Agent-ID echo with an unknown native ID creates no row or turn",
     )?;
     runtime.shutdown().await.map_err(err)?;
     Ok(())

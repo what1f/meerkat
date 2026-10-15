@@ -32,6 +32,8 @@ pub(crate) struct AgentIdentity {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 struct BotObservation {
+    #[serde(default)]
+    bot_app_id: String,
     observer_app_id: String,
     tenant_key: String,
     open_id: String,
@@ -91,8 +93,8 @@ impl IdentityDirectory {
     }
 
     /// Learn typed identities from one callback before the event is exposed to
-    /// Runtime. Unknown bots remain unresolved until another App observes the
-    /// same union_id while referring to a registered Agent.
+    /// Runtime. Resolve bots by their stable App ID or by previously observed
+    /// typed aliases; never infer an identity from a display name.
     pub fn learn_message(&mut self, message: &NormalizedMessage) {
         self.learn_sender(&message.sender, &message.app_id, &message.tenant_key);
         for mention in &message.mentions {
@@ -119,6 +121,7 @@ impl IdentityDirectory {
                 );
             } else {
                 let observation = BotObservation {
+                    bot_app_id: aliases.bot_app_id,
                     observer_app_id: message.app_id.trim().to_owned(),
                     tenant_key: message.tenant_key.trim().to_owned(),
                     open_id: aliases.open_id,
@@ -142,6 +145,14 @@ impl IdentityDirectory {
         let resolved = matches!(sender.kind, SenderKind::Agent)
             .then(|| sender.sender_id.clone())
             .or_else(|| {
+                self.agents.iter().find_map(|(id, agent)| {
+                    (!aliases.bot_app_id.is_empty()
+                        && agent.app_id == aliases.bot_app_id
+                        && same_tenant(&agent.tenant_key, tenant_key))
+                    .then(|| id.clone())
+                })
+            })
+            .or_else(|| {
                 self.resolve_agent(
                     app_id,
                     tenant_key,
@@ -161,6 +172,7 @@ impl IdentityDirectory {
             return;
         }
         let observation = BotObservation {
+            bot_app_id: aliases.bot_app_id,
             observer_app_id: app_id.trim().to_owned(),
             tenant_key: tenant_key.trim().to_owned(),
             open_id: aliases.open_id,
@@ -278,13 +290,24 @@ impl IdentityDirectory {
             .unresolved_bots
             .iter()
             .filter_map(|(key, observation)| {
-                let agent_id = self.resolve_agent(
-                    &observation.observer_app_id,
-                    &observation.tenant_key,
-                    &observation.open_id,
-                    &observation.union_id,
-                    &observation.user_id,
-                )?;
+                let agent_id = self
+                    .agents
+                    .iter()
+                    .find_map(|(id, agent)| {
+                        (!observation.bot_app_id.is_empty()
+                            && agent.app_id == observation.bot_app_id
+                            && same_tenant(&agent.tenant_key, &observation.tenant_key))
+                        .then(|| id.clone())
+                    })
+                    .or_else(|| {
+                        self.resolve_agent(
+                            &observation.observer_app_id,
+                            &observation.tenant_key,
+                            &observation.open_id,
+                            &observation.union_id,
+                            &observation.user_id,
+                        )
+                    })?;
                 Some((key.clone(), agent_id, observation.clone()))
             })
             .collect::<Vec<_>>();
@@ -294,6 +317,7 @@ impl IdentityDirectory {
                 &observation.observer_app_id,
                 &observation.tenant_key,
                 &AliasSet {
+                    bot_app_id: observation.bot_app_id,
                     open_id: observation.open_id,
                     union_id: observation.union_id,
                     user_id: observation.user_id,
@@ -391,6 +415,7 @@ pub(crate) async fn person_open_id(
 
 #[derive(Default)]
 struct AliasSet {
+    bot_app_id: String,
     open_id: String,
     union_id: String,
     user_id: String,
@@ -405,6 +430,7 @@ impl AliasSet {
         let mut aliases = Self::default();
         for (kind, value) in values {
             match kind.as_str() {
+                "app_id" => aliases.bot_app_id = value.trim().to_owned(),
                 "open_id" => aliases.open_id = value.trim().to_owned(),
                 "union_id" => aliases.union_id = value.trim().to_owned(),
                 "user_id" => aliases.user_id = value.trim().to_owned(),

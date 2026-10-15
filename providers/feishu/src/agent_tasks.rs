@@ -31,7 +31,7 @@ const IM_PROMPT: &str = r#"## 飞书 IM
 
 能用一个表情完整表达态度时，直接使用 feishu_reaction_add；有额外信息需要补充时，可以先回应表情再发送文字。当 Get 已经承担全部语义时，不要再发一条“已收到”。OK、CrossMark、MinusOne、DONE、LGTM 等更适合在具体消息下直接表态，不要生硬地插入正文。
 
-消息中的提及使用 @名称[id]。需要提及成员时保留完整标记，不要猜测未出现过的 ID。发送普通消息使用 message_send；回复具体消息时增加 reply_to，并确保该消息属于目标会话。复杂长文通过 content_file 提供；本地图片和文件使用 Markdown 图片或链接引用。
+消息中的提及使用 @名称[id]。需要提及成员时保留完整标记，不要猜测未出现过的 ID。发送普通消息使用 message_send；向人类团队成员发起私信时提供 recipient_id（成员 ID），不需要已有会话。回复具体消息时增加 reply_to，并确保该消息属于目标会话。复杂长文通过 content_file 提供；本地图片和文件先用 lankide upload --file PATH 上传，再将返回的完整资源对象放入 message_send 的 attachments 数组（resource_id、file_name、media_type、size_bytes、sha256）。Markdown 本地路径不支持。
 
 把自己当成团队里真实的一员：当前讨论需要你的观点、有人在问你，或你掌握了能推动事情的信息时才发言；只是看到了但插话没有价值时，不发送消息。回应某一句具体消息且引用关系能帮助理解上下文时才使用 reply_to，不要为了形式感给每条消息都加引用。message_send 返回 sent 才表示已发送；返回 held 时没有发出去。"#;
 
@@ -66,6 +66,7 @@ pub(crate) async fn tools(
     context: &AgentRuntimeContext,
     client: Arc<SharedClient>,
     auth: Auth,
+    action_lock: Arc<tokio::sync::Mutex<()>>,
 ) -> Result<Vec<ToolDefinition>, ProviderError> {
     if !task_system_enabled(&context.workspace_config) {
         return Ok(Vec::new());
@@ -83,27 +84,212 @@ pub(crate) async fn tools(
         TaskOperation::Comment,
     ]
     .into_iter()
-    .map(|operation| definition(operation, client.clone(), auth, access.clone()))
+    .map(|operation| {
+        definition(
+            operation,
+            client.clone(),
+            auth,
+            access.clone(),
+            context.clone(),
+            action_lock.clone(),
+        )
+    })
     .collect()
 }
 
-pub(crate) async fn target_agents_for_task(
-    directory: &crate::identity::IdentityDirectory,
-    client: &SharedClient,
+pub(crate) async fn task_event(
+    context: &lankide_provider::InitContext,
+    client: Arc<SharedClient>,
     auth: Auth,
-    task_id: &str,
-) -> Vec<lankide_core::AgentId> {
-    let directory = MemberDirectory::from_identity(directory);
-    let Ok(task) = client.get_task(task_id, "open_id", auth).await else {
-        return Vec::new();
-    };
-    let member_ids = task_member_ids(&task);
-    directory
+    event: &crate::normalize::NormalizedTaskEvent,
+) -> Result<(lankide_provider::EventSender, lankide_provider::CustomEvent), ProviderError> {
+    use lankide_provider::{CustomEvent, EventSender, EventSenderType};
+    let (_, identity) = crate::identity::load(context.storage()).await?;
+    let raw: Value =
+        serde_json::from_slice(&event.raw).map_err(|_| task_error("read_task_event", false))?;
+    let app_id = raw["header"]["app_id"].as_str().unwrap_or_default();
+    let roster = context.storage().team_members().await?;
+    let directory = MemberDirectory::from_roster(
+        &identity,
+        &roster,
+        app_id,
+        context.storage(),
+        client.clone(),
+        auth,
+    )
+    .await?;
+    let task = client
+        .get_task(&event.task_id, "open_id", auth)
+        .await
+        .map_err(|_| task_error("read_task_event", true))?;
+    let mut targets = directory
         .agents
+        .iter()
+        .filter(|(_, app)| task_member_ids(&task).contains(&("app".to_owned(), (*app).clone())))
+        .filter_map(|(id, _)| lankide_core::AgentId::new(id).ok())
+        .collect::<Vec<_>>();
+    let action = event
+        .event_types
+        .iter()
+        .map(|kind| match kind.as_str() {
+            "task_create" => "创建了任务",
+            "task_completed_update" => {
+                if is_completed(&task) {
+                    "完成了任务"
+                } else {
+                    "重新打开了任务"
+                }
+            }
+            "task_assignees_update" => "更新了负责人",
+            "task_followers_update" => "更新了关注人",
+            "task_comment_create" | "task_comment_reply" => "评论了任务",
+            "task_comment_update" => "更新了评论",
+            "task_comment_delete" => "删除了评论",
+            "task_deleted" => "删除了任务",
+            "task_summary_update" => "更新了标题",
+            "task_desc_update" => "更新了描述",
+            "task_start_due_update" => "更新了日期",
+            _ => "更新了任务",
+        })
+        .collect::<Vec<_>>()
+        .join("、");
+    let key = event
+        .comment_id
+        .as_ref()
+        .map(|id| format!("task_comment/{id}"))
+        .unwrap_or_else(|| format!("task_action/{}", event.task_id));
+    let local = context
+        .storage()
+        .get(&key)
+        .await?
+        .map(|bytes| serde_json::from_slice::<Value>(&bytes))
+        .transpose()
+        .map_err(|_| task_error("read_task_action", false))?;
+    let comment_created = event
+        .event_types
+        .iter()
+        .any(|kind| matches!(kind.as_str(), "task_comment_create" | "task_comment_reply"));
+    let local = local.filter(|value| {
+        if event.comment_id.is_some() {
+            return comment_created;
+        }
+        let version = value["updated_at"]
+            .as_str()
+            .and_then(|value| value.parse::<i64>().ok());
+        let event_time = raw["header"]["create_time"]
+            .as_str()
+            .and_then(|value| value.parse::<i64>().ok());
+        value["updated_at"].as_str() == Some(task.updated_at.as_str())
+            && version
+                .zip(event_time)
+                .is_some_and(|(version, time)| time >= version)
+    });
+    let comment = if let Some(id) = &event.comment_id {
+        if event
+            .event_types
+            .iter()
+            .any(|kind| kind == "task_comment_delete")
+        {
+            None
+        } else {
+            Some(
+                client
+                    .get_task_comment(id, auth)
+                    .await
+                    .map_err(|_| task_error("read_task_comment", true))?,
+            )
+        }
+    } else {
+        None
+    };
+    let member = comment
+        .as_ref()
+        .filter(|_| comment_created)
+        .and_then(|comment| comment.creator.as_ref())
+        .or_else(|| {
+            event
+                .event_types
+                .iter()
+                .any(|kind| kind == "task_create")
+                .then_some(task.creator.as_ref())
+                .flatten()
+        });
+    // A creator is authoritative for creation, but is not the actor of later edits.
+    let actor_id = member
+        .and_then(|member| directory.stable_id(member))
+        .or_else(|| local.as_ref().and_then(|value| value["actor_id"].as_str()));
+    let sender = if let Some(id) = actor_id {
+        let agent = identity.agents.get(id);
+        EventSender {
+            id: id.to_owned(),
+            kind: if agent.is_some() {
+                EventSenderType::Agent
+            } else {
+                EventSenderType::Human
+            },
+            name: agent
+                .map(|agent| agent.display_name.clone())
+                .filter(|name| !name.is_empty())
+                .or_else(|| {
+                    member
+                        .map(|member| member.name.clone())
+                        .filter(|name| !name.is_empty())
+                })
+                .unwrap_or_else(|| id.to_owned()),
+        }
+    } else {
+        EventSender {
+            id: "feishu:task".into(),
+            kind: EventSenderType::System,
+            name: "飞书任务".into(),
+        }
+    };
+    let content = local
+        .as_ref()
+        .and_then(|value| value["content"].as_str())
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            comment
+                .as_ref()
+                .map(|comment| {
+                    let author_app = comment
+                        .creator
+                        .as_ref()
+                        .filter(|member| normalized_member_type(member) == "app")
+                        .map(|member| member.id.as_str())
+                        .unwrap_or(app_id);
+                    normalize_comment_mentions(&comment.content, author_app, &directory)
+                })
+                .unwrap_or_else(|| event.content.clone())
+        });
+    let mentioned_agent_ids = extract_agent_ids(&content)
         .into_iter()
-        .filter(|(_, app_id)| member_ids.contains(&("app".to_owned(), app_id.clone())))
-        .filter_map(|(agent_id, _)| lankide_core::AgentId::new(agent_id).ok())
-        .collect()
+        .filter(|id| identity.agents.contains_key(id))
+        .filter_map(|id| lankide_core::AgentId::new(id).ok())
+        .filter(|id| id.as_str() != sender.id)
+        .collect::<Vec<_>>();
+    for id in &mentioned_agent_ids {
+        if !targets.contains(id) {
+            targets.push(id.clone());
+        }
+    }
+    targets.retain(|id| id.as_str() != sender.id);
+    let mut title = format!("{}{}：{}", sender.name, action, task.summary);
+    if !content.trim().is_empty() {
+        title.push_str("\n");
+        title.push_str(&content);
+    }
+    Ok((
+        sender,
+        CustomEvent {
+            reason: "task".into(),
+            target_agent_ids: targets,
+            mentioned_agent_ids,
+            subject_id: event.task_id.clone(),
+            subject_name: title,
+            data: serde_json::to_value(event).map_err(|_| task_error("read_task_event", false))?,
+        },
+    ))
 }
 
 #[derive(Clone, Copy)]
@@ -179,7 +365,7 @@ impl TaskOperation {
                     "description":{"type":"string"},
                     "assignee_ids":{"type":"array"},
                     "follower_ids":{"type":"array"},
-                    "due":{"type":"object"}
+                    "due":due_schema()
                 }
             }),
             Self::Update => json!({
@@ -189,7 +375,7 @@ impl TaskOperation {
                     "task_id":{"type":"string"},
                     "summary":{"type":"string"},
                     "description":{"type":"string"},
-                    "due":{"type":"object"}
+                    "due":due_schema()
                 }
             }),
             Self::AddMembers | Self::RemoveMembers => json!({
@@ -210,6 +396,8 @@ fn definition(
     client: Arc<SharedClient>,
     auth: Auth,
     access: TaskAccess,
+    context: AgentRuntimeContext,
+    action_lock: Arc<tokio::sync::Mutex<()>>,
 ) -> Result<ToolDefinition, ProviderError> {
     Ok(ToolDefinition {
         id: operation.id().to_owned(),
@@ -221,11 +409,15 @@ fn definition(
             client,
             auth,
             access,
+            context,
+            action_lock,
         }),
     })
 }
 
 struct TaskHandler {
+    context: AgentRuntimeContext,
+    action_lock: Arc<tokio::sync::Mutex<()>>,
     operation: TaskOperation,
     client: Arc<SharedClient>,
     auth: Auth,
@@ -239,9 +431,46 @@ impl InvocationHandler for TaskHandler {
         let auth = self.auth;
         let access = self.access.clone();
         Box::pin(async move {
-            execute(operation, &client, auth, &access, input)
+            let _guard = self.action_lock.lock().await;
+            let result = execute(operation, &client, auth, &access, input.clone())
                 .await
-                .or_else(|error| Ok(tool_error(&error)))
+                .or_else(|error| Ok(tool_error(&error)))?;
+            if result["ok"] == true
+                && matches!(
+                    operation,
+                    TaskOperation::Create
+                        | TaskOperation::Update
+                        | TaskOperation::AddMembers
+                        | TaskOperation::RemoveMembers
+                        | TaskOperation::Complete
+                        | TaskOperation::Comment
+                )
+            {
+                let (key, updated_at) = if let Some(id) = result["comment_id"].as_str() {
+                    (Some(format!("task_comment/{id}")), Value::Null)
+                } else if let Some(id) = result["task"]["task_id"].as_str() {
+                    (
+                        Some(format!("task_action/{id}")),
+                        result["task"]["updated_at"].clone(),
+                    )
+                } else {
+                    (None, Value::Null)
+                };
+                if let Some(key) = key {
+                    self.context
+                        .storage()
+                        .put(
+                            &key,
+                            serde_json::to_vec(&json!({
+                                "actor_id": self.context.agent_id, "updated_at": updated_at,
+                                "content":input.get("content"), "operation":operation.id()
+                            }))
+                            .map_err(|_| task_error("record_task_action", false))?,
+                        )
+                        .await?;
+                }
+            }
+            Ok(result)
         })
     }
 }
@@ -426,7 +655,7 @@ async fn create_task(
     let task = CreateTask {
         summary,
         description: text(input, "description").unwrap_or_default(),
-        due: input.get("due").cloned(),
+        due: normalized_due(input)?,
         assignees,
         followers,
         tasklist_guid: Some(access.tasklist_id.clone()),
@@ -478,7 +707,11 @@ async fn update_task(
         summary: (!complete).then(|| text(input, "summary")).flatten(),
         description: (!complete).then(|| text(input, "description")).flatten(),
         status: complete.then(|| "completed".to_owned()),
-        due: (!complete).then(|| input.get("due").cloned()).flatten(),
+        due: if complete {
+            None
+        } else {
+            normalized_due(input)?
+        },
         extra: Value::Null,
     };
     if !complete && patch.is_empty() {
@@ -667,7 +900,7 @@ impl TaskAccess {
                 .map(|id| {
                     self.directory.mention_targets.get(id).cloned().ok_or(
                         ProviderError::InvalidInput {
-                            field: "task_comment_mention",
+                            field: "content: 无法提及该成员，请先确认飞书身份",
                         },
                     )
                 })
@@ -686,16 +919,6 @@ struct MemberDirectory {
 }
 
 impl MemberDirectory {
-    fn from_identity(identity: &crate::identity::IdentityDirectory) -> Self {
-        let mut directory = Self::default();
-        for (id, identity) in &identity.agents {
-            if !identity.app_id.trim().is_empty() {
-                directory.agents.insert(id.clone(), identity.app_id.clone());
-            }
-        }
-        directory
-    }
-
     async fn from_roster(
         identity: &crate::identity::IdentityDirectory,
         team_members: &[ProviderTeamMember],
@@ -1003,6 +1226,7 @@ fn task_json(task: &TaskRecord, access: &TaskAccess) -> Value {
         "description": task.description,
         "status": if is_completed(task) { "completed" } else { "open" },
         "due": task.due,
+        "updated_at": task.updated_at,
         "assignee_ids": assignee_ids,
         "follower_ids": follower_ids,
         "can_update": access.can_write(task),
@@ -1169,10 +1393,11 @@ fn denied(code: &str, message: &str) -> Value {
 }
 
 fn tool_error(error: &ProviderError) -> Value {
+    if let ProviderError::InvalidInput { field } = error {
+        return denied(error.code(), &format!("任务参数无效：{field}。"));
+    }
     let message = match error {
-        ProviderError::InvalidInput { .. } | ProviderError::SchemaMismatch { .. } => {
-            "任务参数无效。"
-        }
+        ProviderError::SchemaMismatch { .. } => "任务参数无效。",
         ProviderError::NotFound { .. } => "没有找到这个任务。",
         _ => "飞书任务操作未完成，请稍后重试。",
     };
@@ -1184,4 +1409,39 @@ fn task_error(operation: &'static str, retryable: bool) -> ProviderError {
         operation,
         retryable,
     }
+}
+
+fn due_schema() -> Value {
+    json!({"description":"截止日期：YYYY-MM-DD，或 {timestamp: 毫秒字符串, is_all_day: 布尔值}",
+        "oneOf":[{"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+        {"type":"object","required":["timestamp","is_all_day"],"additionalProperties":false,
+        "properties":{"timestamp":{"type":"string","pattern":"^[0-9]+$"},"is_all_day":{"type":"boolean"}}}]})
+}
+fn normalized_due(input: &Value) -> Result<Option<Value>, ProviderError> {
+    let Some(value) = input.get("due") else {
+        return Ok(None);
+    };
+    let invalid = || ProviderError::InvalidInput {
+        field: "due: 请使用 YYYY-MM-DD，或 {timestamp: 毫秒字符串, is_all_day: 布尔值}",
+    };
+    if let Some(date) = value.as_str() {
+        let parsed = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|_| invalid())?;
+        if parsed.format("%Y-%m-%d").to_string() != date {
+            return Err(invalid());
+        }
+        return Ok(Some(
+            json!({"timestamp":parsed.and_hms_opt(0,0,0).ok_or_else(invalid)?.and_utc().timestamp_millis().to_string(),"is_all_day":true}),
+        ));
+    }
+    let object = value.as_object().ok_or_else(invalid)?;
+    if object.len() != 2
+        || value["timestamp"]
+            .as_str()
+            .and_then(|v| v.parse::<u64>().ok())
+            .is_none()
+        || !value["is_all_day"].is_boolean()
+    {
+        return Err(invalid());
+    }
+    Ok(Some(value.clone()))
 }

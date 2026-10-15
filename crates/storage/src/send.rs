@@ -417,10 +417,108 @@ impl Storage {
             error_code: None,
         })
     }
+    /// Reserve the same direct conversation before its first platform send.
+    pub fn prepare_direct_chat(
+        &self,
+        workspace: &WorkspaceId,
+        agent: &AgentId,
+        channel: &ChannelId,
+        channel_name: &str,
+        person: &lankide_core::PersonId,
+        now: i64,
+    ) -> Result<String> {
+        let mut c = self.conn()?;
+        let t = c.transaction()?;
+        let member: bool=t.query_row("SELECT EXISTS(SELECT 1 FROM people WHERE workspace_id=?1 AND person_id=?2 AND team_role IN('member','lead'))",
+            params![workspace.as_str(),person.as_str()],|row|row.get(0))?;
+        if !member {
+            return Err(StorageError::Invalid(
+                "direct recipient is not a team member".into(),
+            ));
+        }
+        if let Some(id)=t.query_row("SELECT provider_chat_id FROM chats WHERE workspace_id=?1 AND receiving_agent_id=?2 AND channel_id=?3 AND recipient_person_id=?4",
+            params![workspace.as_str(),agent.as_str(),channel.as_str(),person.as_str()],|row|row.get::<_,String>(0)).optional()? {return Ok(id);}
+        let target = format!("person:{person}");
+        t.execute("INSERT INTO channels VALUES(?1,?2,?3,?4) ON CONFLICT(workspace_id,channel_id) DO NOTHING",params![workspace.as_str(),channel.as_str(),channel_name,now])?;
+        t.execute("INSERT INTO chats(workspace_id,channel_id,provider_chat_id,recipient_person_id,receiving_agent_id,name,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?4,?6,?6)",
+            params![workspace.as_str(),channel.as_str(),target,person.as_str(),agent.as_str(),now])?;
+        t.commit()?;
+        Ok(target)
+    }
+    /// Attach the first direct message to the platform's real conversation.
+    pub fn bind_sent_chat(&self, message_id: i64, native_chat: &str) -> Result<()> {
+        if native_chat.trim().is_empty() {
+            return Err(StorageError::Invalid("empty sent chat id".into()));
+        }
+        let mut c = self.conn()?;
+        let t = c.transaction()?;
+        let (chat,workspace,channel,agent,person):(i64,String,String,String,Option<String>)=t.query_row(
+            "SELECT c.chat_id,c.workspace_id,c.channel_id,c.receiving_agent_id,c.recipient_person_id FROM messages m JOIN chats c USING(chat_id) WHERE message_id=?1",[message_id],
+            |row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?)))?;
+        let existing=t.query_row("SELECT chat_id FROM chats WHERE workspace_id=?1 AND channel_id=?2 AND receiving_agent_id=?3 AND provider_chat_id=?4",params![workspace,channel,agent,native_chat],|row|row.get::<_,i64>(0)).optional()?;
+        if let Some(existing) = existing.filter(|existing| *existing != chat) {
+            t.execute(
+                "UPDATE messages SET chat_id=?2 WHERE chat_id=?1",
+                params![chat, existing],
+            )?;
+            t.execute(
+                "UPDATE chats SET recipient_person_id=?2 WHERE chat_id=?1",
+                params![existing, person],
+            )?;
+            t.execute("DELETE FROM chats WHERE chat_id=?1", [chat])?;
+        } else {
+            t.execute(
+                "UPDATE chats SET provider_chat_id=?2 WHERE chat_id=?1",
+                params![chat, native_chat],
+            )?;
+        }
+        t.commit()?;
+        Ok(())
+    }
+    pub fn record_outbound_resources(
+        &self,
+        message_id: i64,
+        resources: Vec<crate::ResourceView>,
+    ) -> Result<()> {
+        let changed = self.conn()?.execute(
+            "UPDATE messages SET resources_json=?2 WHERE message_id=?1 AND direction='outbound'",
+            params![message_id, serde_json::to_string(&resources)?],
+        )?;
+        if changed != 1 {
+            return Err(StorageError::Invalid("outbound message not found".into()));
+        }
+        Ok(())
+    }
+    /// Commit a platform send before any callback may be accepted for its parts.
+    pub fn finish_message_send(
+        &self,
+        message_id: i64,
+        outcome: SendOutcome,
+        provider_message_ids: Vec<String>,
+        resources: Vec<crate::ResourceView>,
+        now: i64,
+    ) -> Result<FinishSendResult> {
+        let request_key: String = self.read_conn()?.query_row(
+            "SELECT request_key FROM message_send_attempts WHERE message_id=?1",
+            [message_id],
+            |row| row.get(0),
+        )?;
+        self.finish_send_parts(&request_key, outcome, provider_message_ids, resources, now)
+    }
     pub fn finish_send(
         &self,
         request_key: &str,
         outcome: SendOutcome,
+        now: i64,
+    ) -> Result<FinishSendResult> {
+        self.finish_send_parts(request_key, outcome, Vec::new(), Vec::new(), now)
+    }
+    fn finish_send_parts(
+        &self,
+        request_key: &str,
+        outcome: SendOutcome,
+        provider_message_ids: Vec<String>,
+        resources: Vec<crate::ResourceView>,
         now: i64,
     ) -> Result<FinishSendResult> {
         let mut c = self.conn()?;
@@ -464,6 +562,22 @@ impl Storage {
                     "provider message id {provider_message_id}"
                 )));
             }
+        }
+        for id in &provider_message_ids {
+            if id.trim().is_empty() {
+                return Err(StorageError::Invalid("empty provider message id".into()));
+            }
+            t.execute("INSERT INTO message_provider_parts(chat_id,provider_message_id,message_id) SELECT chat_id,?2,message_id FROM messages WHERE message_id=?1 ON CONFLICT(chat_id,provider_message_id) DO NOTHING", params![current.message_id,id])?;
+            let owner: i64 = t.query_row("SELECT message_id FROM message_provider_parts WHERE chat_id=(SELECT chat_id FROM messages WHERE message_id=?1) AND provider_message_id=?2",params![current.message_id,id],|row|row.get(0))?;
+            if owner != current.message_id {
+                return Err(StorageError::Conflict("provider message part owner".into()));
+            }
+        }
+        if !resources.is_empty() {
+            t.execute(
+                "UPDATE messages SET resources_json=?2 WHERE message_id=?1",
+                params![current.message_id, serde_json::to_string(&resources)?],
+            )?;
         }
         t.execute("UPDATE message_send_attempts SET state=?2,provider_message_id=?3,error_code=?4,finished_at=?5 WHERE request_key=?1 AND state IN ('sending','unknown')",params![request_key,next,provider_message_id,error_code,now])?;
         t.execute("UPDATE messages SET send_status=?2,provider_message_id=?3,updated_at=?4 WHERE message_id=?1 AND send_status IN ('sending','unknown')",params![current.message_id,next,provider_message_id,now])?;

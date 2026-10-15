@@ -38,6 +38,27 @@ impl Runtime {
     pub async fn coordinate_event(
         &self,
         workspace_id: &WorkspaceId,
+        event: ProviderEvent,
+        now: i64,
+    ) -> Result<CoordinatedEvent, RuntimeError> {
+        self.require_active(workspace_id)?;
+        let provider = self.provider(workspace_id)?;
+        // Agent messages are dispatched by send_message. Platform callbacks can
+        // arrive before any native part ID is known, so identify echoes by sender.
+        if matches!(event.kind, ProviderEventKind::Message(_))
+            && provider.agents.read().await.values().any(|agent| {
+                event.sender.id == agent.agent_id.as_str()
+                    || event.sender.id == agent.provider_sender_id
+            })
+        {
+            return Ok(CoordinatedEvent::Dropped);
+        }
+        self.coordinate_event_inner(workspace_id, event, now).await
+    }
+
+    pub(super) async fn coordinate_event_inner(
+        &self,
+        workspace_id: &WorkspaceId,
         mut event: ProviderEvent,
         now: i64,
     ) -> Result<CoordinatedEvent, RuntimeError> {
@@ -284,13 +305,24 @@ impl Runtime {
                 let dispatch = custom
                     .target_agent_ids
                     .iter()
-                    .filter(|id| agents.get(*id).is_some_and(|agent| !agent.muted()))
+                    .filter(|id| {
+                        agents.get(*id).is_some_and(|agent| !agent.muted())
+                            && !(event.sender.kind == EventSenderType::Agent
+                                && (event.sender.id == id.as_str()
+                                    || agents.get(*id).is_some_and(|agent| {
+                                        event.sender.id == agent.provider_sender_id
+                                    })))
+                    })
                     .map(|id| InboxDispatch {
                         agent_id: id.clone(),
                         available_at: now,
-                        trigger_reason: DispatchReason::Custom {
-                            name: custom.reason.clone(),
-                            object_id: custom.subject_id.clone(),
+                        trigger_reason: if custom.mentioned_agent_ids.contains(id) {
+                            DispatchReason::Mention
+                        } else {
+                            DispatchReason::Custom {
+                                name: custom.reason.clone(),
+                                object_id: custom.subject_id.clone(),
+                            }
                         },
                     })
                     .collect();
@@ -477,7 +509,9 @@ fn message_dispatches(
 ) -> Result<Vec<InboxDispatch>, RuntimeError> {
     let mut dispatches = Vec::new();
     for agent in agents.values() {
-        if sender.kind == EventSenderType::Agent && sender.id == agent.provider_sender_id {
+        if sender.kind == EventSenderType::Agent
+            && (sender.id == agent.provider_sender_id || sender.id == agent.agent_id.as_str())
+        {
             continue;
         }
         let default_policy = match channel.default_attention {

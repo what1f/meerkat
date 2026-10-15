@@ -896,6 +896,7 @@ fn custom_event() -> ProviderEvent {
         sender: sender(),
         provider_data: json!({}),
         kind: ProviderEventKind::Custom(CustomEvent {
+            mentioned_agent_ids: Vec::new(),
             reason: "task_assigned".into(),
             target_agent_ids: vec![agent_id(), AgentId::new("reviewer").unwrap()],
             subject_id: "T1".into(),

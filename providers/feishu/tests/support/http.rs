@@ -85,21 +85,29 @@ pub struct Server {
     thread: Option<JoinHandle<()>>,
 }
 impl Server {
-    pub fn start(handler: impl Fn(Request) -> Response + Send + 'static) -> Self {
+    pub fn start(handler: impl Fn(Request) -> Response + Send + Sync + 'static) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
         let stopped = Arc::new(AtomicBool::new(false));
         let flag = stopped.clone();
+        let handler = Arc::new(handler);
         let thread = thread::spawn(move || {
+            let mut requests = Vec::new();
             while !flag.load(Ordering::Acquire) {
                 match listener.accept() {
-                    Ok((stream, _)) => serve(stream, &handler),
+                    Ok((stream, _)) => {
+                        let handler = handler.clone();
+                        requests.push(thread::spawn(move || serve(stream, handler.as_ref())));
+                    }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(5))
                     }
                     Err(error) => panic!("accept: {error}"),
                 }
+            }
+            for request in requests {
+                request.join().unwrap();
             }
         });
         Self {

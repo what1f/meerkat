@@ -354,6 +354,7 @@ async fn send(
         args,
         &[
             "--channel",
+            "--to",
             "--chat",
             "--content",
             "--content-file",
@@ -363,8 +364,19 @@ async fn send(
         ],
         &["--force"],
     )?;
-    let channel_id = options.required("--channel")?.to_owned();
-    let chat_id = options.required("--chat")?.to_owned();
+    let (channel_id, chat_id) = if let Some(person) = options.value("--to") {
+        if options.has("--chat") || options.has("--channel") {
+            return Err(CliError::Usage(
+                "use --to PERSON_ID, or --channel CHANNEL --chat CHAT".into(),
+            ));
+        }
+        (String::new(), format!("person:{person}"))
+    } else {
+        (
+            options.required("--channel")?.to_owned(),
+            options.required("--chat")?.to_owned(),
+        )
+    };
     if options.has("--content") && options.has("--content-file") {
         return Err(CliError::Usage(
             "choose one of --content or --content-file".to_owned(),
@@ -632,7 +644,7 @@ fn require_no_extra(args: &[String], expected: usize) -> Result<(), CliError> {
 }
 
 fn help() -> String {
-    "lankide capabilities | profile [update --name NAME --role ROLE --bio BIO --avatar PATH] | invoke <capability> [--arguments-json JSON | --arguments-file PATH] | send --channel ID --chat ID (--content TEXT | --content-file PATH) [--reply-to MESSAGE_ID] [--attachment PATH] [--force] | content --kind KIND --id ID | upload --file PATH [--media-type TYPE] | download --resource-id ID --output ABSOLUTE_PATH".to_owned()
+    "lankide capabilities | profile [update --name NAME --role ROLE --bio BIO --avatar PATH] | invoke <capability> [--arguments-json JSON | --arguments-file PATH] | send (--channel ID --chat ID | --to PERSON_ID) (--content TEXT | --content-file PATH) [--reply-to MESSAGE_ID] [--attachment PATH] [--force] | content --kind KIND --id ID | upload --file PATH [--media-type TYPE] | download --resource-id ID --output ABSOLUTE_PATH".to_owned()
 }
 
 struct Options {

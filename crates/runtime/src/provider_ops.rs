@@ -7,11 +7,104 @@ impl Runtime {
         agent_id: AgentId,
         spec: SendMessageSpec,
     ) -> Result<SendMessageResult, RuntimeError> {
-        self.host(workspace_id)
-            .await?
-            .send_message(agent_id, spec)
-            .await
-            .map_err(Into::into)
+        let result = async {
+            let resources = spec
+                .attachments
+                .iter()
+                .map(|attachment| {
+                    let resource = &attachment.resource;
+                    Ok::<_, RuntimeError>(lankide_storage::ResourceView {
+                        resource_id: lankide_core::ResourceId::new(resource.resource_id)
+                            .map_err(|error| RuntimeError::InvalidCore(error.to_string()))?,
+                        file_name: resource.file_name.clone(),
+                        media_type: resource.media_type.clone(),
+                        size_bytes: resource.size_bytes,
+                        sha256: resource.sha256.clone(),
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            self.storage
+                .record_outbound_resources(spec.message_id.get(), resources.clone())
+                .await?;
+            let result = self
+                .host(workspace_id)
+                .await?
+                .send_message(agent_id.clone(), spec.clone())
+                .await?;
+            if let Some(chat) = &result.provider_chat_id {
+                self.storage
+                    .bind_sent_chat(spec.message_id.get(), chat)
+                    .await?;
+            }
+            let now = now_millis();
+            let outcome = if result.status == lankide_provider::SendMessageStatus::Sent {
+                SendOutcome::Sent {
+                    provider_message_id: result.provider_message_id.clone().ok_or_else(|| {
+                        RuntimeError::InvalidCore("sent Provider result missing message id".into())
+                    })?,
+                }
+            } else {
+                SendOutcome::Unknown
+            };
+            self.storage
+                .finish_message_send(
+                    spec.message_id.get(),
+                    outcome,
+                    result.provider_message_ids.clone(),
+                    resources,
+                    now,
+                )
+                .await?;
+            if let Some(native_id) = &result.provider_message_id {
+                let mut mentioned_agent_ids = spec.mentions.clone();
+                for mention in lankide_core::markdown_mentions(&spec.content) {
+                    if let Ok(id) = AgentId::new(mention.id) {
+                        if !mentioned_agent_ids.contains(&id) {
+                            mentioned_agent_ids.push(id);
+                        }
+                    }
+                }
+                self.coordinate_event_inner(
+                    workspace_id,
+                    ProviderEvent {
+                        receiving_agent_id: Some(agent_id.clone()),
+                        channel_id: spec.channel_id.clone(),
+                        provider_chat_id: result
+                            .provider_chat_id
+                            .clone()
+                            .unwrap_or_else(|| spec.chat_id.clone()),
+                        sender: lankide_provider::EventSender {
+                            id: agent_id.to_string(),
+                            kind: EventSenderType::Agent,
+                            name: String::new(),
+                        },
+                        kind: ProviderEventKind::Message(lankide_provider::MessageEvent {
+                            provider_message_id: native_id.clone(),
+                            content: spec.content.clone(),
+                            reply_to_provider_message_id: None,
+                            mentioned_agent_ids,
+                            attachments: spec
+                                .attachments
+                                .iter()
+                                .map(|item| item.resource.clone())
+                                .collect(),
+                        }),
+                        provider_data: serde_json::json!({}),
+                    },
+                    now,
+                )
+                .await?;
+            }
+            Ok::<_, RuntimeError>(result)
+        }
+        .await;
+        if let Err(error) = &result {
+            log::error!(
+                "workspace={workspace_id} agent={agent_id} message={} send failed: {error:?}",
+                spec.message_id
+            );
+        }
+        result
     }
 
     pub async fn invoke_provider_tool(

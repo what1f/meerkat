@@ -162,6 +162,7 @@ pub struct ReactionEvent {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct CustomEvent {
+    pub mentioned_agent_ids: Vec<AgentId>,
     pub reason: String,
     pub target_agent_ids: Vec<AgentId>,
     pub subject_id: String,
@@ -295,6 +296,10 @@ pub enum SendMessageStatus {
 pub struct SendMessageResult {
     pub status: SendMessageStatus,
     pub provider_message_id: Option<String>,
+    /// Canonical platform conversation, including a newly opened direct chat.
+    pub provider_chat_id: Option<String>,
+    /// All native parts belonging to this one message, in send order.
+    pub provider_message_ids: Vec<String>,
 }
 impl SendMessageResult {
     pub fn sent(id: impl Into<String>) -> Result<Self, ProviderError> {
@@ -306,13 +311,27 @@ impl SendMessageResult {
         }
         Ok(Self {
             status: SendMessageStatus::Sent,
-            provider_message_id: Some(id),
+            provider_message_id: Some(id.clone()),
+            provider_message_ids: vec![id],
+            provider_chat_id: None,
         })
+    }
+    pub fn sent_parts(ids: Vec<String>) -> Result<Self, ProviderError> {
+        let mut result = Self::sent(ids.first().cloned().unwrap_or_default())?;
+        if ids.iter().any(|id| id.trim().is_empty()) {
+            return Err(ProviderError::InvalidInput {
+                field: "provider_message_ids",
+            });
+        }
+        result.provider_message_ids = ids;
+        Ok(result)
     }
     pub const fn unknown() -> Self {
         Self {
             status: SendMessageStatus::Unknown,
             provider_message_id: None,
+            provider_message_ids: Vec::new(),
+            provider_chat_id: None,
         }
     }
 }

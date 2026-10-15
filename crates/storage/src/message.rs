@@ -525,7 +525,7 @@ impl Storage {
         let t = c.transaction()?;
         ensure_workspace_provider(&t, &event.workspace_id, &event.provider_id)?;
         t.execute("INSERT INTO channels VALUES(?1,?2,?3,?4) ON CONFLICT(workspace_id,channel_id) DO UPDATE SET name=excluded.name,updated_at=excluded.updated_at",params![event.workspace_id.as_str(),event.channel_id.as_str(),event.channel_name,event.now])?;
-        t.execute("INSERT INTO chats(workspace_id,channel_id,provider_chat_id,name,created_at,updated_at,receiving_agent_id)VALUES(?1,?2,?3,?4,?5,?5,?6) ON CONFLICT(workspace_id,channel_id,provider_chat_id,receiving_agent_id) DO UPDATE SET name=excluded.name,updated_at=excluded.updated_at",params![event.workspace_id.as_str(),event.channel_id.as_str(),event.provider_chat_id,event.chat_name,event.now,event.receiving_agent_id.as_ref().map(AgentId::as_str).unwrap_or("")])?;
+        t.execute("INSERT INTO chats(workspace_id,channel_id,provider_chat_id,name,created_at,updated_at,receiving_agent_id)VALUES(?1,?2,?3,?4,?5,?5,?6) ON CONFLICT(workspace_id,channel_id,provider_chat_id,receiving_agent_id) DO UPDATE SET name=CASE WHEN excluded.name=excluded.provider_chat_id THEN chats.name ELSE excluded.name END,updated_at=excluded.updated_at",params![event.workspace_id.as_str(),event.channel_id.as_str(),event.provider_chat_id,event.chat_name,event.now,event.receiving_agent_id.as_ref().map(AgentId::as_str).unwrap_or("")])?;
         let chat_id: i64 = t.query_row("SELECT chat_id FROM chats WHERE workspace_id=?1 AND channel_id=?2 AND provider_chat_id=?3 AND receiving_agent_id=?4",params![event.workspace_id.as_str(),event.channel_id.as_str(),event.provider_chat_id,event.receiving_agent_id.as_ref().map(AgentId::as_str).unwrap_or("")],|r|r.get(0))?;
         if let Some((message_id, direction, sender_kind, sender_id)) = t
             .query_row(
@@ -629,7 +629,7 @@ impl Storage {
         if let Some((reaction_id, target_message_id)) = t.query_row("SELECT reaction_id,target_message_id FROM reactions WHERE workspace_id=?1 AND provider_event_id=?2",params![reaction.workspace_id.as_str(),provider_event_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()? {
             return Ok(ReactionResult { reaction_id: Some(reaction_id), target_message_id: Some(target_message_id), duplicate: true, ignored_unknown_target: false, inbox_item_ids: Vec::new() });
         }
-        let target: Option<(i64, i64)>=t.query_row("SELECT c.chat_id,m.message_id FROM chats c JOIN messages m ON m.chat_id=c.chat_id WHERE c.workspace_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND m.provider_message_id=?4 AND c.receiving_agent_id=?5",params![reaction.workspace_id.as_str(),reaction.channel_id.as_str(),reaction.provider_chat_id,reaction.target_provider_message_id,reaction.receiving_agent_id.as_ref().map(AgentId::as_str).unwrap_or("")],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+        let target: Option<(i64, i64)>=t.query_row("SELECT c.chat_id,m.message_id FROM chats c JOIN messages m ON m.chat_id=c.chat_id WHERE c.workspace_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND (m.provider_message_id=?4 OR EXISTS(SELECT 1 FROM message_provider_parts p WHERE p.message_id=m.message_id AND p.provider_message_id=?4)) AND c.receiving_agent_id=?5",params![reaction.workspace_id.as_str(),reaction.channel_id.as_str(),reaction.provider_chat_id,reaction.target_provider_message_id,reaction.receiving_agent_id.as_ref().map(AgentId::as_str).unwrap_or("")],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
         let Some((chat_id, target_message_id)) = target else {
             return Ok(ReactionResult {
                 reaction_id: None,
@@ -664,6 +664,18 @@ impl Storage {
             inbox_item_ids,
         })
     }
+    pub fn outbound_message_id(
+        &self,
+        workspace: &WorkspaceId,
+        channel: &ChannelId,
+        chat: &str,
+        native_id: &str,
+    ) -> Result<Option<i64>> {
+        Ok(self.read_conn()?.query_row(
+            "SELECT m.message_id FROM messages m JOIN chats c USING(chat_id) WHERE c.workspace_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND m.direction='outbound' AND (m.provider_message_id=?4 OR EXISTS(SELECT 1 FROM message_provider_parts p WHERE p.message_id=m.message_id AND p.provider_message_id=?4)) LIMIT 1",
+            params![workspace.as_str(),channel.as_str(),chat,native_id],|row|row.get(0),
+        ).optional()?)
+    }
     pub fn find_message(
         &self,
         w: &WorkspaceId,
@@ -682,7 +694,7 @@ impl Storage {
         pm: &str,
         receiver: Option<&AgentId>,
     ) -> Result<Option<i64>> {
-        Ok(self.read_conn()?.query_row("SELECT m.message_id FROM messages m JOIN chats c USING(chat_id) WHERE c.workspace_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND m.provider_message_id=?4 AND c.receiving_agent_id=?5",params![w.as_str(),ch.as_str(),pc,pm,receiver.map(AgentId::as_str).unwrap_or("")],|r|r.get(0)).optional()?)
+        Ok(self.read_conn()?.query_row("SELECT m.message_id FROM messages m JOIN chats c USING(chat_id) WHERE c.workspace_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND (m.provider_message_id=?4 OR EXISTS(SELECT 1 FROM message_provider_parts p WHERE p.message_id=m.message_id AND p.provider_message_id=?4)) AND c.receiving_agent_id=?5",params![w.as_str(),ch.as_str(),pc,pm,receiver.map(AgentId::as_str).unwrap_or("")],|r|r.get(0)).optional()?)
     }
     /// Resolve the author of a reaction target within its receiving account.
     pub fn reaction_target_author(
@@ -694,7 +706,7 @@ impl Storage {
         receiver: Option<&AgentId>,
     ) -> Result<Option<(MessageAuthorType, String)>> {
         let row: Option<(String, String)> = self.read_conn()?.query_row(
-            "SELECT m.sender_kind,COALESCE(m.sender_id,'') FROM messages m JOIN chats c USING(chat_id) WHERE c.workspace_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND m.provider_message_id=?4 AND c.receiving_agent_id=?5",
+            "SELECT m.sender_kind,COALESCE(m.sender_id,'') FROM messages m JOIN chats c USING(chat_id) WHERE c.workspace_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND (m.provider_message_id=?4 OR EXISTS(SELECT 1 FROM message_provider_parts p WHERE p.message_id=m.message_id AND p.provider_message_id=?4)) AND c.receiving_agent_id=?5",
             params![workspace.as_str(), channel.as_str(), chat, target, receiver.map(AgentId::as_str).unwrap_or("")],
             |row| Ok((row.get(0)?, row.get(1)?)),
         ).optional()?;

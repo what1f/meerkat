@@ -58,6 +58,13 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
         }
     })
     .await??;
+    for result in report["invalid_attachments"].as_array().unwrap() {
+        assert_eq!(
+            result["error"]["code"], "invalid_input",
+            "wrong attachment shape must be actionable: {result}"
+        );
+    }
+    assert_eq!(report["local_markdown"]["error"]["code"], "invalid_input");
     assert_eq!(
         report["content"]["content_markdown"],
         "Please read this message"
