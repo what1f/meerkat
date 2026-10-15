@@ -391,3 +391,98 @@ async fn an_agent_without_resume_or_cancel_starts_fresh_and_can_be_deleted_durin
     .expect("deleted Agent process is still running")?;
     rig.close().await
 }
+
+#[tokio::test]
+async fn failed_provider_tool_returns_to_harness_and_run_continues() -> Result<()> {
+    let rig = SystemRig::start(config()).await?;
+    let team = rig.workspace("tool_failure").await?;
+    for (name, via_cli, rpc_error) in [
+        ("native", false, false),
+        ("cli", true, false),
+        ("rpc", false, true),
+    ] {
+        let agent = team
+            .agent(name)
+            .harness(Script::FailedProviderTool {
+                via_cli,
+                rpc_error,
+                text: "continued".into(),
+            })
+            .create()
+            .await?;
+        team.mention(&agent, name, "owner", "react").await?;
+        agent
+            .wait_for(|runs, _| {
+                runs.iter()
+                    .any(|run| matches!(run.state.as_str(), "succeeded" | "failed"))
+            })
+            .await?;
+        let runs = agent.executions().await?;
+        assert_eq!(runs.len(), 1, "{runs:?}");
+        assert_eq!(
+            runs[0].state, "succeeded",
+            "failed Tool result was lost: {runs:?}"
+        );
+        assert_eq!(team.outbound(&agent, name)[0].content, "continued");
+    }
+    rig.close().await
+}
+
+#[tokio::test]
+async fn bot_reactions_only_wake_the_author_and_humans_still_wake_the_group() -> Result<()> {
+    let rig = SystemRig::start(config()).await?;
+    let team = rig.workspace("reactions").await?;
+    let a = team.agent("a").create().await?;
+    let b = team.agent("b").create().await?;
+    let c = team.agent("c").create().await?;
+    team.mention(&b, "group", "owner", "hello").await?;
+    rig.settle().await?;
+    let human_message = team.outbound(&b, "group")[0].reply_to.clone().unwrap();
+    for (index, agent) in [&a, &b, &c].into_iter().enumerate() {
+        team.group_reaction(
+            "group",
+            &agent.id,
+            true,
+            &human_message,
+            &format!("bot-human-{index}"),
+        )
+        .await?;
+    }
+    assert_eq!(a.inbox_count()?, 0, "bot reaction to a human queued A");
+    assert_eq!(b.inbox_count()?, 1, "bot reaction to a human queued B");
+    assert_eq!(c.inbox_count()?, 0, "bot reaction to a human queued C");
+    rig.settle().await?;
+    assert_eq!(
+        a.executions().await?.len(),
+        0,
+        "bot reaction to a human woke A"
+    );
+    assert_eq!(
+        b.executions().await?.len(),
+        1,
+        "bot reaction to a human woke B"
+    );
+    assert_eq!(
+        c.executions().await?.len(),
+        0,
+        "bot reaction to a human woke C"
+    );
+    let bot_message = team.outbound(&b, "group")[0].message_id.clone();
+    team.group_reaction("group", &a.id, true, &bot_message, "a-to-b")
+        .await?;
+    rig.settle().await?;
+    assert_eq!(a.executions().await?.len(), 0);
+    assert_eq!(b.executions().await?.len(), 2);
+    assert_eq!(c.executions().await?.len(), 0);
+    team.group_reaction("group", &b.id, true, &bot_message, "b-to-self")
+        .await?;
+    rig.settle().await?;
+    assert_eq!(b.executions().await?.len(), 2);
+    team.group_reaction("group", "owner", false, &human_message, "human-to-human")
+        .await?;
+    rig.settle().await?;
+    assert_eq!(a.executions().await?.len(), 1);
+    assert_eq!(b.executions().await?.len(), 3);
+    assert_eq!(c.executions().await?.len(), 1);
+    rig.close().await
+}

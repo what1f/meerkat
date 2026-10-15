@@ -678,6 +678,23 @@ impl Storage {
     ) -> Result<Option<i64>> {
         Ok(self.conn()?.query_row("SELECT m.message_id FROM messages m JOIN chats c USING(chat_id) WHERE c.workspace_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND m.provider_message_id=?4 AND c.receiving_agent_id=?5",params![w.as_str(),ch.as_str(),pc,pm,receiver.map(AgentId::as_str).unwrap_or("")],|r|r.get(0)).optional()?)
     }
+    /// Resolve the author of a reaction target within its receiving account.
+    pub fn reaction_target_author(
+        &self,
+        workspace: &WorkspaceId,
+        channel: &ChannelId,
+        chat: &str,
+        target: &str,
+        receiver: Option<&AgentId>,
+    ) -> Result<Option<(MessageAuthorType, String)>> {
+        let row: Option<(String, String)> = self.conn()?.query_row(
+            "SELECT m.sender_kind,COALESCE(m.sender_id,'') FROM messages m JOIN chats c USING(chat_id) WHERE c.workspace_id=?1 AND c.channel_id=?2 AND c.provider_chat_id=?3 AND m.provider_message_id=?4 AND c.receiving_agent_id=?5",
+            params![workspace.as_str(), channel.as_str(), chat, target, receiver.map(AgentId::as_str).unwrap_or("")],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).optional()?;
+        row.map(|(kind, id)| Ok((parse_sender_kind(&kind)?, id)))
+            .transpose()
+    }
     pub fn message_count(&self, w: &WorkspaceId) -> Result<usize> {
         let n: i64 = self.conn()?.query_row(
             "SELECT count(*) FROM messages m JOIN chats c USING(chat_id) WHERE c.workspace_id=?1",

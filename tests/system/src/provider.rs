@@ -78,6 +78,17 @@ impl Provider for ScriptedProvider {
             icon: String::new(),
         }
     }
+    fn tools<'a>(&'a self, _: AgentRuntimeContext) -> ProviderFuture<'a, Vec<ToolDefinition>> {
+        Box::pin(async {
+            Ok(vec![ToolDefinition {
+                id: "failing_reaction".into(),
+                description: "IM reaction".into(),
+                input_schema: JsonSchema::new(serde_json::json!({"type":"object"}))?,
+                output_schema: JsonSchema::new(serde_json::json!({"type":"object"}))?,
+                handler: Arc::new(FailedImCall),
+            }])
+        })
+    }
     fn reaction_catalog(&self) -> Vec<ReactionDefinition> {
         vec![ReactionDefinition {
             id: "thumbs_up".into(),
@@ -177,15 +188,8 @@ impl Provider for ScriptedProvider {
                 None => None,
             };
             let mut sends = self.state.outbound.lock().expect("outbound");
-            let count = sends
-                .iter()
-                .filter(|send| {
-                    send.workspace == context.workspace_id.as_str()
-                        && send.account == account
-                        && send.chat == context.chat_id
-                })
-                .count();
-            let id = format!("sent-{}", count + 1);
+            // Platform message IDs are unique across bots in the same group.
+            let id = format!("sent-{}", sends.len() + 1);
             sends.push(Outbound {
                 order: self.state.order.fetch_add(1, Ordering::SeqCst),
                 workspace: context.workspace_id.to_string(),
@@ -269,6 +273,18 @@ impl Provider for ScriptedProvider {
                     idempotency_key: None,
                 });
             Ok(())
+        })
+    }
+}
+
+struct FailedImCall;
+impl InvocationHandler for FailedImCall {
+    fn invoke<'a>(&'a self, _: serde_json::Value) -> ProviderFuture<'a, serde_json::Value> {
+        Box::pin(async {
+            Err(ProviderError::External {
+                operation: "reaction_add",
+                retryable: false,
+            })
         })
     }
 }

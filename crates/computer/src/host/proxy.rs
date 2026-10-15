@@ -262,6 +262,7 @@ pub(super) async fn harness_call(
                 execution: Some(execution),
                 tool_call_id: call_id,
                 success: false,
+                structured_content_json: "{}".into(),
                 error: Some(ToolError {
                     code: format!("{:?}", error.code()).to_lowercase(),
                     message: error.message().into(),

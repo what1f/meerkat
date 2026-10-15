@@ -152,7 +152,7 @@ impl<T: Transport + ?Sized> Transport for Arc<T> {
 
 /// Production HTTP transport used by the Provider adapter.  The low-level
 /// Bot API client remains synchronous, so each request is bridged through a
-/// short-lived Tokio runtime on a dedicated thread.
+/// short-lived Tokio runtime on a dedicated thread, with idle pooling disabled.
 #[derive(Clone)]
 pub struct ReqwestTransport {
     client: reqwest::Client,
@@ -178,6 +178,8 @@ impl ReqwestTransport {
     pub fn with_timeout(timeout: Duration) -> Self {
         Self {
             client: reqwest::Client::builder()
+                // Idle connections cannot outlive their request runtime.
+                .pool_max_idle_per_host(0)
                 .timeout(timeout)
                 .build()
                 .expect("reqwest client configuration is valid"),
@@ -211,10 +213,9 @@ impl Transport for ReqwestTransport {
                 if !request.body.is_empty() {
                     builder = builder.body(request.body);
                 }
-                let response = builder
-                    .send()
-                    .await
-                    .map_err(|_| TransportError::Failed("HTTP request failed".to_owned()))?;
+                let response = builder.send().await.map_err(|error| {
+                    TransportError::Failed(format!("HTTP request failed: {}", error.without_url()))
+                })?;
                 let status = response.status().as_u16();
                 let headers = response
                     .headers()
@@ -229,8 +230,11 @@ impl Transport for ReqwestTransport {
                 let body = response
                     .bytes()
                     .await
-                    .map_err(|_| {
-                        TransportError::Failed("HTTP response body read failed".to_owned())
+                    .map_err(|error| {
+                        TransportError::Failed(format!(
+                            "HTTP response body read failed: {}",
+                            error.without_url()
+                        ))
                     })?
                     .to_vec();
                 Ok(Response {

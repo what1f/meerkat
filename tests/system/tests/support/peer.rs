@@ -207,6 +207,49 @@ fn main() {
                         );
                         continue;
                     }
+                    Script::FailedProviderTool {
+                        via_cli,
+                        rpc_error,
+                        text,
+                    } => {
+                        if *via_cli {
+                            let result = runtime
+                                .block_on(lankide_cli::execute_from_environment(vec![
+                                    "invoke".into(),
+                                    "failing_reaction".into(),
+                                    "--arguments-json".into(),
+                                    "{}".into(),
+                                ]))
+                                .expect("failed Tool is a capability result");
+                            assert_eq!(result["success"], false, "{result}");
+                            assert_eq!(result["error"]["code"], "provider_tool_failed", "{result}");
+                        } else {
+                            event(
+                                &mut sequence,
+                                json!({"kind":"tool_started", "tool_call_id":"failed-im",
+                                "tool_name":if *rpc_error {"message_recall"} else {"failing_reaction"}, "arguments":{}}),
+                            );
+                            let result = received.recv_timeout(Duration::from_secs(2)).expect(
+                                "failed provider Tool result must arrive before idle timeout",
+                            );
+                            assert_eq!(result["op"], "tool_result");
+                            assert_eq!(result["request"]["success"], false, "{result}");
+                            assert_eq!(
+                                result["request"]["error"]["code"],
+                                if *rpc_error {
+                                    "internal"
+                                } else {
+                                    "provider_tool_failed"
+                                },
+                                "{result}"
+                            );
+                            event(
+                                &mut sequence,
+                                json!({"kind":"tool_finished", "tool_call_id":"failed-im", "success":false,"output":null}),
+                            );
+                        }
+                        (text, 0)
+                    }
                     Script::Capability { arguments, text } => {
                         runtime
                             .block_on(lankide_cli::execute_from_environment(arguments.clone()))

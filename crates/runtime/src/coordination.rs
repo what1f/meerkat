@@ -201,7 +201,23 @@ impl Runtime {
                 {
                     Vec::new()
                 } else {
-                    reaction_dispatches(&agents, &reaction.sender, &reaction.reaction, now)
+                    reaction_dispatches(
+                        &agents,
+                        &reaction.sender,
+                        &reaction.reaction,
+                        if reaction.sender.kind == EventSenderType::Agent {
+                            self.storage.reaction_target_author(
+                                workspace_id,
+                                &event.channel_id,
+                                &event.provider_chat_id,
+                                &reaction.target_provider_message_id,
+                                receiving_agent_id.as_ref(),
+                            )?
+                        } else {
+                            None
+                        },
+                        now,
+                    )
                 };
                 let event_id = provider_event_id.unwrap_or_else(|| {
                     format!(
@@ -511,13 +527,20 @@ fn reaction_dispatches(
     agents: &BTreeMap<AgentId, AgentRuntimeConfig>,
     sender: &lankide_provider::EventSender,
     reaction: &str,
+    target_author: Option<(MessageAuthorType, String)>,
     now: i64,
 ) -> Vec<InboxDispatch> {
     agents
         .values()
         .filter(|agent| {
-            !(sender.kind == EventSenderType::Agent && sender.id == agent.provider_sender_id)
-                && !agent.muted()
+            !agent.muted()
+                && (sender.kind != EventSenderType::Agent
+                    || (sender.id != agent.provider_sender_id
+                        && target_author.as_ref().is_some_and(|(kind, id)| {
+                            *kind == MessageAuthorType::Agent
+                                && (id == agent.agent_id.as_str()
+                                    || id == &agent.provider_sender_id)
+                        })))
         })
         .map(|agent| InboxDispatch {
             agent_id: agent.agent_id.clone(),

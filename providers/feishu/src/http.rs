@@ -164,7 +164,7 @@ impl<T: Transport + ?Sized> Transport for Arc<T> {
 /// The wire client intentionally remains synchronous so a local peer can be
 /// used without an async runtime.  This boundary owns the small bridge to the
 /// workspace's async `reqwest` client and runs each request on a short-lived
-/// runtime thread; Provider methods call it from `spawn_blocking`.
+/// runtime thread with idle pooling disabled; Provider methods call it from `spawn_blocking`.
 #[derive(Clone)]
 pub struct ReqwestTransport {
     client: reqwest::Client,
@@ -180,6 +180,8 @@ impl Default for ReqwestTransport {
     fn default() -> Self {
         Self {
             client: reqwest::Client::builder()
+                // Idle connections cannot outlive their request runtime.
+                .pool_max_idle_per_host(0)
                 .timeout(Duration::from_secs(30))
                 .build()
                 .expect("reqwest default client configuration is valid"),
@@ -219,10 +221,9 @@ impl Transport for ReqwestTransport {
                 if !request.body.is_empty() {
                     builder = builder.body(request.body);
                 }
-                let response = builder
-                    .send()
-                    .await
-                    .map_err(|_| TransportError::Failed("HTTP request failed".to_owned()))?;
+                let response = builder.send().await.map_err(|error| {
+                    TransportError::Failed(format!("HTTP request failed: {}", error.without_url()))
+                })?;
                 let status = response.status().as_u16();
                 let headers = response
                     .headers()
@@ -237,8 +238,11 @@ impl Transport for ReqwestTransport {
                 let body = response
                     .bytes()
                     .await
-                    .map_err(|_| {
-                        TransportError::Failed("HTTP response body read failed".to_owned())
+                    .map_err(|error| {
+                        TransportError::Failed(format!(
+                            "HTTP response body read failed: {}",
+                            error.without_url()
+                        ))
                     })?
                     .to_vec();
                 Ok(Response {

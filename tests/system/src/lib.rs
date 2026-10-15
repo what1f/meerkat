@@ -790,6 +790,48 @@ impl<'a> Workspace<'a> {
         .await?;
         Ok(())
     }
+    pub async fn group_reaction(
+        &self,
+        chat: &str,
+        sender_id: &str,
+        bot: bool,
+        target: &str,
+        event_id: &str,
+    ) -> Result<()> {
+        let sink = self
+            .rig
+            .im
+            .sinks
+            .lock()
+            .expect("sinks")
+            .get(&self.id)
+            .expect("workspace IM")
+            .clone();
+        let sender = EventSender {
+            id: sender_id.into(),
+            name: sender_id.into(),
+            kind: if bot {
+                EventSenderType::Agent
+            } else {
+                EventSenderType::Human
+            },
+        };
+        sink.emit(ProviderEvent {
+            receiving_agent_id: None,
+            channel_id: ChannelId::new("group_chat")?,
+            provider_chat_id: chat.into(),
+            sender: sender.clone(),
+            kind: ProviderEventKind::Reaction(lankide_provider::ReactionEvent {
+                target_provider_message_id: target.into(),
+                sender,
+                reaction: "thumbs_up".into(),
+                action: lankide_provider::ReactionAction::Add,
+            }),
+            provider_data: json!({"event_id":event_id}),
+        })
+        .await?;
+        Ok(())
+    }
     async fn message(
         &self,
         channel: &str,

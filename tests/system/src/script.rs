@@ -57,6 +57,11 @@ pub enum Script {
     ProxyScenario {
         binary: String,
     },
+    FailedProviderTool {
+        via_cli: bool,
+        rpc_error: bool,
+        text: String,
+    },
     Capability {
         arguments: Vec<String>,
         text: String,

@@ -54,7 +54,10 @@ impl Runtime {
             }
             Err(error) => {
                 guard.fail("provider_tool_failed", now_millis())?;
-                Err(error.into())
+                log::error!("provider Tool {} failed: {error}", request.tool_name);
+                Ok(ToolProgress::Failed {
+                    code: "provider_tool_failed".into(),
+                })
             }
         }
     }
