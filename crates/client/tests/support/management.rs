@@ -60,6 +60,7 @@ struct MockData {
     delayed_agents: Vec<(String, Arc<tokio::sync::Notify>)>,
     delayed_onboarding: Vec<(String, Arc<tokio::sync::Notify>)>,
     delayed_agent_updates: Vec<(String, Arc<tokio::sync::Notify>)>,
+    delayed_agent_deletions: Vec<(String, Arc<tokio::sync::Notify>)>,
     delayed_workspace_states: Vec<(String, Arc<tokio::sync::Notify>)>,
     agent_onboarding: std::collections::BTreeMap<(String, String), AgentOnboardingState>,
     workspaces: Vec<Workspace>,
@@ -124,6 +125,7 @@ impl MockManagementClient {
                 delayed_agents: Vec::new(),
                 delayed_onboarding: Vec::new(),
                 delayed_agent_updates: Vec::new(),
+                delayed_agent_deletions: Vec::new(),
                 delayed_workspace_states: Vec::new(),
                 agent_onboarding: std::collections::BTreeMap::new(),
                 workspaces: vec![
@@ -150,6 +152,7 @@ impl MockManagementClient {
                 delayed_agents: Vec::new(),
                 delayed_onboarding: Vec::new(),
                 delayed_agent_updates: Vec::new(),
+                delayed_agent_deletions: Vec::new(),
                 delayed_workspace_states: Vec::new(),
                 agent_onboarding: std::collections::BTreeMap::new(),
                 workspaces: vec![],
@@ -199,6 +202,15 @@ impl MockManagementClient {
             .lock()
             .await
             .delayed_agent_updates
+            .push((agent.into(), gate.clone()));
+        gate
+    }
+    pub async fn delay_next_agent_deletion(&self, agent: &str) -> Arc<tokio::sync::Notify> {
+        let gate = Arc::new(tokio::sync::Notify::new());
+        self.data
+            .lock()
+            .await
+            .delayed_agent_deletions
             .push((agent.into(), gate.clone()));
         gate
     }
@@ -467,6 +479,16 @@ impl ManagementClient for MockManagementClient {
         self.update_agent(agent, None).await
     }
     async fn delete_agent(&self, workspace_id: &str, agent_id: &str) -> Result<(), ClientError> {
+        let gate = {
+            let mut data = self.data.lock().await;
+            data.delayed_agent_deletions
+                .iter()
+                .position(|(id, _)| id == agent_id)
+                .map(|index| data.delayed_agent_deletions.remove(index).1)
+        };
+        if let Some(gate) = gate {
+            gate.notified().await;
+        }
         let mut data = self.lock().await?;
         let before = data.agents.len();
         data.agents

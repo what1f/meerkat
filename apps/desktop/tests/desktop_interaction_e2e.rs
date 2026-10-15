@@ -10,6 +10,7 @@ use gpui_component::Root;
 use lankide_client::ManagementClient;
 use management_fixture::MockManagementClient;
 use std::{sync::Arc, time::Duration};
+use tokio_stream::StreamExt;
 use ui::onboarding::next_agent_onboarding_request;
 use ui::{
     InitialUiState, LankideApp, LankideFrame, UiMessage, localized_agent_onboarding_copy,
@@ -169,7 +170,7 @@ async fn run_workspace_agent_and_onboarding_dialog_workflows(cx: &mut TestAppCon
             *mounted_for_build.lock().unwrap() = Some((view, frame.clone()));
             Root::new(frame, window, cx).bordered(false)
         });
-        let (_view, frame) = mounted.lock().unwrap().take().unwrap();
+        let (view, frame) = mounted.lock().unwrap().take().unwrap();
         cx.update(|window, cx| observe_dialog_root(&frame, &root, window, cx));
         click_and_draw_one_frame(cx, "first-workspace");
         assert!(
@@ -425,7 +426,28 @@ async fn run_workspace_agent_and_onboarding_dialog_workflows(cx: &mut TestAppCon
         draw(cx);
         click(cx, "delete-agent-1");
         assert!(cx.debug_bounds("confirm-delete-agent").is_some());
+        let deletion_gate = client.delay_next_agent_deletion("existing_builder").await;
+        let mut deletion_changes = cx.notifications(&view);
         click(cx, "confirm-delete-agent");
+        assert!(client.get_agent("ui_e2e", "existing_builder").await.is_ok());
+        assert!(cx.debug_bounds("confirm-delete-agent").is_some());
+        deletion_gate.notify_one();
+        // Deletion runs in a detached foreground task. Drawing a frame does not
+        // join that task; observe its completion before checking stored state.
+        let deadline = cx.executor().timer(Duration::from_secs(5));
+        let mut deadline = std::pin::pin!(deadline);
+        loop {
+            draw(cx);
+            if cx.debug_bounds("confirm-delete-agent").is_none()
+                && cx.debug_bounds("agent-card-existing_builder").is_none()
+            {
+                break;
+            }
+            tokio::select! {
+                notification = deletion_changes.next() => assert!(notification.is_some(), "Agent view was released during deletion"),
+                _ = &mut deadline => panic!("Agent deletion did not complete"),
+            }
+        }
         assert!(
             client
                 .get_agent("ui_e2e", "existing_builder")
