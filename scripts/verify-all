@@ -9,7 +9,7 @@ FULL_ARTIFACT_DIR=""
 FULL_INDEX=""
 
 usage() {
-  printf '%s\n' 'usage: ./scripts/verify-all --list | --gate hermetic|live-provider|live-harness|live-composition|desktop-visual|full-release [--resume]' >&2
+  printf '%s\n' 'usage: ./scripts/verify-all --list | --gate hermetic|live-provider|live-harness|live-composition|desktop-visual|release-regressions|full-release [--resume]' >&2
 }
 
 ensure_run_id() {
@@ -109,30 +109,23 @@ require_live() {
     printf '[verify-all] PREREQUISITE_MISSING: set LANKIDE_E2E_LIVE=1\n' >&2; return 4;
   }
 }
-run_prerequisite() {
-  run_step "prerequisite probe ($1)" cargo run -p lankide-testkit --example prerequisites -- --gate "$1" --no-live
-}
-
-run_workspace_checks() {
-  run_step 'cargo metadata' cargo metadata --no-deps --format-version 1 >/dev/null || return $?
-  run_step 'E2E contract synchronization' "$SCRIPT_DIR/verify-e2e-contracts" || return $?
-  run_step 'production data boundary' "$SCRIPT_DIR/verify-production-boundary" || return $?
-  run_step 'desktop UI boundary' "$SCRIPT_DIR/verify-desktop-ui-boundary" || return $?
-  run_step 'cargo fmt --all --check' cargo fmt --all --check || return $?
-  run_step 'cargo check --workspace --all-targets' cargo check --workspace --all-targets
-}
 run_hermetic() {
   local module_id package kind classification command scenario prerequisites unattended status
-  run_workspace_checks || return $?
-  run_prerequisite hermetic || return $?
+  # Contracts still define focused commands. The gate runs the workspace once,
+  # including local regressions in otherwise live Provider/Harness packages.
   while IFS=$'\t' read -r module_id package kind classification command scenario prerequisites unattended status; do
     [[ -z "${module_id:-}" || "${module_id:0:1}" == "#" || "$classification" != hermetic ]] && continue
-    run_module "$module_id" || return $?
+    if [[ "$status" != implemented ]]; then
+      printf '[verify-all] PENDING: %s has no completed business E2E contract\n' "$module_id" >&2
+      return 3
+    fi
   done < "$ROOT_DIR/tests/e2e-modules.tsv"
-  run_step 'Provider local fault and contract regressions' cargo test -p lankide-provider-feishu --test feishu_e2e -p lankide-provider-telegram --test telegram_e2e || return $?
-  run_step 'Desktop bootstrap production binaries' cargo build -p lankide-desktop -p lankide-runtime-daemon -p lankide-computer-daemon -p lankide-cli || return $?
+  run_step 'Hermetic business E2Es (workspace, one feature set)' cargo test --workspace --tests --locked \
+    --features lankide-computer/test-support,lankide-harness/test-support
+}
+run_release_regressions() {
   run_step 'Desktop real process startup and cleanup' python3 "$ROOT_DIR/apps/desktop/tests/bootstrap_e2e.py" \
-    --binary-dir "${CARGO_TARGET_DIR:-$ROOT_DIR/target}/debug" \
+    --binary-dir "${LANKIDE_RELEASE_BIN_DIR:-${CARGO_TARGET_DIR:-$ROOT_DIR/target}/release}" \
     --artifact-dir "$ROOT_DIR/target/e2e-artifacts/desktop-bootstrap/$LANKIDE_E2E_RUN_ID" || return $?
   run_step 'verification entrypoint regressions' python3 "$ROOT_DIR/tests/verification_e2e.py"
 }
@@ -196,7 +189,7 @@ from pathlib import Path
 
 index = json.loads(Path(sys.argv[1]).read_text())
 result = json.loads(Path(sys.argv[2]).read_text())
-required = ["release-build", "hermetic", "live-provider", "live-harness", "live-composition"]
+required = ["release-build", "hermetic", "live-provider", "live-harness", "live-composition", "check", "release-regressions"]
 steps = index.get("steps", [])
 for wanted in required:
     matches = [step for step in steps if step.get("id") == wanted]
@@ -283,6 +276,8 @@ run_full_release() {
     cargo build --workspace --all-targets --release --locked || return $?
   "$SCRIPT_DIR/release-provenance" record --binary-dir "$LANKIDE_RELEASE_BIN_DIR" \
     --source-snapshot "$FULL_ARTIFACT_DIR/source-before-build.json" --output "$FULL_ARTIFACT_DIR/provenance.json" || return $?
+  record_step check 'just check' just check || return $?
+  record_step release-regressions 'release process and verification scenarios' run_release_regressions || return $?
   record_step hermetic 'hermetic' run_hermetic || return $?
   record_step live-provider 'live-provider' run_live_provider || return $?
   record_step live-harness 'live-harness' run_live_harness || return $?
@@ -331,6 +326,7 @@ ensure_run_id || exit $?
 acquire_gate_locks "$gate" || exit $?
 case "$gate" in
   hermetic) run_hermetic ;;
+  release-regressions) run_release_regressions ;;
   live-provider) run_live_provider ;;
   live-harness) run_live_harness ;;
   live-composition) run_live_composition ;;

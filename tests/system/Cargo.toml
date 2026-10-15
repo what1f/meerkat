@@ -120,3 +120,10 @@ prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
 status = "implemented"
+
+# Compile the shipped CLI entrypoint with the rig, without a nested Cargo build.
+[[bin]]
+name = "system-cli"
+path = "../../apps/lankide-cli/src/main.rs"
+test = false
+bench = false

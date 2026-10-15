@@ -105,14 +105,23 @@ LANKIDE_E2E_LIVE=1 ./scripts/verify-all --gate live-harness
 LANKIDE_E2E_LIVE=1 ./scripts/verify-all --gate full-release
 ```
 
-`verify-all --gate hermetic` first runs `cargo metadata`, validates that Cargo
-package metadata and `tests/e2e-modules.tsv` are identical, runs
-`cargo fmt --all --check` and `cargo check --workspace --all-targets`, then
-runs every hermetic module contract. It exits non-zero when any selected
-contract remains pending. Live gates require explicit opt-in and run their
-read-only prerequisite probe before the first external side effect. No gate
-silently skips a selected contract or turns missing credentials into a green
-run.
+`just check` verifies open-source and production boundaries, formatting, the
+workspace build, module contracts, and the Desktop UI boundary. `just test`
+(`verify-all --gate hermetic`) runs all workspace integration scenarios once in
+one Cargo invocation with the Computer and Harness `test-support` features.
+Ignored live tests stay opt-in. The daemon self-spawning scenarios are Cargo
+test targets; the prerequisite probe and CLI forwarding examples are already
+covered by integration scenarios. The system rig builds the shipped CLI
+entrypoint as its test-only `system-cli` binary, without a nested Cargo build.
+Focused module commands remain available
+through `verify-module --run <id>`. A pending hermetic contract fails the gate.
+
+`just release-local` additionally builds and verifies the release package and
+runs `verify-all --gate release-regressions`: real Desktop process bootstrap
+and verification-entrypoint scenarios, using the release binaries. Full release
+runs these checks against its isolated release build too. Live gates require
+explicit opt-in and probe prerequisites before their first external side effect.
+No gate turns missing credentials into a green run.
 
 ## Required fields for every module
 

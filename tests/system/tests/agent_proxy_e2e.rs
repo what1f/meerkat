@@ -7,23 +7,10 @@ use serde_json::{Value, json};
 use std::{path::PathBuf, time::Duration};
 use tokio::time::timeout;
 
-async fn binary() -> Result<PathBuf> {
-    let status = tokio::process::Command::new("cargo")
-        .args(["build", "-p", "lankide-cli", "--bin", "lankide", "--locked"])
-        .status()
-        .await?;
-    assert!(status.success(), "build real CLI");
-    Ok(std::env::current_exe()?
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("lankide"))
-}
 #[tokio::test]
 async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_address()
 -> Result<()> {
-    let binary = binary().await?;
+    let binary = std::path::Path::new(env!("CARGO_BIN_EXE_system-cli"));
     let mut rig = SystemRig::start(RigConfig {
         harness_executable: env!("CARGO_BIN_EXE_system-harness").into(),
         computer_ws_only: true,
