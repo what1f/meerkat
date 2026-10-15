@@ -5,7 +5,7 @@ use serde::Serialize;
 use std::io::Write;
 use url::Url;
 
-pub const STANDARD_BOT_TENANT_SCOPES: [&str; 25] = [
+pub const STANDARD_BOT_TENANT_SCOPES: [&str; 26] = [
     "application:application:patch",
     "application:application:self_manage",
     "application:bot.basic_info:read",
@@ -25,6 +25,7 @@ pub const STANDARD_BOT_TENANT_SCOPES: [&str; 25] = [
     "im:message:recall",
     "im:message:send_as_bot",
     "im:resource",
+    "task:comment",
     "task:comment:read",
     "task:comment:write",
     "task:task:read",
@@ -38,7 +39,7 @@ pub const STANDARD_BOT_EVENTS: [&str; 5] = [
     "im.message.reaction.created_v1",
     "im.message.reaction.deleted_v1",
     "im.chat.updated_v1",
-    "task.task.update_user_access_v2",
+    "task.task.comment.updated_v1",
 ];
 
 #[derive(Serialize)]

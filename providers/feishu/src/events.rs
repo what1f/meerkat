@@ -203,9 +203,6 @@ impl<S: EventSource> Dispatcher<S> {
         if !self.accepted {
             match normalize_event(&raw.body, &self.config) {
                 Ok(event) => sink.emit(event).await.map_err(DispatchError::Sink)?,
-                Err(crate::normalize::NormalizeError::SelfReaction) => {
-                    // Deliberately ignored feedback still needs a transport receipt.
-                }
                 Err(error) => return Err(DispatchError::Normalize(error)),
             }
             self.accepted = true;

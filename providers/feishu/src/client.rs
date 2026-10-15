@@ -1156,11 +1156,18 @@ impl<T: Transport> Client<T> {
             "user_id_type".to_owned(),
             normalized_user_id_type(user_id_type),
         )];
-        let body = comment.to_json();
+        // Task v2 exposes plain comments; native @ markup is documented for
+        // the rich-comment endpoint. Both APIs use the same task GUID.
+        let path = format!(
+            "/open-apis/task/v1/tasks/{}/comments",
+            encode_path_segment(&comment.task_guid)
+        );
+        let body = serde_json::json!({"rich_content":comment.content,
+            "parent_id":comment.reply_to_comment_id.as_deref().unwrap_or("0")});
         let response: ApiResponse<TaskCommentResult> = self
             .json_request(
                 Method::Post,
-                COMMENTS_PATH,
+                &path,
                 &query,
                 Some(&body),
                 auth,
@@ -1175,6 +1182,31 @@ impl<T: Transport> Client<T> {
             .ok_or_else(|| ClientError::MissingField {
                 operation: "create Feishu task comment".to_owned(),
                 field: "comment.id".to_owned(),
+            })
+    }
+
+    pub async fn get_task_comment(
+        &self,
+        comment_id: &str,
+        auth: Auth,
+    ) -> Result<crate::dto::TaskComment, ClientError> {
+        let path = format!("{COMMENTS_PATH}/{}", encode_path_segment(comment_id));
+        let response: ApiResponse<TaskCommentResult> = self
+            .json_request(
+                Method::Get,
+                &path,
+                &[("user_id_type".to_owned(), "open_id".to_owned())],
+                None::<&Value>,
+                auth,
+                "get Feishu task comment",
+            )
+            .await?;
+        response
+            .data
+            .and_then(|data| data.comment)
+            .ok_or_else(|| ClientError::MissingField {
+                operation: "get Feishu task comment".to_owned(),
+                field: "comment".to_owned(),
             })
     }
 

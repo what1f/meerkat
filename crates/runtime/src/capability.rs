@@ -11,8 +11,8 @@ pub(crate) fn standard_tool_definitions() -> Vec<ToolDefinition> {
     [
         (
             "message_send",
-            "Send a message to a conversation in the current task.",
-            r#"{"type":"object","required":["channel_id","chat_id"],"anyOf":[{"required":["content"]},{"required":["content_file"]},{"required":["attachments"]}],"properties":{"channel_id":{"type":"string"},"chat_id":{"type":"string"},"content":{"type":"string"},"content_file":{"type":"string"},"attachments":{"type":"array","minItems":1,"items":{"type":"object"}},"reply_to":{"type":"integer"},"force":{"type":"boolean","description":"强制发送。使用前必须读取当前可获取的最新消息，重新判断待发送内容。仅当内容仍然有效、此刻有必要发出，且继续等待会妨碍沟通时使用。禁止因发送被拒绝、图省事或机械重试而启用；尚未读取新消息时不得使用。"}},"additionalProperties":false}"#,
+            "Send to a conversation in the current task, or start a direct message with a human team member using recipient_id.",
+            r#"{"type":"object","oneOf":[{"required":["channel_id","chat_id"]},{"required":["recipient_id"]}],"anyOf":[{"required":["content"]},{"required":["content_file"]},{"required":["attachments"]}],"properties":{"recipient_id":{"type":"string","description":"人类团队成员 ID；发送私信时使用，与 channel_id/chat_id 二选一。"},"channel_id":{"type":"string"},"chat_id":{"type":"string"},"content":{"type":"string"},"content_file":{"type":"string"},"attachments":{"description":"先用 lankide upload --file PATH 上传本地文件，再原样传入返回的资源对象。Markdown 本地路径不支持。","type":"array","minItems":1,"items":{"type":"object","required":["resource_id","file_name","media_type","size_bytes","sha256"],"properties":{"resource_id":{"type":"integer","minimum":1},"file_name":{"type":"string"},"media_type":{"type":"string"},"size_bytes":{"type":"integer","minimum":0},"sha256":{"type":"string"}},"additionalProperties":false}},"reply_to":{"type":"integer"},"force":{"type":"boolean","description":"强制发送。使用前必须读取当前可获取的最新消息，重新判断待发送内容。仅当内容仍然有效、此刻有必要发出，且继续等待会妨碍沟通时使用。禁止因发送被拒绝、图省事或机械重试而启用；尚未读取新消息时不得使用。"}},"additionalProperties":false}"#,
         ),
         (
             "message_recall",
@@ -269,6 +269,21 @@ impl RuntimeApplication {
         &self,
         request: SendMessageRequest,
     ) -> Result<ProtocolSendMessageResult, RuntimeError> {
+        let execution = request
+            .context
+            .as_ref()
+            .and_then(|context| context.execution.clone());
+        let result = self.send_message_gateway_inner(request).await;
+        if let Err(error) = &result {
+            log::error!("message send failed execution={execution:?}: {error:?}");
+        }
+        result
+    }
+
+    async fn send_message_gateway_inner(
+        &self,
+        mut request: SendMessageRequest,
+    ) -> Result<ProtocolSendMessageResult, RuntimeError> {
         let context = request
             .context
             .as_ref()
@@ -278,12 +293,74 @@ impl RuntimeApplication {
         }
         let runtime = self.runtime()?;
         let validated = runtime.validate_run_context(context, now_millis()).await?;
+        if unsupported_local_markdown(&request.content_markdown) {
+            return Ok(invalid_send_result(
+                "本地图片和文件请先使用 lankide upload --file PATH，再将返回的完整资源对象放入 attachments。",
+            ));
+        }
+        let direct_person = request
+            .chat_id
+            .strip_prefix("person:")
+            .map(lankide_core::PersonId::new)
+            .transpose()
+            .map_err(|error| RuntimeError::InvalidCore(error.to_string()))?;
+        if direct_person.is_some() && request.channel_id.is_empty() {
+            request.channel_id = runtime
+                .channels(&validated.workspace_id)
+                .await?
+                .into_iter()
+                .find(|channel| {
+                    channel.default_attention
+                        == lankide_provider::ChannelDefaultAttention::DirectMessage
+                })
+                .ok_or_else(|| RuntimeError::Application("当前平台不支持私信。".into()))?
+                .id
+                .to_string();
+        }
         let channel_id = ChannelId::new(request.channel_id)
             .map_err(|error| RuntimeError::InvalidCore(error.to_string()))?;
+        if let Some(person) = &direct_person {
+            if runtime
+                .database()
+                .person(&validated.workspace_id, person)
+                .await?
+                .is_none_or(|person| person.team_role == lankide_storage::TeamRole::External)
+            {
+                return Ok(invalid_send_result(
+                    "recipient_id 请选择人类团队成员的 ID。",
+                ));
+            }
+            let channel = runtime
+                .channels(&validated.workspace_id)
+                .await?
+                .into_iter()
+                .find(|channel| {
+                    channel.id == channel_id
+                        && channel.default_attention
+                            == lankide_provider::ChannelDefaultAttention::DirectMessage
+                })
+                .ok_or_else(|| RuntimeError::Application("请选择私信会话。".into()))?;
+            if request.reply_to_message_id.is_some() {
+                return Err(RuntimeError::Application(
+                    "新私信不支持引用其他会话的消息。".into(),
+                ));
+            }
+            request.chat_id = runtime
+                .database()
+                .prepare_direct_chat(
+                    &validated.workspace_id,
+                    &validated.agent_id,
+                    &channel_id,
+                    &channel.name,
+                    person,
+                    now_millis(),
+                )
+                .await?;
+        }
         let snapshot_chat = validated.snapshot.chats.iter().find(|chat| {
             chat.chat.channel_id == channel_id && chat.chat.provider_chat_id == request.chat_id
         });
-        if snapshot_chat.is_none() {
+        if snapshot_chat.is_none() && direct_person.is_none() {
             return Err(RuntimeError::Application(
                 "Choose a conversation included in the current task.".into(),
             ));
@@ -333,25 +410,34 @@ impl RuntimeApplication {
             &format!("execution:{}", validated.execution_id),
             &request.idempotency_key,
         );
-        let begun = match runtime
-            .database()
-            .begin_send_guarded(
-                validated.snapshot.snapshot_id,
-                &channel_id,
-                &request.chat_id,
-                request.force,
-                SendRequest {
-                    workspace_id: validated.workspace_id.clone(),
-                    channel_id: channel_id.clone(),
-                    provider_chat_id: request.chat_id.clone(),
-                    request_key: provider_idempotency_key.clone(),
-                    sender_agent_id: validated.agent_id.clone(),
-                    content: request.content_markdown.clone(),
-                    now,
-                },
+        let send_request = SendRequest {
+            workspace_id: validated.workspace_id.clone(),
+            channel_id: channel_id.clone(),
+            provider_chat_id: request.chat_id.clone(),
+            request_key: provider_idempotency_key.clone(),
+            sender_agent_id: validated.agent_id.clone(),
+            content: request.content_markdown.clone(),
+            now,
+        };
+        let begun = match if direct_person.is_some() && snapshot_chat.is_none() {
+            GuardedSendResult::Ready(
+                runtime
+                    .database()
+                    .begin_execution_send(validated.execution_id, send_request)
+                    .await?,
             )
-            .await?
-        {
+        } else {
+            runtime
+                .database()
+                .begin_send_guarded(
+                    validated.snapshot.snapshot_id,
+                    &channel_id,
+                    &request.chat_id,
+                    request.force,
+                    send_request,
+                )
+                .await?
+        } {
             GuardedSendResult::Ready(attempt) => attempt,
             GuardedSendResult::NewMessages { .. } => {
                 return Ok(ProtocolSendMessageResult {
@@ -462,8 +548,8 @@ impl RuntimeApplication {
                     message_id: begun.message_id,
                     provider_message_id: String::new(),
                     error: Some(ToolError {
-                        code: if unknown { "send_unknown" } else { "send_failed" }.into(),
-                        message: if unknown {
+                        code: if provider_error.is_some_and(|error| matches!(error,lankide_provider::ProviderError::InvalidInput{..})) { "invalid_input" } else if unknown { "send_unknown" } else { "send_failed" }.into(),
+                        message: if let Some(lankide_provider::ProviderError::InvalidInput{field}) = provider_error { field } else if unknown {
                             "The send result is unknown. Check the conversation before sending again."
                         } else {
                             "The message could not be sent."
@@ -657,6 +743,15 @@ async fn invoke_standard_tool(
                     false,
                 )));
             }
+            if object
+                .get("attachments")
+                .is_some_and(|value| !value.is_array())
+            {
+                return Ok(Some(invalid_send_input(
+                    &request.invocation_id,
+                    "attachments 请填写上传后返回的资源对象数组。",
+                )));
+            }
             let resources = object
                 .get("attachments")
                 .and_then(serde_json::Value::as_array)
@@ -666,12 +761,26 @@ async fn invoke_standard_tool(
                         .map(resource_argument)
                         .collect::<Result<Vec<_>, _>>()
                 })
-                .transpose()?
-                .unwrap_or_default();
+                .transpose();
+            let resources = match resources {
+                Ok(resources) => resources.unwrap_or_default(),
+                Err(_) => {
+                    return Ok(Some(invalid_send_input(
+                        &request.invocation_id,
+                        "attachments 中每项须为上传返回的完整资源对象：resource_id、file_name、media_type、size_bytes、sha256。请先使用 lankide upload --file PATH。",
+                    )));
+                }
+            };
             let content = object
                 .get("content")
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or_default();
+            if unsupported_local_markdown(content) {
+                return Ok(Some(invalid_send_input(
+                    &request.invocation_id,
+                    "本地图片和文件请先使用 lankide upload --file PATH，再将返回的完整资源对象放入 attachments。",
+                )));
+            }
             if content.is_empty() && resources.is_empty() {
                 return Ok(Some(capability_error(
                     request.invocation_id.clone(),
@@ -682,8 +791,25 @@ async fn invoke_standard_tool(
             let response = application
                 .send_message_gateway(SendMessageRequest {
                     context: request.context.clone(),
-                    channel_id: required_text(object, "channel_id")?.to_owned(),
-                    chat_id: required_text(object, "chat_id")?.to_owned(),
+                    channel_id: if object.contains_key("recipient_id") {
+                        String::new()
+                    } else {
+                        required_text(object, "channel_id")?.to_owned()
+                    },
+                    chat_id: if let Some(recipient) = object.get("recipient_id") {
+                        if object.contains_key("chat_id")
+                            || object.contains_key("channel_id")
+                            || !recipient.is_string()
+                        {
+                            return Ok(Some(invalid_send_input(
+                                &request.invocation_id,
+                                "私信请只提供 recipient_id；会话消息请提供 channel_id 和 chat_id。",
+                            )));
+                        }
+                        format!("person:{}", recipient.as_str().unwrap_or_default())
+                    } else {
+                        required_text(object, "chat_id")?.to_owned()
+                    },
                     content_markdown: content.to_owned(),
                     reply_to_message_id: object.get("reply_to").and_then(serde_json::Value::as_i64),
                     resources,
@@ -974,6 +1100,18 @@ fn required_text<'a>(
 
 fn resource_argument(value: &serde_json::Value) -> Result<ResourceRef, RuntimeError> {
     let object = argument_object(value)?;
+    let fields = [
+        "resource_id",
+        "file_name",
+        "media_type",
+        "size_bytes",
+        "sha256",
+    ];
+    if object.len() != fields.len() || fields.iter().any(|key| !object.contains_key(*key)) {
+        return Err(RuntimeError::InvalidCore(
+            "attachments must contain complete uploaded resources".into(),
+        ));
+    }
     Ok(ResourceRef {
         resource_id: object
             .get("resource_id")
@@ -995,4 +1133,41 @@ fn parse_arguments(value: &str) -> Result<serde_json::Value, RuntimeError> {
     }
     serde_json::from_str(value)
         .map_err(|error| RuntimeError::Application(format!("invalid arguments: {error}")))
+}
+
+fn invalid_send_input(invocation_id: &str, message: &str) -> CapabilityInvokeResult {
+    let mut result = capability_error(invocation_id.to_owned(), "invalid_input", false);
+    if let Some(error) = &mut result.error {
+        error.message = message.to_owned();
+    }
+    result
+}
+
+fn unsupported_local_markdown(content: &str) -> bool {
+    content.match_indices("](").any(|(index, _)| {
+        let target = content[index + 2..].trim_start().trim_start_matches('<');
+        [
+            "/",
+            "./",
+            "../",
+            "~/",
+            "file://",
+            "resource://",
+            "attachment://",
+        ]
+        .iter()
+        .any(|prefix| target.starts_with(prefix))
+    })
+}
+fn invalid_send_result(message: &str) -> ProtocolSendMessageResult {
+    ProtocolSendMessageResult {
+        accepted: false,
+        message_id: 0,
+        provider_message_id: String::new(),
+        error: Some(ToolError {
+            code: "invalid_input".into(),
+            message: message.into(),
+            retryable: false,
+        }),
+    }
 }

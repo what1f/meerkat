@@ -15,6 +15,7 @@ use tokio_tungstenite::tungstenite::{
     handshake::server::{Request as UpgradeRequest, Response as UpgradeResponse},
 };
 
+pub const PNG: &[u8] = b"\x89PNG\r\n\x1a\nimage bytes";
 pub const FILE: &[u8] = b"attachment bytes\0\xff\r\nfrom Alice";
 // Platform-owned pbbp2 wire contract, independent of the Provider's private frame type.
 #[derive(Clone, Default, PartialEq)]
@@ -190,6 +191,14 @@ struct State {
     requests: Vec<Request>,
     failures: BTreeMap<String, (u16, usize)>,
     acknowledgements: Vec<Value>,
+    tasks: BTreeMap<String, Value>,
+    comments: BTreeMap<String, Value>,
+    tasklist: Option<Value>,
+    echo_sends: bool,
+    upload_gate: Option<(
+        tokio::sync::oneshot::Sender<()>,
+        std::sync::mpsc::Receiver<()>,
+    )>,
     next_message: usize,
     deliveries: Vec<Delivery>,
     parents: BTreeMap<String, String>,
@@ -359,6 +368,70 @@ impl FeishuServer {
             let app = app.strip_prefix("Bearer tenant-").unwrap();
             assert!(matches!(app, "cli_alpha" | "cli_beta" | "cli_gamma"));
             let data = match (request.method.as_str(), path) {
+                ("GET", "/open-apis/task/v2/tasklists") => {
+                    json!({"items":state.tasklist.iter().cloned().collect::<Vec<_>>(),"has_more":false})
+                }
+                ("POST", "/open-apis/task/v2/tasklists") => {
+                    let mut tasklist = request.json();
+                    tasklist["guid"] = json!("tasklist_team");
+                    state.tasklist = Some(tasklist.clone());
+                    json!({"tasklist":tasklist})
+                }
+                ("GET", "/open-apis/task/v2/tasklists/tasklist_team") => {
+                    json!({"tasklist":state.tasklist})
+                }
+                ("POST", "/open-apis/task/v2/tasks") => {
+                    let mut task = request.json();
+                    if task
+                        .get("due")
+                        .is_some_and(|due| due.get("timestamp").and_then(Value::as_str).is_none())
+                    {
+                        let mut response =
+                            Response::json(json!({"code":1470400,"msg":"Invalid Param 'due'"}));
+                        response.status = 400;
+                        return response;
+                    }
+                    let id = format!("task_{}", state.tasks.len() + 1);
+                    task["guid"] = json!(id);
+                    task["creator"] = json!({"id":app,"type":"app","name":"Beta"});
+                    task["updated_at"] = json!("2000");
+                    state.tasks.insert(id, task.clone());
+                    json!({"task":task})
+                }
+                ("PATCH", path) if path.starts_with("/open-apis/task/v2/tasks/") => {
+                    let id = path.rsplit('/').next().unwrap();
+                    let task = state.tasks.get_mut(id).expect("created task");
+                    for (key, value) in request.json()["task"].as_object().unwrap() {
+                        task[key] = value.clone();
+                    }
+                    let next = task["updated_at"].as_str().unwrap().parse::<u64>().unwrap() + 1000;
+                    task["updated_at"] = json!(next.to_string());
+                    json!({"task":task})
+                }
+                ("GET", path) if path.starts_with("/open-apis/task/v2/tasks/") => {
+                    let id = path.rsplit('/').next().unwrap();
+                    json!({"task":state.tasks.get(id).expect("created task")})
+                }
+                ("POST", path)
+                    if path.starts_with("/open-apis/task/v1/tasks/")
+                        && path.ends_with("/comments") =>
+                {
+                    let mut comment = request.json();
+                    comment["content"] = comment["rich_content"].clone();
+                    let id = format!("comment_{}", state.comments.len() + 1);
+                    comment["id"] = json!(id);
+                    comment["creator"] = json!({"id":app,"type":"app","name":"Beta"});
+                    comment["created_at"] = json!("3000");
+                    state.comments.insert(id, comment.clone());
+                    json!({"comment":comment})
+                }
+                ("GET", "/open-apis/task/v2/comments") => {
+                    json!({"items":state.comments.values().cloned().collect::<Vec<_>>(),"has_more":false})
+                }
+                ("GET", path) if path.starts_with("/open-apis/task/v2/comments/") => {
+                    let id = path.rsplit('/').next().unwrap();
+                    json!({"comment":state.comments.get(id).expect("created comment")})
+                }
                 ("GET", "/open-apis/bot/v3/info") => {
                     return Response::json(
                         json!({"code":0,"bot":{"open_id":format!("ou_{}", app.trim_start_matches("cli_")),"app_name":app}}),
@@ -376,12 +449,12 @@ impl FeishuServer {
                         return response;
                     };
                     // The real endpoint reports the chat but not its type.
-                    json!({"items":[{"message_id":id,"chat_id":message["chat_id"],"msg_type":message["message_type"]}]})
+                    json!({"items":[{"message_id":id,"chat_id":message["chat_id"],"msg_type":message["message_type"],"sender":message["sender"]}]})
                 }
                 ("GET", path) if path.starts_with("/open-apis/im/v1/chats/") => {
                     let id = path.trim_start_matches("/open-apis/im/v1/chats/");
                     let mode = state.chats.get(id).expect("chat was delivered");
-                    json!({"chat_id":id,"chat_mode":mode,"chat_type":"private"})
+                    json!({"chat_id":id,"chat_mode":mode,"chat_type":"private","name":"Design team"})
                 }
                 ("GET", "/open-apis/contact/v3/users/ou_alice") => {
                     json!({"user":{"open_id":"ou_alice","union_id":"on_alice","name":"Alice"}})
@@ -389,21 +462,59 @@ impl FeishuServer {
                 ("GET", "/open-apis/im/v1/messages/om_file/resources/inbound-file") => {
                     return Response::file(FILE);
                 }
+                ("GET", path) if path.ends_with("/resources/uploaded-file") => {
+                    return Response::file(FILE);
+                }
+                ("GET", path) if path.ends_with("/resources/uploaded-image") => {
+                    return Response::file(PNG);
+                }
+                ("GET", path) if path.ends_with("/resources/inbound-image") => {
+                    return Response::file(PNG);
+                }
                 ("POST", "/open-apis/im/v1/files") => {
                     assert_eq!(request.part("file"), FILE);
+                    let gate = state.upload_gate.take();
+                    drop(state);
+                    if let Some((started, release)) = gate {
+                        let _ = started.send(());
+                        let _ = release.recv_timeout(Duration::from_secs(10));
+                    }
                     json!({"file_key":"uploaded-file"})
                 }
                 ("POST", "/open-apis/im/v1/images") => json!({"image_key":"uploaded-image"}),
                 ("POST", "/open-apis/im/v1/messages") => {
                     state.next_message += 1;
                     let body = request.json();
+                    if body["receive_id"]
+                        .as_str()
+                        .is_some_and(|id| id.starts_with("person:"))
+                    {
+                        let mut response =
+                            Response::json(json!({"code":230001,"msg":"Invalid receive_id"}));
+                        response.status = 400;
+                        return response;
+                    }
+
+                    let native_chat = if request.path.contains("receive_id_type=open_id") {
+                        "oc_direct_alice"
+                    } else {
+                        body["receive_id"].as_str().unwrap()
+                    };
+                    let native_chat = native_chat.to_owned();
                     state.deliveries.push(Delivery {
                         sender: app.into(),
-                        chat: body["receive_id"].as_str().unwrap().into(),
+                        chat: native_chat.clone(),
                         parent: None,
                         body: body.clone(),
                     });
-                    json!({"message_id":format!("om_sent_{}",state.next_message),"chat_id":body["receive_id"]})
+                    let id = format!("om_sent_{}", state.next_message);
+                    if state.echo_sends {
+                        let event = json!({"schema":"2.0","header":{"event_id":format!("echo-{id}"),"event_type":"im.message.receive_v1","app_id":app,"tenant_key":"tenant"},
+                          "event":{"sender":{"sender_type":"app","sender_id":{"open_id":format!("ou_{}",app.trim_start_matches("cli_")),"union_id":format!("on_{}",app.trim_start_matches("cli_"))}},
+                          "message":{"message_id":id,"chat_id":body["receive_id"],"chat_type":"group","create_time":"2000","message_type":body["msg_type"],"content":body["content"]}}});
+                        state.events.entry(app.into()).or_default().push_back(event);
+                    }
+                    json!({"message_id":id,"chat_id":native_chat})
                 }
                 ("POST", "/open-apis/im/v1/messages/om_file/reply") => {
                     let chat = state
@@ -445,9 +556,11 @@ impl FeishuServer {
             state
                 .parents
                 .insert(id.into(), message["chat_id"].as_str().unwrap().into());
-            state
-                .messages
-                .insert((app_id.into(), id.into()), message.clone());
+            state.messages.insert((app_id.into(), id.into()), {
+                let mut stored = message.clone();
+                stored["sender"] = event["event"]["message_sender"].clone();
+                stored
+            });
             state.chats.insert(
                 message["chat_id"].as_str().unwrap().into(),
                 message["chat_type"].as_str().unwrap().into(),
@@ -458,6 +571,20 @@ impl FeishuServer {
             .entry(app_id.into())
             .or_default()
             .push_back(event);
+    }
+    pub fn hold_next_upload(
+        &self,
+    ) -> (
+        tokio::sync::oneshot::Receiver<()>,
+        std::sync::mpsc::Sender<()>,
+    ) {
+        let (started, uploading) = tokio::sync::oneshot::channel();
+        let (release, wait) = std::sync::mpsc::channel();
+        self.state.lock().unwrap().upload_gate = Some((started, wait));
+        (uploading, release)
+    }
+    pub fn echo_sends(&self) {
+        self.state.lock().unwrap().echo_sends = true;
     }
     pub fn fail_requests(&self, path: &str, status: u16, count: usize) {
         self.state

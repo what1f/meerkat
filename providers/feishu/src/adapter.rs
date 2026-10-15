@@ -359,7 +359,43 @@ impl Provider for FeishuProvider {
                 });
             }
             let idempotency_key = context.idempotency_key.clone();
-            let chat_id = context.chat_id.clone();
+            let mut chat_id = context.chat_id.clone();
+            let direct_recipient = if let Some(id) = chat_id.strip_prefix("person:") {
+                if context.channel_id.as_str() != "private_chat" || context.reply_to.is_some() {
+                    return Err(ProviderError::InvalidInput {
+                        field: "recipient_id: 请选择成员并发送新私信",
+                    });
+                }
+                let id =
+                    lankide_core::PersonId::new(id).map_err(|_| ProviderError::InvalidInput {
+                        field: "recipient_id",
+                    })?;
+                let person = context.storage().person(&id).await?;
+                if person.team_role == lankide_provider::TeamRole::External {
+                    return Err(ProviderError::InvalidInput {
+                        field: "recipient_id: 请选择团队成员",
+                    });
+                }
+                let open_id = crate::identity::person_open_id(
+                    context.storage(),
+                    person,
+                    &crate::identity::load(context.storage())
+                        .await?
+                        .1
+                        .agent_app_id(&context.agent_id)
+                        .ok_or(ProviderError::InvalidInput {
+                            field: "sender_app_id",
+                        })?
+                        .to_owned(),
+                    state.client.clone(),
+                    state.auth,
+                )
+                .await?;
+                chat_id = open_id;
+                true
+            } else {
+                false
+            };
             let content = context.content.clone();
             let mentions = context.mentions.clone();
             let reply_to = context.reply_to;
@@ -380,10 +416,16 @@ impl Provider for FeishuProvider {
             let provider_reply_id =
                 resolve_reply_id(context.storage(), &context.channel_id, &chat_id, reply_to)
                     .await?;
-            let receive_id_type = receive_id_type(&context.provider_config, &chat_id);
+            let receive_id_type = if direct_recipient {
+                "open_id".to_owned()
+            } else {
+                receive_id_type(&context.provider_config, &chat_id)
+            };
             let auth = state.auth;
             let client = state.client;
-            let sent = match (async move {
+            let mut part_ids = Vec::new();
+            let mut sent_chat = None;
+            let sent = (async {
                 let mut primary = None;
                 if !rendered.trim().is_empty() {
                     let result = if let Some(reply_id) = provider_reply_id.as_deref() {
@@ -401,6 +443,8 @@ impl Provider for FeishuProvider {
                             Some(feishu_send_part_key(&idempotency_key, "content"));
                         client.send_message(&message, auth).await
                     }?;
+                    sent_chat.get_or_insert_with(|| result.chat_id.clone());
+                    part_ids.push(result.message_id.clone());
                     primary = Some(result);
                 }
                 for (index, attachment) in attachments.into_iter().enumerate() {
@@ -450,26 +494,49 @@ impl Provider for FeishuProvider {
                         ));
                         client.send_message(&message, auth).await?
                     };
+                    sent_chat.get_or_insert_with(|| result.chat_id.clone());
+                    part_ids.push(result.message_id.clone());
                     primary.get_or_insert(result);
                 }
                 primary.ok_or(crate::http::ClientError::InvalidInput(
                     "Feishu message payload is empty".to_owned(),
                 ))
             })
-            .await
-            {
-                Ok(sent) => sent,
-                Err(error) if is_unknown_send_error(&error) => {
-                    return Ok(SendMessageResult::unknown());
+            .await;
+            match sent {
+                Ok(primary) => {
+                    let mut result = SendMessageResult::sent_parts(part_ids)?;
+                    if direct_recipient {
+                        result.provider_chat_id = Some(primary.chat_id);
+                    }
+                    Ok(result)
                 }
-                Err(_) => {
-                    return Err(ProviderError::External {
-                        operation: "feishu_send_message",
-                        retryable: false,
-                    });
+                Err(error) => {
+                    if let Some(init) =
+                        self.contexts.lock().ok().and_then(|contexts| {
+                            contexts.get(context.workspace_id.as_str()).cloned()
+                        })
+                    {
+                        init.logger().log(
+                            lankide_provider::LogLevel::Error,
+                            &format!("Feishu send failed: {error:?}"),
+                        );
+                    }
+                    if !part_ids.is_empty() || is_unknown_send_error(&error) {
+                        let mut result = SendMessageResult::unknown();
+                        result.provider_message_ids = part_ids;
+                        if direct_recipient {
+                            result.provider_chat_id = sent_chat;
+                        }
+                        Ok(result)
+                    } else {
+                        Err(ProviderError::External {
+                            operation: "feishu_send_message",
+                            retryable: false,
+                        })
+                    }
                 }
-            };
-            SendMessageResult::sent(sent.message_id)
+            }
         })
     }
 
@@ -547,7 +614,15 @@ impl Provider for FeishuProvider {
             )?);
             if crate::agent_tasks::task_system_enabled(&context.workspace_config) {
                 let _identity_guard = self.identity_lock.lock().await;
-                tools.extend(crate::agent_tasks::tools(&context, state.client, state.auth).await?);
+                tools.extend(
+                    crate::agent_tasks::tools(
+                        &context,
+                        state.client,
+                        state.auth,
+                        self.identity_lock.clone(),
+                    )
+                    .await?,
+                );
             }
             Ok(tools)
         })
@@ -991,7 +1066,24 @@ impl NormalizedEventSink for FeishuEventBridge {
         event: NormalizedEvent,
     ) -> crate::events::EventFuture<'_, Result<(), crate::events::SinkError>> {
         Box::pin(async move {
-            let event = if let NormalizedEvent::Message(message) = event {
+            let event = if let NormalizedEvent::Message(mut message) = event {
+                if message.sender.kind == SenderKind::Bot {
+                    let record = self
+                        .client
+                        .get_message(&message.provider_message_id, self.auth)
+                        .await
+                        .map_err(crate::events::SinkError::from)?;
+                    if let Some(sender) = record.sender
+                        && sender.sender_type == "app"
+                        && sender.id_type == "app_id"
+                        && !sender.id.trim().is_empty()
+                    {
+                        message
+                            .sender
+                            .aliases
+                            .push(("app_id".to_owned(), sender.id));
+                    }
+                }
                 let app_id = message.app_id.clone();
                 let tenant_key = message.tenant_key.clone();
                 let raw = message.raw.clone();
@@ -1009,6 +1101,11 @@ impl NormalizedEventSink for FeishuEventBridge {
                     .map_err(crate::events::SinkError::from)?
             } else {
                 event
+            };
+            let _task_guard = if matches!(&event, NormalizedEvent::Task(_)) {
+                Some(self.identity_lock.lock().await)
+            } else {
+                None
             };
             let provider_event = normalized_event_to_provider(
                 &self.context,
@@ -1051,7 +1148,7 @@ async fn receiving_agent(
 
 async fn normalized_event_to_provider(
     context: &InitContext,
-    client: &SharedClient,
+    client: &Arc<SharedClient>,
     auth: Auth,
     inbound_resource_cache: &Arc<AsyncMutex<InboundResourceCache>>,
     human_names: &mut BTreeMap<String, (String, Instant)>,
@@ -1129,19 +1226,12 @@ async fn normalized_event_to_provider(
                         continue;
                     }
                 };
-                let file_name = if downloaded.file_name.trim().is_empty() {
-                    attachment.name.clone()
-                } else {
-                    downloaded.file_name
-                };
+                let (file_name, media_type) =
+                    inbound_media_metadata(&downloaded, &attachment.name, &attachment.content_type);
                 let resource = match context
                     .save_resource(ResourceUpload {
                         file_name,
-                        media_type: if downloaded.content_type.trim().is_empty() {
-                            attachment.content_type.clone()
-                        } else {
-                            downloaded.content_type
-                        },
+                        media_type,
                         bytes: downloaded.data,
                     })
                     .await
@@ -1163,8 +1253,17 @@ async fn normalized_event_to_provider(
                 .iter()
                 .filter_map(|value| AgentId::new(value.clone()).ok())
                 .collect();
-            let provider_data =
+            let mut provider_data =
                 serde_json::to_value(&message).map_err(crate::events::SinkError::from)?;
+            if message.channel_id == "group_chat" {
+                let chat = client
+                    .get_chat(&message.chat_id, auth)
+                    .await
+                    .map_err(crate::events::SinkError::from)?;
+                if !chat.name.trim().is_empty() {
+                    provider_data["chat_name"] = serde_json::json!(chat.name);
+                }
+            }
             let receiving_agent_id = if message.channel_id == "private_chat" {
                 receiving_agent(context, &message.app_id).await?
             } else {
@@ -1244,6 +1343,7 @@ async fn normalized_event_to_provider(
                 name: "Feishu".to_owned(),
             },
             kind: ProviderEventKind::Custom(lankide_provider::CustomEvent {
+                mentioned_agent_ids: Vec::new(),
                 reason: "chat_updated".to_owned(),
                 target_agent_ids: Vec::new(),
                 subject_id: update.chat_id.clone(),
@@ -1253,28 +1353,16 @@ async fn normalized_event_to_provider(
             provider_data: serde_json::to_value(&update).map_err(crate::events::SinkError::from)?,
         }),
         NormalizedEvent::Task(task) => {
-            let (_, directory) = crate::identity::load(context.storage())
-                .await
-                .map_err(crate::events::SinkError::from)?;
-            let target_agent_ids =
-                crate::agent_tasks::target_agents_for_task(&directory, client, auth, &task.task_id)
-                    .await;
+            let (sender, custom) =
+                crate::agent_tasks::task_event(context, client.clone(), auth, &task)
+                    .await
+                    .map_err(crate::events::SinkError::from)?;
             Ok(ProviderEvent {
                 receiving_agent_id: None,
                 channel_id: channel("task"),
-                provider_chat_id: "tasks".to_owned(),
-                sender: EventSender {
-                    id: "feishu:task".to_owned(),
-                    kind: EventSenderType::System,
-                    name: "Feishu Tasks".to_owned(),
-                },
-                kind: ProviderEventKind::Custom(lankide_provider::CustomEvent {
-                    reason: "task".to_owned(),
-                    target_agent_ids,
-                    subject_id: task.task_id.clone(),
-                    subject_name: "Feishu task".to_owned(),
-                    data: serde_json::to_value(&task).map_err(crate::events::SinkError::from)?,
-                }),
+                provider_chat_id: "tasks".into(),
+                sender,
+                kind: ProviderEventKind::Custom(custom),
                 provider_data: serde_json::to_value(&task)
                     .map_err(crate::events::SinkError::from)?,
             })
@@ -1478,9 +1566,15 @@ async fn feishu_mention_targets(
             targets.push(MentionTarget::new(id, external_id, name));
             continue;
         }
-        let Ok(person_id) = lankide_core::PersonId::new(id.clone()) else {
-            continue;
-        };
+        if directory.agents.contains_key(&id) {
+            return Err(ProviderError::InvalidInput {
+                field: "mention: 无法提及该成员，请先确认飞书身份",
+            });
+        }
+        let person_id =
+            lankide_core::PersonId::new(id.clone()).map_err(|_| ProviderError::InvalidInput {
+                field: "mention: 请使用 @名称[成员ID]",
+            })?;
         let person = storage.person(&person_id).await?;
         let open_id =
             crate::identity::person_open_id(storage, person, sender_app_id, client.clone(), auth)
@@ -1633,4 +1727,53 @@ pub(crate) fn configured_domain(
         }
         Some(_) => return Err(ProviderError::InvalidInput { field: "domain" }),
     }
+}
+
+fn inbound_media_metadata(
+    downloaded: &crate::dto::DownloadedResource,
+    name: &str,
+    media_type: &str,
+) -> (String, String) {
+    let format = image::guess_format(&downloaded.data).ok();
+    let media_type = format
+        .map(|format| format.to_mime_type().to_owned())
+        .unwrap_or_else(|| {
+            if downloaded.content_type.trim().is_empty()
+                || downloaded.content_type == "application/octet-stream"
+            {
+                media_type.to_owned()
+            } else {
+                downloaded
+                    .content_type
+                    .split(';')
+                    .next()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_owned()
+            }
+        });
+    let mut file_name = if downloaded.file_name.trim().is_empty() {
+        name.to_owned()
+    } else {
+        downloaded.file_name.clone()
+    };
+    if file_name.trim().is_empty() {
+        file_name = "attachment".into();
+    }
+    if std::path::Path::new(&file_name).extension().is_none() {
+        let extension = format
+            .and_then(|format| format.extensions_str().first().copied())
+            .or_else(|| match media_type.as_str() {
+                "image/png" => Some("png"),
+                "image/jpeg" => Some("jpg"),
+                "image/gif" => Some("gif"),
+                "image/webp" => Some("webp"),
+                _ => None,
+            });
+        if let Some(extension) = extension {
+            file_name.push('.');
+            file_name.push_str(extension);
+        }
+    }
+    (file_name, media_type)
 }

@@ -8,6 +8,8 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
 lankide-core = { path = "../../crates/core" }
 lankide-provider = { path = "../../crates/provider" }
 serde.workspace = true
@@ -23,6 +25,7 @@ flate2 = "1.1.9"
 url = "2.5.8"
 
 [dev-dependencies]
+lankide-protocol = { path = "../../crates/protocol" }
 lankide-storage = { path = "../../crates/storage" }
 lankide-runtime = { path = "../../crates/runtime" }
 lankide-testkit = { path = "../../crates/testkit" }
@@ -38,7 +41,7 @@ status = "implemented"
 
 [package.metadata.lankide.e2e-additional.provider-feishu-hermetic]
 command = "cargo test -p lankide-provider-feishu --test mock_server_e2e"
-scenario = "S2.1 binds two bot accounts to separate Agents and verifies direct messages and reactions identify the receiving Agent. Separate S2.2 group-mention and S2.3 attachment-reply scenarios: Run the real Feishu Provider lifecycle against a loopback IM server; deliver a group mention of bot B, download an attachment, reply with its exact bytes in the same chat and parent, react, recall, and shut down. Preserve the platform pbbp2 WebSocket envelope without a prost dependency (S17). Skip permanently failed and malformed events so the next message arrives; recover temporary IM outages without duplicate delivery, cap retry delays without discarding transient events, and deliver three concurrent Agents' messages and reactions once each in the same chat under the correct sender."
+scenario = "S2.1 binds two bot accounts to separate Agents and verifies direct messages and reactions identify the receiving Agent. Separate S2.2 group-mention and S2.3 attachment-reply scenarios: Run the real Feishu Provider lifecycle against a loopback IM server; deliver a group mention of bot B, download an attachment, reply with its exact bytes in the same chat and parent, react, recall, and shut down. Preserve the platform pbbp2 WebSocket envelope without a prost dependency (S17). Skip permanently failed and malformed events so the next message arrives; recover temporary IM outages without duplicate delivery, cap retry delays without discarding transient events, and deliver three concurrent Agents' messages and reactions once each in the same chat under the correct sender. Drop Agent message echoes by workspace sender identity before and after send completion, preserving one sent message, all native part IDs, resources, and one mention wake without waking the sender. Process and dispatch a human message while another Agent attachment upload is held open by the mock IM server; keep Agent reactions recorded. Validate local-file attachment inputs, identify PNG content and group names, resolve pending bot observations on existing-app binding via stable app IDs, reject unresolved mentions, record own DM reactions without waking the actor, send native rich task-comment mentions, name task actions and actors without self-targeting, validate due dates, and start human DMs by open ID."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

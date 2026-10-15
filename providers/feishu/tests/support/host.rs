@@ -62,6 +62,13 @@ impl Services {
             _directory: directory,
         })
     }
+    pub fn runtime(&self) -> lankide_runtime::Runtime {
+        lankide_runtime::Runtime::new(lankide_runtime::RuntimeConfig {
+            database: DatabaseConfig::new(self._directory.path().join("runtime.sqlite")),
+            retry: Default::default(),
+        })
+        .unwrap()
+    }
     pub fn agent(&self, id: &AgentId, secret_name: &str, secret: &str) {
         self.db
             .create_agent(lankide_storage::AgentSpec {
@@ -198,6 +205,25 @@ impl ProviderStorage for Services {
                 resource: stored.resource.into(),
                 bytes: stored.bytes,
             })
+        })
+    }
+    fn team_members(&self) -> ProviderFuture<'_, Vec<ProviderTeamMember>> {
+        Box::pin(async move {
+            let mut members = self
+                .db
+                .list_human_team_members(&self.workspace)
+                .map_err(error)?
+                .into_iter()
+                .map(|record| ProviderTeamMember::Human(person(record)))
+                .collect::<Vec<_>>();
+            members.extend(
+                self.db
+                    .list_agents(&self.workspace)
+                    .map_err(error)?
+                    .into_iter()
+                    .map(|agent| ProviderTeamMember::Agent { agent_id: agent.id }),
+            );
+            Ok(members)
         })
     }
     fn get_or_create_person<'a>(

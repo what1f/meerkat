@@ -70,11 +70,16 @@ fn exercise_feishu_contract() -> Result<(), String> {
     let manifest: Value = serde_json::from_str(&raw_manifest).map_err(|e| e.to_string())?;
     if authorization.host_str() != Some("open.feishu.cn")
         || query.get("clientID").map(|value| value.as_ref()) != Some("cli_e2e")
-        || manifest["scopes"]["tenant"].as_array().map(Vec::len) != Some(25)
-        || manifest["events"]["items"]["tenant"]
-            .as_array()
-            .map(Vec::len)
-            != Some(5)
+        || STANDARD_BOT_TENANT_SCOPES.iter().any(|scope| {
+            !manifest["scopes"]["tenant"]
+                .as_array()
+                .is_some_and(|scopes| scopes.contains(&json!(scope)))
+        })
+        || STANDARD_BOT_EVENTS.iter().any(|event| {
+            !manifest["events"]["items"]["tenant"]
+                .as_array()
+                .is_some_and(|events| events.contains(&json!(event)))
+        })
     {
         return Err("Feishu installation link does not request the product capabilities".into());
     }
@@ -734,7 +739,7 @@ async fn feishu_task_flow_projects_the_typed_team_roster() {
     let state = transport.state.lock().expect("task flow state");
     assert_eq!(state.comment_bodies.len(), 2);
     assert_eq!(
-        state.comment_bodies[1]["content"],
+        state.comment_bodies[1]["rich_content"],
         "<at id=ou_lead></at> <at id=ou_gamma></at> @未识别成员 请确认"
     );
     assert_eq!(state.create_bodies.len(), 3);
@@ -771,7 +776,7 @@ async fn feishu_task_flow_projects_the_typed_team_roster() {
         json!([{"id":"cli_gamma","type":"app","role":"assignee"}])
     );
     assert_eq!(
-        state.comment_bodies[0]["content"],
+        state.comment_bodies[0]["rich_content"],
         "<at id=ou_lead></at> 和 <at id=ou_beta></at> 请确认"
     );
 }
@@ -1701,7 +1706,10 @@ impl Transport for TaskFlowTransport {
                     .ok_or_else(|| TransportError::Failed("unknown fixture task".to_owned()))?;
                 return json_response(200, json!({"code":0,"data":{"task":task}}));
             }
-            if request.path.ends_with("/task/v2/comments") && request.method == Method::Post {
+            if request.path.contains("/task/v1/tasks/")
+                && request.path.ends_with("/comments")
+                && request.method == Method::Post
+            {
                 let body: Value = serde_json::from_slice(&request.body)
                     .map_err(|error| TransportError::Failed(error.to_string()))?;
                 self.state
@@ -1916,6 +1924,8 @@ impl Transport for FeishuFixtureTransport {
                     "tenant_access_token": "fixture-tenant-token",
                     "expire": 7200
                 })
+            } else if request.path.contains("/im/v1/chats/") && request.method == Method::Get {
+                json!({"code":0,"data":{"chat_id":request.path.rsplit('/').next().unwrap_or_default(),"chat_mode":"group","name":"Team"}})
             } else if request.path.ends_with("/bot/v3/info") {
                 json!({
                     "code": 0,
@@ -2036,6 +2046,14 @@ impl Transport for FeishuIdentityTransport {
                     "tenant_access_token": format!("token-{app_id}"),
                     "expire": 7200
                 })
+            } else if request.path.contains("/im/v1/messages/") && request.method == Method::Get {
+                json!({"code":0,"data":{"items":[{
+                    "message_id":request.path.rsplit('/').next().unwrap_or_default(),
+                    "chat_id":"oc_identity",
+                    "sender":{"id":"app_a","id_type":"app_id","sender_type":"app"}
+                }]}})
+            } else if request.path.contains("/im/v1/chats/") && request.method == Method::Get {
+                json!({"code":0,"data":{"chat_id":request.path.rsplit('/').next().unwrap_or_default(),"chat_mode":"group","name":"Team"}})
             } else if request.path.ends_with("/bot/v3/info") {
                 let authorization = request
                     .headers

@@ -267,12 +267,6 @@ pub fn normalize_reaction(
             actual: header.app_id.trim().to_owned(),
         });
     }
-    if event.operator_type == "app"
-        && !config.app_id.trim().is_empty()
-        && event.app_id.trim() == config.app_id.trim()
-    {
-        return Err(NormalizeError::SelfReaction);
-    }
     match event.operator_type.trim() {
         "user" if event.user_id.preferred().is_none() => {
             return Err(NormalizeError::Incomplete(
@@ -363,7 +357,7 @@ pub fn normalize_chat_update(raw: &[u8]) -> Result<NormalizedChatUpdate, Normali
 }
 
 pub fn normalize_task(raw: &[u8]) -> Result<NormalizedTaskEvent, NormalizeError> {
-    let envelope: FeishuTaskEvent = serde_json::from_slice(raw)
+    let mut envelope: FeishuTaskEvent = serde_json::from_slice(raw)
         .map_err(|error| NormalizeError::Malformed(error.to_string()))?;
     if !envelope.header.event_type.starts_with("task.") {
         return Err(NormalizeError::UnsupportedEvent(
@@ -374,6 +368,22 @@ pub fn normalize_task(raw: &[u8]) -> Result<NormalizedTaskEvent, NormalizeError>
         return Err(NormalizeError::Incomplete(
             "task_guid is required".to_owned(),
         ));
+    }
+    if envelope.header.event_type == "task.task.comment.updated_v1" {
+        envelope.event.event_types = vec![
+            match envelope.event.obj_type {
+                1 => "task_comment_create",
+                2 => "task_comment_reply",
+                3 => "task_comment_update",
+                4 => "task_comment_delete",
+                _ => {
+                    return Err(NormalizeError::Incomplete(
+                        "comment obj_type is required".into(),
+                    ));
+                }
+            }
+            .to_owned(),
+        ];
     }
     let event_id = canonical_task_event_id(&envelope);
     Ok(NormalizedTaskEvent {
@@ -390,7 +400,14 @@ pub fn normalize_task(raw: &[u8]) -> Result<NormalizedTaskEvent, NormalizeError>
 fn canonical_task_event_id(envelope: &FeishuTaskEvent) -> String {
     let task_id = envelope.event.task_guid.trim();
     if let Some(comment_id) = non_empty(&envelope.event.comment_id) {
-        return format!("task.comment:{comment_id}");
+        return match envelope.event.obj_type {
+            1 | 2 => format!("task.comment:{comment_id}:created"),
+            4 => format!("task.comment:{comment_id}:deleted"),
+            _ => format!(
+                "task.comment:{comment_id}:updated:{}",
+                envelope.header.create_time
+            ),
+        };
     }
     if envelope
         .event
@@ -770,7 +787,6 @@ pub enum NormalizeError {
     UnsupportedEvent(String),
     Incomplete(String),
     AppMismatch { expected: String, actual: String },
-    SelfReaction,
 }
 
 impl std::fmt::Display for NormalizeError {
@@ -783,7 +799,6 @@ impl std::fmt::Display for NormalizeError {
                 formatter,
                 "Feishu event app_id {actual} does not match configured app {expected}"
             ),
-            Self::SelfReaction => formatter.write_str("the current Feishu App reaction is ignored"),
         }
     }
 }

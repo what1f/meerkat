@@ -522,24 +522,39 @@ async fn bot_reactions_only_wake_the_author_and_humans_still_wake_the_group() ->
 }
 
 #[tokio::test]
-async fn provider_agent_messages_use_the_runtime_display_name_in_other_agents_prompts() -> Result<()>
-{
+async fn canonical_agent_messages_use_display_names_and_platform_echoes_do_not_wake_agents()
+-> Result<()> {
     let rig = SystemRig::start(config()).await?;
     let team = rig.workspace("agent_names").await?;
-    let a = team.agent("a").create().await?;
+    let a = team
+        .agent("a")
+        .harness(Script::reply("@Bruce[b] the draft is ready"))
+        .create()
+        .await?;
     let b = team.agent("b").create().await?;
     let mut profile = a.view().await?;
     profile.name = "Alice Agent".into();
     rig.management().update_agent(profile, None).await?;
-    team.agent_message(&a, &b, "group", "the draft is ready")
+    team.mention(&a, "group", "owner", "prepare the draft")
         .await?;
     rig.settle().await?;
     let inputs = b.harness_inputs()?;
     assert_eq!(inputs.len(), 1);
     assert!(
-        inputs[0].contains("] Alice Agent: the draft is ready"),
+        inputs[0]
+            .lines()
+            .any(|line| line.contains("] Alice Agent:") && line.contains("the draft is ready")),
         "{}",
         inputs[0]
     );
+    team.agent_message(&a, &b, "group", "the draft is ready")
+        .await?;
+    rig.settle().await?;
+    assert_eq!(
+        b.harness_inputs()?.len(),
+        1,
+        "platform echo must not wake the recipient again"
+    );
+    assert_eq!(a.harness_inputs()?.len(), 1, "sender must not wake itself");
     rig.close().await
 }

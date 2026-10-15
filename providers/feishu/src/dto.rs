@@ -566,8 +566,10 @@ pub struct TaskCommentResult {
 pub struct TaskEventBody {
     #[serde(default, deserialize_with = "nullable_vec")]
     pub event_types: Vec<String>,
-    #[serde(default, deserialize_with = "nullable_string")]
+    #[serde(alias = "task_id", default, deserialize_with = "nullable_string")]
     pub task_guid: String,
+    #[serde(default)]
+    pub obj_type: i32,
     #[serde(default, deserialize_with = "nullable_string")]
     pub comment_id: String,
     #[serde(default, deserialize_with = "nullable_string")]

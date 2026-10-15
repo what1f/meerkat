@@ -3801,9 +3801,12 @@ name = "lankide-provider-feishu"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
+ "chrono",
  "flate2",
  "futures-util",
+ "image",
  "lankide-core",
+ "lankide-protocol",
  "lankide-provider",
  "lankide-runtime",
  "lankide-storage",
