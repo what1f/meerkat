@@ -192,8 +192,22 @@ impl RuntimeApplication {
             ));
         };
         let arguments = parse_arguments(&request.arguments_json)?;
-        if let Some(result) = invoke_standard_tool(self, &request, &validated, &arguments).await? {
-            return Ok(result);
+        match invoke_standard_tool(self, &request, &validated, &arguments).await {
+            Ok(Some(result)) => return Ok(result),
+            Ok(None) => {}
+            // Validation messages are written for the Agent; a generic internal
+            // error made Agents retry requests that can never succeed.
+            Err(RuntimeError::Application(message)) => {
+                return Ok(CapabilityInvokeResult {
+                    error: Some(ToolError {
+                        code: "invalid_request".into(),
+                        message,
+                        retryable: false,
+                    }),
+                    ..capability_error(request.invocation_id, "invalid_request", false)
+                });
+            }
+            Err(error) => return Err(error),
         }
         let result = if authorized.kind == lankide_protocol::CapabilityKind::Tool as i32 {
             let name = request.capability_name.as_str();

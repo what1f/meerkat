@@ -2491,6 +2491,29 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
                 .is_some_and(|error| error.code == "message_not_found"),
         "recall unknown internal message result",
     )?;
+    // An Agent asked to post in a conversation outside its task learns why and stops.
+    let outside = agent_client
+        .invoke_capability(CapabilityInvokeRequest {
+            context: Some(context.clone()),
+            capability_name: "message_send".into(),
+            invocation_id: "send-outside".into(),
+            arguments_json: json!({
+                "channel_id": "group_chat",
+                "chat_id": "chat-not-in-task",
+                "content": "hello"
+            })
+            .to_string(),
+        })
+        .await
+        .map_err(err)?
+        .into_inner();
+    ensure(
+        !outside.success
+            && outside.error.is_some_and(|error| {
+                error.code == "invalid_request" && !error.retryable && !error.message.is_empty()
+            }),
+        "send outside task conversations is explained, not retried",
+    )?;
     let unauthorized = agent_client
         .invoke_capability(CapabilityInvokeRequest {
             context: Some(context.clone()),
@@ -2849,7 +2872,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             json!({"message_id":sent_message_id,"content":"edited reply"}),
             "edit_unsupported",
         ),
-        ("invalid-edit-input", json!({}), "tool_unavailable"),
+        ("invalid-edit-input", json!({}), "invalid_request"),
     ] {
         computer_frames
             .send(ComputerFrame {
@@ -2881,13 +2904,6 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         let Some(runtime_frame::Frame::CapabilityResponse(response)) = response.frame else {
             return Err("tool failure was not returned to Computer".into());
         };
-        if expected_code == "tool_unavailable" {
-            ensure(
-                response.error_code != 0,
-                "invalid capability input is rejected",
-            )?;
-            continue;
-        }
         let result: lankide_protocol::CapabilityInvokeResult =
             lankide_protocol::agent::decode(&response.payload).map_err(err)?;
         ensure(
