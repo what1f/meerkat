@@ -40,5 +40,6 @@ async fn execute() -> Result<(), AppError> {
         None => RuntimePaths::local_default()?,
     };
     lankide_daemon_runtime::init_logging(&paths.home, "lankide-runtime-daemon")?;
+    log::info!("started version={}", env!("CARGO_PKG_VERSION"));
     run_daemon(paths, production_factories()?, wait_for_shutdown()).await
 }

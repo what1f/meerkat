@@ -97,6 +97,9 @@ async fn execute() -> Result<(), AppError> {
         None => lankide_computer_daemon::ComputerDaemonPaths::local_default()?,
     };
     lankide_daemon_runtime::init_logging(&paths.home, "lankide-computer-daemon")?;
+    if pairing.is_none() {
+        log::info!("started version={}", env!("CARGO_PKG_VERSION"));
+    }
     let mut config = DaemonConfig::for_home(paths.home)?;
     if let Some((url, code)) = pairing {
         lankide_computer_daemon::pair_with_pin(&config.paths, &url, &code, cert_sha256.as_deref())
