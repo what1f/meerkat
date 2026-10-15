@@ -13,9 +13,9 @@ use lankide_protocol::{
     CreateAgentRequest, CreateWorkspaceRequest, DEFAULT_MAX_MESSAGE_BYTES, DeleteAgentRequest,
     Delivery, DeliveryKind, DeliveryResult, ExecutionEvent, ExecutionEventKind, ExecutionRef,
     HarnessConfig, ListWorkspacesRequest, ManagementSubscription, PROTOCOL_VERSION, ResourceChunk,
-    ResourceDescriptor, ResourceRequest, SendMessageRequest, SessionAction, SessionDirective,
-    TransportConfig, UpdateAgentRequest, UpdateSelfProfileRequest, UpdateWorkspaceRequest,
-    WorkspaceRef, computer_frame, runtime_frame,
+    ResourceDescriptor, ResourceRequest, RuntimePeer, SendMessageRequest, SessionAction,
+    SessionDirective, TransportConfig, UpdateAgentRequest, UpdateSelfProfileRequest,
+    UpdateWorkspaceRequest, WorkspaceRef, computer_frame, runtime_frame,
 };
 use lankide_provider::{
     AgentContext, AgentRuntimeContext, AutoReactionContext, ChannelDefaultAttention,
@@ -4429,7 +4429,52 @@ async fn prompt_failure_recovery_scenario() {
     );
     let pinned = runtime.storage().has_active_execution(&w).unwrap();
     let recovery = runtime.recoverable_executions(Some(&w)).unwrap();
+    let stored = runtime.storage().execution(1).unwrap();
+    assert_eq!(
+        stored.error_code.as_deref(),
+        Some("input_preparation_failed")
+    );
+    assert_eq!(
+        stored.error_message.as_deref(),
+        Some("runtime_provider_call: external (prompt_failure)")
+    );
+    assert!(matches!(
+        runtime
+            .execute_ready(&w, &a, &NeverAssignedComputer, 60_002)
+            .await
+            .unwrap(),
+        ExecutionProgress::Idle
+    ));
     runtime.shutdown().await.unwrap();
+    drop(runtime);
+    let factories = ProviderFactoryRegistry::default();
+    factories
+        .register(Arc::new(ApplicationFactory {
+            provider_id: ProviderId::new("fixture").unwrap(),
+            state: Arc::new(FakeState::default()),
+        }))
+        .unwrap();
+    let application = RuntimeApplication::open(
+        RuntimeConfig {
+            database: DatabaseConfig::new(temp.path().join("runtime.db")),
+            retry: Default::default(),
+        },
+        factories,
+    )
+    .await
+    .unwrap();
+    let details = RuntimePeerAdapter::new(application.clone())
+        .get_execution_details(lankide_protocol::GetExecutionDetailsRequest {
+            request_id: "preparation-reason".into(),
+            execution_id: 1,
+        })
+        .await
+        .unwrap();
+    assert_eq!(details.state, "failed");
+    assert!(details.attempts.is_empty());
+    assert_eq!(details.error_code, stored.error_code);
+    assert_eq!(details.error_message, stored.error_message);
+    application.shutdown().await.unwrap();
     assert!(
         !pinned,
         "prompt failure left active execution and claimed inbox: {recovery:?}"

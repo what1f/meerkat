@@ -31,6 +31,59 @@ impl SelectItem for ComputerChoice {
 }
 
 impl LankideApp {
+    pub(super) fn refresh_settings_computers(&mut self, cx: &mut Context<Self>) {
+        let client = self.client.clone();
+        self.settings_computers_task = Some(cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_secs(2)).await;
+                if !this
+                    .update(cx, |this, _| this.page == Page::Settings)
+                    .unwrap_or(false)
+                {
+                    return;
+                }
+                let result = client.get_computer_catalog(None).await;
+                let visible = this
+                    .update(cx, |this, cx| {
+                        if this.page != Page::Settings {
+                            return false;
+                        }
+                        if let Ok(computers) = result {
+                            this.computers = computers
+                                .into_iter()
+                                .filter(|c| c.registered && c.revoked_at.is_none())
+                                .collect();
+                            cx.notify();
+                        }
+                        true
+                    })
+                    .unwrap_or(false);
+                if !visible {
+                    return;
+                }
+            }
+        }));
+    }
+
+    fn start_pairing_hint(&mut self, cx: &mut Context<Self>) {
+        self.pairing_waiting_hint = false;
+        let request = self.pairing_request;
+        self.pairing_hint_task = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_secs(30))
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.pairing_active(request)
+                    && !this.pairing_editing
+                    && this.pairing_connected.is_none()
+                {
+                    this.pairing_waiting_hint = true;
+                    this.notify_dialog_changed(cx);
+                }
+            });
+        }));
+    }
+
     pub(super) fn read_local_computer(&mut self, home: &Path) {
         self.local_computer_id = local_computer_id(home);
     }
@@ -125,6 +178,8 @@ impl LankideApp {
     fn open_pair_computer(&mut self, cx: &mut Context<Self>) {
         self.modal = Some(Modal::PairComputer);
         self.pairing_code = None;
+        self.pairing_waiting_hint = false;
+        self.pairing_hint_task = None;
         self.pairing_connected = None;
         self.pairing_copied = false;
         self.pairing_loading = true;
@@ -163,6 +218,9 @@ impl LankideApp {
                             this.pairing_pin = access.cert_sha256;
                             this.pairing_editing = this.pairing_address.is_none();
                             this.pairing_code = code;
+                            if this.pairing_code.is_some() {
+                                this.start_pairing_hint(cx);
+                            }
                         }
                         Err(error) => this.error = Some(UiMessage::client(error)),
                     }
@@ -288,6 +346,7 @@ impl LankideApp {
                         this.pairing_code = Some(code);
                         this.pairing_editing = false;
                         this.pairing_copied = false;
+                        this.start_pairing_hint(cx);
                     }
                     Err(_) => {
                         this.error = Some(UiMessage::localized(
@@ -394,6 +453,7 @@ impl LankideApp {
         let loading = self.pairing_loading;
         let copied = self.pairing_copied;
         let connected = self.pairing_connected.clone();
+        let waiting_hint = self.pairing_waiting_hint;
         let address_input = self.pairing_address_input.clone();
         let theme = self.theme();
         let error = self.error.as_ref().map(|e| e.text(language));
@@ -467,6 +527,16 @@ impl LankideApp {
                                         ),
                                 )
                             })
+                            .when(waiting_hint && !editing && connected.is_none() && command.is_some(), |body| {
+                                body.child(div()
+                                    .debug_selector(|| "pairing-waiting-hint".into())
+                                    .text_size(px(12.))
+                                    .text_color(theme.text_secondary)
+                                    .child(language.text(
+                                        "没有连上？确认对方能访问这个地址，并在本机防火墙中允许 Lankide 接收连接。",
+                                        "Not connecting? Make sure the other computer can reach this address and that this Mac's firewall allows Lankide to accept connections.",
+                                    )))
+                            })
                             .when_some(connected.clone(), |body, name| {
                                 body.child(
                                     div()
@@ -507,6 +577,8 @@ impl LankideApp {
                                                             },
                                                         );
                                                         this.pairing_editing = true;
+                                                        this.pairing_waiting_hint = false;
+                                                        this.pairing_hint_task = None;
                                                         this.error = None;
                                                         this.notify_dialog_changed(cx);
                                                     })

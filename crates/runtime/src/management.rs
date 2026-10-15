@@ -60,6 +60,8 @@ impl RuntimeApplication {
             })
             .collect::<Result<Vec<_>, RuntimeError>>()?;
         Ok(lankide_protocol::ExecutionDetails {
+            error_code: execution.error_code,
+            error_message: execution.error_message,
             execution_id: execution.execution_id,
             state: execution.state.as_str().into(),
             attempts,

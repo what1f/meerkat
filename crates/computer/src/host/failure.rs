@@ -43,7 +43,7 @@ pub(super) fn log_failure(
         "attempt": execution.attempt, "agent_id": agent_id,
         "computer_id": inner.config.computer_id, "failure": failure,
     });
-    eprintln!("{record}");
+    log::error!("{record}");
     let result = (|| -> std::io::Result<()> {
         let mut bytes = serde_json::to_vec(&record)?;
         bytes.push(b'\n');
@@ -54,6 +54,6 @@ pub(super) fn log_failure(
             .write_all(&bytes)
     })();
     if let Err(error) = result {
-        eprintln!("Computer failure log could not be saved: {error}");
+        log::error!("Computer failure log could not be saved: {error}");
     }
 }

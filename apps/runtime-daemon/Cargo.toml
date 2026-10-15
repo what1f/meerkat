@@ -8,6 +8,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+log.workspace = true
 socket2 = "0.6"
 rustls.workspace = true
 tokio-rustls.workspace = true
@@ -48,3 +49,11 @@ status = "implemented"
 [[example]]
 name = "runtime-daemon-e2e"
 path = "tests/support/runner.rs"
+
+[package.metadata.lankide.e2e-additional.daemon-logs]
+command = "cargo test -p lankide-runtime-daemon --test daemon_logs_e2e"
+scenario = "Run the shipped Runtime daemon with invalid configuration and discarded stdout/stderr; retain a timestamped failure in the private home log, rotate a full 4 MiB log once, and enforce mode 0600 on both files."
+prerequisites = "Unix filesystem semantics; private daemon home"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"

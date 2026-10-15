@@ -1,7 +1,7 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, Div, ElementId, Entity, InteractiveElement as _, IntoElement, ParentElement,
-    RenderOnce, SharedString, Stateful, Styled, Text, Window, div, px, relative, rgb, rgba,
+    RenderOnce, SharedString, Stateful, Styled, Text, Window, div, px, relative, rgba,
 };
 use gpui_component::{
     Sizable as _,
@@ -264,7 +264,7 @@ impl RenderOnce for DesktopFormField {
                     .w_full()
                     .rounded(px(RADIUS_CONTROL + 1.))
                     .when(has_error, |field| {
-                        field.border_1().border_color(rgb(0xdc2626))
+                        field.border_1().border_color(theme.error)
                     })
                     .child(self.child),
             )
@@ -272,7 +272,7 @@ impl RenderOnce for DesktopFormField {
                 field.child(
                     div()
                         .text_size(px(12.))
-                        .text_color(rgb(0xdc2626))
+                        .text_color(theme.error)
                         .child(error),
                 )
             })
@@ -328,18 +328,14 @@ impl RenderOnce for DesktopBanner {
             .p(px(12.))
             .rounded(px(12.))
             .border_1()
-            .border_color(if error {
-                gpui::rgb(0xdc2626).into()
-            } else {
-                theme.border
-            })
+            .border_color(if error { theme.error } else { theme.border })
             .bg(if error {
                 gpui::rgba(0xff00000a).into()
             } else {
                 theme.raised
             })
             .text_color(if error {
-                gpui::rgb(0xb91c1c).into()
+                theme.error
             } else {
                 theme.text_secondary
             })

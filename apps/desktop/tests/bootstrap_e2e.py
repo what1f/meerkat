@@ -57,7 +57,6 @@ def reuse_running_services(binaries, artifact_dir):
                         assert payload["runtime_ready"] and payload["computer_connected"] and payload["management"], payload
                         assert not group_members(process.pid), "Desktop left a helper alive"
                         assert all(owner.poll() is None for owner in owners), "Desktop stopped an external owner"
-                        assert not (home / "logs").exists(), "Desktop spawned a competing helper"
                         for name, contents in locks.items():
                             assert (home / f"run/{name}.lock").read_bytes() == contents, "Desktop replaced a service owner"
                     finally:
@@ -144,8 +143,9 @@ def run(binary_dir, artifact_dir):
                         assert code != 0 and payload["status"] == "failed", payload
                         assert not payload["computer_connected"], payload
                         assert payload["runtime_ready"] == (failed_helper == "lankide-computer-daemon"), payload
-                        helper_log = home / "logs" / f"{failed_helper}.log"
-                        helper_output = helper_log.read_text()
+                        # A helper that fails before logger setup still reports
+                        # its failure through the inherited foreground stream.
+                        helper_output = (artifact_dir / f"{scenario}.log").read_text()
                         assert "injected helper startup failure" in helper_output
                     leftovers = [str(path.relative_to(home)) for path in (home / "run").glob("*") if path.is_socket() or path.suffix == ".lock"]
                     assert not leftovers, f"{scenario}: leftover service endpoints: {leftovers}"

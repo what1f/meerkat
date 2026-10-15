@@ -245,7 +245,7 @@ pub(super) async fn run_events(
 }
 
 fn stop_after_persistence_failure(inner: &Inner, error: &std::io::Error) {
-    eprintln!("Computer stopped because its execution state could not be saved: {error}");
+    log::error!("Computer stopped because its execution state could not be saved: {error}");
     inner.persistence_failed.store(true, Ordering::Release);
     let _ = inner.stop_tx.send(Some("state_persistence_failed".into()));
 }

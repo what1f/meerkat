@@ -84,7 +84,7 @@ impl<'a> WorkspaceLifecycle<'a> {
             .await
         {
             if let Err(rollback_error) = runtime.storage().rollback_new_workspace(&id) {
-                eprintln!("[runtime] workspace={id} setup rollback failed: {rollback_error}");
+                log::error!("[runtime] workspace={id} setup rollback failed: {rollback_error}");
                 return Err(rollback_error.into());
             }
             return Err(error.into());
@@ -302,7 +302,7 @@ impl<'a> AgentLifecycle<'a> {
                 .storage()
                 .rollback_new_agent(&workspace_id, &agent_id)
             {
-                eprintln!(
+                log::error!(
                     "[runtime] workspace={workspace_id} agent={agent_id} setup rollback failed: {rollback_error}"
                 );
                 return Err(rollback_error.into());
@@ -465,7 +465,7 @@ impl<'a> AgentLifecycle<'a> {
                     .delete_agent_files(&computer_id, &cleanup_workspace_id, &cleanup_agent_id)
                     .await
                 {
-                    eprintln!(
+                    log::error!(
                         "[runtime] workspace={cleanup_workspace_id} agent={cleanup_agent_id} deferred file cleanup failed: {error}"
                     );
                 }

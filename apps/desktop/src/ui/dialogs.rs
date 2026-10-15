@@ -892,7 +892,7 @@ impl LankideApp {
                                 div()
                                     .mt(px(-12.))
                                     .text_size(px(12.))
-                                    .text_color(rgb(0xdc2626))
+                                    .text_color(theme.error)
                                     .child(error),
                             )
                         })

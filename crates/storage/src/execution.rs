@@ -15,6 +15,7 @@ type RecoverableExecutionRow = (
     Option<String>,
     i64,
     String,
+    Option<String>,
 );
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SteerDelivery {
@@ -83,6 +84,7 @@ pub struct ExecutionView {
     pub state: ExecutionState,
     pub final_output: Option<String>,
     pub error_code: Option<String>,
+    pub error_message: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -347,7 +349,7 @@ pub(super) fn load_recoverable_executions(
     c: &Connection,
     workspace_id: Option<&WorkspaceId>,
 ) -> Result<Vec<RecoverableExecutionView>> {
-    let mut sql="SELECT e.execution_id,e.snapshot_id,e.state,e.final_output,e.error_code,d.delivery_id,d.state FROM executions e JOIN execution_deliveries d USING(execution_id) WHERE e.state IN('queued','assigning','running','recovering')".to_owned();
+    let mut sql="SELECT e.execution_id,e.snapshot_id,e.state,e.final_output,e.error_code,d.delivery_id,d.state,e.error_message FROM executions e JOIN execution_deliveries d USING(execution_id) WHERE e.state IN('queued','assigning','running','recovering')".to_owned();
     if workspace_id.is_some() {
         sql.push_str(" AND e.workspace_id=?1");
     }
@@ -362,6 +364,7 @@ pub(super) fn load_recoverable_executions(
             r.get(4)?,
             r.get(5)?,
             r.get(6)?,
+            r.get(7)?,
         ))
     };
     let rows = if let Some(w) = workspace_id {
@@ -373,8 +376,16 @@ pub(super) fn load_recoverable_executions(
     };
     drop(s);
     let mut out = Vec::new();
-    for (execution_id, snapshot_id, state, final_output, error_code, delivery_id, delivery_state) in
-        rows
+    for (
+        execution_id,
+        snapshot_id,
+        state,
+        final_output,
+        error_code,
+        delivery_id,
+        delivery_state,
+        error_message,
+    ) in rows
     {
         out.push(RecoverableExecutionView {
             execution: ExecutionView {
@@ -383,6 +394,7 @@ pub(super) fn load_recoverable_executions(
                 state: ExecutionState::parse(&state)?,
                 final_output,
                 error_code,
+                error_message,
             },
             snapshot: load_snapshot(c, snapshot_id)?,
             delivery_id,
@@ -779,6 +791,7 @@ impl Storage {
         &self,
         id: i64,
         error: &str,
+        detail: &str,
         retry_at: i64,
         now: i64,
     ) -> Result<bool> {
@@ -792,6 +805,10 @@ impl Storage {
             params![id, retry_at],
         )?;
         abandon_execution(&transaction, id, ExecutionState::Failed, Some(error), now)?;
+        transaction.execute(
+            "UPDATE executions SET error_message=?2 WHERE execution_id=?1",
+            params![id, detail],
+        )?;
         transaction.commit()?;
         Ok(true)
     }
@@ -815,13 +832,14 @@ impl Storage {
         Ok(true)
     }
     pub fn execution(&self, id: i64) -> Result<ExecutionView> {
-        let(s,st,o,e):(i64,String,Option<String>,Option<String>)=self.conn()?.query_row("SELECT snapshot_id,state,final_output,error_code FROM executions WHERE execution_id=?1",[id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)))?;
+        let(s,st,o,e,detail):(i64,String,Option<String>,Option<String>,Option<String>)=self.conn()?.query_row("SELECT snapshot_id,state,final_output,error_code,error_message FROM executions WHERE execution_id=?1",[id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)))?;
         Ok(ExecutionView {
             execution_id: id,
             snapshot_id: s,
             state: ExecutionState::parse(&st)?,
             final_output: o,
             error_code: e,
+            error_message: detail,
         })
     }
     pub fn has_active_execution(&self, workspace_id: &WorkspaceId) -> Result<bool> {
@@ -851,7 +869,7 @@ impl Storage {
         workspace_id: Option<&WorkspaceId>,
     ) -> Result<Vec<RecoverableExecutionView>> {
         let c = self.conn()?;
-        let mut sql="SELECT e.execution_id,e.snapshot_id,e.state,e.final_output,e.error_code,d.delivery_id,d.state FROM executions e JOIN execution_deliveries d USING(execution_id) WHERE e.state IN('queued','assigning','running','recovering')".to_owned();
+        let mut sql="SELECT e.execution_id,e.snapshot_id,e.state,e.final_output,e.error_code,d.delivery_id,d.state,e.error_message FROM executions e JOIN execution_deliveries d USING(execution_id) WHERE e.state IN('queued','assigning','running','recovering')".to_owned();
         if workspace_id.is_some() {
             sql.push_str(" AND e.workspace_id=?1");
         }
@@ -866,6 +884,7 @@ impl Storage {
                 r.get(4)?,
                 r.get(5)?,
                 r.get(6)?,
+                r.get(7)?,
             ))
         };
         let rows = if let Some(workspace_id) = workspace_id {
@@ -886,6 +905,7 @@ impl Storage {
             error_code,
             delivery_id,
             delivery_state,
+            error_message,
         ) in rows
         {
             views.push(RecoverableExecutionView {
@@ -895,6 +915,7 @@ impl Storage {
                     state: ExecutionState::parse(&state_name)?,
                     final_output,
                     error_code,
+                    error_message,
                 },
                 snapshot: load_snapshot(&c, snapshot_id)?,
                 delivery_id,

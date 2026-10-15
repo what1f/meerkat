@@ -62,7 +62,7 @@ impl Runtime {
                 .as_ref()
                 .filter(|id| agents.contains_key(*id))
             else {
-                eprintln!(
+                log::error!(
                     "[runtime] warning: workspace={workspace_id} direct message dropped: missing or unknown receiving Agent"
                 );
                 return Ok(CoordinatedEvent::Dropped);
@@ -177,7 +177,7 @@ impl Runtime {
                         while tasks.try_join_next().is_some() {}
                         tasks.spawn(async move {
                             if let Err(error) = host.auto_reaction(agent_id.clone(), spec).await {
-                                eprintln!(
+                                log::error!(
                                     "[runtime] workspace={workspace_id} agent={agent_id} auto reaction failed: {error}"
                                 );
                             }

@@ -42,6 +42,7 @@ pub(super) async fn run_loop(
                 inner.connected.store(false, Ordering::Release);
                 super::proxy::disconnected(&inner).await;
                 if let Err(error) = &result {
+                    log::error!("computer={} link failed: {error}", inner.config.computer_id);
                     if matches!(error, ComputerError::InvalidAssignment(_) | ComputerError::ProtocolVersionUnsupported | ComputerError::Link(LinkError::Closed(CloseReason::ComputerRevoked | CloseReason::ComputerUnknown))) {
                         ComputerHandle::cancel_inner(&inner, "computer_link_rejected").await;
                         return result.map(|_| ());
@@ -143,7 +144,10 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, ComputerError> {
     loop {
         tokio::select! {
             _ = &mut replay, if !replay_done => replay_done = true,
-            _ = &mut deadline => return Ok(started.elapsed()),
+            _ = &mut deadline => {
+                log::warn!("computer={} link heartbeat timed out", inner.config.computer_id);
+                return Ok(started.elapsed());
+            },
             _ = heartbeat.tick() => {
                 let frame = ComputerFrame {
                     protocol_version: lankide_protocol::PROTOCOL_VERSION,
@@ -174,7 +178,10 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, ComputerError> {
                     }
                 }
                 Some(Err(error @ LinkError::Closed(CloseReason::ComputerRevoked | CloseReason::ComputerUnknown))) => return Err(error.into()),
-                Some(Err(_)) => return Ok(started.elapsed()),
+                Some(Err(error)) => {
+                    log::warn!("computer={} link closed: {error}", inner.config.computer_id);
+                    return Ok(started.elapsed());
+                },
                 None => return Ok(started.elapsed()),
             }
         }

@@ -6,7 +6,11 @@ use lankide_runtime_daemon::{
 #[tokio::main]
 async fn main() {
     if let Err(error) = execute().await {
-        eprintln!("runtime-daemon could not start: {error}");
+        if log::log_enabled!(log::Level::Error) {
+            log::error!("runtime-daemon could not start: {error}");
+        } else {
+            eprintln!("runtime-daemon could not start: {error}");
+        }
         std::process::exit(1);
     }
 }
@@ -35,5 +39,6 @@ async fn execute() -> Result<(), AppError> {
         Some(home) => RuntimePaths::for_home(home)?,
         None => RuntimePaths::local_default()?,
     };
+    lankide_daemon_runtime::init_logging(&paths.home, "lankide-runtime-daemon")?;
     run_daemon(paths, production_factories()?, wait_for_shutdown()).await
 }

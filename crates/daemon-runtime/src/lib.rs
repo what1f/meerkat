@@ -192,3 +192,6 @@ impl Drop for InstanceGuard {
         }
     }
 }
+
+mod logging;
+pub use logging::init_logging;

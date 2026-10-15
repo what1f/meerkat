@@ -701,43 +701,12 @@ fn helper_executable(name: &str) -> Result<PathBuf, ClientError> {
 }
 
 fn spawn_helper(executable: &Path, home: &Path) -> Result<Child, ClientError> {
-    let logs = home.join("logs");
-    fs::create_dir_all(&logs).map_err(|error| ClientError::Unavailable(error.to_string()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&logs, fs::Permissions::from_mode(0o700))
-            .map_err(|error| ClientError::Unavailable(error.to_string()))?;
-    }
-    let name = executable
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("service");
-    let path = logs.join(format!("{name}.log"));
-    if fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
-        return Err(ClientError::Unavailable(
-            "服务日志路径不能是符号链接。".into(),
-        ));
-    }
-    let mut options = fs::OpenOptions::new();
-    options.create(true).append(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let log = options
-        .open(path)
-        .map_err(|error| ClientError::Unavailable(error.to_string()))?;
-    let stderr = log
-        .try_clone()
-        .map_err(|error| ClientError::Unavailable(error.to_string()))?;
     Command::new(executable)
         .arg("--home")
         .arg(home)
         .stdin(Stdio::null())
-        .stdout(log)
-        .stderr(stderr)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
         .spawn()
         .map_err(|error| ClientError::Unavailable(error.to_string()))
 }

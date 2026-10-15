@@ -102,9 +102,52 @@ impl Runtime {
         {
             Ok(input) => input,
             Err(error) => {
+                // Provider errors contain typed codes and static operation names,
+                // never raw HTTP responses, configuration, or credentials.
+                let detail = match &error {
+                    RuntimeError::ProviderCall(source) | RuntimeError::Provider { source, .. } => {
+                        match source {
+                            ProviderError::External { operation, .. }
+                            | ProviderError::Timeout { operation }
+                            | ProviderError::Unsupported { operation } => {
+                                format!("{error} ({operation})")
+                            }
+                            ProviderError::InvalidInput { field } => format!("{error} ({field})"),
+                            ProviderError::InvalidSchema { location }
+                            | ProviderError::SchemaMismatch { location } => {
+                                format!("{error} ({location})")
+                            }
+                            _ => format!("runtime_provider_call: {}", source.code()),
+                        }
+                    }
+                    // Dynamic messages may include Provider-supplied values.
+                    RuntimeError::InvalidCore(_) => "runtime_invalid_core".into(),
+                    RuntimeError::InvalidProviderSchema(_) => {
+                        "runtime_invalid_provider_schema".into()
+                    }
+                    RuntimeError::Application(_) | RuntimeError::ActionRequired(_) => {
+                        "runtime_application".into()
+                    }
+                    RuntimeError::Storage(source) => match source {
+                        StorageError::Sqlite(error) => {
+                            format!("runtime_storage: sqlite {:?}", error.sqlite_error_code())
+                        }
+                        StorageError::Json(_) => "runtime_storage: invalid JSON".into(),
+                        StorageError::Invalid(_)
+                        | StorageError::Conflict(_)
+                        | StorageError::Busy(_) => "runtime_storage: unavailable data".into(),
+                        _ => source.to_string(),
+                    },
+                    _ => error.to_string(),
+                };
+                log::error!(
+                    "workspace={workspace_id} agent={agent_id} execution={} input_preparation_failed: {detail}",
+                    created.execution_id
+                );
                 self.storage.fail_execution_retry_after(
                     created.execution_id,
                     "input_preparation_failed",
+                    &detail,
                     now.saturating_add(60_000),
                     now,
                 )?;
@@ -189,6 +232,11 @@ impl Runtime {
         let completion = match computer.execute(assignment).await {
             Ok(completion) => completion,
             Err(error) => {
+                log::error!(
+                    "execution={} computer failed: {}",
+                    created.execution_id,
+                    error.code
+                );
                 if error.code == "computer_disconnected" {
                     self.storage
                         .mark_execution_recovering(created.execution_id, now)?;
@@ -221,6 +269,7 @@ impl Runtime {
         }
         match completion.outcome {
             ComputerOutcome::Failed { code } => {
+                log::error!("execution={} failed: {code}", created.execution_id);
                 self.storage
                     .fail_execution(created.execution_id, &code, now_millis())?;
                 self.apply_pending_failure_policies(workspace_id, agent_id)
@@ -346,7 +395,11 @@ impl Runtime {
                             request_key,
                         })
                     }
-                    Err(_) => {
+                    Err(error) => {
+                        log::error!(
+                            "execution={} provider send failed: {error}",
+                            created.execution_id
+                        );
                         self.storage.finish_send(
                             &request_key,
                             SendOutcome::Failed {
@@ -536,9 +589,11 @@ impl Drop for ToolInvocationGuard<'_> {
             self.storage
                 .fail_tool_invocation(&request, "invocation_cancelled", now_millis())
         {
-            eprintln!(
+            log::error!(
                 "[runtime] execution={} attempt={} tool_call={} finalization failed: {error}",
-                request.execution_id, request.attempt, request.tool_call_id
+                request.execution_id,
+                request.attempt,
+                request.tool_call_id
             );
         }
     }

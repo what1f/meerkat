@@ -911,7 +911,7 @@ impl ComputerBroker {
                 .delete_agent_files(computer_id, &workspace_id, &agent_id)
                 .await
             {
-                eprintln!(
+                log::error!(
                     "[runtime] workspace={workspace_id} agent={agent_id} deferred file cleanup failed: {error}"
                 );
             }

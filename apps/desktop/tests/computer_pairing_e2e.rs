@@ -174,7 +174,7 @@ fn local_online_offline_selection_and_pairing_dialog() {
         cx.update(|cx| cx.background_executor().allow_parking());
         cx.update(|cx| {
             gpui_component::init(cx);
-            apply_component_theme(DesktopTheme::light(), cx);
+            apply_component_theme(DesktopTheme::dark(), cx);
         });
         let mounted = Arc::new(std::sync::Mutex::new(None));
         let capture = mounted.clone();
@@ -184,7 +184,7 @@ fn local_online_offline_selection_and_pairing_dialog() {
         tx.send(Ok(())).unwrap();
         let (root, cx) = cx.add_window_view(move |window, cx| {
             let view = cx.new(|cx| {
-                LankideApp::new_with_startup(view_client, rx, local_home, false, window, cx)
+                LankideApp::new_with_startup(view_client, rx, local_home, true, window, cx)
             });
             let frame = cx.new(|cx| LankideFrame::new(view, window, cx));
             *capture.lock().unwrap() = Some(frame.clone());
@@ -204,6 +204,48 @@ fn local_online_offline_selection_and_pairing_dialog() {
         assert!(cx.debug_bounds(online_selector).is_some());
         assert!(cx.debug_bounds(offline_selector).is_some());
         assert!(cx.debug_bounds(revoked_selector).is_none());
+        // Status and registration changes reach the visible Settings card.
+        let executable = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("lankide-computer-daemon");
+        let mut reconnected = OwnedComputer(
+            std::process::Command::new(executable)
+                .arg("--home")
+                .arg(remote_home.path())
+                .env("HOME", remote_home.path())
+                .env("SHELL", "/bin/sh")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        let remote_online: &'static str =
+            Box::leak(format!("computer-online-{}", remote.computer_id).into_boxed_str());
+        wait(cx, |cx| cx.debug_bounds(remote_online).is_some());
+        reconnected.0.kill().unwrap();
+        reconnected.0.wait().unwrap();
+        wait(cx, |cx| cx.debug_bounds(offline_selector).is_some());
+        let added_home = tempfile::tempdir_in("/tmp").unwrap();
+        let code = runtime.block_on(client.create_pairing_code()).unwrap();
+        let added = runtime
+            .block_on(pair(
+                &ComputerDaemonPaths::for_home(added_home.path()).unwrap(),
+                &url,
+                &code.code,
+            ))
+            .unwrap();
+        let added_selector: &'static str =
+            Box::leak(format!("computer-{}", added.computer_id).into_boxed_str());
+        wait(cx, |cx| cx.debug_bounds(added_selector).is_some());
+        runtime
+            .block_on(client.revoke_computer(&added.computer_id))
+            .unwrap();
+        wait(cx, |cx| cx.debug_bounds(added_selector).is_none());
+
         click(cx, "pair-computer");
         wait(cx, |cx| cx.debug_bounds("pairing-address-input").is_some());
         let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -213,6 +255,9 @@ fn local_online_offline_selection_and_pairing_dialog() {
         click(cx, "enable-computer-access");
         wait(cx, |cx| cx.debug_bounds("pairing-command").is_some());
         assert!(cx.debug_bounds("pairing-code").is_none());
+        assert!(cx.debug_bounds("pairing-waiting-hint").is_none());
+        cx.executor().advance_clock(Duration::from_secs(30));
+        wait(cx, |cx| cx.debug_bounds("pairing-waiting-hint").is_some());
         click(cx, "copy-pairing-command");
         let copied = cx.update(|_, cx| cx.read_from_clipboard().unwrap().text().unwrap());
         std::thread::sleep(Duration::from_millis(2100));

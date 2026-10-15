@@ -8,6 +8,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+log.workspace = true
 async-trait.workspace = true
 lankide-protocol = { path = "../../crates/protocol" }
 reqwest.workspace = true
@@ -51,7 +52,7 @@ sha2 = { workspace = true }
 
 [package.metadata.lankide.e2e-additional.computer-daemon-pairing]
 command = "cargo test -p lankide-computer-daemon --test pairing_cli_e2e"
-scenario = "Run the shipped foreground pair command against a private TLS listener: pair a second Computer using a 256-bit code and certificate pin; reject wrong pins, untrusted certificates, remote plaintext, used codes, and expired codes; reconnect after Runtime and Computer process restarts with the persisted pin; change and clear the address live while local discovery stays online; keep management and resources off the remote listener; verify owner-only identity and credential files and real machine names."
+scenario = "Run the shipped foreground pair command against a private TLS listener: pair a second Computer using a 256-bit code and certificate pin; reject wrong pins, untrusted certificates, remote plaintext, used codes, and expired codes; reconnect after Runtime and Computer process restarts with the persisted pin; change and clear the address live while local discovery stays online; keep management and resources off the remote listener; verify owner-only identity and credential files and real machine names. Preserve timestamped pairing failure diagnostics in an owner-only home log while retaining foreground stderr."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

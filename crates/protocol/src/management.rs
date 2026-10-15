@@ -179,6 +179,8 @@ pub struct ExecutionAttemptDetails {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExecutionDetails {
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
     pub execution_id: i64,
     pub state: String,
     pub attempts: Vec<ExecutionAttemptDetails>,

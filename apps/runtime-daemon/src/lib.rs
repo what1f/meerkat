@@ -258,7 +258,7 @@ where
         let application = application.clone();
         tokio::spawn(async move {
             if let Err(error) = application.start().await {
-                eprintln!("runtime background Provider startup failed: {error}");
+                log::error!("runtime background Provider startup failed: {error}");
             }
         })
     };

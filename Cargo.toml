@@ -36,6 +36,7 @@ rust-version = "1.96"
 publish = false
 
 [workspace.dependencies]
+log = { version = "0.4", features = ["std"] }
 async-trait = "0.1"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }

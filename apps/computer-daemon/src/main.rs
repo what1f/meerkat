@@ -12,10 +12,15 @@ use std::{
 #[tokio::main]
 async fn main() {
     if let Err(error) = execute().await {
-        match &error {
-            AppError::Io(error) => eprintln!("{error}"),
-            AppError::InvalidArgument(message) => eprintln!("{message}"),
-            _ => eprintln!("Could not start this computer: {error}"),
+        let message = match &error {
+            AppError::Io(error) => error.to_string(),
+            AppError::InvalidArgument(message) => message.to_string(),
+            _ => format!("Could not start this computer: {error}"),
+        };
+        if log::log_enabled!(log::Level::Error) {
+            log::error!("{message}");
+        } else {
+            eprintln!("{message}");
         }
         std::process::exit(1);
     }
@@ -87,10 +92,12 @@ async fn execute() -> Result<(), AppError> {
             return Err(AppError::InvalidArgument("unknown option"));
         }
     }
-    let mut config = match home {
-        Some(home) => DaemonConfig::for_home(home)?,
-        None => DaemonConfig::local_default()?,
+    let paths = match home {
+        Some(home) => lankide_computer_daemon::ComputerDaemonPaths::for_home(home)?,
+        None => lankide_computer_daemon::ComputerDaemonPaths::local_default()?,
     };
+    lankide_daemon_runtime::init_logging(&paths.home, "lankide-computer-daemon")?;
+    let mut config = DaemonConfig::for_home(paths.home)?;
     if let Some((url, code)) = pairing {
         lankide_computer_daemon::pair_with_pin(&config.paths, &url, &code, cert_sha256.as_deref())
             .await?;

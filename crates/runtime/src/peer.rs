@@ -46,7 +46,7 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
         hello: ComputerHello,
         reason: lankide_protocol::link::CloseReason,
     ) {
-        eprintln!("computer={} link_rejected={reason}", hello.computer_id);
+        log::error!("computer={} link_rejected={reason}", hello.computer_id);
         let _ = self
             .application
             .computer_broker()
@@ -164,11 +164,15 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                                 // Reject this stale attempt without dropping the authenticated
                                 // Computer link before its outbox-discard response can arrive.
                                 if !matches!(error, RuntimeError::InvalidExecutionToken) {
+                                    log::warn!("computer={computer_id} link frame failed: {error}");
                                     break;
                                 }
                             }
                         }
-                        Err(_) => break,
+                        Err(error) => {
+                            log::warn!("computer={computer_id} link failed: {error}");
+                            break;
+                        }
                     }
                 }
                 let _ = application.computer_broker().disconnect_connection(
@@ -189,7 +193,7 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                 .retry_agent_file_deletions(&cleanup_computer_id)
                 .await
             {
-                eprintln!(
+                log::error!(
                     "[runtime] computer={cleanup_computer_id} deferred Agent file cleanup could not start: {error}"
                 );
             }

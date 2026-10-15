@@ -169,7 +169,7 @@ impl RuntimeApplication {
                         self.start_workspace_loop(workspace.id)?;
                     }
                     Err(error) => {
-                        eprintln!(
+                        log::error!(
                             "[runtime] workspace={} Provider startup failed: {error}",
                             workspace.id
                         );
@@ -483,18 +483,18 @@ impl RuntimeApplication {
                                     for delivery in steer_deliveries {
                                         // Failed sends remain pending for this same Computer instance.
                                         if let Err(error) = self.inner.broker.deliver_steer(delivery).await {
-                                            eprintln!("[runtime] workspace={workspace_id} steer delivery failed: {error}");
+                                            log::error!("[runtime] workspace={workspace_id} steer delivery failed: {error}");
                                         }
                                     }
                                 }
                                 Ok(_) => {},
-                                Err(error) => eprintln!("[runtime] workspace={workspace_id} event acceptance failed: {error}"),
+                                Err(error) => log::error!("[runtime] workspace={workspace_id} event acceptance failed: {error}"),
                             }
                         }
                         Ok(None) => tokio::time::sleep(std::time::Duration::from_millis(100)).await,
                         Err(RuntimeError::WorkspacePaused(_)) => break,
                         Err(error) => {
-                            eprintln!("[runtime] workspace={workspace_id} event receive failed: {error}");
+                            log::error!("[runtime] workspace={workspace_id} event receive failed: {error}");
                             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
                         },
                     }
@@ -502,12 +502,12 @@ impl RuntimeApplication {
                 _ = interval.tick() => {}
             }
             if let Err(error) = self.inner.broker.expire_leases(now_millis()) {
-                eprintln!("[runtime] workspace={workspace_id} lease expiry failed: {error}");
+                log::error!("[runtime] workspace={workspace_id} lease expiry failed: {error}");
             }
             let agents = match runtime.storage().list_agent_records(&workspace_id) {
                 Ok(agents) => agents,
                 Err(error) => {
-                    eprintln!("[runtime] workspace={workspace_id} agent listing failed: {error}");
+                    log::error!("[runtime] workspace={workspace_id} agent listing failed: {error}");
                     continue;
                 }
             };
@@ -564,7 +564,7 @@ impl RuntimeApplication {
                             .flatten()
                             != previous_pause;
                     if let Err(error) = result {
-                        eprintln!(
+                        log::error!(
                             "[runtime] workspace={execution_workspace} agent={execution_agent} execution failed: {error}"
                         );
                     }
@@ -580,7 +580,7 @@ impl RuntimeApplication {
                         .finish_paused_workspace(&execution_workspace)
                         .await
                     {
-                        eprintln!(
+                        log::error!(
                             "[runtime] workspace={execution_workspace} pause completion failed: {error}"
                         );
                     }
@@ -1017,18 +1017,24 @@ fn person_identity(record: PersonRecord) -> ProviderPersonIdentity {
 }
 impl ProviderLogger for WorkspaceServices {
     fn log(&self, level: lankide_provider::LogLevel, message: &str) {
-        eprintln!(
-            "provider workspace={} level={level:?}: {message}",
-            self.workspace_id
-        );
+        let level = match level {
+            lankide_provider::LogLevel::Debug => log::Level::Debug,
+            lankide_provider::LogLevel::Info => log::Level::Info,
+            lankide_provider::LogLevel::Warn => log::Level::Warn,
+            lankide_provider::LogLevel::Error => log::Level::Error,
+        };
+        log::log!(level, "provider workspace={}: {message}", self.workspace_id);
     }
 }
 impl OperationProgress for WorkspaceServices {
     fn report<'a>(&'a self, update: OperationUpdate) -> SdkFuture<'a, ()> {
         Box::pin(async move {
-            eprintln!(
+            log::info!(
                 "provider operation workspace={} stage={} completed={} total={:?}",
-                self.workspace_id, update.stage, update.completed, update.total
+                self.workspace_id,
+                update.stage,
+                update.completed,
+                update.total
             );
             Ok(())
         })

@@ -1100,6 +1100,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
             .fail_execution_retry_after(
                 failed.execution_id,
                 "input_preparation_failed",
+                "Provider prompt unavailable",
                 4_100,
                 4_006,
             )

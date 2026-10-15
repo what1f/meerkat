@@ -89,6 +89,18 @@ async fn rejected(url: &str, code: &str, pin: Option<&str>, expected: &str) -> R
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains(expected), "{stderr}");
     assert!(!home.path().join("computer-credentials.json").exists());
+    let path = home.path().join("logs/lankide-computer-daemon.log");
+    let log = std::fs::read_to_string(&path)?;
+    assert!(log.contains(expected), "{log}");
+    assert!(log.lines().all(|line| {
+        line.split_whitespace()
+            .next()
+            .unwrap()
+            .trim_end_matches('Z')
+            .parse::<f64>()
+            .is_ok()
+    }));
+    assert_eq!(std::fs::metadata(path)?.permissions().mode() & 0o777, 0o600);
     Ok(())
 }
 async fn online(client: &RuntimeManagementClient, id: &str) -> Result<(), Error> {

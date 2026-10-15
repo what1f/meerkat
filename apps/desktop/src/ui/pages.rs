@@ -48,6 +48,7 @@ impl LankideApp {
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.reload_computers(None, window, cx);
                                 this.page = Page::Settings;
+                                this.refresh_settings_computers(cx);
                                 cx.notify();
                             }))
                             .child(
@@ -605,7 +606,7 @@ impl LankideApp {
             .unwrap_or(WorkspaceObservedState::Unknown);
         let status_color = match observed_state {
             WorkspaceObservedState::Running if runtime_active => rgb(0x238636).into(),
-            WorkspaceObservedState::Error => rgb(0xdc2626).into(),
+            WorkspaceObservedState::Error => theme.error,
             WorkspaceObservedState::Starting | WorkspaceObservedState::Running => {
                 rgb(0xb7791f).into()
             }
