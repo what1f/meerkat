@@ -76,6 +76,7 @@ impl RuntimeApplication {
                 self.inner.pairing_validity_ms.load(Ordering::Relaxed),
             )
             .await?;
+        self.emit_computer_catalog_changed();
         Ok(PairComputerResponse {
             computer_id,
             device_credential,
@@ -115,6 +116,7 @@ impl RuntimeApplication {
             .revoke_computer(computer_id, application::now_millis())
             .await?;
         self.computer_broker().revoke(computer_id)?;
+        self.emit_computer_catalog_changed();
         Ok(())
     }
 }

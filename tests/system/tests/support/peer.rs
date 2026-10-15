@@ -344,7 +344,8 @@ fn main() {
                         .append(true)
                         .open(std::env::var("LANKIDE_SYSTEM_CONTROLS").expect("control journal"))
                         .expect("open control journal");
-                    writeln!(journal, "{}", json!({"op":"reply_sent"}))
+                    journal
+                        .write_all(b"{\"op\":\"reply_sent\"}\n")
                         .expect("record capability reply");
                     let release = std::env::var("LANKIDE_SYSTEM_RELEASE").expect("terminal gate");
                     let deadline = std::time::Instant::now() + Duration::from_secs(20);

@@ -39,7 +39,7 @@ pub(super) async fn run_loop(
             _ = stop_rx.changed() => continue,
             result = run_connection(inner.clone()) => {
                 *inner.connection.write().await = None;
-                inner.connected.store(false, Ordering::Release);
+                inner.connected.send_replace(false);
                 super::proxy::disconnected(&inner).await;
                 if let Err(error) = &result {
                     log::error!("computer={} link failed: {error}", inner.config.computer_id);
@@ -129,7 +129,7 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, ComputerError> {
         heartbeat_interval,
     )));
     *inner.connection.write().await = Some(tx.clone());
-    inner.connected.store(true, Ordering::Release);
+    inner.connected.send_replace(true);
     publish_inventory(&inner).await;
     let replay = replay_pending(&inner, &tx);
     tokio::pin!(replay);

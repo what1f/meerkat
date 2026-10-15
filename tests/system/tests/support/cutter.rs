@@ -44,15 +44,25 @@ impl Cutter {
                         let address = address.clone(); let records = records.clone(); let cut = cut.clone();
                         tasks.spawn(async move {
                             let result: Result<()> = async {
-                                let header = headers(&mut client).await?;
-                                let text = String::from_utf8(header.clone())?;
                                 let mut server = TcpStream::connect(address).await?;
-                                server.write_all(&header).await?;
-                                if text.starts_with("GET /resources/") {
+                                loop {
+                                    let header = match headers(&mut client).await {
+                                        Ok(header) => header,
+                                        Err(error) if error.downcast_ref::<std::io::Error>().is_some_and(|error| error.kind() == std::io::ErrorKind::UnexpectedEof) => break,
+                                        Err(error) => return Err(error),
+                                    };
+                                    let text = String::from_utf8(header.clone())?;
+                                    server.write_all(&header).await?;
+                                    if !text.starts_with("GET /resources/") {
+                                        tokio::io::copy_bidirectional(&mut client, &mut server).await?;
+                                        break;
+                                    }
                                     let fields: Vec<_> = text.lines().filter_map(|line| line.split_once(':')).map(|(key,value)| (key.to_ascii_lowercase(), value.trim().to_owned())).collect();
                                     let get = |name: &str| fields.iter().find(|(key,_)| key == name).map(|(_,value)| value.clone());
                                     records.lock().unwrap().push(Download { execution: get("x-lankide-execution").unwrap_or_default(), attempt: get("x-lankide-attempt").unwrap_or_default(), token: get("authorization").unwrap_or_default().trim_start_matches("Bearer ").to_owned(), range: get("range") });
                                     let header = headers(&mut server).await?;
+                                    let response = String::from_utf8(header.clone())?;
+                                    let mut remaining: u64 = response.lines().filter_map(|line| line.split_once(':')).find(|(name, _)| name.eq_ignore_ascii_case("content-length")).ok_or("missing resource length")?.1.trim().parse()?;
                                     client.write_all(&header).await?;
                                     if let Some(count) = cut_after.filter(|_| !cut.swap(true, Ordering::SeqCst)) {
                                         let mut limited = (&mut server).take(count as u64);
@@ -61,14 +71,16 @@ impl Cutter {
                                         client.shutdown().await?;
                                         return Ok(());
                                     }
-                                    if corrupt {
+                                    if corrupt && remaining > 0 {
                                         let mut byte = [0];
                                         server.read_exact(&mut byte).await?;
                                         byte[0] ^= 1;
                                         client.write_all(&byte).await?;
+                                        remaining -= 1;
                                     }
+                                    let copied = tokio::io::copy(&mut (&mut server).take(remaining), &mut client).await?;
+                                    if copied != remaining { return Err("incomplete resource body".into()); }
                                 }
-                                tokio::io::copy_bidirectional(&mut client, &mut server).await?;
                                 Ok(())
                             }.await;
                             if let Err(error) = result { eprintln!("resource cutter: {error}"); }

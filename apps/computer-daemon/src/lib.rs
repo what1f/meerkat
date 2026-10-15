@@ -250,7 +250,6 @@ pub async fn run_with_harnesses(
         .map_err(AppError::Computer)?;
     let shutdown = wait_for_shutdown();
     tokio::pin!(shutdown);
-    let mut status = tokio::time::interval(Duration::from_millis(100));
     let mut announced = false;
     loop {
         tokio::select! {
@@ -259,11 +258,9 @@ pub async fn run_with_harnesses(
                 handle.shutdown("computer_shutdown").await;
                 return handle.join().await.map_err(AppError::Computer);
             }
-            _ = status.tick(), if !announced => {
-                if handle.status().await.connected {
-                    println!("Connected as {}", computer_name());
-                    announced = true;
-                }
+            _ = handle.wait_until_connected(), if !announced => {
+                println!("Connected as {}", computer_name());
+                announced = true;
             }
         }
     }

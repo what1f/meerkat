@@ -61,7 +61,7 @@ classification = "hermetic"
 
 [package.metadata.lankide.e2e-additional.system-resources-http]
 command = "cargo test -p lankide-system-e2e --test resources_http_e2e"
-scenario = "Verify S11.1-S11.3 through real daemons on private separate homes: image-only and captioned messages reach the Agent snapshot with existing local file paths and the right hash, a byte-count network cut resumes with Range, and foreign or wall-clock-expired attempt tokens cannot fetch resources. Reject foreign workspace resources, invalid ranges, and corrupted bytes before Harness startup or atomic publication. Pair a pinned TLS Computer and deliver a large image through the existing Computer capability path with exact-byte and SHA-256 checks while the remote resource HTTP route remains closed."
+scenario = "Verify S11.1-S11.3 through real daemons on private separate homes: image-only and captioned messages reach the Agent snapshot with existing local file paths and the right hash, a byte-count network cut resumes with Range, and foreign or wall-clock-expired attempt tokens cannot fetch resources. Reject foreign workspace resources, invalid ranges, and corrupted bytes before Harness startup or atomic publication. Pair a pinned TLS Computer and deliver a large image through the existing Computer capability path with exact-byte and SHA-256 checks while the remote resource HTTP route remains closed. Deliver two sequential attachments on one Computer with their own exact bytes, hashes and Harness input paths."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
@@ -107,7 +107,7 @@ status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-management-http]
 command = "cargo test -p lankide-system-e2e --test management_http_e2e"
-scenario = "Verify S16 through real daemons on private homes: owner-authenticated HTTP workspace calls and a scoped event WebSocket work, missing/wrong/device/pairing credentials receive 401 from HTTP and the event upgrade, the owner cannot open a Computer link, the owner file is 0600, and its credential is reused after Runtime restart. Verify loopback management closes open event subscriptions on shutdown and reject configuration that would expose management on a public plaintext listener. Rename an Agent in a paused workspace after restart, then resume and process a message."
+scenario = "Verify S16 through real daemons on private homes: owner-authenticated HTTP workspace calls and a scoped event WebSocket work, missing/wrong/device/pairing credentials receive 401 from HTTP and the event upgrade, the owner cannot open a Computer link, the owner file is 0600, and its credential is reused after Runtime restart. Verify loopback management closes open event subscriptions on shutdown and reject configuration that would expose management on a public plaintext listener. Rename an Agent in a paused workspace after restart, then resume and process a message. Subscribe through the management client before pairing, then observe registered-offline, online, offline and revoked catalog state after events, and resubscribe with the same client after Runtime restart, including a scoped subscription."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
@@ -115,7 +115,7 @@ status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-reliability]
 command = "cargo test -p lankide-system-e2e --test reliability_e2e"
-scenario = "Replay 300 offline events under TCP backpressure and deliver one reply; replay lost initial delivery receipts for both completed and live runs without rerunning the batch. Crash Runtime during input preparation and requeue the message; preserve offline queued messages across restart. Cancel the same surviving Harness after Runtime crash. Repeated Computer loss follows exponential backoff, pauses after the existing fingerprint limit, and sends one notice."
+scenario = "Replay 300 offline events under TCP backpressure and deliver one reply; replay lost initial delivery receipts for both completed and live runs without rerunning the batch. Crash Runtime during input preparation and requeue the message; preserve offline queued messages across restart. Cancel the same surviving Harness after Runtime crash. Repeated Computer loss follows exponential backoff, pauses after the existing fingerprint limit, and sends one notice. Observe the scripted Harness reply confirmation before disconnect, then recover the completed reply once after reconnect."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

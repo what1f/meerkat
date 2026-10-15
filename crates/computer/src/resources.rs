@@ -50,6 +50,7 @@ pub fn resolve_content_file(agent_home: &Path, value: &str) -> Result<PathBuf, C
 }
 
 pub(crate) async fn download_resource(
+    client: &reqwest::Client,
     runtime_run: &Path,
     endpoint: Option<&str>,
     resource: &ResourceRef,
@@ -77,11 +78,6 @@ pub(crate) async fn download_resource(
         .execution
         .as_ref()
         .ok_or_else(|| ComputerError::Resource("missing_execution".into()))?;
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
-        .map_err(|e| ComputerError::Resource(e.to_string()))?;
     // Keep an interrupted file for the next bounded retry, including retries
     // after a Computer restart. Never publish bytes before integrity checks.
     for retry in 0..3 {

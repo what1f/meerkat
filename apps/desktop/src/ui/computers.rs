@@ -31,37 +31,121 @@ impl SelectItem for ComputerChoice {
 }
 
 impl LankideApp {
-    pub(super) fn refresh_settings_computers(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn subscribe_computers(&mut self, cx: &mut Context<Self>) {
         let client = self.client.clone();
-        self.settings_computers_task = Some(cx.spawn(async move |this, cx| {
+        self.computer_events_task = Some(cx.spawn(async move |this, cx| {
             loop {
-                cx.background_executor().timer(Duration::from_secs(2)).await;
-                if !this
-                    .update(cx, |this, _| this.page == Page::Settings)
-                    .unwrap_or(false)
+                // Subscribe before reading: changes during the snapshot stay queued.
+                if let Ok(mut events) = client.subscribe_management_events(None, 0).await
+                    && let Ok(catalog) = client.get_computer_catalog(None).await
                 {
-                    return;
-                }
-                let result = client.get_computer_catalog(None).await;
-                let visible = this
-                    .update(cx, |this, cx| {
-                        if this.page != Page::Settings {
-                            return false;
+                    if this
+                        .update(cx, |this, cx| this.apply_computer_catalog(catalog, cx))
+                        .is_err()
+                    {
+                        return;
+                    }
+                    while let Some(Ok(event)) = events.next().await {
+                        if event.kind != lankide_client::ManagementEventKind::ComputerCatalogChanged
+                        {
+                            continue;
                         }
-                        if let Ok(computers) = result {
-                            this.computers = computers
-                                .into_iter()
-                                .filter(|c| c.registered && c.revoked_at.is_none())
-                                .collect();
-                            cx.notify();
+                        match client.get_computer_catalog(None).await {
+                            Ok(catalog) => {
+                                if this
+                                    .update(cx, |this, cx| this.apply_computer_catalog(catalog, cx))
+                                    .is_err()
+                                {
+                                    return;
+                                }
+                            }
+                            Err(_) => break,
                         }
-                        true
-                    })
-                    .unwrap_or(false);
-                if !visible {
-                    return;
+                    }
                 }
+                // Retry only a disconnected subscription. Each connection rediscovers
+                // the Runtime and reads a fresh snapshot, including after restart.
+                cx.background_executor().timer(Duration::from_secs(1)).await;
             }
+        }));
+    }
+
+    fn apply_computer_catalog(
+        &mut self,
+        catalog: Vec<lankide_client::ComputerOption>,
+        cx: &mut Context<Self>,
+    ) {
+        if matches!(self.modal, Some(Modal::PairComputer))
+            && !self.pairing_loading
+            && self.pairing_connected.is_none()
+            && let Some(computer) = catalog.iter().find(|computer| {
+                computer.registered
+                    && computer.revoked_at.is_none()
+                    && computer.available
+                    && !self.pairing_known.contains(&computer.id)
+            })
+        {
+            self.pairing_connected = Some(computer.name.clone());
+            self.pairing_code_task = None;
+            let request = self.pairing_request;
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(1600))
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    if this.pairing_active(request) {
+                        this.modal = None;
+                        this.notify_dialog_changed(cx);
+                    }
+                });
+            })
+            .detach();
+        }
+        self.computers = catalog
+            .into_iter()
+            .filter(|computer| computer.registered && computer.revoked_at.is_none())
+            .collect();
+        self.notify_dialog_changed(cx);
+    }
+
+    fn renew_pairing_code_at_expiry(&mut self, cx: &mut Context<Self>) {
+        let Some(code) = self.pairing_code.as_ref() else {
+            return;
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        let delay = Duration::from_millis(code.expires_at.saturating_sub(now).max(0) as u64);
+        let request = self.pairing_request;
+        let client = self.client.clone();
+        self.pairing_code_task = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(delay).await;
+            if !this
+                .update(cx, |this, _| {
+                    this.pairing_active(request)
+                        && !this.pairing_editing
+                        && this.pairing_connected.is_none()
+                })
+                .unwrap_or(false)
+            {
+                return;
+            }
+            let result = client.create_pairing_code().await;
+            let _ = this.update(cx, |this, cx| {
+                if !this.pairing_active(request) || this.pairing_connected.is_some() {
+                    return;
+                }
+                match result {
+                    Ok(code) => {
+                        this.pairing_code = Some(code);
+                        this.pairing_copied = false;
+                        this.renew_pairing_code_at_expiry(cx);
+                    }
+                    Err(error) => this.error = Some(UiMessage::client(error)),
+                }
+                this.notify_dialog_changed(cx);
+            });
         }));
     }
 
@@ -180,6 +264,8 @@ impl LankideApp {
         self.pairing_code = None;
         self.pairing_waiting_hint = false;
         self.pairing_hint_task = None;
+        self.pairing_code_task = None;
+        self.pairing_known.clear();
         self.pairing_connected = None;
         self.pairing_copied = false;
         self.pairing_loading = true;
@@ -200,113 +286,31 @@ impl LankideApp {
                 Ok::<_, ClientError>((access, catalog, code))
             }
             .await;
-            let mut known = std::collections::HashSet::new();
-            let active = this
-                .update(cx, |this, cx| {
-                    if !this.pairing_active(request) {
-                        return false;
-                    }
-                    this.pairing_loading = false;
-                    match result {
-                        Ok((access, catalog, code)) => {
-                            known = catalog.iter().map(|c| c.id.clone()).collect();
-                            this.computers = catalog
-                                .into_iter()
-                                .filter(|c| c.registered && c.revoked_at.is_none())
-                                .collect();
-                            this.pairing_address = access.address;
-                            this.pairing_pin = access.cert_sha256;
-                            this.pairing_editing = this.pairing_address.is_none();
-                            this.pairing_code = code;
-                            if this.pairing_code.is_some() {
-                                this.start_pairing_hint(cx);
-                            }
-                        }
-                        Err(error) => this.error = Some(UiMessage::client(error)),
-                    }
-                    this.notify_dialog_changed(cx);
-                    true
-                })
-                .unwrap_or(false);
-            if !active {
-                return;
-            }
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(400))
-                    .await;
-                let needs_code = match this.update(cx, |this, _| {
-                    if !this.pairing_active(request) {
-                        return None;
-                    }
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as i64;
-                    Some(
-                        !this.pairing_editing
-                            && this.pairing_address.is_some()
-                            && this
-                                .pairing_code
-                                .as_ref()
-                                .is_none_or(|code| now >= code.expires_at),
-                    )
-                }) {
-                    Ok(Some(value)) => value,
-                    _ => return,
-                };
-                let catalog = client.get_computer_catalog(None).await;
-                let code = if needs_code {
-                    Some(client.create_pairing_code().await)
-                } else {
-                    None
-                };
-                let connected = this
-                    .update(cx, |this, cx| {
-                        if !this.pairing_active(request) {
-                            return false;
-                        }
-                        if let Ok(catalog) = catalog {
-                            let added = catalog.iter().find(|c| {
-                                c.registered
-                                    && c.revoked_at.is_none()
-                                    && c.available
-                                    && !known.contains(&c.id)
-                            });
-                            if let Some(computer) = added {
-                                this.pairing_connected = Some(computer.name.clone());
-                            }
-                            this.computers = catalog
-                                .into_iter()
-                                .filter(|c| c.registered && c.revoked_at.is_none())
-                                .collect();
-                        }
-                        if let Some(code) = code {
-                            match code {
-                                Ok(code) => {
-                                    this.pairing_code = Some(code);
-                                    this.pairing_copied = false;
-                                }
-                                Err(error) => this.error = Some(UiMessage::client(error)),
-                            }
-                        }
-                        this.notify_dialog_changed(cx);
-                        this.pairing_connected.is_some()
-                    })
-                    .unwrap_or(false);
-                if connected {
-                    cx.background_executor()
-                        .timer(Duration::from_millis(1600))
-                        .await;
-                    let _ = this.update(cx, |this, cx| {
-                        if this.pairing_active(request) {
-                            this.modal = None;
-                            this.notify_dialog_changed(cx);
-                        }
-                    });
+            let _ = this.update(cx, |this, cx| {
+                if !this.pairing_active(request) {
                     return;
                 }
-            }
+                this.pairing_loading = false;
+                match result {
+                    Ok((access, catalog, code)) => {
+                        this.pairing_known = catalog.iter().map(|c| c.id.clone()).collect();
+                        this.computers = catalog
+                            .into_iter()
+                            .filter(|c| c.registered && c.revoked_at.is_none())
+                            .collect();
+                        this.pairing_address = access.address;
+                        this.pairing_pin = access.cert_sha256;
+                        this.pairing_editing = this.pairing_address.is_none();
+                        this.pairing_code = code;
+                        if this.pairing_code.is_some() {
+                            this.start_pairing_hint(cx);
+                            this.renew_pairing_code_at_expiry(cx);
+                        }
+                    }
+                    Err(error) => this.error = Some(UiMessage::client(error)),
+                }
+                this.notify_dialog_changed(cx);
+            });
         })
         .detach();
         cx.notify();
@@ -347,6 +351,7 @@ impl LankideApp {
                         this.pairing_editing = false;
                         this.pairing_copied = false;
                         this.start_pairing_hint(cx);
+                        this.renew_pairing_code_at_expiry(cx);
                     }
                     Err(_) => {
                         this.error = Some(UiMessage::localized(

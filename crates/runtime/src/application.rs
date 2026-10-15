@@ -705,6 +705,17 @@ impl RuntimeApplication {
         Ok(())
     }
 
+    pub(crate) fn emit_computer_catalog_changed(&self) {
+        let sequence = self.inner.sequence.fetch_add(1, Ordering::AcqRel) + 1;
+        let _ = self.inner.events.send(lankide_protocol::ManagementEvent {
+            sequence,
+            occurred_at: now_millis(),
+            kind: lankide_protocol::ManagementEventKind::ComputerCatalogChanged as i32,
+            workspace: None,
+            agent: None,
+        });
+    }
+
     pub(crate) fn emit_management(
         &self,
         kind: lankide_protocol::ManagementEventKind,

@@ -202,3 +202,95 @@ async fn management_cannot_be_configured_on_a_public_plaintext_listener() -> Res
     assert!(!paths.run.join(management::URL_FILE).exists());
     Ok(())
 }
+
+#[tokio::test]
+async fn owner_sees_computer_pairing_presence_and_revocation_from_events() -> Result<()> {
+    use lankide_computer_daemon::{ComputerDaemonPaths, pair};
+    let mut rig = SystemRig::start(RigConfig {
+        auto_start_computer: false,
+        ..Default::default()
+    })
+    .await?;
+    let scenario = async {
+        let client = rig.management().clone();
+        let mut events = client.subscribe_management_events(None, 0).await?;
+        let code = client.create_pairing_code().await?;
+        let (url, _) = rig.local_pairing_endpoint()?;
+        let device = pair(
+            &ComputerDaemonPaths::for_home(rig.computer_home())?,
+            &url,
+            &code.code,
+        )
+        .await?;
+        let event = timeout(Duration::from_secs(3), events.next())
+            .await?
+            .ok_or("pairing event stream ended")??;
+        assert_eq!(event.kind, ManagementEventKind::ComputerCatalogChanged);
+        assert!(event.workspace_id.is_empty());
+        let catalog = client.get_computer_catalog(None).await?;
+        assert!(
+            catalog
+                .iter()
+                .any(|c| c.id == device.computer_id && c.registered && !c.available)
+        );
+
+        rig.start_paired_computer()?;
+        loop {
+            timeout(Duration::from_secs(3), events.next())
+                .await?
+                .ok_or("online event stream ended")??;
+            if client
+                .get_computer_catalog(None)
+                .await?
+                .iter()
+                .any(|c| c.id == device.computer_id && c.available)
+            {
+                break;
+            }
+        }
+        // Start the offline observer after online reconciliation so an earlier
+        // registration or inventory event cannot satisfy this transition.
+        events = client.subscribe_management_events(None, 0).await?;
+        rig.stop_computer()?;
+        loop {
+            timeout(Duration::from_secs(3), events.next())
+                .await?
+                .ok_or("offline event stream ended")??;
+            if client
+                .get_computer_catalog(None)
+                .await?
+                .iter()
+                .any(|c| c.id == device.computer_id && !c.available)
+            {
+                break;
+            }
+        }
+        drop(events);
+        rig.restart_runtime().await?;
+        // The same client discovers the restarted Runtime and subscribes again.
+        let mut events = client
+            .subscribe_management_events(Some("owner_team"), 0)
+            .await?;
+        client.revoke_computer(&device.computer_id).await?;
+        timeout(Duration::from_secs(3), events.next())
+            .await?
+            .ok_or("revocation event stream ended")??;
+        assert!(
+            client
+                .get_computer_catalog(None)
+                .await?
+                .iter()
+                .any(|c| c.id == device.computer_id && c.revoked_at.is_some() && !c.available)
+        );
+        assert!(
+            rig.await_terminal_computer()
+                .await?
+                .contains("computer_revoked")
+        );
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    }
+    .await;
+    let cleanup = rig.close().await;
+    scenario?;
+    cleanup
+}

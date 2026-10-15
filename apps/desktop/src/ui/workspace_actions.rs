@@ -163,6 +163,7 @@ impl LankideApp {
             cx,
         );
         self.settings_task_enabled = workspace.task_system_enabled;
+        self.computer_events_task = None;
         self.page = Page::Workspace;
         self.error = None;
         cx.notify();

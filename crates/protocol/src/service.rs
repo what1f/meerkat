@@ -571,9 +571,11 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
                     if event.sequence <= last_sequence {
                         return Err(Status::out_of_range("management_sequence_regression"));
                     }
-                    ManagementEventKind::try_from(event.kind)
+                    let kind = ManagementEventKind::try_from(event.kind)
                         .map_err(|_| Status::invalid_argument("unknown_management_event_kind"))?;
-                    validate_workspace_ref(event.workspace.as_ref())?;
+                    if kind != ManagementEventKind::ComputerCatalogChanged {
+                        validate_workspace_ref(event.workspace.as_ref())?;
+                    }
                     if event.agent.is_some() {
                         validate_agent_ref(event.agent.as_ref())?;
                     }

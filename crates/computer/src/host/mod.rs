@@ -23,7 +23,7 @@ use std::fmt;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{Mutex, RwLock, mpsc, watch};
 
@@ -333,7 +333,18 @@ impl Computer {
             probes.insert(harness_id, probe);
         }
         let (stop_tx, stop_rx) = watch::channel(None);
+        let mut resource_http = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(60));
+        if let Some(pin) = self.cert_sha256.as_deref() {
+            resource_http =
+                resource_http.use_preconfigured_tls(lankide_protocol::tls::client_config(pin)?);
+        }
+        let resource_http = resource_http
+            .build()
+            .map_err(|error| ComputerError::Resource(error.to_string()))?;
         let inner = Arc::new(Inner {
+            resource_http,
             liveness: self.liveness,
             config: self.config,
             output_records: self.output_records,
@@ -356,7 +367,7 @@ impl Computer {
             deferred_tool_results: Mutex::new(HashMap::new()),
             capability_calls: Mutex::new(HashMap::new()),
             connection: RwLock::new(None),
-            connected: AtomicBool::new(false),
+            connected: watch::channel(false).0,
             persistence_failed: AtomicBool::new(false),
             stop_tx,
         });
@@ -386,10 +397,17 @@ impl ComputerHandle {
     }
 
     pub async fn status(&self) -> ComputerStatus {
+        let connected = *self.inner.connected.borrow();
         ComputerStatus {
-            connected: self.inner.connected.load(Ordering::Acquire),
+            connected,
             active_attempts: active_attempts(&self.inner).await,
         }
+    }
+
+    /// Wait until this Computer has an authenticated Runtime connection.
+    pub async fn wait_until_connected(&self) {
+        let mut connected = self.inner.connected.subscribe();
+        let _ = connected.wait_for(|value| *value).await;
     }
 
     pub async fn shutdown(&self, reason: impl Into<String>) {
@@ -476,6 +494,7 @@ struct StartingExecution {
 }
 
 struct Inner {
+    resource_http: reqwest::Client,
     liveness: ExecutionLiveness,
     output_records: OutputRecordPolicy,
     capability_cli: Option<PathBuf>,
@@ -500,7 +519,7 @@ struct Inner {
     deferred_tool_results: Mutex<HashMap<(String, String), lankide_protocol::ToolResult>>,
     capability_calls: Mutex<HashMap<String, proxy::PendingCall>>,
     connection: RwLock<Option<mpsc::Sender<ComputerFrame>>>,
-    connected: AtomicBool,
+    connected: watch::Sender<bool>,
     persistence_failed: AtomicBool,
     stop_tx: watch::Sender<Option<String>>,
 }

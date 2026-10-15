@@ -92,12 +92,14 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                 .map_err(status)?
         };
         self.application.set_computer_connected(true);
+        self.application.emit_computer_catalog_changed();
         let cleanup_broker = self.application.computer_broker();
         let cleanup_computer_id = computer_id.clone();
         let application = self.application.clone();
         self.application
             .spawn_background(async move {
                 let mut capability_calls = crate::capability_link::CapabilityCalls::default();
+                let mut online = false;
                 while let Some(frame) = frames.next().await {
                     match frame {
                         Ok(frame) => {
@@ -157,6 +159,15 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                                 }
                                 continue;
                             }
+                            let first_heartbeat = !online
+                                && matches!(
+                                    &frame.frame,
+                                    Some(computer_frame::Frame::Heartbeat(_))
+                                );
+                            let inventory_changed = matches!(
+                                &frame.frame,
+                                Some(computer_frame::Frame::InventoryChanged(_))
+                            );
                             if let Err(error) = application
                                 .computer_broker()
                                 .handle_frame(&computer_id, &instance_id, frame)
@@ -167,6 +178,13 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                                 if !matches!(error, RuntimeError::InvalidExecutionToken) {
                                     log::warn!("computer={computer_id} link frame failed: {error}");
                                     break;
+                                }
+                            } else {
+                                if first_heartbeat {
+                                    online = true;
+                                }
+                                if inventory_changed || first_heartbeat {
+                                    application.emit_computer_catalog_changed();
                                 }
                             }
                         }
@@ -180,6 +198,7 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                     .computer_broker()
                     .disconnect_connection(&computer_id, &instance_id, connection_id)
                     .await;
+                application.emit_computer_catalog_changed();
                 application.set_computer_connected(
                     application
                         .computer_broker()
@@ -610,16 +629,23 @@ impl RuntimePeer for RuntimePeerAdapter {
                     };
                     let event = match received {
                         Ok(event) => event,
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            let _ = sender
+                                .send(Err(Status::unavailable("management events lagged")))
+                                .await;
+                            break;
+                        }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     };
                     if event.sequence <= after
-                        || workspace.as_ref().is_some_and(|workspace| {
-                            event
-                                .workspace
-                                .as_ref()
-                                .is_none_or(|value| &value.workspace_id != workspace)
-                        })
+                        || (event.kind
+                            != lankide_protocol::ManagementEventKind::ComputerCatalogChanged as i32
+                            && workspace.as_ref().is_some_and(|workspace| {
+                                event
+                                    .workspace
+                                    .as_ref()
+                                    .is_none_or(|value| &value.workspace_id != workspace)
+                            }))
                     {
                         continue;
                     }

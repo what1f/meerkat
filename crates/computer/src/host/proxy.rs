@@ -301,6 +301,7 @@ pub(super) async fn download_resource(
         .is_some_and(|(url, _)| url.starts_with("wss://"))
     {
         return crate::resources::download_resource(
+            &inner.resource_http,
             &inner.runtime_run,
             inner.link_endpoint.as_ref().map(|(url, _)| url.as_str()),
             resource,

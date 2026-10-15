@@ -167,8 +167,8 @@ impl BackgroundServices {
         self.stopping = true;
         match &mut self.adapter {
             Adapter::Transient { runtime, computer } => {
-                for mut child in [computer.take(), runtime.take()].into_iter().flatten() {
-                    stop_helper(&mut child);
+                for child in [computer.take(), runtime.take()].into_iter().flatten() {
+                    stop_helper(child);
                 }
             }
             #[cfg(target_os = "macos")]
@@ -496,22 +496,23 @@ fn prepare_launch_agent(
     Ok(())
 }
 
-fn stop_helper(child: &mut Child) {
+fn stop_helper(mut child: Child) {
     if child.try_wait().ok().flatten().is_some() {
         return;
     }
-    let _ = Command::new("kill")
-        .arg("-TERM")
-        .arg(child.id().to_string())
-        .status();
-    for _ in 0..50 {
-        if child.try_wait().ok().flatten().is_some() {
-            return;
+    let pid = child.id().to_string();
+    let _ = Command::new("kill").args(["-TERM", &pid]).status();
+    std::thread::scope(|scope| {
+        let (done, exited) = std::sync::mpsc::sync_channel(1);
+        let waiter = scope.spawn(move || {
+            let _ = child.wait();
+            let _ = done.send(());
+        });
+        if exited.recv_timeout(Duration::from_secs(1)).is_err() {
+            let _ = Command::new("kill").args(["-KILL", &pid]).status();
         }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    let _ = child.kill();
-    let _ = child.wait();
+        let _ = waiter.join();
+    });
 }
 
 #[cfg(unix)]

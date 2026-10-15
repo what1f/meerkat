@@ -279,6 +279,7 @@ pub enum ManagementEventKind {
     AgentDeleted,
     ProviderOnboardingChanged,
     CatalogChanged,
+    ComputerCatalogChanged,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ManagementEvent {
@@ -1572,9 +1573,6 @@ impl ManagementClient for RuntimeManagementClient {
             .into_inner()
             .map(|r| {
                 r.map_err(map_status).and_then(|e| {
-                    let w = e
-                        .workspace
-                        .ok_or_else(|| ClientError::Protocol("event workspace missing".into()))?;
                     let kind = match wire::ManagementEventKind::try_from(e.kind)
                         .map_err(|_| ClientError::Protocol("unknown event kind".into()))?
                     {
@@ -1599,14 +1597,26 @@ impl ManagementClient for RuntimeManagementClient {
                         wire::ManagementEventKind::ProviderOnboardingChanged => {
                             ManagementEventKind::ProviderOnboardingChanged
                         }
+                        wire::ManagementEventKind::ComputerCatalogChanged => {
+                            ManagementEventKind::ComputerCatalogChanged
+                        }
                         wire::ManagementEventKind::CatalogChanged => {
                             ManagementEventKind::CatalogChanged
                         }
                         _ => return Err(ClientError::Protocol("unspecified event kind".into())),
                     };
+                    let workspace_id = match e.workspace {
+                        Some(workspace) => workspace.workspace_id,
+                        None if kind == ManagementEventKind::ComputerCatalogChanged => {
+                            String::new()
+                        }
+                        None => {
+                            return Err(ClientError::Protocol("event workspace missing".into()));
+                        }
+                    };
                     Ok(ManagementEvent {
                         sequence: e.sequence,
-                        workspace_id: w.workspace_id,
+                        workspace_id,
                         agent_id: e.agent.map(|a| a.agent_id),
                         kind,
                     })

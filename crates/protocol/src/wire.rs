@@ -365,6 +365,7 @@ pub enum ManagementEventKind {
     ProviderOnboardingChanged = 6,
     CatalogChanged = 7,
     AgentDeleted = 8,
+    ComputerCatalogChanged = 9,
 }
 impl Default for ManagementEventKind {
     fn default() -> Self {
@@ -384,6 +385,7 @@ impl TryFrom<i32> for ManagementEventKind {
             6 => Ok(Self::ProviderOnboardingChanged),
             7 => Ok(Self::CatalogChanged),
             8 => Ok(Self::AgentDeleted),
+            9 => Ok(Self::ComputerCatalogChanged),
             _ => Err(crate::Status::invalid_argument("unknown_enum_value")),
         }
     }

@@ -318,3 +318,36 @@ async fn pinned_tls_computer_receives_attachment_over_its_computer_link() -> Res
     assert_eq!(team.outbound(&agent, "images").len(), 1);
     rig.close().await
 }
+
+#[tokio::test]
+async fn repeated_attachments_reach_the_same_computer_with_their_own_contents() -> Result<()> {
+    let rig = SystemRig::start(config()).await?;
+    let team = rig.workspace("team").await?;
+    let agent = team
+        .agent("bruce")
+        .harness(Script::LinkReply {
+            text: "seen".into(),
+        })
+        .create()
+        .await?;
+    let mut paths = Vec::new();
+    for size in [128, 4096] {
+        let bytes = image(size);
+        let resource = team.image_message(&agent, "images", bytes.clone()).await?;
+        rig.settle().await?;
+        let path = agent
+            .resource_directory()?
+            .join(format!("{}-photo.png", resource.resource_id));
+        assert_eq!(std::fs::read(&path)?, bytes);
+        assert_eq!(hash(&std::fs::read(&path)?), resource.sha256);
+        assert!(!path.with_extension("part").exists());
+        paths.push(path);
+    }
+    let inputs = agent.harness_inputs()?;
+    assert_eq!(inputs.len(), 2);
+    for (input, path) in inputs.iter().zip(paths) {
+        assert!(input.contains(path.to_str().unwrap()));
+    }
+    assert_eq!(team.outbound(&agent, "images").len(), 2);
+    rig.close().await
+}

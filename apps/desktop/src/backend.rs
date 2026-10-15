@@ -248,10 +248,11 @@ fn lankide_home() -> PathBuf {
 }
 
 async fn connect_with_retry(run: &Path) -> Result<RuntimeManagementClient, ClientError> {
+    let client = RuntimeManagementClient::connect_local_lazy(run);
     let mut last_error = ClientError::Unavailable("Lankide 尚未就绪".into());
     for _ in 0..50 {
-        match RuntimeManagementClient::connect_local(&run).await {
-            Ok(client) => return Ok(client),
+        match client.list_workspaces().await {
+            Ok(_) => return Ok(client),
             Err(error) => last_error = error,
         }
         tokio::time::sleep(Duration::from_millis(100)).await;

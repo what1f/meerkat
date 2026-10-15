@@ -11,6 +11,7 @@ impl LankideApp {
                     .id("nav-agents")
                     .debug_selector(|| "nav-agents".into())
                     .on_click(cx.listener(|this, _, _, cx| {
+                        this.computer_events_task = None;
                         this.page = Page::Agents;
                         cx.notify();
                     }))
@@ -48,7 +49,7 @@ impl LankideApp {
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.reload_computers(None, window, cx);
                                 this.page = Page::Settings;
-                                this.refresh_settings_computers(cx);
+                                this.subscribe_computers(cx);
                                 cx.notify();
                             }))
                             .child(

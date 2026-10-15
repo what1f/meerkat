@@ -168,7 +168,9 @@ fn local_online_offline_selection_and_pairing_dialog() {
         Box::leak(format!("computer-offline-{}", remote.computer_id).into_boxed_str());
     let online_selector: &'static str =
         Box::leak(format!("computer-online-{local}").into_boxed_str());
+    let rig = std::cell::RefCell::new(rig);
     let scenario = std::panic::AssertUnwindSafe(|dispatcher: gpui::TestDispatcher| {
+        let mut rig = rig.borrow_mut();
         let mut cx = TestAppContext::build(dispatcher.clone(), Some("computer_pairing"));
         let _refs = cx.app.borrow().ref_counts_drop_handle();
         cx.update(|cx| cx.background_executor().allow_parking());
@@ -229,6 +231,11 @@ fn local_online_offline_selection_and_pairing_dialog() {
         reconnected.0.kill().unwrap();
         reconnected.0.wait().unwrap();
         wait(cx, |cx| cx.debug_bounds(offline_selector).is_some());
+        // Keep Settings open across a Runtime restart. The existing Desktop
+        // subscription must reconnect and receive subsequent catalog changes.
+        runtime.block_on(rig.restart_runtime()).unwrap();
+        let (url, _) = rig.local_pairing_endpoint().unwrap();
+        wait(cx, |cx| cx.debug_bounds(online_selector).is_some());
         let added_home = tempfile::tempdir_in("/tmp").unwrap();
         let code = runtime.block_on(client.create_pairing_code()).unwrap();
         let added = runtime
@@ -354,7 +361,7 @@ fn local_online_offline_selection_and_pairing_dialog() {
         cx.update(|_, cx| cx.quit());
     });
     gpui::run_test(1, &[], 0, &mut |dispatcher, _| scenario(dispatcher), None);
-    runtime.block_on(rig.close()).unwrap();
+    runtime.block_on(rig.into_inner().close()).unwrap();
 }
 
 #[path = "../src/backend.rs"]
