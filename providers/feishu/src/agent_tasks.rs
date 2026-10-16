@@ -1,6 +1,6 @@
 use crate::client::{Auth, Client as FeishuClient};
 use crate::dto::{TaskMember, TaskRecord, TasklistRecord};
-use crate::http::Transport;
+use crate::http::{ClientError, Transport};
 use crate::mention::{
     BARE_MENTION, MentionTarget, extract_agent_ids, has_bare_mention, render_card_markdown,
 };
@@ -104,7 +104,7 @@ pub(crate) async fn task_event(
     client: Arc<SharedClient>,
     auth: Auth,
     event: &crate::normalize::NormalizedTaskEvent,
-) -> Result<(lankide_provider::EventSender, lankide_provider::CustomEvent), ProviderError> {
+) -> Result<Option<(lankide_provider::EventSender, lankide_provider::CustomEvent)>, ProviderError> {
     use lankide_provider::{CustomEvent, EventSender, EventSenderType};
     let (_, identity) = crate::identity::load(context.storage()).await?;
     let raw: Value =
@@ -120,10 +120,16 @@ pub(crate) async fn task_event(
         auth,
     )
     .await?;
-    let task = client
-        .get_task(&event.task_id, "open_id", auth)
-        .await
-        .map_err(|_| task_error("read_task_event", true))?;
+    let task = match client.get_task(&event.task_id, "open_id", auth).await {
+        Ok(task) => task,
+        // Task events reach every subscribed App, but an App can only read
+        // tasks it may access. Those events are not addressed to it.
+        Err(ClientError::Api {
+            code: 1470403 | 1470404,
+            ..
+        }) => return Ok(None),
+        Err(error) => return Err(task_error("read_task_event", error.is_retryable())),
+    };
     let mut targets = directory
         .agents
         .iter()
@@ -281,7 +287,7 @@ pub(crate) async fn task_event(
         title.push_str("\n");
         title.push_str(&content);
     }
-    Ok((
+    Ok(Some((
         sender,
         CustomEvent {
             reason: "task".into(),
@@ -291,7 +297,7 @@ pub(crate) async fn task_event(
             subject_name: title,
             data: serde_json::to_value(event).map_err(|_| task_error("read_task_event", false))?,
         },
-    ))
+    )))
 }
 
 #[derive(Clone, Copy)]

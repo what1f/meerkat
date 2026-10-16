@@ -1114,7 +1114,7 @@ impl NormalizedEventSink for FeishuEventBridge {
             } else {
                 None
             };
-            let provider_event = normalized_event_to_provider(
+            let Some(provider_event) = normalized_event_to_provider(
                 &self.context,
                 &self.client,
                 self.auth,
@@ -1122,7 +1122,10 @@ impl NormalizedEventSink for FeishuEventBridge {
                 &mut self.human_names,
                 event,
             )
-            .await?;
+            .await?
+            else {
+                return Ok(());
+            };
             self.context
                 .event_sink()
                 .emit(provider_event)
@@ -1160,7 +1163,7 @@ async fn normalized_event_to_provider(
     inbound_resource_cache: &Arc<AsyncMutex<InboundResourceCache>>,
     human_names: &mut BTreeMap<String, (String, Instant)>,
     event: NormalizedEvent,
-) -> Result<ProviderEvent, crate::events::SinkError> {
+) -> Result<Option<ProviderEvent>, crate::events::SinkError> {
     match event {
         NormalizedEvent::Message(mut message) => {
             let sender = resolved_sender(
@@ -1272,7 +1275,7 @@ async fn normalized_event_to_provider(
                 }
             }
             let receiving_agent_id = receiving_agent(context, &message.app_id).await?;
-            Ok(ProviderEvent {
+            Ok(Some(ProviderEvent {
                 receiving_agent_id,
                 channel_id: channel(&message.channel_id),
                 provider_chat_id: message.chat_id,
@@ -1285,7 +1288,7 @@ async fn normalized_event_to_provider(
                     attachments,
                 }),
                 provider_data,
-            })
+            }))
         }
         NormalizedEvent::Reaction(reaction) => {
             let sender = resolved_sender(
@@ -1322,7 +1325,7 @@ async fn normalized_event_to_provider(
                 None
             };
             let provider_chat_id = target.chat_id;
-            Ok(ProviderEvent {
+            Ok(Some(ProviderEvent {
                 receiving_agent_id,
                 channel_id: channel(if direct { "private_chat" } else { "group_chat" }),
                 provider_chat_id,
@@ -1334,9 +1337,9 @@ async fn normalized_event_to_provider(
                     action,
                 }),
                 provider_data,
-            })
+            }))
         }
-        NormalizedEvent::ChatUpdated(update) => Ok(ProviderEvent {
+        NormalizedEvent::ChatUpdated(update) => Ok(Some(ProviderEvent {
             receiving_agent_id: None,
             channel_id: channel("group_chat"),
             provider_chat_id: update.chat_id.clone(),
@@ -1354,13 +1357,16 @@ async fn normalized_event_to_provider(
                 data: serde_json::to_value(&update).map_err(crate::events::SinkError::from)?,
             }),
             provider_data: serde_json::to_value(&update).map_err(crate::events::SinkError::from)?,
-        }),
+        })),
         NormalizedEvent::Task(task) => {
-            let (sender, custom) =
+            let Some((sender, custom)) =
                 crate::agent_tasks::task_event(context, client.clone(), auth, &task)
                     .await
-                    .map_err(crate::events::SinkError::from)?;
-            Ok(ProviderEvent {
+                    .map_err(crate::events::SinkError::from)?
+            else {
+                return Ok(None);
+            };
+            Ok(Some(ProviderEvent {
                 receiving_agent_id: None,
                 channel_id: channel("task"),
                 provider_chat_id: "tasks".into(),
@@ -1368,7 +1374,7 @@ async fn normalized_event_to_provider(
                 kind: ProviderEventKind::Custom(custom),
                 provider_data: serde_json::to_value(&task)
                     .map_err(crate::events::SinkError::from)?,
-            })
+            }))
         }
     }
 }

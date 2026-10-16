@@ -1225,6 +1225,8 @@ async fn mock_task_comments_mention_members_and_events_name_the_actor() {
         "task mentions must work without a prior cross-App IM mention: {commented}"
     );
     let comment_id = commented["comment_id"].as_str().unwrap();
+    // Task events also reach Apps that cannot read the task.
+    server.deliver("cli_beta",json!({"schema":"2.0","header":{"event_id":"foreign-task","event_type":"task.task.update_tenant_v1","app_id":"cli_beta","tenant_key":"tenant","create_time":"2998"},"event":{"task_guid":"task_by_someone_else","event_types":["task_create"]}}));
     // Feishu also reports the comment as a task update without the comment.
     server.deliver("cli_beta",json!({"schema":"2.0","header":{"event_id":"comment-update-copy","event_type":"task.task.update_tenant_v1","app_id":"cli_beta","tenant_key":"tenant","create_time":"2999"},"event":{"task_guid":task_id,"event_types":["task_comment_create"]}}));
     server.deliver("cli_beta",json!({"schema":"2.0","header":{"event_id":"comment-created","event_type":"task.task.comment.updated_v1","app_id":"cli_beta","tenant_key":"tenant","create_time":"3000"},"event":{"task_id":task_id,"comment_id":comment_id,"obj_type":1}}));

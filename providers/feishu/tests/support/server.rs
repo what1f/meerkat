@@ -410,7 +410,15 @@ impl FeishuServer {
                 }
                 ("GET", path) if path.starts_with("/open-apis/task/v2/tasks/") => {
                     let id = path.rsplit('/').next().unwrap();
-                    json!({"task":state.tasks.get(id).expect("created task")})
+                    // Feishu hides tasks the calling App did not create.
+                    let Some(task) = state.tasks.get(id) else {
+                        let mut response = Response::json(
+                            json!({"code":1470403,"msg":"Invoker is unauthorized to get a task"}),
+                        );
+                        response.status = 403;
+                        return response;
+                    };
+                    json!({"task":task})
                 }
                 ("POST", path)
                     if path.starts_with("/open-apis/task/v1/tasks/")
