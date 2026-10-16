@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-type SharedClient = FeishuClient<Arc<dyn Transport>>;
+pub(crate) type SharedClient = FeishuClient<Arc<dyn Transport>>;
 
 const DEFAULT_TASKLIST_NAME: &str = "团队任务";
 
@@ -832,8 +832,7 @@ impl TaskAccess {
         client: Arc<SharedClient>,
         auth: Auth,
     ) -> Result<Self, ProviderError> {
-        let (mut workspace_state, identity_directory) =
-            crate::identity::load(context.storage()).await?;
+        let (_, identity_directory) = crate::identity::load(context.storage()).await?;
         let app_id = identity_directory
             .agent_app_id(&context.agent_id)
             .map(str::to_owned)
@@ -841,17 +840,7 @@ impl TaskAccess {
                 field: "task_agent_app_id",
             })?;
         let team_members = context.storage().team_members().await?;
-        let lead_id = team_members
-            .iter()
-            .filter_map(|member| match member {
-                ProviderTeamMember::Human(person) => Some(person),
-                ProviderTeamMember::Agent { .. } => None,
-            })
-            .find(|person| person.team_role == TeamRole::Lead)
-            .map(|person| person.person_id.to_string())
-            .ok_or(ProviderError::NotFound {
-                entity: "team_lead",
-            })?;
+        let lead_id = team_lead_id(&team_members)?;
         let directory = MemberDirectory::from_roster(
             &identity_directory,
             &team_members,
@@ -861,24 +850,15 @@ impl TaskAccess {
             auth,
         )
         .await?;
-        let saved_tasklist_id = text(&workspace_state, "tasklist_guid");
-        let configured_name = tasklist_name(&context.workspace_config);
-        let desired_members = directory.tasklist_members();
-        let tasklist_id = ensure_tasklist(
+        let tasklist_id = ensure_team_tasklist(
+            context.storage(),
+            &context.workspace_config,
+            &directory,
+            &lead_id,
             client,
             auth,
-            saved_tasklist_id.as_deref(),
-            configured_name.as_deref(),
-            &desired_members,
         )
         .await?;
-        if saved_tasklist_id.as_deref() != Some(tasklist_id.as_str()) {
-            workspace_state["tasklist_guid"] = Value::String(tasklist_id.clone());
-            context
-                .storage()
-                .put_workspace_state(workspace_state)
-                .await?;
-        }
         Ok(Self {
             agent_id: context.agent_id.to_string(),
             app_id,
@@ -926,6 +906,106 @@ impl TaskAccess {
                 .collect::<Result<Vec<_>, _>>()?;
         Ok(render_card_markdown(content, &targets).0)
     }
+}
+
+fn team_lead_id(team_members: &[ProviderTeamMember]) -> Result<String, ProviderError> {
+    team_members
+        .iter()
+        .filter_map(|member| match member {
+            ProviderTeamMember::Human(person) => Some(person),
+            ProviderTeamMember::Agent { .. } => None,
+        })
+        .find(|person| person.team_role == TeamRole::Lead)
+        .map(|person| person.person_id.to_string())
+        .ok_or(ProviderError::NotFound {
+            entity: "team_lead",
+        })
+}
+
+/// Joins `app_id` to the Team Tasklist as the team lead, creating the list
+/// under the lead's own identity when the workspace has none yet.
+pub(crate) async fn join_team_tasklist_as_lead(
+    storage: &dyn lankide_provider::ProviderStorage,
+    workspace_config: &Value,
+    lead_client: &SharedClient,
+    app_id: &str,
+) -> Result<String, ProviderError> {
+    let mut workspace_state = storage.workspace_state().await?;
+    let saved_guid = text(&workspace_state, "tasklist_guid");
+    let agent = [TasklistMember::editor(MemberIdentity::app(app_id))];
+    let saved = match saved_guid.as_deref() {
+        Some(guid) => match lead_client.get_tasklist(guid, "open_id", Auth::User).await {
+            Ok(tasklist) => Some(tasklist),
+            Err(ClientError::Api { code: 1470404, .. }) => None,
+            Err(error) => {
+                return Err(task_error("feishu_tasklist_access", error.is_retryable()));
+            }
+        },
+        None => None,
+    };
+    let tasklist = match saved {
+        Some(tasklist) => {
+            let missing = missing_tasklist_members(&tasklist, &agent);
+            if !missing.is_empty() {
+                lead_client
+                    .add_tasklist_members(&tasklist.guid, &missing, "open_id", Auth::User)
+                    .await
+                    .map_err(|error| task_error("feishu_tasklist_members", error.is_retryable()))?;
+            }
+            tasklist
+        }
+        None => {
+            let name =
+                tasklist_name(workspace_config).unwrap_or_else(|| DEFAULT_TASKLIST_NAME.to_owned());
+            lead_client
+                .create_tasklist(&name, &agent, "open_id", Auth::User)
+                .await
+                .map_err(|error| task_error("feishu_tasklist_create", error.is_retryable()))?
+        }
+    };
+    if tasklist.guid.trim().is_empty() {
+        return Err(task_error("feishu_tasklist_get", false));
+    }
+    if saved_guid.as_deref() != Some(tasklist.guid.as_str()) {
+        workspace_state["tasklist_guid"] = Value::String(tasklist.guid.clone());
+        storage.put_workspace_state(workspace_state).await?;
+    }
+    Ok(tasklist.guid)
+}
+
+async fn ensure_team_tasklist(
+    storage: &dyn lankide_provider::ProviderStorage,
+    workspace_config: &Value,
+    directory: &MemberDirectory,
+    lead_id: &str,
+    client: Arc<SharedClient>,
+    auth: Auth,
+) -> Result<String, ProviderError> {
+    let mut workspace_state = storage.workspace_state().await?;
+    let saved_tasklist_id = text(&workspace_state, "tasklist_guid");
+    let lead = directory
+        .humans
+        .get(lead_id)
+        .cloned()
+        .map(MemberIdentity::user)
+        .ok_or(ProviderError::NotFound {
+            entity: "team_lead",
+        })?;
+    let tasklist_id = ensure_tasklist(
+        client,
+        auth,
+        saved_tasklist_id.as_deref(),
+        tasklist_name(workspace_config).as_deref(),
+        &directory.tasklist_members(),
+        &lead,
+        &directory.current_app_id,
+    )
+    .await?;
+    if saved_tasklist_id.as_deref() != Some(tasklist_id.as_str()) {
+        workspace_state["tasklist_guid"] = Value::String(tasklist_id.clone());
+        storage.put_workspace_state(workspace_state).await?;
+    }
+    Ok(tasklist_id)
 }
 
 #[derive(Clone, Default)]
@@ -1030,7 +1110,7 @@ impl MemberDirectory {
                     .values()
                     .cloned()
                     .map(MemberIdentity::user)
-                    .map(TasklistMember::viewer),
+                    .map(TasklistMember::editor),
             )
             .collect()
     }
@@ -1072,85 +1152,93 @@ async fn ensure_tasklist(
     saved_guid: Option<&str>,
     configured_name: Option<&str>,
     desired_members: &[TasklistMember],
+    owner: &MemberIdentity,
+    caller_app_id: &str,
 ) -> Result<String, ProviderError> {
-    let saved_guid = saved_guid.map(str::to_owned);
-    let configured_name = configured_name.map(str::to_owned);
-    let desired_members = desired_members.to_vec();
-    (async move {
-        let saved_tasklist = if let Some(guid) = saved_guid
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-        {
-            client.get_tasklist(guid, "open_id", auth).await.ok()
-        } else {
-            None
-        };
-        let mut tasklist = if let Some(tasklist) = saved_tasklist {
-            tasklist
-        } else {
-            // A replacement Agent App cannot read a Tasklist owned only by a
-            // deleted App. Discover or create the Team Tasklist available to
-            // the current verified App and persist that GUID through the
-            // caller, instead of making IM execution unavailable as well.
-            let name = configured_name
-                .as_deref()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or(DEFAULT_TASKLIST_NAME);
-            let mut matches = Vec::new();
-            let mut page_token = None;
-            loop {
-                let page = client
-                    .list_tasklists(page_token.as_deref(), 100, "open_id", auth)
-                    .await
-                    .map_err(|_| task_error("feishu_tasklist_list", true))?;
-                matches.extend(
-                    page.items
-                        .into_iter()
-                        .filter(|item| item.name.trim() == name),
-                );
-                if !page.has_more {
-                    break;
-                }
-                let next = page
-                    .next_page_token
-                    .ok_or_else(|| task_error("feishu_tasklist_list", false))?;
-                if page_token.as_deref() == Some(next.as_str()) {
-                    return Err(task_error("feishu_tasklist_list", false));
-                }
-                page_token = Some(next);
+    let saved_guid = saved_guid
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let saved_tasklist = match saved_guid.as_deref() {
+        Some(guid) => match client.get_tasklist(guid, "open_id", auth).await {
+            Ok(tasklist) => Some(tasklist),
+            Err(ClientError::Api { code: 1470404, .. }) => None,
+            // Another member can manage the list; never replace the team's
+            // list just because this App is not in it yet.
+            Err(error) => {
+                return Err(task_error("feishu_tasklist_access", error.is_retryable()));
             }
-            match matches.len() {
-                0 => client
-                    .create_tasklist(name, &desired_members, "open_id", auth)
-                    .await
-                    .map_err(|_| task_error("feishu_tasklist_create", false))?,
-                1 => matches.remove(0),
-                _ => return Err(task_error("feishu_tasklist_ambiguous", false)),
-            }
-        };
-        if let Some(name) = configured_name
-            .as_deref()
+        },
+        None => None,
+    };
+    let mut tasklist = if let Some(tasklist) = saved_tasklist {
+        tasklist
+    } else {
+        let name = configured_name
             .filter(|value| !value.trim().is_empty())
-            && tasklist.name.trim() != name
-        {
-            tasklist = client
-                .patch_tasklist(&tasklist.guid, Some(name), "open_id", auth)
+            .unwrap_or(DEFAULT_TASKLIST_NAME);
+        let mut matches = Vec::new();
+        let mut page_token = None;
+        loop {
+            let page = client
+                .list_tasklists(page_token.as_deref(), 100, "open_id", auth)
                 .await
-                .map_err(|_| task_error("feishu_tasklist_update", false))?;
+                .map_err(|error| task_error("feishu_tasklist_list", error.is_retryable()))?;
+            matches.extend(
+                page.items
+                    .into_iter()
+                    .filter(|item| item.name.trim() == name),
+            );
+            if !page.has_more {
+                break;
+            }
+            let next = page
+                .next_page_token
+                .ok_or_else(|| task_error("feishu_tasklist_list", false))?;
+            if page_token.as_deref() == Some(next.as_str()) {
+                return Err(task_error("feishu_tasklist_list", false));
+            }
+            page_token = Some(next);
         }
-        if tasklist.guid.trim().is_empty() {
-            return Err(task_error("feishu_tasklist_get", false));
-        }
-        let missing = missing_tasklist_members(&tasklist, &desired_members);
-        if !missing.is_empty() {
-            client
-                .add_tasklist_members(&tasklist.guid, &missing, "open_id", auth)
+        match matches.len() {
+            0 => client
+                .create_tasklist(name, desired_members, "open_id", auth)
                 .await
-                .map_err(|_| task_error("feishu_tasklist_members", false))?;
+                .map_err(|error| task_error("feishu_tasklist_create", error.is_retryable()))?,
+            1 => matches.remove(0),
+            _ => return Err(task_error("feishu_tasklist_ambiguous", false)),
         }
-        Ok(tasklist.guid)
-    })
-    .await
+    };
+    if tasklist.guid.trim().is_empty() {
+        return Err(task_error("feishu_tasklist_get", false));
+    }
+    if let Some(name) = configured_name.filter(|value| !value.trim().is_empty())
+        && tasklist.name.trim() != name
+    {
+        tasklist = client
+            .patch_tasklist(&tasklist.guid, Some(name), "open_id", auth)
+            .await
+            .map_err(|error| task_error("feishu_tasklist_update", error.is_retryable()))?;
+    }
+    let missing = missing_tasklist_members(&tasklist, desired_members);
+    if !missing.is_empty() {
+        tasklist = client
+            .add_tasklist_members(&tasklist.guid, &missing, "open_id", auth)
+            .await
+            .map_err(|error| task_error("feishu_tasklist_members", error.is_retryable()))?;
+    }
+    // The list belongs to the team lead; Agents work in it as editors. Only
+    // the owning App can hand it over.
+    let owned_by_caller = tasklist.owner.as_ref().is_some_and(|current| {
+        normalized_member_type(current) == "app" && current.id == caller_app_id
+    });
+    if owned_by_caller {
+        client
+            .transfer_tasklist_owner(&tasklist.guid, owner, "open_id", auth)
+            .await
+            .map_err(|error| task_error("feishu_tasklist_owner", error.is_retryable()))?;
+    }
+    Ok(tasklist.guid)
 }
 
 fn missing_tasklist_members(

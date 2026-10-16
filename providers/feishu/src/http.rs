@@ -41,6 +41,9 @@ pub struct Request {
     pub query: Vec<(String, String)>,
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
+    /// Web sign-in hops set cookies on every redirect, so those callers read
+    /// each hop themselves.
+    pub follow_redirects: bool,
 }
 
 impl fmt::Debug for Request {
@@ -49,7 +52,10 @@ impl fmt::Debug for Request {
             .headers
             .iter()
             .map(|(name, value)| {
-                if name.eq_ignore_ascii_case("authorization") {
+                if name.eq_ignore_ascii_case("authorization")
+                    || name.eq_ignore_ascii_case("cookie")
+                    || name.to_ascii_lowercase().contains("csrf")
+                {
                     (name.clone(), "<redacted>".to_owned())
                 } else {
                     (name.clone(), value.clone())
@@ -75,7 +81,13 @@ impl Request {
             query: Vec::new(),
             headers: Vec::new(),
             body: Vec::new(),
+            follow_redirects: true,
         }
+    }
+
+    pub fn without_redirects(mut self) -> Self {
+        self.follow_redirects = false;
+        self
     }
 
     pub fn query(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
@@ -147,6 +159,13 @@ impl Response {
             .find(|(key, _)| key.eq_ignore_ascii_case(name))
             .map(|(_, value)| value.as_str())
     }
+
+    pub fn header_values<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a str> + 'a {
+        self.headers
+            .iter()
+            .filter(move |(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
 }
 
 pub type TransportFuture<'a> = std::pin::Pin<
@@ -166,6 +185,7 @@ impl<T: Transport + ?Sized> Transport for Arc<T> {
 #[derive(Clone)]
 pub struct ReqwestTransport {
     client: reqwest::Client,
+    no_redirect_client: reqwest::Client,
 }
 impl fmt::Debug for ReqwestTransport {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -187,6 +207,11 @@ impl ReqwestTransport {
                 .timeout(timeout)
                 .build()
                 .expect("reqwest client configuration is valid"),
+            no_redirect_client: reqwest::Client::builder()
+                .timeout(timeout)
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .expect("reqwest client configuration is valid"),
         }
     }
 }
@@ -200,7 +225,12 @@ impl Transport for ReqwestTransport {
                 Method::Patch => reqwest::Method::PATCH,
                 Method::Delete => reqwest::Method::DELETE,
             };
-            let mut builder = self.client.request(method, &request.path);
+            let client = if request.follow_redirects {
+                &self.client
+            } else {
+                &self.no_redirect_client
+            };
+            let mut builder = client.request(method, &request.path);
             if !request.query.is_empty() {
                 builder = builder.query(&request.query);
             }

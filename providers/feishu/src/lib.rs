@@ -6,6 +6,7 @@ mod adapter;
 mod agent_tasks;
 mod authorization;
 pub mod client;
+mod console;
 pub mod dto;
 pub mod events;
 pub mod http;
@@ -19,7 +20,7 @@ pub mod registration;
 pub mod tasks;
 pub mod ws;
 
-pub use adapter::{EventSourceFactory, FeishuProvider};
+pub use adapter::{CONSOLE_LOGIN_INTERFACE, EventSourceFactory, FeishuProvider};
 pub use authorization::{
     STANDARD_BOT_EVENTS, STANDARD_BOT_TENANT_SCOPES, authorization_url,
     contains_standard_capabilities,

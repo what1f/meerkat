@@ -39,6 +39,7 @@ mod machines;
 pub(crate) use machines::local_machine_id;
 mod dialogs;
 mod errors;
+mod feishu_sign_in;
 pub(super) mod onboarding;
 mod pages;
 mod reaction_picker;
@@ -47,6 +48,7 @@ mod workspace_actions;
 use agent_actions::{new_environment_row, selected_harness_id};
 use components::*;
 use errors::friendly_error;
+use feishu_sign_in::FeishuSignIn;
 use machines::MachineChoice;
 pub(super) use onboarding::localized_agent_onboarding_copy;
 use onboarding::telegram_bot_username;
@@ -78,6 +80,7 @@ enum Modal {
     EditAgent(String),
     DeleteAgent(String),
     AgentOnboarding(AgentOnboardingState),
+    FeishuSignIn(FeishuSignIn),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

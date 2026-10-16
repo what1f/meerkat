@@ -41,3 +41,15 @@ never holds back later events.
 A permanent error is logged once and skipped; its platform acknowledgement
 lets later events flow. Source reconnects use capped backoff until recovery or
 shutdown.
+
+New Agents use the developer console once the team lead has signed in by QR
+code, either right after creating the workspace or in the first Agent's dialog:
+
+```sh
+cargo test -p lankide-provider-feishu --test e2e console_onboarding::
+```
+
+The scenarios simulate the Feishu sign-in, developer console, consent and
+Tasklist endpoints. One sign-in creates and publishes every Agent App, the
+first Agent creates the Team Tasklist as the lead, and later Agents join it as
+editors. A console failure falls back to confirming the new App in Feishu.

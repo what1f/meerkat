@@ -556,6 +556,9 @@ impl AgentOnboardingContext {
     pub fn workspace_secrets(&self) -> &dyn SecretReader {
         self.secret_reader.as_ref()
     }
+    pub fn workspace_secret_writer(&self) -> &dyn SecretWriter {
+        self.secret_writer.as_ref()
+    }
     pub async fn write_agent_secret(
         &self,
         name: &str,

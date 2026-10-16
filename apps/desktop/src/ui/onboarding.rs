@@ -351,6 +351,28 @@ pub(crate) fn localized_agent_onboarding_copy(
             OnboardingStatus::Ready | OnboardingStatus::Error
         );
     if is_waiting_for_confirmation {
+        if state.provider_id == "feishu" && state.step == "console_login" {
+            return (
+                language.text("登录飞书", "Sign in to Feishu").to_owned(),
+                language
+                    .text(
+                        "登录后自动创建 Agent 应用。",
+                        "The Agent app is created after you sign in.",
+                    )
+                    .to_owned(),
+            );
+        }
+        if state.provider_id == "feishu"
+            && state.step == "permissions"
+            && state.verification_uri.is_none()
+        {
+            return (
+                language.text("正在创建应用", "Creating the app").to_owned(),
+                language
+                    .text("完成后自动启用。", "The Agent is enabled when it finishes.")
+                    .to_owned(),
+            );
+        }
         if state.provider_id == "feishu" && state.step == "permissions" {
             return (
                 language

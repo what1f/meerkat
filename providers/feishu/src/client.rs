@@ -13,8 +13,8 @@ use crate::dto::{
 };
 use crate::http::{ClientError, Method, Request, Response, Transport, encode_path_segment};
 use crate::tasks::{
-    COMMENTS_PATH, Comment, CreateTask, ListRequest, TASKLISTS_PATH, TASKS_PATH, TaskMemberInput,
-    TaskPatch, TasklistMember,
+    COMMENTS_PATH, Comment, CreateTask, ListRequest, MemberIdentity, TASKLISTS_PATH, TASKS_PATH,
+    TaskMemberInput, TaskPatch, TasklistMember,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -1428,6 +1428,48 @@ impl<T: Transport> Client<T> {
             .and_then(|value| value.tasklist)
             .ok_or_else(|| ClientError::MissingField {
                 operation: "patch Feishu tasklist".to_owned(),
+                field: "tasklist".to_owned(),
+            })
+    }
+
+    /// Hands the tasklist to `owner`; the previous owner stays as an editor.
+    pub async fn transfer_tasklist_owner(
+        &self,
+        tasklist_guid: &str,
+        owner: &MemberIdentity,
+        user_id_type: &str,
+        auth: Auth,
+    ) -> Result<TasklistRecord, ClientError> {
+        let path = format!(
+            "{TASKLISTS_PATH}/{}",
+            encode_path_segment(tasklist_guid.trim())
+        );
+        let query = [(
+            "user_id_type".to_owned(),
+            normalized_user_id_type(user_id_type),
+        )];
+        let body = json!({
+            "tasklist": {
+                "owner": { "id": owner.external_id.trim(), "type": owner.identity_type.trim() }
+            },
+            "update_fields": ["owner"],
+            "origin_owner_to_role": "editor"
+        });
+        let response: ApiResponse<TasklistResult> = self
+            .json_request(
+                Method::Patch,
+                &path,
+                &query,
+                Some(&body),
+                auth,
+                "transfer Feishu tasklist owner",
+            )
+            .await?;
+        response
+            .data
+            .and_then(|value| value.tasklist)
+            .ok_or_else(|| ClientError::MissingField {
+                operation: "transfer Feishu tasklist owner".to_owned(),
                 field: "tasklist".to_owned(),
             })
     }

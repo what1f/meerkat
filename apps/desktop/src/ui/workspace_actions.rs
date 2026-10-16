@@ -253,10 +253,15 @@ impl LankideApp {
                         this.selected_workspace_id = Some(workspace.id.clone());
                         this.reaction_options.clear();
                         this.telegram_manager_ready = false;
+                        let feishu =
+                            (workspace.provider.id == "feishu").then(|| workspace.id.clone());
                         this.workspaces.push(workspace);
                         this.agents.clear();
                         this.images.clear();
                         this.modal = None;
+                        if let Some(workspace_id) = feishu {
+                            this.begin_feishu_sign_in(workspace_id, cx);
+                        }
                         Some((
                             NotificationType::Success,
                             UiMessage::localized("工作区已创建。", "Workspace created."),

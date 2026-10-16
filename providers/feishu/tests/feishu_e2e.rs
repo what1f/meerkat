@@ -757,14 +757,22 @@ async fn feishu_task_flow_projects_the_typed_team_roster() {
         .expect("Tasklist ACL");
     for (id, member_type, role) in [
         ("cli_beta", "app", "editor"),
-        ("ou_lead", "user", "viewer"),
-        ("ou_teammate", "user", "viewer"),
+        ("ou_lead", "user", "editor"),
+        ("ou_teammate", "user", "editor"),
     ] {
         assert!(acl.iter().any(|member| {
             member["id"] == id && member["type"] == member_type && member["role"] == role
         }));
     }
     assert!(acl.iter().all(|member| member["id"] != "ou_external"));
+    assert_eq!(
+        state.owner_transfers,
+        [json!({
+            "tasklist":{"owner":{"id":"ou_lead","type":"user"}},
+            "update_fields":["owner"],
+            "origin_owner_to_role":"editor"
+        })]
+    );
     assert_eq!(state.task_member_add_bodies.len(), 1);
     assert_eq!(
         state.task_member_add_bodies[0]["members"],
@@ -1590,6 +1598,16 @@ struct TaskFlowState {
     task_member_remove_bodies: Vec<Value>,
     tasks: BTreeMap<String, Value>,
     tasklist_members: Vec<Value>,
+    owner_transfers: Vec<Value>,
+}
+
+impl TaskFlowState {
+    fn tasklist_owner(&self) -> Value {
+        self.owner_transfers
+            .last()
+            .map(|body| body["tasklist"]["owner"].clone())
+            .unwrap_or_else(|| json!({"id":"cli_alpha","type":"app","role":"owner"}))
+    }
 }
 
 impl Transport for TaskFlowTransport {
@@ -1618,7 +1636,7 @@ impl Transport for TaskFlowTransport {
                     vec![json!({
                         "guid":"tasklist_flow",
                         "name":"团队任务",
-                        "owner":{"id":"cli_alpha","type":"app","role":"owner"},
+                        "owner":state.tasklist_owner(),
                         "members":state.tasklist_members
                     })]
                 };
@@ -1638,7 +1656,7 @@ impl Transport for TaskFlowTransport {
                     json!({"code":0,"data":{"tasklist":{
                         "guid":"tasklist_flow",
                         "name":"团队任务",
-                        "owner":{"id":"cli_alpha","type":"app","role":"owner"},
+                        "owner":state.tasklist_owner(),
                         "members":state.tasklist_members
                     }}}),
                 );
@@ -1652,7 +1670,27 @@ impl Transport for TaskFlowTransport {
                     json!({"code":0,"data":{"tasklist":{
                         "guid":"tasklist_flow",
                         "name":"团队任务",
-                        "owner":{"id":"cli_alpha","type":"app","role":"owner"},
+                        "owner":state.tasklist_owner(),
+                        "members":state.tasklist_members
+                    }}}),
+                );
+            }
+            if request.path.ends_with("/task/v2/tasklists/tasklist_flow")
+                && request.method == Method::Patch
+            {
+                let body: Value = serde_json::from_slice(&request.body)
+                    .map_err(|error| TransportError::Failed(error.to_string()))?;
+                let mut state = self.state.lock().expect("task flow state");
+                let mut previous = state.tasklist_owner();
+                previous["role"] = json!("editor");
+                state.tasklist_members.push(previous);
+                state.owner_transfers.push(body);
+                return json_response(
+                    200,
+                    json!({"code":0,"data":{"tasklist":{
+                        "guid":"tasklist_flow",
+                        "name":"团队任务",
+                        "owner":state.tasklist_owner(),
                         "members":state.tasklist_members
                     }}}),
                 );
@@ -1670,7 +1708,7 @@ impl Transport for TaskFlowTransport {
                     json!({"code":0,"data":{"tasklist":{
                         "guid":"tasklist_flow",
                         "name":"团队任务",
-                        "owner":{"id":"cli_alpha","type":"app","role":"owner"},
+                        "owner":state.tasklist_owner(),
                         "members":state.tasklist_members
                     }}}),
                 );
@@ -2011,8 +2049,8 @@ impl Transport for FeishuFixtureTransport {
                     "data":{"tasklist":{
                         "guid":"tasklist_e2e",
                         "name":"团队任务",
-                        "owner":{"id":"cli_e2e","type":"app","role":"owner"},
-                        "members":[{"id":"ou_human_e2e","type":"user","role":"viewer"}]
+                        "owner":{"id":"ou_human_e2e","type":"user","role":"owner"},
+                        "members":[{"id":"cli_e2e","type":"app","role":"editor"}]
                     }}
                 })
             } else if request.path.contains("/contact/v3/users/on_profile") {

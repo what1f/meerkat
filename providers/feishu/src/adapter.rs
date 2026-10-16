@@ -19,7 +19,8 @@ use lankide_core::{
 };
 use lankide_provider::{
     AgentContext, AgentRuntimeContext, AutoReactionContext, ChannelDefaultAttention,
-    ChannelDefinition, EventSender, EventSenderType, InitContext, MessageAttachment, MessageEvent,
+    ChannelDefinition, EventSender, EventSenderType, InitContext, InterfaceDefinition,
+    InvocationHandler, JsonSchema, MessageAttachment, MessageEvent,
     PROVIDER_CAPABILITY_TASK_SYSTEM, Provider, ProviderError, ProviderEvent, ProviderEventKind,
     ProviderFuture, ProviderInfo, ProviderStorage, ReactionEvent, RecallMessageContext,
     ResourceUpload, SendMessageContext, SendMessageResult, ToolDefinition,
@@ -104,6 +105,41 @@ impl InboundResourceCache {
     fn prune(&mut self) {
         self.entries
             .retain(|_, (_, observed_at)| observed_at.elapsed() < INBOUND_RESOURCE_CACHE_TTL);
+    }
+}
+
+/// Signs the user in to the Feishu developer console with a QR code, so new
+/// Agent Apps are created without another confirmation.
+pub const CONSOLE_LOGIN_INTERFACE: &str = "feishu.workspace.console_login";
+
+struct ConsoleLoginHandler {
+    context: InitContext,
+    transport: SharedTransport,
+}
+
+impl InvocationHandler for ConsoleLoginHandler {
+    fn invoke<'a>(&'a self, input: Value) -> ProviderFuture<'a, Value> {
+        Box::pin(async move {
+            let action = input
+                .get("action")
+                .and_then(Value::as_str)
+                .unwrap_or("status");
+            let login = crate::console::login(
+                self.transport.clone(),
+                self.context.secret_reader(),
+                self.context.secret_writer(),
+                action,
+            )
+            .await?;
+            Ok(match login {
+                crate::console::Login::Ready(_) => serde_json::json!({"state": "ready"}),
+                crate::console::Login::Required => serde_json::json!({"state": "required"}),
+                crate::console::Login::Waiting { qr_code, scanned } => serde_json::json!({
+                    "state": if scanned { "scanned" } else { "waiting" },
+                    "qr_code": qr_code,
+                }),
+            })
+        })
     }
 }
 
@@ -341,6 +377,27 @@ impl Provider for FeishuProvider {
 
     fn init<'a>(&'a self, context: InitContext) -> ProviderFuture<'a, ()> {
         Box::pin(async move {
+            context
+                .register_interface(InterfaceDefinition {
+                    id: CONSOLE_LOGIN_INTERFACE.into(),
+                    input_schema: JsonSchema::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {"action": {"enum": ["status", "start", "poll"]}}
+                    }))?,
+                    output_schema: JsonSchema::new(serde_json::json!({
+                        "type": "object",
+                        "required": ["state"],
+                        "properties": {
+                            "state": {"enum": ["ready", "required", "waiting", "scanned"]},
+                            "qr_code": {"type": "string"}
+                        }
+                    }))?,
+                    handler: Arc::new(ConsoleLoginHandler {
+                        context: context.clone(),
+                        transport: self.transport.clone(),
+                    }),
+                })
+                .await?;
             let workspace_key = context.workspace_id().to_string();
             if let Ok(mut contexts) = self.contexts.lock() {
                 contexts.insert(workspace_key, context);

@@ -51,6 +51,9 @@ impl LankideApp {
             Some(Modal::AgentOnboarding(state)) => {
                 self.agent_onboarding_dialog(dialog, app, state, window, cx)
             }
+            Some(Modal::FeishuSignIn(state)) => {
+                self.feishu_sign_in_dialog(dialog, app, state, window)
+            }
             None => DesktopDialog::from(dialog)
                 .w(px(0.))
                 .h(px(0.))
@@ -1161,6 +1164,15 @@ impl LankideApp {
                     .map(|error| friendly_error(error, language))
             });
         let verification_uri = state.verification_uri.clone();
+        let qr_value = verification_uri.clone().or_else(|| {
+            state
+                .payload
+                .get("qr_code")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+        });
+        let is_feishu_sign_in = state.provider_id == "feishu" && state.step == "console_login";
         let is_new_feishu_permissions =
             state.provider_id == "feishu" && state.step == "permissions";
         let steps = if state.provider_id == "telegram" {
@@ -1188,12 +1200,8 @@ impl LankideApp {
         } else {
             1
         };
-        let dialog_height = px(if verification_uri.is_some() {
-            610.
-        } else {
-            390.
-        })
-        .min((window.viewport_size().height - px(48.)).max(px(390.)));
+        let dialog_height = px(if qr_value.is_some() { 610. } else { 390. })
+            .min((window.viewport_size().height - px(48.)).max(px(390.)));
         let centered_top = ((window.viewport_size().height - dialog_height) * 0.5).max(px(64.));
         DesktopDialog::from(dialog)
             .w(px(720.))
@@ -1270,9 +1278,9 @@ impl LankideApp {
                                     ),
                             ),
                     );
-                if let Some(uri) = verification_uri.clone() {
-                    let uri_for_open = uri.clone();
-                    let qr_code = qr_code_image(&uri);
+                if let Some(qr_value) = qr_value.clone() {
+                    let link = verification_uri.clone();
+                    let qr_code = qr_code_image(&qr_value);
                     body = body.child(
                         div()
                             .py(px(8.))
@@ -1295,6 +1303,18 @@ impl LankideApp {
                                     .text_color(theme.text_secondary)
                                     .child(if state.provider_id == "telegram" {
                                         language.text("在 Telegram 中确认", "Confirm in Telegram")
+                                    } else if is_feishu_sign_in {
+                                        if state.status == OnboardingStatus::Verifying {
+                                            language.text(
+                                                "在飞书中确认登录",
+                                                "Confirm sign-in in Feishu",
+                                            )
+                                        } else {
+                                            language.text(
+                                                "使用飞书扫码登录",
+                                                "Scan with Feishu to sign in",
+                                            )
+                                        }
                                     } else if is_new_feishu_permissions {
                                         language.text(
                                             "使用飞书扫码继续授权",
@@ -1305,23 +1325,25 @@ impl LankideApp {
                                             .text("使用飞书扫码确认", "Scan with Feishu to confirm")
                                     }),
                             )
-                            .child(
-                                DesktopButton::outline(
-                                    "open-agent-onboarding-link",
-                                    if state.provider_id == "telegram" {
-                                        language.text("在 Telegram 中打开", "Open in Telegram")
-                                    } else if is_new_feishu_permissions {
-                                        language.text("继续授权", "Continue authorization")
-                                    } else {
-                                        language.text("在飞书中打开", "Open in Feishu")
-                                    },
+                            .when_some(link, |panel, link| {
+                                panel.child(
+                                    DesktopButton::outline(
+                                        "open-agent-onboarding-link",
+                                        if state.provider_id == "telegram" {
+                                            language.text("在 Telegram 中打开", "Open in Telegram")
+                                        } else if is_new_feishu_permissions {
+                                            language.text("继续授权", "Continue authorization")
+                                        } else {
+                                            language.text("在飞书中打开", "Open in Feishu")
+                                        },
+                                    )
+                                    .on_click(
+                                        window.listener_for(&open_link_app, move |_, _, _, cx| {
+                                            cx.open_url(&link)
+                                        }),
+                                    ),
                                 )
-                                .on_click(
-                                    window.listener_for(&open_link_app, move |_, _, _, cx| {
-                                        cx.open_url(&uri_for_open)
-                                    }),
-                                ),
-                            ),
+                            }),
                     );
                 }
                 let mut footer = DesktopDialogFooter::new().child(desktop_dialog_cancel(
