@@ -105,13 +105,13 @@ impl NetProxy {
         });
     }
     /// Drop a complete client WebSocket frame before forwarding any of it.
-    pub fn cut_before_computer_frame(&self, kind: &'static str) {
+    pub fn cut_before_machine_frame(&self, kind: &'static str) {
         self.state.send_modify(|s| s.cut_before = Some(kind));
     }
-    pub fn discard_computer_frame(&self, kind: &'static str) {
+    pub fn discard_machine_frame(&self, kind: &'static str) {
         self.state.send_modify(|s| s.discard_once = Some(kind));
     }
-    pub fn delay_computer_frames(&self, delay: std::time::Duration) {
+    pub fn delay_machine_frames(&self, delay: std::time::Duration) {
         self.state.send_modify(|s| s.frame_delay = delay);
     }
     pub fn attempts(&self) -> Vec<Instant> {

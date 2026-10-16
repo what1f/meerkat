@@ -16,7 +16,7 @@ lankide-provider = { path = "../provider" }
 lankide-harness = { path = "../harness" }
 lankide-storage = { path = "../storage" }
 lankide-runtime = { path = "../runtime" }
-lankide-computer = { path = "../computer" }
+lankide-machine-core = { path = "../machine-core" }
 serde.workspace = true
 serde_json.workspace = true
 

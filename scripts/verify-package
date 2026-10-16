@@ -76,9 +76,9 @@ def main():
                     if code != 0:
                         raise ValueError("extracted Desktop bootstrap failed")
                     observed = json.loads(bootstrap_result.read_text())
-                    if observed.get("status") != "passed" or not all(observed.get(key) is True for key in ("runtime_ready", "computer_connected", "management")):
+                    if observed.get("status") != "passed" or not all(observed.get(key) is True for key in ("runtime_ready", "machine_connected", "management")):
                         raise ValueError("extracted Desktop did not pass all startup checks")
-                    if any((home / "run" / name).exists() for name in ("runtime.sock", "runtime.lock", "computer.lock")):
+                    if any((home / "run" / name).exists() for name in ("runtime.sock", "runtime.lock", "machine.lock")):
                         raise ValueError("extracted Desktop left service endpoints behind")
                     result.update(bootstrap=observed, signature="passed", archive_content="passed", cleanup="passed")
                 finally:

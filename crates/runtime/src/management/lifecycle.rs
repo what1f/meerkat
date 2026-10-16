@@ -496,14 +496,14 @@ impl<'a> AgentLifecycle<'a> {
             Some(&agent_id),
             now_millis(),
         );
-        if !record.computer_id.is_empty() {
-            let broker = self.application.computer_broker();
-            let computer_id = record.computer_id;
+        if !record.machine_id.is_empty() {
+            let broker = self.application.machine_broker();
+            let machine_id = record.machine_id;
             let cleanup_workspace_id = workspace_id.clone();
             let cleanup_agent_id = agent_id.clone();
             self.application.spawn_background(async move {
                 if let Err(error) = broker
-                    .delete_agent_files(&computer_id, &cleanup_workspace_id, &cleanup_agent_id)
+                    .delete_agent_files(&machine_id, &cleanup_workspace_id, &cleanup_agent_id)
                     .await
                 {
                     log::error!(

@@ -35,12 +35,12 @@ pub enum RuntimeError {
     Application(String),
     ActionRequired(String),
     InvalidExecutionToken,
-    ComputerNotRegistered,
-    ComputerRevoked,
-    ComputerHasAssignedAgents,
-    LocalComputerCannotBeRemoved,
-    ComputerNameInvalid,
-    HarnessUnavailableOnComputer,
+    MachineNotRegistered,
+    MachineRevoked,
+    MachineHasAssignedAgents,
+    LocalMachineCannotBeRemoved,
+    MachineNameInvalid,
+    HarnessUnavailableOnMachine,
     ProviderMismatch {
         workspace_id: WorkspaceId,
         expected: ProviderId,
@@ -99,15 +99,15 @@ impl fmt::Display for RuntimeError {
             Self::RuntimeStillShared => formatter.write_str("runtime_still_shared"),
             Self::Application(error) => write!(formatter, "runtime_application: {error}"),
             Self::ActionRequired(message) => formatter.write_str(message),
-            Self::ComputerNotRegistered => formatter.write_str("computer_not_registered"),
-            Self::ComputerHasAssignedAgents => formatter.write_str("computer_has_assigned_agents"),
-            Self::LocalComputerCannotBeRemoved => {
-                formatter.write_str("local_computer_cannot_be_removed")
+            Self::MachineNotRegistered => formatter.write_str("machine_not_registered"),
+            Self::MachineHasAssignedAgents => formatter.write_str("machine_has_assigned_agents"),
+            Self::LocalMachineCannotBeRemoved => {
+                formatter.write_str("local_machine_cannot_be_removed")
             }
-            Self::ComputerNameInvalid => formatter.write_str("computer_name_invalid"),
-            Self::ComputerRevoked => formatter.write_str("computer_revoked"),
-            Self::HarnessUnavailableOnComputer => {
-                formatter.write_str("harness_unavailable_on_computer")
+            Self::MachineNameInvalid => formatter.write_str("machine_name_invalid"),
+            Self::MachineRevoked => formatter.write_str("machine_revoked"),
+            Self::HarnessUnavailableOnMachine => {
+                formatter.write_str("harness_unavailable_on_machine")
             }
             Self::InvalidExecutionToken => formatter.write_str("runtime_invalid_execution_token"),
             Self::ProviderMismatch {

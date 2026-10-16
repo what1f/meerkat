@@ -1,4 +1,4 @@
-//! Owner management uses the shared listener without granting Computer access.
+//! Owner management uses the shared listener without granting Machine access.
 use lankide_client::{ManagementClient, ManagementEventKind};
 use lankide_protocol::{DEFAULT_MAX_MESSAGE_BYTES, management};
 use lankide_system_e2e::{Result, RigConfig, SystemRig};
@@ -18,7 +18,7 @@ async fn owner_manages_over_http_and_events_while_other_credentials_are_rejected
             std::fs::metadata(&owner_path)?.permissions().mode() & 0o777,
             0o600
         );
-        let (_, device) = rig.computer_endpoint()?;
+        let (_, device) = rig.machine_endpoint()?;
         let (_, pairing) = rig.local_pairing_endpoint()?;
         let http = reqwest::Client::builder()
             .no_proxy()
@@ -75,10 +75,10 @@ async fn owner_manages_over_http_and_events_while_other_credentials_are_rejected
             unauthorized.subscribe_management_events(None, 0).await,
             Err(lankide_client::ClientError::Provider(_))
         ));
-        // The owner cannot cross into the Computer entry point.
-        let (computer_url, _) = rig.local_pairing_endpoint()?;
+        // The owner cannot cross into the Machine entry point.
+        let (machine_url, _) = rig.local_pairing_endpoint()?;
         assert!(
-            lankide_protocol::link::connect(&computer_url, &owner, DEFAULT_MAX_MESSAGE_BYTES)
+            lankide_protocol::link::connect(&machine_url, &owner, DEFAULT_MAX_MESSAGE_BYTES)
                 .await
                 .is_err()
         );
@@ -117,11 +117,11 @@ async fn owner_manages_over_http_and_events_while_other_credentials_are_rejected
 
 #[tokio::test]
 async fn loopback_management_closes_events_on_shutdown() -> Result<()> {
-    use lankide_runtime_daemon::{RuntimePaths, ShutdownReason, run_daemon};
+    use lankided::{RuntimePaths, ShutdownReason, run_daemon};
     let home = tempfile::tempdir()?;
     std::fs::write(
         home.path().join("runtime.json"),
-        br#"{"computer_link_listen":"127.0.0.1:0"}"#,
+        br#"{"machine_link_listen":"127.0.0.1:0"}"#,
     )?;
     let paths = RuntimePaths::for_home(home.path())?;
     let (stop, stopped) = tokio::sync::oneshot::channel();
@@ -190,11 +190,11 @@ async fn paused_workspace_agent_can_be_renamed_and_runs_after_resume() -> Result
 
 #[tokio::test]
 async fn management_cannot_be_configured_on_a_public_plaintext_listener() -> Result<()> {
-    use lankide_runtime_daemon::{RuntimePaths, run_daemon};
+    use lankided::{RuntimePaths, run_daemon};
     let home = tempfile::tempdir()?;
     std::fs::write(
         home.path().join("runtime.json"),
-        br#"{"computer_link_listen":"0.0.0.0:0"}"#,
+        br#"{"machine_link_listen":"0.0.0.0:0"}"#,
     )?;
     let paths = RuntimePaths::for_home(home.path())?;
     let result = run_daemon(paths.clone(), Default::default(), std::future::pending()).await;
@@ -204,10 +204,10 @@ async fn management_cannot_be_configured_on_a_public_plaintext_listener() -> Res
 }
 
 #[tokio::test]
-async fn owner_sees_computer_pairing_presence_and_revocation_from_events() -> Result<()> {
-    use lankide_computer_daemon::{ComputerDaemonPaths, pair};
+async fn owner_sees_machine_pairing_presence_and_revocation_from_events() -> Result<()> {
+    use lankide_machine::{MachineDaemonPaths, pair};
     let mut rig = SystemRig::start(RigConfig {
-        auto_start_computer: false,
+        auto_start_machine: false,
         ..Default::default()
     })
     .await?;
@@ -217,7 +217,7 @@ async fn owner_sees_computer_pairing_presence_and_revocation_from_events() -> Re
         let code = client.create_pairing_code().await?;
         let (url, _) = rig.local_pairing_endpoint()?;
         let device = pair(
-            &ComputerDaemonPaths::for_home(rig.computer_home())?,
+            &MachineDaemonPaths::for_home(rig.machine_home())?,
             &url,
             &code.code,
         )
@@ -225,25 +225,25 @@ async fn owner_sees_computer_pairing_presence_and_revocation_from_events() -> Re
         let event = timeout(Duration::from_secs(3), events.next())
             .await?
             .ok_or("pairing event stream ended")??;
-        assert_eq!(event.kind, ManagementEventKind::ComputerCatalogChanged);
+        assert_eq!(event.kind, ManagementEventKind::MachineCatalogChanged);
         assert!(event.workspace_id.is_empty());
-        let catalog = client.get_computer_catalog(None).await?;
+        let catalog = client.get_machine_catalog(None).await?;
         assert!(
             catalog
                 .iter()
-                .any(|c| c.id == device.computer_id && c.registered && !c.available)
+                .any(|c| c.id == device.machine_id && c.registered && !c.available)
         );
 
-        rig.start_paired_computer()?;
+        rig.start_paired_machine()?;
         loop {
             timeout(Duration::from_secs(3), events.next())
                 .await?
                 .ok_or("online event stream ended")??;
             if client
-                .get_computer_catalog(None)
+                .get_machine_catalog(None)
                 .await?
                 .iter()
-                .any(|c| c.id == device.computer_id && c.available)
+                .any(|c| c.id == device.machine_id && c.available)
             {
                 break;
             }
@@ -251,16 +251,16 @@ async fn owner_sees_computer_pairing_presence_and_revocation_from_events() -> Re
         // Start the offline observer after online reconciliation so an earlier
         // registration or inventory event cannot satisfy this transition.
         events = client.subscribe_management_events(None, 0).await?;
-        rig.stop_computer()?;
+        rig.stop_machine()?;
         loop {
             timeout(Duration::from_secs(3), events.next())
                 .await?
                 .ok_or("offline event stream ended")??;
             if client
-                .get_computer_catalog(None)
+                .get_machine_catalog(None)
                 .await?
                 .iter()
-                .any(|c| c.id == device.computer_id && !c.available)
+                .any(|c| c.id == device.machine_id && !c.available)
             {
                 break;
             }
@@ -271,21 +271,21 @@ async fn owner_sees_computer_pairing_presence_and_revocation_from_events() -> Re
         let mut events = client
             .subscribe_management_events(Some("owner_team"), 0)
             .await?;
-        client.revoke_computer(&device.computer_id).await?;
+        client.revoke_machine(&device.machine_id).await?;
         timeout(Duration::from_secs(3), events.next())
             .await?
             .ok_or("revocation event stream ended")??;
         assert!(
             client
-                .get_computer_catalog(None)
+                .get_machine_catalog(None)
                 .await?
                 .iter()
-                .any(|c| c.id == device.computer_id && c.revoked_at.is_some() && !c.available)
+                .any(|c| c.id == device.machine_id && c.revoked_at.is_some() && !c.available)
         );
         assert!(
-            rig.await_terminal_computer()
+            rig.await_terminal_machine()
                 .await?
-                .contains("computer_revoked")
+                .contains("machine_revoked")
         );
         Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
     }

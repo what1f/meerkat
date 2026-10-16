@@ -50,8 +50,8 @@ impl ExecutionAttemptState {
 pub struct ExecutionAttemptView {
     pub execution_id: i64,
     pub attempt: i64,
-    pub computer_id: String,
-    pub computer_instance_id: String,
+    pub machine_id: String,
+    pub machine_instance_id: String,
     pub state: ExecutionAttemptState,
     pub last_event_sequence: u64,
     pub native_session_id: Option<String>,
@@ -92,8 +92,8 @@ pub struct ExecutionEventRecord {
 pub struct RecordExecutionEvent {
     pub execution_id: i64,
     pub attempt: i64,
-    pub computer_id: String,
-    pub computer_instance_id: String,
+    pub machine_id: String,
+    pub machine_instance_id: String,
     pub sequence: u64,
     pub kind: String,
     pub payload: Vec<u8>,
@@ -138,15 +138,15 @@ fn load_execution_attempt(
     attempt: i64,
 ) -> Result<ExecutionAttemptView> {
     let row = connection.query_row(
-        "SELECT computer_id,computer_instance_id,state,last_event_sequence,native_session_id,lease_expires_at,failure_json FROM execution_attempts WHERE execution_id=?1 AND attempt=?2",
+        "SELECT machine_id,machine_instance_id,state,last_event_sequence,native_session_id,lease_expires_at,failure_json FROM execution_attempts WHERE execution_id=?1 AND attempt=?2",
         params![execution_id, attempt],
         |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, i64>(3)?, row.get::<_, Option<String>>(4)?, row.get::<_, i64>(5)?, row.get::<_, Option<String>>(6)?)),
     )?;
     Ok(ExecutionAttemptView {
         execution_id,
         attempt,
-        computer_id: row.0,
-        computer_instance_id: row.1,
+        machine_id: row.0,
+        machine_instance_id: row.1,
         state: ExecutionAttemptState::parse(&row.2)?,
         last_event_sequence: row.3 as u64,
         native_session_id: row.4,
@@ -302,12 +302,12 @@ impl Storage {
         &self,
         execution_id: i64,
         attempt: i64,
-        computer_id: &str,
-        computer_instance_id: &str,
+        machine_id: &str,
+        machine_instance_id: &str,
         lease_expires_at: i64,
         now: i64,
     ) -> Result<ExecutionAttemptView> {
-        if attempt <= 0 || computer_id.is_empty() || computer_instance_id.is_empty() {
+        if attempt <= 0 || machine_id.is_empty() || machine_instance_id.is_empty() {
             return Err(StorageError::Invalid(
                 "invalid execution attempt identity".into(),
             ));
@@ -333,13 +333,13 @@ impl Storage {
             return Err(StorageError::Conflict("stale execution attempt".into()));
         }
         transaction.execute(
-            "INSERT INTO execution_attempts(execution_id,attempt,computer_id,computer_instance_id,state,last_event_sequence,lease_expires_at,assigned_at) VALUES(?1,?2,?3,?4,'offered',0,?5,?6) ON CONFLICT(execution_id,attempt) DO NOTHING",
-            params![execution_id, attempt, computer_id, computer_instance_id, lease_expires_at, now],
+            "INSERT INTO execution_attempts(execution_id,attempt,machine_id,machine_instance_id,state,last_event_sequence,lease_expires_at,assigned_at) VALUES(?1,?2,?3,?4,'offered',0,?5,?6) ON CONFLICT(execution_id,attempt) DO NOTHING",
+            params![execution_id, attempt, machine_id, machine_instance_id, lease_expires_at, now],
         )?;
         let view = load_execution_attempt(&transaction, execution_id, attempt)?;
-        if view.computer_id != computer_id || view.computer_instance_id != computer_instance_id {
+        if view.machine_id != machine_id || view.machine_instance_id != machine_instance_id {
             return Err(StorageError::Conflict(
-                "execution attempt belongs to another computer instance".into(),
+                "execution attempt belongs to another machine instance".into(),
             ));
         }
         transaction.execute(
@@ -530,11 +530,11 @@ impl Storage {
             return Err(StorageError::Invalid("unknown execution".into()));
         };
         let attempt = transaction.query_row(
-            "SELECT computer_id,computer_instance_id,state,last_event_sequence FROM execution_attempts WHERE execution_id=?1 AND attempt=?2",
+            "SELECT machine_id,machine_instance_id,state,last_event_sequence FROM execution_attempts WHERE execution_id=?1 AND attempt=?2",
             params![event.execution_id, event.attempt],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, i64>(3)?)),
         ).optional()?;
-        let Some((computer_id, instance_id, attempt_state, last_sequence)) = attempt else {
+        let Some((machine_id, instance_id, attempt_state, last_sequence)) = attempt else {
             return Ok(ExecutionEventReceipt {
                 max_saved_sequence: 0,
                 disposition: ExecutionEventDisposition::StaleAttempt,
@@ -543,13 +543,13 @@ impl Storage {
         // Keep placement validation and event commit in the same transaction.
         // A move or revoke can race the Runtime broker's initial frame check.
         let placement_current: bool = transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM executions e JOIN agents a ON a.workspace_id=e.workspace_id AND a.agent_id=e.agent_id WHERE e.execution_id=?1 AND e.placement_computer_id=a.computer_id AND e.placement_generation=a.placement_generation AND NOT EXISTS(SELECT 1 FROM computers c WHERE c.computer_id=?2 AND c.revoked_at IS NOT NULL))",
-            params![event.execution_id, event.computer_id], |row| row.get(0),
+            "SELECT EXISTS(SELECT 1 FROM executions e JOIN agents a ON a.workspace_id=e.workspace_id AND a.agent_id=e.agent_id WHERE e.execution_id=?1 AND e.placement_machine_id=a.machine_id AND e.placement_generation=a.placement_generation AND NOT EXISTS(SELECT 1 FROM machines c WHERE c.machine_id=?2 AND c.revoked_at IS NOT NULL))",
+            params![event.execution_id, event.machine_id], |row| row.get(0),
         )?;
         if !placement_current
             || current_attempt != event.attempt
-            || computer_id != event.computer_id
-            || instance_id != event.computer_instance_id
+            || machine_id != event.machine_id
+            || instance_id != event.machine_instance_id
             || matches!(attempt_state.as_str(), "lost" | "rejected")
         {
             return Ok(ExecutionEventReceipt {
@@ -614,12 +614,12 @@ impl Storage {
                 ExecutionEventDisposition::Committed
             }
             "failed" => {
-                transaction.execute("UPDATE execution_attempts SET state='failed',error_code=coalesce(json_extract(failure_json,'$.code'),'computer_execution_failed'),finished_at=?3 WHERE execution_id=?1 AND attempt=?2", params![event.execution_id, event.attempt, event.now])?;
+                transaction.execute("UPDATE execution_attempts SET state='failed',error_code=coalesce(json_extract(failure_json,'$.code'),'machine_execution_failed'),finished_at=?3 WHERE execution_id=?1 AND attempt=?2", params![event.execution_id, event.attempt, event.now])?;
                 abandon_execution(
                     &transaction,
                     event.execution_id,
                     ExecutionState::Failed,
-                    Some("computer_execution_failed"),
+                    Some("machine_execution_failed"),
                     event.now,
                 )?;
                 ExecutionEventDisposition::Abandoned
@@ -644,9 +644,9 @@ impl Storage {
         })
     }
 
-    pub fn reconcile_computer_heartbeat(
+    pub fn reconcile_machine_heartbeat(
         &self,
-        computer_id: &str,
+        machine_id: &str,
         instance_id: &str,
         active_attempts: &[(i64, i64)],
         now: i64,
@@ -655,10 +655,10 @@ impl Storage {
         let mut connection = self.conn()?;
         let transaction = connection.transaction()?;
         let mut statement = transaction.prepare(
-            "SELECT a.execution_id,a.attempt,a.computer_instance_id,a.state FROM execution_attempts a JOIN executions e USING(execution_id) WHERE a.computer_id=?1 AND e.attempt=a.attempt AND e.state IN('assigning','running','recovering') AND a.state IN('offered','accepted','running') ORDER BY a.execution_id",
+            "SELECT a.execution_id,a.attempt,a.machine_instance_id,a.state FROM execution_attempts a JOIN executions e USING(execution_id) WHERE a.machine_id=?1 AND e.attempt=a.attempt AND e.state IN('assigning','running','recovering') AND a.state IN('offered','accepted','running') ORDER BY a.execution_id",
         )?;
         let attempts = statement
-            .query_map([computer_id], |row| {
+            .query_map([machine_id], |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
                     row.get::<_, i64>(1)?,
@@ -677,7 +677,7 @@ impl Storage {
                 result.continued.push((execution_id, attempt));
             } else if stored_instance == instance_id && state == "offered" {
                 // Assignment may still be in flight. Its original lease remains
-                // authoritative until Computer accepts and reports it active.
+                // authoritative until Machine accepts and reports it active.
             } else {
                 lose_attempt_transaction(&transaction, execution_id, attempt, now)?;
                 result.lost.push((execution_id, attempt));
@@ -690,7 +690,7 @@ impl Storage {
     pub fn expire_execution_attempt_leases(&self, now: i64) -> Result<Vec<(i64, i64)>> {
         let mut connection = self.conn()?;
         let transaction = connection.transaction()?;
-        let mut statement = transaction.prepare("SELECT a.execution_id,a.attempt FROM execution_attempts a JOIN executions e USING(execution_id) WHERE e.attempt=a.attempt AND e.state IN('assigning','running','recovering') AND a.state IN('offered','accepted','running') AND (a.lease_expires_at<=?1 OR EXISTS(SELECT 1 FROM agents p WHERE p.workspace_id=e.workspace_id AND p.agent_id=e.agent_id AND (p.computer_id!=e.placement_computer_id OR p.placement_generation!=e.placement_generation)) OR EXISTS(SELECT 1 FROM computers c WHERE c.computer_id=a.computer_id AND c.revoked_at IS NOT NULL)) ORDER BY a.execution_id")?;
+        let mut statement = transaction.prepare("SELECT a.execution_id,a.attempt FROM execution_attempts a JOIN executions e USING(execution_id) WHERE e.attempt=a.attempt AND e.state IN('assigning','running','recovering') AND a.state IN('offered','accepted','running') AND (a.lease_expires_at<=?1 OR EXISTS(SELECT 1 FROM agents p WHERE p.workspace_id=e.workspace_id AND p.agent_id=e.agent_id AND (p.machine_id!=e.placement_machine_id OR p.placement_generation!=e.placement_generation)) OR EXISTS(SELECT 1 FROM machines c WHERE c.machine_id=a.machine_id AND c.revoked_at IS NOT NULL)) ORDER BY a.execution_id")?;
         let expired = statement
             .query_map([now], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))

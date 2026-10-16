@@ -1,6 +1,6 @@
 #[path = "support/ws.rs"]
 mod ws;
-use lankide_protocol::computer_frame;
+use lankide_protocol::machine_frame;
 use lankide_protocol::runtime_frame;
 use lankide_protocol::*;
 use lankide_protocol::{Code, Status};
@@ -97,7 +97,7 @@ struct TestPeer {
 #[derive(Default)]
 struct PeerState {
     connections: usize,
-    hellos: Vec<ComputerHello>,
+    hellos: Vec<MachineHello>,
     assignment_results: Vec<AssignmentResult>,
     event_sequences: Vec<u64>,
     resources: HashMap<i64, StoredResource>,
@@ -114,7 +114,7 @@ struct StoredResource {
 }
 
 #[async_trait::async_trait]
-impl lankide_protocol::ComputerPeer for TestPeer {
+impl lankide_protocol::MachinePeer for TestPeer {
     async fn authorize_link(
         &self,
         credential: &str,
@@ -127,10 +127,10 @@ impl lankide_protocol::ComputerPeer for TestPeer {
         }
     }
 
-    async fn connect_computer(
+    async fn connect_machine(
         &self,
-        hello: ComputerHello,
-        mut frames: ComputerFrameStream,
+        hello: MachineHello,
+        mut frames: MachineFrameStream,
     ) -> Result<RuntimeFrameStream, Status> {
         let connection = {
             let mut state = self.state.lock().expect("peer state");
@@ -164,14 +164,14 @@ impl lankide_protocol::ComputerPeer for TestPeer {
                     }
                 };
                 match frame.frame {
-                    Some(computer_frame::Frame::AssignmentResult(result)) => {
+                    Some(machine_frame::Frame::AssignmentResult(result)) => {
                         state
                             .lock()
                             .expect("peer state")
                             .assignment_results
                             .push(result);
                     }
-                    Some(computer_frame::Frame::ExecutionEvent(event)) => {
+                    Some(machine_frame::Frame::ExecutionEvent(event)) => {
                         state
                             .lock()
                             .expect("peer state")
@@ -593,9 +593,9 @@ async fn exchange_assignment_events_and_reconnect(path: &std::path::Path, peer: 
     );
     assert_complete_assignment(&assign);
     first_tx
-        .send(ComputerFrame {
+        .send(MachineFrame {
             protocol_version: lankide_protocol::PROTOCOL_VERSION,
-            frame: Some(computer_frame::Frame::AssignmentResult(AssignmentResult {
+            frame: Some(machine_frame::Frame::AssignmentResult(AssignmentResult {
                 failure: None,
                 execution: assign.execution.clone(),
                 accepted: true,
@@ -1022,13 +1022,13 @@ async fn exchange_management_and_cli(path: &std::path::Path) {
 }
 
 async fn reject_version_mismatch(path: &std::path::Path) {
-    let mut hello = computer_hello();
+    let mut hello = machine_hello();
     hello.protocol_version += 1;
     let error = ws::connect_stream(
         path,
-        iter([ComputerFrame {
+        iter([MachineFrame {
             protocol_version: lankide_protocol::PROTOCOL_VERSION,
-            frame: Some(computer_frame::Frame::Hello(hello)),
+            frame: Some(machine_frame::Frame::Hello(hello)),
         }]),
     )
     .await
@@ -1038,13 +1038,13 @@ async fn reject_version_mismatch(path: &std::path::Path) {
 }
 
 async fn reject_oversized_frame(path: &std::path::Path) {
-    let mut hello = computer_hello();
-    hello.computer_version = "x".repeat(SERVER_LIMIT * 2);
+    let mut hello = machine_hello();
+    hello.machine_version = "x".repeat(SERVER_LIMIT * 2);
     let error = ws::connect_stream(
         path,
-        iter([ComputerFrame {
+        iter([MachineFrame {
             protocol_version: lankide_protocol::PROTOCOL_VERSION,
-            frame: Some(computer_frame::Frame::Hello(hello)),
+            frame: Some(machine_frame::Frame::Hello(hello)),
         }]),
     )
     .await
@@ -1106,7 +1106,7 @@ async fn reject_unknown_frame(path: &std::path::Path) {
             .expect("hello frame"),
     );
     sender
-        .send(ComputerFrame {
+        .send(MachineFrame {
             protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: None,
         })
@@ -1167,20 +1167,20 @@ async fn wait_for_socket(path: &std::path::Path) {
     .unwrap_or_else(|_| panic!("UDS did not accept connections: {}", path.display()));
 }
 
-fn hello_frame() -> ComputerFrame {
-    ComputerFrame {
+fn hello_frame() -> MachineFrame {
+    MachineFrame {
         protocol_version: lankide_protocol::PROTOCOL_VERSION,
-        frame: Some(computer_frame::Frame::Hello(computer_hello())),
+        frame: Some(machine_frame::Frame::Hello(machine_hello())),
     }
 }
 
-fn computer_hello() -> ComputerHello {
-    ComputerHello {
+fn machine_hello() -> MachineHello {
+    MachineHello {
         device_credential: String::new(),
         protocol_version: PROTOCOL_VERSION,
-        computer_id: "fixture-computer".into(),
-        instance_id: "computer_instance_1".into(),
-        computer_version: "0.1.0".into(),
+        machine_id: "fixture-machine".into(),
+        instance_id: "machine_instance_1".into(),
+        machine_version: "0.1.0".into(),
         os: "macos".into(),
         arch: "aarch64".into(),
         harnesses: vec![HarnessInfo {
@@ -1287,10 +1287,10 @@ fn assignment() -> AssignExecution {
     }
 }
 
-fn event_frame(sequence: u64, kind: ExecutionEventKind, payload: &[u8]) -> ComputerFrame {
-    ComputerFrame {
+fn event_frame(sequence: u64, kind: ExecutionEventKind, payload: &[u8]) -> MachineFrame {
+    MachineFrame {
         protocol_version: lankide_protocol::PROTOCOL_VERSION,
-        frame: Some(computer_frame::Frame::ExecutionEvent(ExecutionEvent {
+        frame: Some(machine_frame::Frame::ExecutionEvent(ExecutionEvent {
             execution: Some(execution_ref()),
             sequence,
             occurred_at: 1_725_000_000_000 + sequence as i64,

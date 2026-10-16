@@ -1,7 +1,7 @@
 //! Shared test-only wiring for the real WS, HTTP, and local JSON endpoints.
 #![allow(dead_code)]
-use lankide_protocol::link::{self, CloseReason, ComputerLink, LinkError};
-use lankide_protocol::{ComputerPeer, RuntimeFrame, RuntimePeer, TransportConfig, TransportError};
+use lankide_protocol::link::{self, CloseReason, LinkError, MachineLink};
+use lankide_protocol::{MachinePeer, RuntimeFrame, RuntimePeer, TransportConfig, TransportError};
 use lankide_protocol::{Response, Status};
 use std::{
     future::Future,
@@ -19,7 +19,7 @@ pub async fn serve_local<P, F>(
     shutdown: F,
 ) -> Result<(), TransportError>
 where
-    P: RuntimePeer + ComputerPeer + Clone,
+    P: RuntimePeer + MachinePeer + Clone,
     F: Future<Output = ()> + Send + 'static,
 {
     let socket = socket.as_ref().to_owned();
@@ -80,7 +80,7 @@ impl Stream for Messages {
 }
 pub async fn connect_stream(
     socket: &Path,
-    mut frames: impl Stream<Item = lankide_protocol::ComputerFrame> + Unpin + Send + 'static,
+    mut frames: impl Stream<Item = lankide_protocol::MachineFrame> + Unpin + Send + 'static,
 ) -> Result<Response<Messages>, Status> {
     let (url, secret) = link::discover(socket).map_err(|e| Status::unavailable(e.to_string()))?;
     let hello = frames
@@ -88,7 +88,7 @@ pub async fn connect_stream(
         .await
         .ok_or_else(|| Status::invalid_argument("missing_hello"))?;
     let credential = match &hello.frame {
-        Some(lankide_protocol::computer_frame::Frame::Hello(hello))
+        Some(lankide_protocol::machine_frame::Frame::Hello(hello))
             if !hello.device_credential.is_empty() =>
         {
             hello.device_credential.as_str()

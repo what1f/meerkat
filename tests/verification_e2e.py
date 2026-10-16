@@ -131,7 +131,7 @@ def run():
             shutil.copy2(ROOT / name, root / name)
         binary_dir = root / "release"
         binary_dir.mkdir()
-        for name in ("lankide", "lankide-desktop", "lankide-runtime-daemon", "lankide-computer-daemon"):
+        for name in ("lankide", "lankide-desktop", "lankided", "lankide-machine"):
             executable(binary_dir / name, "#!/bin/sh\nexit 0\n")
         snapshot, provenance = root / "snapshot.json", root / "provenance.json"
         provenance_tool = str(scripts / "release-provenance")
@@ -189,8 +189,8 @@ def run():
         bundle = root / "packaged/Lankide.app"
         layout = {
             "lankide-desktop": "Contents/MacOS/Lankide",
-            "lankide-runtime-daemon": "Contents/Library/LaunchServices/lankide-runtime-daemon",
-            "lankide-computer-daemon": "Contents/Library/LaunchServices/lankide-computer-daemon",
+            "lankided": "Contents/Library/LaunchServices/lankided",
+            "lankide-machine": "Contents/Library/LaunchServices/lankide-machine",
             "lankide": "Contents/Resources/bin/lankide",
         }
         for name, relative in layout.items():
@@ -203,7 +203,7 @@ def run():
             shutil.copy2(root / name, bundle / "Contents/Resources" / name)
         launch_agents = bundle / "Contents/Library/LaunchAgents"
         launch_agents.mkdir(parents=True)
-        for name in ("com.lankide.runtime.plist", "com.lankide.computer.plist"):
+        for name in ("com.lankide.daemon.plist", "com.lankide.machine.plist"):
             (launch_agents / name).write_text("test-only launch agent metadata")
         assert invoke("snapshot", "--output", snapshot).returncode == 0
         assert invoke("record", "--output", provenance, "--binary-dir", binary_dir, "--source-snapshot", snapshot).returncode == 0

@@ -276,20 +276,20 @@ database_methods! {
         attempt: i64,
     ) -> Option<ExecutionAuthContext> [
     ] (execution_id, attempt);
-    false execution_computer_matches(
+    false execution_machine_matches(
         execution_id: i64,
         attempt: i64,
-        computer_id: &str,
+        machine_id: &str,
     ) -> bool [
-        let computer_id = computer_id.to_owned();
-    ] (execution_id, attempt, &computer_id);
+        let machine_id = machine_id.to_owned();
+    ] (execution_id, attempt, &machine_id);
     false execution_placement_matches(
         execution_id: i64,
         attempt: i64,
-        computer_id: &str,
+        machine_id: &str,
     ) -> bool [
-        let computer_id = computer_id.to_owned();
-    ] (execution_id, attempt, &computer_id);
+        let machine_id = machine_id.to_owned();
+    ] (execution_id, attempt, &machine_id);
     true expire_execution_attempt_leases(now: i64) -> Vec<(i64, i64)> [] (now);
     true fail_execution(id: i64, e: &str, now: i64) -> bool [let e = e.to_owned();] (id, &e, now);
     true fail_execution_retry_after(
@@ -405,50 +405,50 @@ database_methods! {
         delivery_id: i64,
         execution_id: i64,
         attempt: i64,
-        computer_id: &str,
-        computer_instance_id: &str,
+        machine_id: &str,
+        machine_instance_id: &str,
         accepted: bool,
         now: i64,
     ) -> bool [
-        let computer_id = computer_id.to_owned();
-        let computer_instance_id = computer_instance_id.to_owned();
-    ] (delivery_id, execution_id, attempt, &computer_id, &computer_instance_id, accepted, now);
-    true observe_computer(
-        computer_id: &str,
+        let machine_id = machine_id.to_owned();
+        let machine_instance_id = machine_instance_id.to_owned();
+    ] (delivery_id, execution_id, attempt, &machine_id, &machine_instance_id, accepted, now);
+    true observe_machine(
+        machine_id: &str,
         now: i64,
         inventory_json: Option<&str>,
         os: Option<&str>,
         version: Option<&str>,
     ) -> () [
-        let computer_id = computer_id.to_owned();
+        let machine_id = machine_id.to_owned();
         let inventory_json = inventory_json.map(ToOwned::to_owned);
         let os = os.map(ToOwned::to_owned);
         let version = version.map(ToOwned::to_owned);
-    ] (&computer_id, now, inventory_json.as_deref(), os.as_deref(), version.as_deref());
+    ] (&machine_id, now, inventory_json.as_deref(), os.as_deref(), version.as_deref());
     true offer_execution_attempt(
         execution_id: i64,
         attempt: i64,
-        computer_id: &str,
-        computer_instance_id: &str,
+        machine_id: &str,
+        machine_instance_id: &str,
         lease_expires_at: i64,
         now: i64,
     ) -> ExecutionAttemptView [
-        let computer_id = computer_id.to_owned();
-        let computer_instance_id = computer_instance_id.to_owned();
-    ] (execution_id, attempt, &computer_id, &computer_instance_id, lease_expires_at, now);
-    true pair_computer(
-        computer: &ComputerRecord,
+        let machine_id = machine_id.to_owned();
+        let machine_instance_id = machine_instance_id.to_owned();
+    ] (execution_id, attempt, &machine_id, &machine_instance_id, lease_expires_at, now);
+    true pair_machine(
+        machine: &MachineRecord,
         code_hash: Option<&str>,
         validity_ms: i64,
     ) -> () [
-        let computer = computer.to_owned();
+        let machine = machine.to_owned();
         let code_hash = code_hash.map(ToOwned::to_owned);
-    ] (&computer, code_hash.as_deref(), validity_ms);
+    ] (&machine, code_hash.as_deref(), validity_ms);
     false pending_agent_file_deletions(
-        computer_id: &str,
+        machine_id: &str,
     ) -> Vec<(WorkspaceId, AgentId)> [
-        let computer_id = computer_id.to_owned();
-    ] (&computer_id);
+        let machine_id = machine_id.to_owned();
+    ] (&machine_id);
     false pending_failure_notices(
         w: &WorkspaceId,
         a: &AgentId,
@@ -457,12 +457,12 @@ database_methods! {
         let a = a.to_owned();
     ] (&w, &a);
     false pending_steer_deliveries(
-        computer_id: &str,
-        computer_instance_id: &str,
+        machine_id: &str,
+        machine_instance_id: &str,
     ) -> Vec<SteerDelivery> [
-        let computer_id = computer_id.to_owned();
-        let computer_instance_id = computer_instance_id.to_owned();
-    ] (&computer_id, &computer_instance_id);
+        let machine_id = machine_id.to_owned();
+        let machine_instance_id = machine_instance_id.to_owned();
+    ] (&machine_id, &machine_instance_id);
     false person(
         workspace_id: &WorkspaceId,
         person_id: &PersonId,
@@ -561,17 +561,17 @@ database_methods! {
         let workspace_id = workspace_id.to_owned();
         let agent_id = agent_id.to_owned();
     ] (&workspace_id, &agent_id, message_id);
-    true reconcile_computer_heartbeat(
-        computer_id: &str,
+    true reconcile_machine_heartbeat(
+        machine_id: &str,
         instance_id: &str,
         active_attempts: &[(i64, i64)],
         now: i64,
         lease_expires_at: i64,
     ) -> HeartbeatReconciliation [
-        let computer_id = computer_id.to_owned();
+        let machine_id = machine_id.to_owned();
         let instance_id = instance_id.to_owned();
         let active_attempts = active_attempts.to_owned();
-    ] (&computer_id, &instance_id, &active_attempts, now, lease_expires_at);
+    ] (&machine_id, &instance_id, &active_attempts, now, lease_expires_at);
     true record_execution_event(event: RecordExecutionEvent) -> ExecutionEventReceipt [] (event);
     true record_reaction(reaction: IncomingReaction) -> ReactionResult [] (reaction);
     true recover_startup(now: i64) -> RecoveryState [] (now);
@@ -585,7 +585,7 @@ database_methods! {
     ) -> Vec<RecoverableSendView> [
         let workspace_id = workspace_id.map(ToOwned::to_owned);
     ] (workspace_id.as_ref());
-    false registered_computers() -> Vec<ComputerRecord> [] ();
+    false registered_machines() -> Vec<MachineRecord> [] ();
     true reject_execution_attempt_with_failure(
         execution_id: i64,
         attempt: i64,
@@ -613,16 +613,16 @@ database_methods! {
         let a = a.to_owned();
     ] (&w, &a, now);
     true retry_execution_conflict(id: i64, retry_at: i64) -> () [] (id, retry_at);
-    true rename_computer(computer_id: &str, name: &str) -> () [
-        let computer_id = computer_id.to_owned();
+    true rename_machine(machine_id: &str, name: &str) -> () [
+        let machine_id = machine_id.to_owned();
         let name = name.to_owned();
-    ] (&computer_id, &name);
-    true revoke_computer(
-        computer_id: &str,
+    ] (&machine_id, &name);
+    true revoke_machine(
+        machine_id: &str,
         now: i64,
     ) -> () [
-        let computer_id = computer_id.to_owned();
-    ] (&computer_id, now);
+        let machine_id = machine_id.to_owned();
+    ] (&machine_id, now);
     true rollback_new_agent(
         workspace_id: &WorkspaceId,
         agent_id: &AgentId,

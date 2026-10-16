@@ -1,14 +1,15 @@
 use super::*;
 use lankide_protocol::{
     Agent as ProtocolAgent, AgentAttention, AgentOnboardingState, AgentRef, AttentionMode,
-    CatalogRequest, ChannelAttention, ComputerCatalog, ComputerCatalogItem, CreateAgentRequest,
-    CreateWorkspaceRequest, DeleteAgentRequest, DeleteAgentResponse, DesiredState,
-    EnvironmentVariable, GetAgentAvatarRequest, GetAgentAvatarResponse, GetAgentOnboardingRequest,
-    GetAgentRequest, GetProviderOnboardingRequest, GetWorkspaceRequest, HarnessCatalog,
-    HarnessCatalogItem, ListAgentsRequest, ListAgentsResponse, ListWorkspacesRequest,
-    ListWorkspacesResponse, ManagementEventKind, ObservedState, OnboardingStatus, ProviderCatalog,
-    ProviderCatalogItem, ProviderOnboardingState, ReactionCatalog, SetWorkspaceStateRequest,
-    UpdateAgentRequest, UpdateWorkspaceRequest, Workspace as ProtocolWorkspace, WorkspaceRef,
+    CatalogRequest, ChannelAttention, CreateAgentRequest, CreateWorkspaceRequest,
+    DeleteAgentRequest, DeleteAgentResponse, DesiredState, EnvironmentVariable,
+    GetAgentAvatarRequest, GetAgentAvatarResponse, GetAgentOnboardingRequest, GetAgentRequest,
+    GetProviderOnboardingRequest, GetWorkspaceRequest, HarnessCatalog, HarnessCatalogItem,
+    ListAgentsRequest, ListAgentsResponse, ListWorkspacesRequest, ListWorkspacesResponse,
+    MachineCatalog, MachineCatalogItem, ManagementEventKind, ObservedState, OnboardingStatus,
+    ProviderCatalog, ProviderCatalogItem, ProviderOnboardingState, ReactionCatalog,
+    SetWorkspaceStateRequest, UpdateAgentRequest, UpdateWorkspaceRequest,
+    Workspace as ProtocolWorkspace, WorkspaceRef,
 };
 use lankide_provider::{
     AgentSpec as ProviderAgentSpec, ChannelDefaultAttention,
@@ -33,7 +34,7 @@ impl RuntimeApplication {
             .database()
             .execution(request.execution_id)
             .await?;
-        self.computer_broker()
+        self.machine_broker()
             .request_cancellation(request.execution_id)
             .await?;
         Ok(lankide_protocol::CancelAttemptResponse {})
@@ -53,7 +54,7 @@ impl RuntimeApplication {
             .map(|attempt| {
                 Ok(lankide_protocol::ExecutionAttemptDetails {
                     attempt: attempt.attempt as u32,
-                    computer_id: attempt.computer_id,
+                    machine_id: attempt.machine_id,
                     state: attempt.state.as_str().into(),
                     failure: attempt
                         .failure
@@ -213,22 +214,22 @@ impl RuntimeApplication {
     }
 
     async fn validate_placement(&self, agent: &AgentRecord) -> Result<(), RuntimeError> {
-        let computer = self
+        let machine = self
             .runtime()?
             .database()
-            .registered_computers()
+            .registered_machines()
             .await?
             .into_iter()
-            .find(|c| c.computer_id == agent.computer_id)
-            .ok_or(RuntimeError::ComputerNotRegistered)?;
-        if computer.revoked_at.is_some() {
-            return Err(RuntimeError::ComputerRevoked);
+            .find(|c| c.machine_id == agent.machine_id)
+            .ok_or(RuntimeError::MachineNotRegistered)?;
+        if machine.revoked_at.is_some() {
+            return Err(RuntimeError::MachineRevoked);
         }
         let inventory: Vec<lankide_protocol::link::HarnessInfo> =
-            serde_json::from_str(&computer.inventory_json)
+            serde_json::from_str(&machine.inventory_json)
                 .map_err(|e| RuntimeError::Application(e.to_string()))?;
         if !inventory.iter().any(|h| h.harness_id == agent.harness_id) {
-            return Err(RuntimeError::HarnessUnavailableOnComputer);
+            return Err(RuntimeError::HarnessUnavailableOnMachine);
         }
         Ok(())
     }
@@ -252,7 +253,7 @@ impl RuntimeApplication {
             bio: request.bio,
             avatar: None,
             soul: request.soul,
-            computer_id: request.computer_id,
+            machine_id: request.machine_id,
             placement_generation: 1,
             harness_id: request.harness_id,
             model: request.model,
@@ -271,7 +272,7 @@ impl RuntimeApplication {
             created_at: now,
             updated_at: now,
         };
-        let _registration = self.inner.computer_registration.lock().await;
+        let _registration = self.inner.machine_registration.lock().await;
         self.validate_placement(&candidate).await?;
         let record = AgentLifecycle::new(self)
             .create(workspace, candidate, provider_agent_secrets)
@@ -337,13 +338,13 @@ impl RuntimeApplication {
         if let Some(value) = request.cli_path {
             record.cli_path = nonempty(value);
         }
-        if let Some(value) = request.computer_id {
-            record.computer_id = value;
+        if let Some(value) = request.machine_id {
+            record.machine_id = value;
         }
         if let Some(value) = request.provider_agent_config_json {
             record.provider_agent_config = parse_json(&value)?;
         }
-        let _registration = self.inner.computer_registration.lock().await;
+        let _registration = self.inner.machine_registration.lock().await;
         self.validate_placement(&record).await?;
         let avatar_update = request
             .avatar
@@ -380,7 +381,7 @@ impl RuntimeApplication {
             .unwrap_or_default();
         let resume = old_record.harness_id != record.harness_id
             || old_record.model != record.model
-            || old_record.computer_id != record.computer_id
+            || old_record.machine_id != record.machine_id
             || old_record.thinking != record.thinking
             || old_record.cli_path != record.cli_path
             || old_record.env != record.env
@@ -589,27 +590,24 @@ impl RuntimeApplication {
         Ok(ProviderCatalog { providers })
     }
 
-    pub async fn computer_catalog(
-        &self,
-        _: CatalogRequest,
-    ) -> Result<ComputerCatalog, RuntimeError> {
-        let broker = self.computer_broker();
+    pub async fn machine_catalog(&self, _: CatalogRequest) -> Result<MachineCatalog, RuntimeError> {
+        let broker = self.machine_broker();
         let online = broker.catalog()?;
-        let mut computers: Vec<_> = self
+        let mut machines: Vec<_> = self
             .runtime()?
             .database()
-            .registered_computers()
+            .registered_machines()
             .await?
             .into_iter()
             .map(|record| {
                 let live = online
                     .iter()
-                    .find(|value| value.computer_id == record.computer_id);
+                    .find(|value| value.machine_id == record.machine_id);
                 let inventory: Vec<lankide_protocol::link::HarnessInfo> =
                     serde_json::from_str(&record.inventory_json)
                         .map_err(|e| RuntimeError::Application(e.to_string()))?;
-                Ok(ComputerCatalogItem {
-                    computer_id: record.computer_id,
+                Ok(MachineCatalogItem {
+                    machine_id: record.machine_id,
                     display_name: record.display_name,
                     observed_state: if record.revoked_at.is_some() {
                         ObservedState::Stopped
@@ -629,35 +627,35 @@ impl RuntimeApplication {
                 })
             })
             .collect::<Result<Vec<_>, RuntimeError>>()?;
-        for (computer_id, reason) in broker.rejected_links()? {
-            if let Some(computer) = computers
+        for (machine_id, reason) in broker.rejected_links()? {
+            if let Some(machine) = machines
                 .iter_mut()
-                .find(|value| value.computer_id == computer_id)
+                .find(|value| value.machine_id == machine_id)
             {
-                if computer.revoked_at.is_none() {
-                    computer.observed_state = ObservedState::Error as i32;
-                    computer.status_message = reason.to_string();
+                if machine.revoked_at.is_none() {
+                    machine.observed_state = ObservedState::Error as i32;
+                    machine.status_message = reason.to_string();
                 }
                 continue;
             }
-            computers.push(ComputerCatalogItem {
-                display_name: computer_id.clone(),
-                computer_id,
+            machines.push(MachineCatalogItem {
+                display_name: machine_id.clone(),
+                machine_id,
                 observed_state: ObservedState::Error as i32,
                 harnesses: Vec::new(),
                 status_message: reason.to_string(),
                 ..Default::default()
             });
         }
-        Ok(ComputerCatalog { computers })
+        Ok(MachineCatalog { machines })
     }
 
     pub fn harness_catalog(&self, _: CatalogRequest) -> Result<HarnessCatalog, RuntimeError> {
         let harnesses = self
-            .computer_broker()
+            .machine_broker()
             .catalog()?
             .into_iter()
-            .flat_map(|computer| computer.harnesses)
+            .flat_map(|machine| machine.harnesses)
             .map(|harness| HarnessCatalogItem {
                 harness_id: harness.harness_id,
                 display_name: harness.display_name,
@@ -904,7 +902,7 @@ async fn agent_dto(record: AgentRecord, storage: Database) -> Result<ProtocolAge
             .into_iter()
             .map(|(name, value)| EnvironmentVariable { name, value })
             .collect(),
-        computer_id: record.computer_id,
+        machine_id: record.machine_id,
         created_at: record.created_at,
         updated_at: record.updated_at,
         attention: Some(AgentAttention {
@@ -983,7 +981,7 @@ pub(crate) fn provider_agent_spec(record: &AgentRecord) -> ProviderAgentSpec {
         bio: record.bio.clone(),
         avatar: record.avatar.clone(),
         soul: record.soul.clone(),
-        computer_id: record.computer_id.clone(),
+        machine_id: record.machine_id.clone(),
         harness_id: record.harness_id.clone(),
         model: record.model.clone(),
         thinking_level: record.thinking.clone(),

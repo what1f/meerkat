@@ -1,6 +1,6 @@
 use lankide_client::{AgentDraft, ClientError, ManagementClient};
 use lankide_protocol::{
-    link::{self, ComputerLink},
+    link::{self, MachineLink},
     *,
 };
 use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
@@ -17,77 +17,77 @@ fn config() -> RigConfig {
 }
 
 #[tokio::test]
-async fn s13_1_placement_requires_registered_non_revoked_computer_and_reported_harness()
--> Result<()> {
+async fn s13_1_placement_requires_registered_non_revoked_machine_and_reported_harness() -> Result<()>
+{
     let rig = SystemRig::start(config()).await?;
     let team = rig.workspace("team").await?;
-    let remote = rig.add_computer().await?;
-    let computer = remote.id.clone();
+    let remote = rig.add_machine().await?;
+    let machine = remote.id.clone();
     let draft = AgentDraft {
         id: "bruce".into(),
         name: "Bruce".into(),
-        computer_id: "unknown".into(),
+        machine_id: "unknown".into(),
         harness_id: "pi".into(),
         ..Default::default()
     };
     assert!(matches!(
         rig.management().create_agent("team", draft.clone()).await,
-        Err(ClientError::ComputerNotRegistered)
+        Err(ClientError::MachineNotRegistered)
     ));
     let mut unavailable = draft;
-    unavailable.computer_id = computer.clone();
+    unavailable.machine_id = machine.clone();
     unavailable.harness_id = "absent".into();
     assert!(matches!(
         rig.management().create_agent("team", unavailable).await,
-        Err(ClientError::HarnessUnavailableOnComputer)
+        Err(ClientError::HarnessUnavailableOnMachine)
     ));
     let agent = team
         .agent("bruce")
-        .computer(&computer)
+        .machine(&machine)
         .harness(Script::reply("hi"))
         .create()
         .await?;
     let original = agent.view().await?;
     let mut changed = original.clone();
-    changed.computer_id = "unknown".into();
+    changed.machine_id = "unknown".into();
     assert!(matches!(
         rig.management().update_agent(changed, None).await,
-        Err(ClientError::ComputerNotRegistered)
+        Err(ClientError::MachineNotRegistered)
     ));
     let mut changed = original.clone();
     changed.harness_id = "absent".into();
     assert!(matches!(
         rig.management().update_agent(changed, None).await,
-        Err(ClientError::HarnessUnavailableOnComputer)
+        Err(ClientError::HarnessUnavailableOnMachine)
     ));
-    assert_eq!(agent.view().await?.computer_id, original.computer_id);
+    assert_eq!(agent.view().await?.machine_id, original.machine_id);
     assert!(
-        rig.management().revoke_computer(&computer).await.is_err(),
-        "must move assigned Agents before removing their Computer"
+        rig.management().revoke_machine(&machine).await.is_err(),
+        "must move assigned Agents before removing their Machine"
     );
-    let destination = rig.add_computer().await?;
+    let destination = rig.add_machine().await?;
     let mut moved = original.clone();
-    moved.computer_id = destination.id.clone();
+    moved.machine_id = destination.id.clone();
     rig.management().update_agent(moved, None).await?;
-    rig.management().revoke_computer(&computer).await?;
+    rig.management().revoke_machine(&machine).await?;
     let revoked = AgentDraft {
         id: "clark".into(),
         name: "Clark".into(),
-        computer_id: computer,
+        machine_id: machine,
         harness_id: "pi".into(),
         ..Default::default()
     };
     assert!(matches!(
         rig.management().create_agent("team", revoked).await,
-        Err(ClientError::ComputerRevoked)
+        Err(ClientError::MachineRevoked)
     ));
     assert!(matches!(
         rig.management().update_agent(original, None).await,
-        Err(ClientError::ComputerRevoked)
+        Err(ClientError::MachineRevoked)
     ));
     assert!(
         rig.management()
-            .get_computer_catalog(None)
+            .get_machine_catalog(None)
             .await?
             .iter()
             .any(|c| c.id == remote.id && c.revoked_at.is_some() && !c.available)
@@ -98,25 +98,25 @@ async fn s13_1_placement_requires_registered_non_revoked_computer_and_reported_h
 }
 
 #[tokio::test]
-async fn s13_2_each_agent_runs_only_on_its_own_computer() -> Result<()> {
+async fn s13_2_each_agent_runs_only_on_its_own_machine() -> Result<()> {
     let rig = SystemRig::start(config()).await?;
     let first = rig
         .management()
-        .get_computer_catalog(None)
+        .get_machine_catalog(None)
         .await?
         .remove(0)
         .id;
-    let second = rig.add_computer().await?;
+    let second = rig.add_machine().await?;
     let team = rig.workspace("team").await?;
     let bruce = team
         .agent("bruce")
-        .computer(&first)
+        .machine(&first)
         .harness(Script::reply("first"))
         .create()
         .await?;
     let clark = team
         .agent("clark")
-        .computer(&second.id)
+        .machine(&second.id)
         .harness(Script::reply("second"))
         .create()
         .await?;
@@ -126,12 +126,12 @@ async fn s13_2_each_agent_runs_only_on_its_own_computer() -> Result<()> {
     assert_eq!(team.dm_transcript(&bruce, "alice"), ["one", "first"]);
     assert_eq!(team.dm_transcript(&clark, "alice"), ["two", "second"]);
     for (home, present, absent) in [
-        (rig.computer_home(), "bruce", "clark"),
+        (rig.machine_home(), "bruce", "clark"),
         (second.home.path(), "clark", "bruce"),
     ] {
         let root = home.join("workspaces");
-        assert!(lankide_computer::agent_directory(&root, "team", present)?.exists());
-        assert!(!lankide_computer::agent_directory(&root, "team", absent)?.exists());
+        assert!(lankide_machine_core::agent_directory(&root, "team", present)?.exists());
+        assert!(!lankide_machine_core::agent_directory(&root, "team", absent)?.exists());
     }
     drop(second);
     rig.close().await
@@ -145,9 +145,9 @@ async fn s13_3_offline_message_stays_queued_and_runs_after_reconnect() -> Result
         .harness(Script::reply("back"))
         .create()
         .await?;
-    rig.stop_computer()?;
+    rig.stop_machine()?;
     timeout(Duration::from_secs(5), async {
-        while rig.computer_online().await? {
+        while rig.machine_online().await? {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
@@ -166,8 +166,8 @@ async fn s13_3_offline_message_stays_queued_and_runs_after_reconnect() -> Result
     assert_eq!(agent.inbox_states()?, ["pending"]);
     assert!(agent.executions().await?.is_empty());
     assert!(team.outbound(&agent, "alice").is_empty());
-    rig.start_paired_computer()?;
-    rig.wait_computer_online().await?;
+    rig.start_paired_machine()?;
+    rig.wait_machine_online().await?;
     rig.settle().await?;
     let team = rig.existing_workspace("team");
     let agent = team.existing_agent("bruce");
@@ -178,17 +178,17 @@ async fn s13_3_offline_message_stays_queued_and_runs_after_reconnect() -> Result
 }
 
 #[tokio::test]
-async fn s13_4_assigned_computer_removal_is_refused_and_its_result_is_preserved() -> Result<()> {
+async fn s13_4_assigned_machine_removal_is_refused_and_its_result_is_preserved() -> Result<()> {
     let rig = SystemRig::start(RigConfig {
         network_proxy: true,
         ..config()
     })
     .await?;
-    let device = lankide_computer_daemon::read_credentials(rig.computer_home())?.unwrap();
+    let device = lankide_machine::read_credentials(rig.machine_home())?.unwrap();
     let team = rig.workspace("team").await?;
     let agent = team
         .agent("bruce")
-        .computer(&device.computer_id)
+        .machine(&device.machine_id)
         .harness(Script::Reply {
             text: "late".into(),
             held: true,
@@ -206,12 +206,12 @@ async fn s13_4_assigned_computer_removal_is_refused_and_its_result_is_preserved(
         Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
     })
     .await??;
-    let computer = agent.view().await?.computer_id;
+    let machine = agent.view().await?.machine_id;
     rig.proxy.as_ref().unwrap().pause();
     agent.release_run().await?;
     assert!(matches!(
-        rig.management().revoke_computer(&computer).await,
-        Err(ClientError::ComputerHasAssignedAgents)
+        rig.management().revoke_machine(&machine).await,
+        Err(ClientError::MachineHasAssignedAgents)
     ));
     rig.proxy.as_ref().unwrap().restore();
     rig.settle().await?;
@@ -245,20 +245,20 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
         ..config()
     })
     .await?;
-    let (url, _) = rig.computer_endpoint()?;
+    let (url, _) = rig.machine_endpoint()?;
     let cutter = cutter::Cutter::start(&url, None, false).await?;
-    rig.route_computer_through(&cutter.url).await?;
+    rig.route_machine_through(&cutter.url).await?;
     let first = rig
         .management()
-        .get_computer_catalog(None)
+        .get_machine_catalog(None)
         .await?
         .remove(0)
         .id;
-    let second = rig.add_computer().await?;
+    let second = rig.add_machine().await?;
     let team = rig.workspace("team").await?;
     let agent = team
         .agent("bruce")
-        .computer(&first)
+        .machine(&first)
         .harness(Script::Hang)
         .create()
         .await?;
@@ -289,12 +289,12 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
             .header("x-lankide-execution", &auth.execution)
             .header("x-lankide-attempt", &auth.attempt)
     };
-    // Replay through an authenticated Computer link, without heartbeat-driven
+    // Replay through an authenticated Machine link, without heartbeat-driven
     // cancellation masking the placement authorization being checked here.
-    rig.stop_computer()?;
+    rig.stop_machine()?;
     let team = rig.existing_workspace("team");
     let agent = team.existing_agent("bruce");
-    let mut link = capability_link(&url, rig.computer_home()).await?;
+    let mut link = capability_link(&url, rig.machine_home()).await?;
     let capability = || lankide_protocol::CapabilityInvokeRequest {
         context: Some(context.clone()),
         capability_name: "unread_current".into(),
@@ -310,12 +310,12 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
         )?
         .success
     );
-    // A valid token must also be rejected on another registered Computer.
+    // A valid token must also be rejected on another registered Machine.
     let second_id = second.id.clone();
     let second_home = tempfile::tempdir()?;
     std::fs::copy(
-        second.home.path().join("computer-credentials.json"),
-        second_home.path().join("computer-credentials.json"),
+        second.home.path().join("machine-credentials.json"),
+        second_home.path().join("machine-credentials.json"),
     )?;
     drop(second);
     let mut other_link = capability_link(&url, second_home.path()).await?;
@@ -352,9 +352,9 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
         )?
         .success
     );
-    for (offset, computer) in [&second_id, &original.computer_id].into_iter().enumerate() {
+    for (offset, machine) in [&second_id, &original.machine_id].into_iter().enumerate() {
         let mut moved = agent.view().await?;
-        moved.computer_id = computer.clone();
+        moved.machine_id = machine.clone();
         rig.management().update_agent(moved, None).await?;
         assert_eq!(generation()?, initial + offset as i64 + 1);
         assert_eq!(download().send().await?.status(), 403);
@@ -370,8 +370,8 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
     drop(other_link);
     drop(link);
     rig.restart_runtime().await?;
-    rig.stop_computer()?;
-    let (restarted_url, _) = rig.computer_endpoint()?;
+    rig.stop_machine()?;
+    let (restarted_url, _) = rig.machine_endpoint()?;
     assert_eq!(
         client
             .get(format!(
@@ -387,7 +387,7 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
             .status(),
         403
     );
-    let mut link = capability_link(&restarted_url, rig.computer_home()).await?;
+    let mut link = capability_link(&restarted_url, rig.machine_home()).await?;
     let response = invoke(&mut link, capability()).await?;
     assert_eq!(
         response.error_code,
@@ -399,16 +399,16 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
 
 async fn capability_link(url: &str, home: &std::path::Path) -> Result<link::ClientLink> {
     let credentials: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(home.join("computer-credentials.json"))?)?;
+        serde_json::from_slice(&std::fs::read(home.join("machine-credentials.json"))?)?;
     let secret = credentials["device_credential"].as_str().unwrap();
     let mut link = link::connect(url, secret, DEFAULT_MAX_MESSAGE_BYTES).await?;
-    link.send(link::ComputerFrame {
+    link.send(link::MachineFrame {
         protocol_version: PROTOCOL_VERSION,
-        frame: Some(link::ComputerPayload::Hello(link::ComputerHello {
+        frame: Some(link::MachinePayload::Hello(link::MachineHello {
             device_credential: secret.into(),
-            computer_id: credentials["computer_id"].as_str().unwrap().into(),
+            machine_id: credentials["machine_id"].as_str().unwrap().into(),
             instance_id: "placement-capabilities".into(),
-            computer_version: "1".into(),
+            machine_version: "1".into(),
             os: "test".into(),
             arch: "test".into(),
             protocol_version: PROTOCOL_VERSION,
@@ -428,9 +428,9 @@ async fn invoke(
     link: &mut link::ClientLink,
     request: CapabilityInvokeRequest,
 ) -> Result<link::CapabilityResponse> {
-    link.send(link::ComputerFrame {
+    link.send(link::MachineFrame {
         protocol_version: PROTOCOL_VERSION,
-        frame: Some(link::ComputerPayload::CapabilityRequest(
+        frame: Some(link::MachinePayload::CapabilityRequest(
             link::CapabilityRequest {
                 request_id: request.invocation_id.clone(),
                 method: "invoke_capability".into(),
@@ -469,15 +469,15 @@ async fn stale_unacknowledged_progress_is_discarded_without_disconnect_after_pla
     .await?;
     let first = rig
         .management()
-        .get_computer_catalog(None)
+        .get_machine_catalog(None)
         .await?
         .remove(0)
         .id;
-    let second = rig.add_computer().await?;
+    let second = rig.add_machine().await?;
     let team = rig.workspace("team").await?;
     let agent = team
         .agent("bruce")
-        .computer(&first)
+        .machine(&first)
         .harness(Script::Progress {
             duration_ms: 60_000,
             interval_ms: 20,
@@ -489,7 +489,7 @@ async fn stale_unacknowledged_progress_is_discarded_without_disconnect_after_pla
     rig.proxy.as_ref().unwrap().pause_replies();
     timeout(Duration::from_secs(5), async {
         loop {
-            if !rig.computer_state()?["pending_events"]
+            if !rig.machine_state()?["pending_events"]
                 .as_object()
                 .unwrap()
                 .is_empty()
@@ -501,20 +501,20 @@ async fn stale_unacknowledged_progress_is_discarded_without_disconnect_after_pla
     })
     .await??;
     let original = agent.view().await?;
-    rig.stop_computer()?;
+    rig.stop_machine()?;
     let mut moved = original.clone();
-    moved.computer_id = second.id.clone();
+    moved.machine_id = second.id.clone();
     rig.management().update_agent(moved, None).await?;
     rig.management().update_agent(original, None).await?;
     rig.proxy.as_ref().unwrap().restore();
     // A new listener replaces the old proxy target. Use direct local discovery
-    // for the next Computer, retaining the same paired home and durable outbox.
+    // for the next Machine, retaining the same paired home and durable outbox.
     rig.proxy = None;
     drop(second);
     rig.restart_runtime().await?;
     timeout(Duration::from_secs(5), async {
         loop {
-            if rig.computer_state()?["pending_events"]
+            if rig.machine_state()?["pending_events"]
                 .as_object()
                 .unwrap()
                 .is_empty()
@@ -525,7 +525,7 @@ async fn stale_unacknowledged_progress_is_discarded_without_disconnect_after_pla
         }
     })
     .await??;
-    assert!(rig.computer_online().await?);
+    assert!(rig.machine_online().await?);
     let agent = rig.existing_workspace("team").existing_agent("bruce");
     assert_eq!(
         rig.existing_workspace("team")

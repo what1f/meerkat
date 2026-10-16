@@ -3625,51 +3625,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-computer"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "lankide-core",
- "lankide-harness",
- "lankide-protocol",
- "log",
- "reqwest",
- "rustix 1.1.4",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "tokio",
- "tokio-stream",
- "uuid",
-]
-
-[[package]]
-name = "lankide-computer-daemon"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "lankide-client",
- "lankide-computer",
- "lankide-daemon-runtime",
- "lankide-harness",
- "lankide-harness-claude-code",
- "lankide-harness-codex",
- "lankide-harness-pi",
- "lankide-protocol",
- "lankide-runtime",
- "lankide-runtime-daemon",
- "log",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "tokio",
- "tokio-stream",
-]
-
-[[package]]
 name = "lankide-core"
 version = "0.1.0"
 dependencies = [
@@ -3699,7 +3654,7 @@ dependencies = [
  "http",
  "image",
  "lankide-client",
- "lankide-computer-daemon",
+ "lankide-machine",
  "lankide-system-e2e",
  "objc2 0.6.4",
  "objc2-foundation 0.3.2",
@@ -3758,6 +3713,51 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-stream",
+]
+
+[[package]]
+name = "lankide-machine"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "lankide-client",
+ "lankide-machine-core",
+ "lankide-daemon-runtime",
+ "lankide-harness",
+ "lankide-harness-claude-code",
+ "lankide-harness-codex",
+ "lankide-harness-pi",
+ "lankide-protocol",
+ "lankide-runtime",
+ "lankided",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
+name = "lankide-machine-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "lankide-core",
+ "lankide-harness",
+ "lankide-protocol",
+ "log",
+ "reqwest",
+ "rustix 1.1.4",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "uuid",
 ]
 
 [[package]]
@@ -3863,7 +3863,63 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-runtime-daemon"
+name = "lankide-storage"
+version = "0.1.0"
+dependencies = [
+ "lankide-core",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "uuid",
+]
+
+[[package]]
+name = "lankide-system-e2e"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "lankide-cli",
+ "lankide-client",
+ "lankide-machine-core",
+ "lankide-machine",
+ "lankide-core",
+ "lankide-harness",
+ "lankide-protocol",
+ "lankide-provider",
+ "lankide-runtime",
+ "lankided",
+ "lankide-storage",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite",
+]
+
+[[package]]
+name = "lankide-testkit"
+version = "0.1.0"
+dependencies = [
+ "lankide-machine-core",
+ "lankide-core",
+ "lankide-harness",
+ "lankide-protocol",
+ "lankide-provider",
+ "lankide-runtime",
+ "lankide-storage",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "lankided"
 version = "0.1.0"
 dependencies = [
  "async-trait",
@@ -3890,62 +3946,6 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-stream",
-]
-
-[[package]]
-name = "lankide-storage"
-version = "0.1.0"
-dependencies = [
- "lankide-core",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "uuid",
-]
-
-[[package]]
-name = "lankide-system-e2e"
-version = "0.1.0"
-dependencies = [
- "futures-util",
- "lankide-cli",
- "lankide-client",
- "lankide-computer",
- "lankide-computer-daemon",
- "lankide-core",
- "lankide-harness",
- "lankide-protocol",
- "lankide-provider",
- "lankide-runtime",
- "lankide-runtime-daemon",
- "lankide-storage",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "tokio",
- "tokio-stream",
- "tokio-tungstenite",
-]
-
-[[package]]
-name = "lankide-testkit"
-version = "0.1.0"
-dependencies = [
- "lankide-computer",
- "lankide-core",
- "lankide-harness",
- "lankide-protocol",
- "lankide-provider",
- "lankide-runtime",
- "lankide-storage",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
 ]
 
 [[package]]

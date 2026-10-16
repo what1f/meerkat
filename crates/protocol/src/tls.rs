@@ -1,4 +1,4 @@
-//! Certificate pinning shared by pairing and all subsequent Computer links.
+//! Certificate pinning shared by pairing and all subsequent Machine links.
 use rustls::{
     DigitallySignedStruct, Error, SignatureScheme,
     client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
@@ -32,7 +32,7 @@ pub fn validate_url(url: &str, pin: Option<&str>) -> io::Result<()> {
                 }) => {}
         _ => {
             return Err(io::Error::other(
-                "Use a secure address to connect to another computer.",
+                "Use a secure address to connect to another machine.",
             ));
         }
     }

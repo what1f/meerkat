@@ -32,7 +32,7 @@ pub struct Agent {
     pub soul: String,
     pub cli_path: String,
     pub environment_variables: Vec<EnvironmentVariable>,
-    pub computer_id: String,
+    pub machine_id: String,
     pub created_at: i64,
     pub updated_at: i64,
     pub attention: Option<AgentAttention>,
@@ -100,13 +100,13 @@ pub struct ChannelAttention {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ComputerCatalog {
-    pub computers: Vec<ComputerCatalogItem>,
+pub struct MachineCatalog {
+    pub machines: Vec<MachineCatalogItem>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ComputerCatalogItem {
-    pub computer_id: String,
+pub struct MachineCatalogItem {
+    pub machine_id: String,
     pub display_name: String,
     pub observed_state: i32,
     pub harnesses: Vec<HarnessInfo>,
@@ -133,7 +133,7 @@ pub struct CreateAgentRequest {
     pub soul: String,
     pub cli_path: String,
     pub environment_variables: Vec<EnvironmentVariable>,
-    pub computer_id: String,
+    pub machine_id: String,
     pub attention: Option<AgentAttention>,
     pub provider_agent_config_json: String,
     pub provider_agent_secrets_json: String,
@@ -172,7 +172,7 @@ pub struct EnvironmentVariableSet {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExecutionAttemptDetails {
     pub attempt: u32,
-    pub computer_id: String,
+    pub machine_id: String,
     pub state: String,
     pub failure: Option<AttemptFailure>,
 }
@@ -321,7 +321,7 @@ pub use crate::link::ModelCatalogItem;
 pub struct ModelCatalogRequest {
     pub request_id: String,
     pub workspace: Option<WorkspaceRef>,
-    pub computer_id: String,
+    pub machine_id: String,
     pub harness_id: String,
 }
 
@@ -383,16 +383,16 @@ pub struct ReactionCatalogItem {
 pub use crate::link::ResourceRef;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct RenameComputerRequest {
+pub struct RenameMachineRequest {
     pub request_id: String,
-    pub computer_id: String,
+    pub machine_id: String,
     pub name: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct RevokeComputerRequest {
+pub struct RevokeMachineRequest {
     pub request_id: String,
-    pub computer_id: String,
+    pub machine_id: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -416,7 +416,7 @@ pub struct UpdateAgentRequest {
     pub soul: Option<String>,
     pub cli_path: Option<String>,
     pub environment_variables: Option<EnvironmentVariableSet>,
-    pub computer_id: Option<String>,
+    pub machine_id: Option<String>,
     pub avatar: Option<AgentAvatarUpload>,
     pub attention: Option<AgentAttention>,
     pub provider_agent_config_json: Option<String>,
@@ -615,7 +615,7 @@ pub(crate) mod base64_bytes {
     }
 }
 
-/// Remote Computer entry point. Management always remains on loopback.
+/// Remote Machine entry point. Management always remains on loopback.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RemoteAccess {
     pub address: Option<String>,

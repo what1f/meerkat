@@ -35,8 +35,8 @@ const BOOT_LOADER_MIN_VISIBLE: Duration = Duration::from_millis(600);
 
 mod agent_actions;
 mod components;
-mod computers;
-pub(crate) use computers::local_computer_id;
+mod machines;
+pub(crate) use machines::local_machine_id;
 mod dialogs;
 mod errors;
 pub(super) mod onboarding;
@@ -46,8 +46,8 @@ mod workspace_actions;
 
 use agent_actions::{new_environment_row, selected_harness_id};
 use components::*;
-use computers::ComputerChoice;
 use errors::friendly_error;
+use machines::MachineChoice;
 pub(super) use onboarding::localized_agent_onboarding_copy;
 use onboarding::telegram_bot_username;
 use reaction_picker::ReactionPicker;
@@ -73,8 +73,8 @@ enum Page {
 enum Modal {
     CreateWorkspace { step: usize },
     CreateAgent,
-    PairComputer,
-    RemoveComputer(String),
+    PairMachine,
+    RemoveMachine(String),
     EditAgent(String),
     DeleteAgent(String),
     AgentOnboarding(AgentOnboardingState),
@@ -83,7 +83,7 @@ enum Modal {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BusyOperation {
     DeleteAgent,
-    RemoveComputer,
+    RemoveMachine,
     CreateWorkspace,
     SaveAgent,
     SaveWorkspace,
@@ -217,19 +217,19 @@ pub struct LankideApp {
     agent_model_error: Option<UiMessage>,
     agent_provider_handle_error: Option<UiMessage>,
     agent_secret_error: Option<UiMessage>,
-    local_computer_id: Option<String>,
-    computer_renaming: Option<String>,
-    computer_name_input: Entity<InputState>,
-    computer_rename_saving: bool,
-    computer_choices_changed: bool,
+    local_machine_id: Option<String>,
+    machine_renaming: Option<String>,
+    machine_name_input: Entity<InputState>,
+    machine_rename_saving: bool,
+    machine_choices_changed: bool,
     pairing_address: Option<String>,
     pairing_pin: Option<String>,
     pairing_address_input: Entity<InputState>,
     pairing_editing: bool,
     pairing_copied: bool,
     pairing_connected: Option<String>,
-    computers: Vec<lankide_client::ComputerOption>,
-    computer_request: u64,
+    machines: Vec<lankide_client::MachineOption>,
+    machine_request: u64,
     pairing_code: Option<lankide_client::PairingCode>,
     pairing_loading: bool,
     pairing_request: u64,
@@ -237,8 +237,8 @@ pub struct LankideApp {
     pairing_hint_task: Option<gpui::Task<()>>,
     pairing_code_task: Option<gpui::Task<()>>,
     pairing_known: std::collections::HashSet<String>,
-    computer_events_task: Option<gpui::Task<()>>,
-    agent_computer: Entity<SelectState<Vec<ComputerChoice>>>,
+    machine_events_task: Option<gpui::Task<()>>,
+    agent_machine: Entity<SelectState<Vec<MachineChoice>>>,
     agent_harness: Entity<SelectState<Vec<HarnessChoice>>>,
     agent_thinking: Entity<SelectState<Vec<ThinkingChoice>>>,
     agent_reaction: Option<String>,
@@ -334,7 +334,7 @@ impl LankideApp {
                 this.startup_pending = false;
                 match result {
                     Ok(Ok(())) => {
-                        this.read_local_computer(&local_home);
+                        this.read_local_machine(&local_home);
                         this.reload_workspaces(cx);
                     }
                     Ok(Err(error)) => {
@@ -444,8 +444,8 @@ impl LankideApp {
                 cx,
             )
         });
-        let agent_computer =
-            cx.new(|cx| SelectState::new(Vec::<ComputerChoice>::new(), None, window, cx));
+        let agent_machine =
+            cx.new(|cx| SelectState::new(Vec::<MachineChoice>::new(), None, window, cx));
         let language_select = cx.new(|cx| {
             SelectState::new(
                 vec!["简体中文".into(), "English".into()],
@@ -591,13 +591,13 @@ impl LankideApp {
         )
         .detach();
 
-        let computer_name_input = cx.new(|cx| InputState::new(window, cx));
+        let machine_name_input = cx.new(|cx| InputState::new(window, cx));
         cx.subscribe_in(
-            &computer_name_input,
+            &machine_name_input,
             window,
             |this, _, event: &InputEvent, _, cx| {
                 if matches!(event, InputEvent::PressEnter { .. }) {
-                    this.save_computer_name(cx);
+                    this.save_machine_name(cx);
                 }
             },
         )
@@ -673,11 +673,11 @@ impl LankideApp {
             agent_model_error: None,
             agent_provider_handle_error: None,
             agent_secret_error: None,
-            local_computer_id: None,
-            computer_renaming: None,
-            computer_name_input,
-            computer_rename_saving: false,
-            computer_choices_changed: false,
+            local_machine_id: None,
+            machine_renaming: None,
+            machine_name_input,
+            machine_rename_saving: false,
+            machine_choices_changed: false,
             pairing_address: None,
             pairing_pin: None,
             pairing_address_input: cx
@@ -685,8 +685,8 @@ impl LankideApp {
             pairing_editing: false,
             pairing_copied: false,
             pairing_connected: None,
-            computers: Vec::new(),
-            computer_request: 0,
+            machines: Vec::new(),
+            machine_request: 0,
             pairing_code: None,
             pairing_loading: false,
             pairing_request: 0,
@@ -694,8 +694,8 @@ impl LankideApp {
             pairing_hint_task: None,
             pairing_code_task: None,
             pairing_known: Default::default(),
-            computer_events_task: None,
-            agent_computer,
+            machine_events_task: None,
+            agent_machine,
             agent_harness,
             agent_thinking,
             agent_reaction: None,
@@ -778,8 +778,8 @@ impl LankideApp {
         cx: &mut Context<Self>,
     ) {
         self.language = language;
-        let selected = self.agent_computer.read(cx).selected_value().cloned();
-        self.update_computer_choices(selected, window, cx);
+        let selected = self.agent_machine.read(cx).selected_value().cloned();
+        self.update_machine_choices(selected, window, cx);
         for (input, zh, en) in [
             (
                 &self.workspace_id_input,
@@ -872,10 +872,10 @@ impl Render for LankideApp {
             self.started = true;
             self.reload_workspaces(cx);
         }
-        if self.computer_choices_changed {
-            self.computer_choices_changed = false;
-            let selected = self.agent_computer.read(cx).selected_value().cloned();
-            self.update_computer_choices(selected, window, cx);
+        if self.machine_choices_changed {
+            self.machine_choices_changed = false;
+            let selected = self.agent_machine.read(cx).selected_value().cloned();
+            self.update_machine_choices(selected, window, cx);
         }
         self.sync_modal(window, cx);
         let theme = self.theme();

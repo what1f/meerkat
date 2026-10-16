@@ -22,8 +22,8 @@ pub struct SteerDelivery {
     pub delivery_id: i64,
     pub execution_id: i64,
     pub attempt: i64,
-    pub computer_id: String,
-    pub computer_instance_id: String,
+    pub machine_id: String,
+    pub machine_instance_id: String,
     pub rendered_markdown: String,
     pub created_at: i64,
 }
@@ -136,8 +136,8 @@ fn steer_delivery_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SteerDelivery
         delivery_id: -row.get::<_, i64>(0)?,
         execution_id: row.get(1)?,
         attempt: row.get(2)?,
-        computer_id: row.get(3)?,
-        computer_instance_id: row.get(4)?,
+        machine_id: row.get(3)?,
+        machine_instance_id: row.get(4)?,
         rendered_markdown: row.get(5)?,
         created_at: row.get(6)?,
     })
@@ -328,19 +328,19 @@ pub(super) fn lose_attempt_transaction(
     now: i64,
 ) -> Result<()> {
     let failure = serde_json::json!({
-        "code": "computer_lost",
+        "code": "machine_lost",
         "category": "transient",
         "retryable": true,
-        "fingerprint": "computer_lost",
-        "detail": "Computer disconnected before the attempt completed",
+        "fingerprint": "machine_lost",
+        "detail": "Machine disconnected before the attempt completed",
     });
-    let changed = transaction.execute("UPDATE execution_attempts SET state='lost',error_code='computer_lost',failure_json=?4,error_message=json_extract(?4,'$.detail'),finished_at=?3 WHERE execution_id=?1 AND attempt=?2 AND state IN('offered','accepted','running')", params![execution_id,attempt,now,failure.to_string()])? == 1;
+    let changed = transaction.execute("UPDATE execution_attempts SET state='lost',error_code='machine_lost',failure_json=?4,error_message=json_extract(?4,'$.detail'),finished_at=?3 WHERE execution_id=?1 AND attempt=?2 AND state IN('offered','accepted','running')", params![execution_id,attempt,now,failure.to_string()])? == 1;
     if changed {
         abandon_execution(
             transaction,
             execution_id,
             ExecutionState::Failed,
-            Some("computer_lost"),
+            Some("machine_lost"),
             now,
         )?;
     }
@@ -574,7 +574,7 @@ impl Storage {
                 )
             })
             .unwrap_or((1, None, None));
-        t.execute("INSERT INTO executions(workspace_id,agent_id,snapshot_id,state,trigger_summary,created_at,updated_at,attempt,token_hash,token_expires_at,placement_computer_id,placement_generation)VALUES(?1,?2,?3,'queued',?4,?5,?5,?6,?7,?8,(SELECT computer_id FROM agents WHERE workspace_id=?1 AND agent_id=?2),(SELECT placement_generation FROM agents WHERE workspace_id=?1 AND agent_id=?2))",params![w.as_str(),a.as_str(),sid,summary,now,attempt,token_hash,token_expires_at])?;
+        t.execute("INSERT INTO executions(workspace_id,agent_id,snapshot_id,state,trigger_summary,created_at,updated_at,attempt,token_hash,token_expires_at,placement_machine_id,placement_generation)VALUES(?1,?2,?3,'queued',?4,?5,?5,?6,?7,?8,(SELECT machine_id FROM agents WHERE workspace_id=?1 AND agent_id=?2),(SELECT placement_generation FROM agents WHERE workspace_id=?1 AND agent_id=?2))",params![w.as_str(),a.as_str(),sid,summary,now,attempt,token_hash,token_expires_at])?;
         let eid = t.last_insert_rowid();
         t.execute("INSERT INTO execution_deliveries(execution_id,state,created_at)VALUES(?1,'pending',?2)",params![eid,now])?;
         let did = t.last_insert_rowid();
@@ -611,7 +611,7 @@ impl Storage {
         let row: Option<(String, String, i64, String, i64, String)> = self
             .read_conn()?
             .query_row(
-                "SELECT e.workspace_id,e.agent_id,e.attempt,e.token_hash,e.token_expires_at,e.state FROM executions e JOIN agents a ON a.workspace_id=e.workspace_id AND a.agent_id=e.agent_id WHERE e.execution_id=?1 AND e.attempt=?2 AND e.token_hash IS NOT NULL AND e.token_expires_at IS NOT NULL AND e.placement_computer_id=a.computer_id AND e.placement_generation=a.placement_generation AND NOT EXISTS(SELECT 1 FROM computers c WHERE c.computer_id=e.placement_computer_id AND c.revoked_at IS NOT NULL)",
+                "SELECT e.workspace_id,e.agent_id,e.attempt,e.token_hash,e.token_expires_at,e.state FROM executions e JOIN agents a ON a.workspace_id=e.workspace_id AND a.agent_id=e.agent_id WHERE e.execution_id=?1 AND e.attempt=?2 AND e.token_hash IS NOT NULL AND e.token_expires_at IS NOT NULL AND e.placement_machine_id=a.machine_id AND e.placement_generation=a.placement_generation AND NOT EXISTS(SELECT 1 FROM machines c WHERE c.machine_id=e.placement_machine_id AND c.revoked_at IS NOT NULL)",
                 params![execution_id, attempt],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
             )
@@ -632,27 +632,27 @@ impl Storage {
         .transpose()
     }
     /// Verifies the assignment target against the frozen and current placement.
-    pub fn execution_computer_matches(
+    pub fn execution_machine_matches(
         &self,
         execution_id: i64,
         attempt: i64,
-        computer_id: &str,
+        machine_id: &str,
     ) -> Result<bool> {
         Ok(self.read_conn()?.query_row(
-            "SELECT EXISTS(SELECT 1 FROM executions e JOIN agents a ON a.workspace_id=e.workspace_id AND a.agent_id=e.agent_id WHERE e.execution_id=?1 AND e.attempt=?2 AND e.placement_computer_id=?3 AND a.computer_id=?3 AND e.placement_generation=a.placement_generation AND NOT EXISTS(SELECT 1 FROM computers c WHERE c.computer_id=?3 AND c.revoked_at IS NOT NULL))",
-            params![execution_id, attempt, computer_id], |r| r.get(0))?)
+            "SELECT EXISTS(SELECT 1 FROM executions e JOIN agents a ON a.workspace_id=e.workspace_id AND a.agent_id=e.agent_id WHERE e.execution_id=?1 AND e.attempt=?2 AND e.placement_machine_id=?3 AND a.machine_id=?3 AND e.placement_generation=a.placement_generation AND NOT EXISTS(SELECT 1 FROM machines c WHERE c.machine_id=?3 AND c.revoked_at IS NOT NULL))",
+            params![execution_id, attempt, machine_id], |r| r.get(0))?)
     }
 
-    /// Checks the frozen placement before accepting any Computer-side mutation.
+    /// Checks the frozen placement before accepting any Machine-side mutation.
     pub fn execution_placement_matches(
         &self,
         execution_id: i64,
         attempt: i64,
-        computer_id: &str,
+        machine_id: &str,
     ) -> Result<bool> {
         Ok(self.read_conn()?.query_row(
-            "SELECT EXISTS(SELECT 1 FROM executions e JOIN agents a ON a.workspace_id=e.workspace_id AND a.agent_id=e.agent_id JOIN execution_attempts t ON t.execution_id=e.execution_id AND t.attempt=e.attempt WHERE e.execution_id=?1 AND e.attempt=?2 AND t.computer_id=?3 AND e.placement_computer_id=t.computer_id AND e.placement_computer_id=a.computer_id AND e.placement_generation=a.placement_generation AND NOT EXISTS(SELECT 1 FROM computers c WHERE c.computer_id=?3 AND c.revoked_at IS NOT NULL))",
-            params![execution_id, attempt, computer_id], |r| r.get(0))?)
+            "SELECT EXISTS(SELECT 1 FROM executions e JOIN agents a ON a.workspace_id=e.workspace_id AND a.agent_id=e.agent_id JOIN execution_attempts t ON t.execution_id=e.execution_id AND t.attempt=e.attempt WHERE e.execution_id=?1 AND e.attempt=?2 AND t.machine_id=?3 AND e.placement_machine_id=t.machine_id AND e.placement_machine_id=a.machine_id AND e.placement_generation=a.placement_generation AND NOT EXISTS(SELECT 1 FROM machines c WHERE c.machine_id=?3 AND c.revoked_at IS NOT NULL))",
+            params![execution_id, attempt, machine_id], |r| r.get(0))?)
     }
 
     pub fn mark_execution_running(&self, id: i64, now: i64) -> Result<bool> {
@@ -683,20 +683,20 @@ impl Storage {
         let transaction = connection.transaction()?;
         let active: Option<(i64, i64, String, String)> = transaction
             .query_row(
-                "SELECT e.execution_id,e.attempt,a.computer_id,a.computer_instance_id FROM executions e JOIN execution_attempts a ON a.execution_id=e.execution_id AND a.attempt=e.attempt WHERE e.workspace_id=?1 AND e.agent_id=?2 AND e.state IN('assigning','running','recovering') AND a.state IN('offered','accepted','running') ORDER BY e.execution_id DESC LIMIT 1",
+                "SELECT e.execution_id,e.attempt,a.machine_id,a.machine_instance_id FROM executions e JOIN execution_attempts a ON a.execution_id=e.execution_id AND a.attempt=e.attempt WHERE e.workspace_id=?1 AND e.agent_id=?2 AND e.state IN('assigning','running','recovering') AND a.state IN('offered','accepted','running') ORDER BY e.execution_id DESC LIMIT 1",
                 params![workspace_id.as_str(), agent_id.as_str()],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .optional()?;
-        let Some((execution_id, attempt, computer_id, computer_instance_id)) = active else {
+        let Some((execution_id, attempt, machine_id, machine_instance_id)) = active else {
             return Ok(None);
         };
         transaction.execute(
-            "INSERT INTO steer_deliveries(execution_id,attempt,inbox_item_id,computer_id,computer_instance_id,rendered_markdown,state,created_at) VALUES(?1,?2,?3,?4,?5,?6,'pending',?7) ON CONFLICT(execution_id,attempt,inbox_item_id) DO NOTHING",
-            params![execution_id,attempt,inbox_item_id,computer_id,computer_instance_id,rendered_markdown,now],
+            "INSERT INTO steer_deliveries(execution_id,attempt,inbox_item_id,machine_id,machine_instance_id,rendered_markdown,state,created_at) VALUES(?1,?2,?3,?4,?5,?6,'pending',?7) ON CONFLICT(execution_id,attempt,inbox_item_id) DO NOTHING",
+            params![execution_id,attempt,inbox_item_id,machine_id,machine_instance_id,rendered_markdown,now],
         )?;
         let delivery = transaction.query_row(
-            "SELECT steer_delivery_id,execution_id,attempt,computer_id,computer_instance_id,rendered_markdown,created_at FROM steer_deliveries WHERE execution_id=?1 AND attempt=?2 AND inbox_item_id=?3",
+            "SELECT steer_delivery_id,execution_id,attempt,machine_id,machine_instance_id,rendered_markdown,created_at FROM steer_deliveries WHERE execution_id=?1 AND attempt=?2 AND inbox_item_id=?3",
             params![execution_id, attempt, inbox_item_id],
             steer_delivery_row,
         )?;
@@ -705,18 +705,15 @@ impl Storage {
     }
     pub fn pending_steer_deliveries(
         &self,
-        computer_id: &str,
-        computer_instance_id: &str,
+        machine_id: &str,
+        machine_instance_id: &str,
     ) -> Result<Vec<SteerDelivery>> {
         let connection = self.read_conn()?;
         let mut statement = connection.prepare(
-            "SELECT s.steer_delivery_id,s.execution_id,s.attempt,s.computer_id,s.computer_instance_id,s.rendered_markdown,s.created_at FROM steer_deliveries s JOIN executions e USING(execution_id) JOIN execution_attempts a ON a.execution_id=s.execution_id AND a.attempt=s.attempt WHERE s.computer_id=?1 AND s.computer_instance_id=?2 AND s.state='pending' AND e.attempt=s.attempt AND e.state IN('assigning','running','recovering') AND a.state IN('offered','accepted','running') ORDER BY s.steer_delivery_id",
+            "SELECT s.steer_delivery_id,s.execution_id,s.attempt,s.machine_id,s.machine_instance_id,s.rendered_markdown,s.created_at FROM steer_deliveries s JOIN executions e USING(execution_id) JOIN execution_attempts a ON a.execution_id=s.execution_id AND a.attempt=s.attempt WHERE s.machine_id=?1 AND s.machine_instance_id=?2 AND s.state='pending' AND e.attempt=s.attempt AND e.state IN('assigning','running','recovering') AND a.state IN('offered','accepted','running') ORDER BY s.steer_delivery_id",
         )?;
         Ok(statement
-            .query_map(
-                params![computer_id, computer_instance_id],
-                steer_delivery_row,
-            )?
+            .query_map(params![machine_id, machine_instance_id], steer_delivery_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?)
     }
     pub fn mark_steer_delivery_result(
@@ -724,8 +721,8 @@ impl Storage {
         delivery_id: i64,
         execution_id: i64,
         attempt: i64,
-        computer_id: &str,
-        computer_instance_id: &str,
+        machine_id: &str,
+        machine_instance_id: &str,
         accepted: bool,
         now: i64,
     ) -> Result<bool> {
@@ -733,8 +730,8 @@ impl Storage {
         let mut connection = self.conn()?;
         let transaction = connection.transaction()?;
         let changed = transaction.execute(
-            "UPDATE steer_deliveries SET state=?6,accepted_at=CASE WHEN ?7 THEN ?8 ELSE accepted_at END,last_error_at=CASE WHEN ?7 THEN last_error_at ELSE ?8 END WHERE steer_delivery_id=?1 AND execution_id=?2 AND attempt=?3 AND computer_id=?4 AND computer_instance_id=?5 AND state='pending' AND EXISTS(SELECT 1 FROM executions e JOIN execution_attempts a ON a.execution_id=e.execution_id AND a.attempt=e.attempt WHERE e.execution_id=?2 AND e.attempt=?3 AND e.state IN('assigning','running','recovering') AND a.computer_id=?4 AND a.computer_instance_id=?5 AND a.state IN('offered','accepted','running'))",
-            params![delivery_id,execution_id,attempt,computer_id,computer_instance_id,state, accepted, now],
+            "UPDATE steer_deliveries SET state=?6,accepted_at=CASE WHEN ?7 THEN ?8 ELSE accepted_at END,last_error_at=CASE WHEN ?7 THEN last_error_at ELSE ?8 END WHERE steer_delivery_id=?1 AND execution_id=?2 AND attempt=?3 AND machine_id=?4 AND machine_instance_id=?5 AND state='pending' AND EXISTS(SELECT 1 FROM executions e JOIN execution_attempts a ON a.execution_id=e.execution_id AND a.attempt=e.attempt WHERE e.execution_id=?2 AND e.attempt=?3 AND e.state IN('assigning','running','recovering') AND a.machine_id=?4 AND a.machine_instance_id=?5 AND a.state IN('offered','accepted','running'))",
+            params![delivery_id,execution_id,attempt,machine_id,machine_instance_id,state, accepted, now],
         )? == 1;
         if changed && accepted {
             transaction.execute(

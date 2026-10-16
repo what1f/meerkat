@@ -10,12 +10,12 @@ split into small crates and application composition roots:
 
 ```text
 crates/core                 pure domain vocabulary
-crates/protocol             Runtime-Computer/client wire DTOs
+crates/protocol             Runtime-Machine/client wire DTOs
 crates/provider             Provider contracts and normalized events
 crates/harness              Pi/Codex/Claude Code execution contract
 crates/storage              Runtime database boundary
 crates/runtime              scheduling, persistence, Provider lifecycle
-crates/computer             Agent home and Harness execution boundary
+crates/machine-core             Agent home and Harness execution boundary
 crates/daemon-runtime       shared daemon filesystem and instance ownership
 crates/client               management client contract and test support
 crates/desktop-ui           reusable GPUI shell and presentation primitives
@@ -27,8 +27,8 @@ harnesses/pi                Pi composition adapter
 harnesses/codex             Codex composition adapter
 harnesses/claude-code       Claude Code composition adapter
 
-apps/runtime-daemon         Runtime composition root
-apps/computer-daemon        Computer composition root
+apps/daemon         Runtime composition root
+apps/machine        Machine composition root
 apps/desktop                GPUI composition root
 apps/lankide-cli            Agent-run-scoped capability CLI
 ```
@@ -41,7 +41,7 @@ provider  -> core, protocol
 harness   -> core, protocol
 storage   -> core
 runtime   -> core, protocol, provider, storage
-computer  -> core, protocol, harness
+machine  -> core, protocol, harness
 daemon-runtime -> core
 client         -> protocol
 desktop-ui     -> GPUI
@@ -49,8 +49,8 @@ desktop-ui     -> GPUI
 providers/*  -> core, provider
 harnesses/*  -> core, harness
 
-apps/runtime-daemon  -> runtime + daemon-runtime + concrete providers
-apps/computer-daemon -> computer + daemon-runtime + concrete harnesses
+apps/daemon  -> runtime + daemon-runtime + concrete providers
+apps/machine -> machine + daemon-runtime + concrete harnesses
 apps/desktop         -> client + desktop-ui + GPUI
 apps/lankide-cli     -> protocol
 ```
@@ -107,7 +107,7 @@ LANKIDE_E2E_LIVE=1 ./scripts/verify-all --gate full-release
 
 `just check` verifies open-source and production boundaries, formatting, the
 workspace build, module contracts, and the Desktop UI boundary. `just test`
-(`verify-all --gate hermetic`) runs all workspace integration scenarios once with the Computer and Harness
+(`verify-all --gate hermetic`) runs all workspace integration scenarios once with the Machine and Harness
 `test-support` features. Each crate has one `tests/e2e/main.rs` integration
 target, with scenario modules running on parallel test threads. The gate builds
 Cargo's integration targets once, then runs up to three independent crate suites

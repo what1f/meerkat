@@ -632,7 +632,7 @@ async fn mock_runtime(
                         name: id.into(),
                         ..Default::default()
                     },
-                    computer_id: "fixture-computer".into(),
+                    machine_id: "fixture-machine".into(),
                     harness: HarnessConfig::default(),
                     session: SessionDirective::default(),
                     execution_token: "fixture".into(),
@@ -1082,7 +1082,7 @@ fn task_spec() -> AgentRuntimeSpec {
     AgentRuntimeSpec {
         agent_config: json!({}),
         provider_agent_config: json!({"app_id":"cli_beta"}),
-        computer_id: "fixture-computer".into(),
+        machine_id: "fixture-machine".into(),
         harness_id: "pi".into(),
         model: "model".into(),
         thinking_level: "low".into(),

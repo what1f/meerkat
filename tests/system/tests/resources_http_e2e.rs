@@ -8,7 +8,7 @@ use std::time::Duration;
 fn config() -> RigConfig {
     RigConfig {
         harness_executable: env!("CARGO_BIN_EXE_system-harness").into(),
-        computer_ws_only: true,
+        machine_ws_only: true,
         ..Default::default()
     }
 }
@@ -44,7 +44,7 @@ async fn s11_1_image_reaches_the_remote_agent_snapshot_with_the_right_hash() -> 
     let resource = team.image_message(&agent, "images", bytes.clone()).await?;
     rig.settle().await?;
     assert!(rig.homes_are_separate());
-    assert!(!rig.computer_has_runtime_socket());
+    assert!(!rig.machine_has_runtime_socket());
     let path = agent
         .resource_directory()?
         .join(format!("{}-photo.png", resource.resource_id));
@@ -94,10 +94,10 @@ async fn captioned_image_keeps_caption_and_local_path_together() -> Result<()> {
 #[tokio::test]
 async fn s11_2_cut_download_resumes_from_the_partial_file() -> Result<()> {
     let mut rig = SystemRig::start(config()).await?;
-    let (url, _) = rig.computer_endpoint()?;
+    let (url, _) = rig.machine_endpoint()?;
     let cut_after = 1024 * 1024;
     let cutter = Cutter::start(&url, Some(cut_after), false).await?;
-    rig.route_computer_through(&cutter.url).await?;
+    rig.route_machine_through(&cutter.url).await?;
     let team = rig.workspace("team").await?;
     let agent = team
         .agent("bruce")
@@ -150,9 +150,9 @@ async fn s11_3_foreign_and_expired_attempt_tokens_are_rejected() -> Result<()> {
         ..config()
     })
     .await?;
-    let (url, secret) = rig.computer_endpoint()?;
+    let (url, secret) = rig.machine_endpoint()?;
     let cutter = Cutter::start(&url, None, false).await?;
-    rig.route_computer_through(&cutter.url).await?;
+    rig.route_machine_through(&cutter.url).await?;
     let team = rig.workspace("team").await?;
     let agent = team.agent("bruce").harness(Script::Hang).create().await?;
     let resource = team.image_message(&agent, "images", image(0)).await?;
@@ -243,9 +243,9 @@ async fn s11_3_foreign_and_expired_attempt_tokens_are_rejected() -> Result<()> {
 #[tokio::test]
 async fn corrupted_download_is_discarded_before_the_harness_starts() -> Result<()> {
     let mut rig = SystemRig::start(config()).await?;
-    let (url, _) = rig.computer_endpoint()?;
+    let (url, _) = rig.machine_endpoint()?;
     let cutter = Cutter::start(&url, None, true).await?;
-    rig.route_computer_through(&cutter.url).await?;
+    rig.route_machine_through(&cutter.url).await?;
     let team = rig.workspace("team").await?;
     let agent = team
         .agent("bruce")
@@ -272,10 +272,10 @@ async fn corrupted_download_is_discarded_before_the_harness_starts() -> Result<(
 }
 
 #[tokio::test]
-async fn pinned_tls_computer_receives_attachment_over_its_computer_link() -> Result<()> {
+async fn pinned_tls_machine_receives_attachment_over_its_machine_link() -> Result<()> {
     use lankide_client::ManagementClient;
     let mut rig = SystemRig::start(RigConfig {
-        auto_start_computer: false,
+        auto_start_machine: false,
         local_discovery: true,
         ..config()
     })
@@ -288,15 +288,15 @@ async fn pinned_tls_computer_receives_attachment_over_its_computer_link() -> Res
         .set_remote_access(Some(address.clone()))
         .await?;
     let code = rig.management().create_pairing_code().await?;
-    lankide_computer_daemon::pair_with_pin(
-        &lankide_computer_daemon::ComputerDaemonPaths::for_home(rig.computer_home())?,
+    lankide_machine::pair_with_pin(
+        &lankide_machine::MachineDaemonPaths::for_home(rig.machine_home())?,
         &format!("wss://{address}"),
         &code.code,
         access.cert_sha256.as_deref(),
     )
     .await?;
-    rig.start_paired_computer()?;
-    rig.wait_computer_online().await?;
+    rig.start_paired_machine()?;
+    rig.wait_machine_online().await?;
     let team = rig.workspace("team").await?;
     let agent = team
         .agent("bruce")
@@ -320,7 +320,7 @@ async fn pinned_tls_computer_receives_attachment_over_its_computer_link() -> Res
 }
 
 #[tokio::test]
-async fn repeated_attachments_reach_the_same_computer_with_their_own_contents() -> Result<()> {
+async fn repeated_attachments_reach_the_same_machine_with_their_own_contents() -> Result<()> {
     let rig = SystemRig::start(config()).await?;
     let team = rig.workspace("team").await?;
     let agent = team

@@ -1,4 +1,4 @@
-//! Canonical JSON Computer link vocabulary.
+//! Canonical JSON Machine link vocabulary.
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
@@ -71,20 +71,20 @@ pub struct CliCommand {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
-pub struct ComputerHeartbeat {
-    pub computer_id: String,
+pub struct MachineHeartbeat {
+    pub machine_id: String,
     pub instance_id: String,
     pub sent_at: i64,
     pub active_attempts: Vec<ActiveAttempt>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
-pub struct ComputerHello {
+pub struct MachineHello {
     pub device_credential: String,
     pub protocol_version: u32,
-    pub computer_id: String,
+    pub machine_id: String,
     pub instance_id: String,
-    pub computer_version: String,
+    pub machine_version: String,
     pub os: String,
     pub arch: String,
     pub harnesses: Vec<HarnessInfo>,
@@ -274,10 +274,10 @@ pub struct WorkspaceRef {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Eq)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
-pub enum ComputerPayload {
+pub enum MachinePayload {
     CapabilityRequest(CapabilityRequest),
-    Hello(ComputerHello),
-    Heartbeat(ComputerHeartbeat),
+    Hello(MachineHello),
+    Heartbeat(MachineHeartbeat),
     AssignmentResult(AssignmentResult),
     ExecutionEvent(ExecutionEvent),
     DeliveryResult(DeliveryResult),
@@ -302,15 +302,15 @@ pub enum RuntimePayload {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PairComputerRequest {
+pub struct PairMachineRequest {
     pub code: String,
     pub display_name: String,
     pub os: String,
     pub version: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PairComputerResponse {
-    pub computer_id: String,
+pub struct PairMachineResponse {
+    pub machine_id: String,
     pub device_credential: String,
 }
 
@@ -340,4 +340,4 @@ pub struct AgentRunContext {
     pub execution_token: String,
 }
 
-pub use crate::wire::{ComputerFrame, RuntimeFrame};
+pub use crate::wire::{MachineFrame, RuntimeFrame};

@@ -20,7 +20,7 @@ impl RuntimePeerAdapter {
 }
 
 #[async_trait::async_trait]
-impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
+impl lankide_protocol::MachinePeer for RuntimePeerAdapter {
     async fn authorize_link(
         &self,
         credential: &str,
@@ -30,71 +30,71 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
             return Err(lankide_protocol::link::CloseReason::Unauthorized);
         }
         self.application
-            .authenticate_computer(None, credential)
+            .authenticate_machine(None, credential)
             .await
     }
-    async fn pair_computer(
+    async fn pair_machine(
         &self,
-        request: lankide_protocol::link::PairComputerRequest,
+        request: lankide_protocol::link::PairMachineRequest,
         local_secret: &str,
-    ) -> Result<lankide_protocol::link::PairComputerResponse, Status> {
+    ) -> Result<lankide_protocol::link::PairMachineResponse, Status> {
         self.application
-            .pair_computer(request, local_secret)
+            .pair_machine(request, local_secret)
             .await
             .map_err(status)
     }
 
     async fn link_rejected(
         &self,
-        hello: ComputerHello,
+        hello: MachineHello,
         reason: lankide_protocol::link::CloseReason,
     ) {
-        log::error!("computer={} link_rejected={reason}", hello.computer_id);
+        log::error!("machine={} link_rejected={reason}", hello.machine_id);
         let _ = self
             .application
-            .computer_broker()
-            .reject_link(hello.computer_id, reason);
+            .machine_broker()
+            .reject_link(hello.machine_id, reason);
     }
 
-    async fn connect_computer(
+    async fn connect_machine(
         &self,
-        hello: ComputerHello,
-        mut frames: ComputerFrameStream,
+        hello: MachineHello,
+        mut frames: MachineFrameStream,
     ) -> Result<RuntimeFrameStream, Status> {
-        let computer_id = hello.computer_id.clone();
+        let machine_id = hello.machine_id.clone();
         let instance_id = hello.instance_id.clone();
         let (connection_id, output) = {
-            let _guard = self.application.inner.computer_registration.lock().await;
+            let _guard = self.application.inner.machine_registration.lock().await;
             self.application
-                .authenticate_computer(Some(&computer_id), &hello.device_credential)
+                .authenticate_machine(Some(&machine_id), &hello.device_credential)
                 .await
                 .map_err(|reason| Status::unauthenticated(reason.to_string()))?;
             self.application
                 .runtime()
                 .map_err(status)?
                 .database()
-                .observe_computer(
-                    &computer_id,
+                .observe_machine(
+                    &machine_id,
                     application::now_millis(),
                     Some(
                         &serde_json::to_string(&hello.harnesses)
                             .map_err(|_| Status::internal("inventory invalid"))?,
                     ),
                     Some(&hello.os),
-                    Some(&hello.computer_version),
+                    Some(&hello.machine_version),
                 )
                 .await
                 .map_err(|error| status(error.into()))?;
             self.application
-                .computer_broker()
+                .machine_broker()
                 .connect_tracked(hello)
                 .await
                 .map_err(status)?
         };
-        self.application.set_computer_connected(true);
-        self.application.emit_computer_catalog_changed();
-        let cleanup_broker = self.application.computer_broker();
-        let cleanup_computer_id = computer_id.clone();
+        self.application.set_machine_connected(true);
+        self.application.emit_machine_catalog_changed();
+        let cleanup_broker = self.application.machine_broker();
+        let cleanup_machine_id = machine_id.clone();
         let application = self.application.clone();
         self.application
             .spawn_background(async move {
@@ -103,14 +103,14 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                 while let Some(frame) = frames.next().await {
                     match frame {
                         Ok(frame) => {
-                            if let Some(computer_frame::Frame::CapabilityRequest(chunk)) =
+                            if let Some(machine_frame::Frame::CapabilityRequest(chunk)) =
                                 frame.frame.clone()
                             {
                                 let request_id = chunk.request_id.clone();
                                 match capability_calls.accept(chunk) {
                                     Ok(Some((request, permit))) => {
                                         let application = application.clone();
-                                        let computer = computer_id.clone();
+                                        let machine = machine_id.clone();
                                         let instance = instance_id.clone();
                                         let owner = application.clone();
                                         if owner
@@ -118,7 +118,7 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                                                 let _permit = permit;
                                                 crate::capability_link::respond(
                                                     application,
-                                                    computer,
+                                                    machine,
                                                     instance,
                                                     request,
                                                 )
@@ -132,9 +132,9 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                                     Ok(None) => {}
                                     Err(error) => {
                                         let _ = application
-                                            .computer_broker()
+                                            .machine_broker()
                                             .send_frame(
-                                                &computer_id,
+                                                &machine_id,
                                                 &instance_id,
                                                 RuntimeFrame {
                                                     protocol_version:
@@ -160,23 +160,20 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                                 continue;
                             }
                             let first_heartbeat = !online
-                                && matches!(
-                                    &frame.frame,
-                                    Some(computer_frame::Frame::Heartbeat(_))
-                                );
+                                && matches!(&frame.frame, Some(machine_frame::Frame::Heartbeat(_)));
                             let inventory_changed = matches!(
                                 &frame.frame,
-                                Some(computer_frame::Frame::InventoryChanged(_))
+                                Some(machine_frame::Frame::InventoryChanged(_))
                             );
                             if let Err(error) = application
-                                .computer_broker()
-                                .handle_frame(&computer_id, &instance_id, frame)
+                                .machine_broker()
+                                .handle_frame(&machine_id, &instance_id, frame)
                                 .await
                             {
                                 // Reject this stale attempt without dropping the authenticated
-                                // Computer link before its outbox-discard response can arrive.
+                                // Machine link before its outbox-discard response can arrive.
                                 if !matches!(error, RuntimeError::InvalidExecutionToken) {
-                                    log::warn!("computer={computer_id} link frame failed: {error}");
+                                    log::warn!("machine={machine_id} link frame failed: {error}");
                                     break;
                                 }
                             } else {
@@ -184,24 +181,24 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
                                     online = true;
                                 }
                                 if inventory_changed || first_heartbeat {
-                                    application.emit_computer_catalog_changed();
+                                    application.emit_machine_catalog_changed();
                                 }
                             }
                         }
                         Err(error) => {
-                            log::warn!("computer={computer_id} link failed: {error}");
+                            log::warn!("machine={machine_id} link failed: {error}");
                             break;
                         }
                     }
                 }
                 let _ = application
-                    .computer_broker()
-                    .disconnect_connection(&computer_id, &instance_id, connection_id)
+                    .machine_broker()
+                    .disconnect_connection(&machine_id, &instance_id, connection_id)
                     .await;
-                application.emit_computer_catalog_changed();
-                application.set_computer_connected(
+                application.emit_machine_catalog_changed();
+                application.set_machine_connected(
                     application
-                        .computer_broker()
+                        .machine_broker()
                         .catalog()
                         .is_ok_and(|values| !values.is_empty()),
                 );
@@ -209,11 +206,11 @@ impl lankide_protocol::ComputerPeer for RuntimePeerAdapter {
             .map_err(status)?;
         self.application.spawn_background(async move {
             if let Err(error) = cleanup_broker
-                .retry_agent_file_deletions(&cleanup_computer_id)
+                .retry_agent_file_deletions(&cleanup_machine_id)
                 .await
             {
                 log::error!(
-                    "[runtime] computer={cleanup_computer_id} deferred Agent file cleanup could not start: {error}"
+                    "[runtime] machine={cleanup_machine_id} deferred Agent file cleanup could not start: {error}"
                 );
             }
         }).map_err(status)?;
@@ -575,44 +572,41 @@ impl RuntimePeer for RuntimePeerAdapter {
     async fn create_pairing_code(&self, _request: CatalogRequest) -> Result<PairingCode, Status> {
         self.application.create_pairing_code().await.map_err(status)
     }
-    async fn rename_computer(
+    async fn rename_machine(
         &self,
-        request: RenameComputerRequest,
-    ) -> Result<ComputerCatalog, Status> {
+        request: RenameMachineRequest,
+    ) -> Result<MachineCatalog, Status> {
         self.application
-            .rename_computer(&request.computer_id, &request.name)
+            .rename_machine(&request.machine_id, &request.name)
             .await
             .map_err(status)?;
         self.application
-            .computer_catalog(CatalogRequest {
+            .machine_catalog(CatalogRequest {
                 request_id: request.request_id,
                 workspace: None,
             })
             .await
             .map_err(status)
     }
-    async fn revoke_computer(
+    async fn revoke_machine(
         &self,
-        request: RevokeComputerRequest,
-    ) -> Result<ComputerCatalog, Status> {
+        request: RevokeMachineRequest,
+    ) -> Result<MachineCatalog, Status> {
         self.application
-            .revoke_computer(&request.computer_id)
+            .revoke_machine(&request.machine_id)
             .await
             .map_err(status)?;
         self.application
-            .computer_catalog(CatalogRequest {
+            .machine_catalog(CatalogRequest {
                 request_id: request.request_id,
                 workspace: None,
             })
             .await
             .map_err(status)
     }
-    async fn get_computer_catalog(
-        &self,
-        request: CatalogRequest,
-    ) -> Result<ComputerCatalog, Status> {
+    async fn get_machine_catalog(&self, request: CatalogRequest) -> Result<MachineCatalog, Status> {
         self.application
-            .computer_catalog(request)
+            .machine_catalog(request)
             .await
             .map_err(status)
     }
@@ -655,7 +649,7 @@ impl RuntimePeer for RuntimePeerAdapter {
                     };
                     if event.sequence <= after
                         || (event.kind
-                            != lankide_protocol::ManagementEventKind::ComputerCatalogChanged as i32
+                            != lankide_protocol::ManagementEventKind::MachineCatalogChanged as i32
                             && workspace.as_ref().is_some_and(|workspace| {
                                 event
                                     .workspace
@@ -774,21 +768,21 @@ pub(crate) fn status(error: RuntimeError) -> Status {
         RuntimeError::DuplicateProviderType(_) => {
             Status::already_exists("Provider is already available.")
         }
-        RuntimeError::ComputerHasAssignedAgents => {
-            Status::failed_precondition("Move this computer's Agents to another computer first.")
-                .with_detail(Some("computer_has_assigned_agents".into()))
+        RuntimeError::MachineHasAssignedAgents => {
+            Status::failed_precondition("Move this machine's Agents to another machine first.")
+                .with_detail(Some("machine_has_assigned_agents".into()))
         }
-        RuntimeError::LocalComputerCannotBeRemoved => {
-            Status::failed_precondition("This computer cannot be removed.")
-                .with_detail(Some("local_computer_cannot_be_removed".into()))
+        RuntimeError::LocalMachineCannotBeRemoved => {
+            Status::failed_precondition("This machine cannot be removed.")
+                .with_detail(Some("local_machine_cannot_be_removed".into()))
         }
-        RuntimeError::ComputerNameInvalid => {
+        RuntimeError::MachineNameInvalid => {
             Status::invalid_argument("Enter a name with 1 to 80 characters.")
-                .with_detail(Some("computer_name_invalid".into()))
+                .with_detail(Some("machine_name_invalid".into()))
         }
-        RuntimeError::ComputerNotRegistered
-        | RuntimeError::ComputerRevoked
-        | RuntimeError::HarnessUnavailableOnComputer => {
+        RuntimeError::MachineNotRegistered
+        | RuntimeError::MachineRevoked
+        | RuntimeError::HarnessUnavailableOnMachine => {
             let code = error.to_string();
             Status::failed_precondition("Check the request values and try again.")
                 .with_detail(Some(code))

@@ -6,7 +6,7 @@ use std::{future::Future, path::PathBuf, pin::Pin};
 pub type ResourceFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, RuntimeError>> + Send + 'a>>;
 
 /// Runtime-owned byte storage. Persistence owns only resource identity and
-/// metadata; Provider and Computer boundaries never receive its storage path.
+/// metadata; Provider and Machine boundaries never receive its storage path.
 pub trait ResourceStore: Send + Sync {
     fn save<'a>(
         &'a self,

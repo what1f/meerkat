@@ -80,7 +80,7 @@ fn agent(input: wire::CreateAgentRequest) -> wire::Agent {
         soul: input.soul,
         cli_path: input.cli_path,
         environment_variables: input.environment_variables,
-        computer_id: input.computer_id,
+        machine_id: input.machine_id,
         attention: input.attention,
         provider_agent_config_json: input.provider_agent_config_json,
         created_at: 1,
@@ -380,8 +380,8 @@ impl wire::RuntimePeer for Peer {
         if let Some(x) = r.cli_path {
             a.cli_path = x
         }
-        if let Some(x) = r.computer_id {
-            a.computer_id = x
+        if let Some(x) = r.machine_id {
+            a.machine_id = x
         }
         if let Some(environment) = r.environment_variables {
             a.environment_variables = environment.entries;
@@ -541,14 +541,14 @@ impl wire::RuntimePeer for Peer {
             ],
         })
     }
-    async fn get_computer_catalog(
+    async fn get_machine_catalog(
         &self,
         _: wire::CatalogRequest,
-    ) -> Result<wire::ComputerCatalog, Status> {
-        Ok(wire::ComputerCatalog {
-            computers: vec![wire::ComputerCatalogItem {
-                computer_id: "fixture-computer".into(),
-                display_name: "Local Computer".into(),
+    ) -> Result<wire::MachineCatalog, Status> {
+        Ok(wire::MachineCatalog {
+            machines: vec![wire::MachineCatalogItem {
+                machine_id: "fixture-machine".into(),
+                display_name: "Local Machine".into(),
                 observed_state: wire::ObservedState::Running as i32,
                 harnesses: vec![],
                 status_message: String::new(),
@@ -671,11 +671,11 @@ impl wire::RuntimePeer for Peer {
 }
 
 #[async_trait::async_trait]
-impl wire::ComputerPeer for Peer {
-    async fn connect_computer(
+impl wire::MachinePeer for Peer {
+    async fn connect_machine(
         &self,
-        _: wire::ComputerHello,
-        _: wire::ComputerFrameStream,
+        _: wire::MachineHello,
+        _: wire::MachineFrameStream,
     ) -> Result<wire::RuntimeFrameStream, Status> {
         Err(Status::unimplemented("unused"))
     }
@@ -812,7 +812,7 @@ async fn common_contract<C: ManagementClient>(client: &C, prefix: &str) -> Resul
         bio: "Ships".into(),
         avatar: lankide_client::Avatar::Custom("B".into()),
         soul: "Care about quality".into(),
-        computer_id: "fixture-computer".into(),
+        machine_id: "fixture-machine".into(),
         harness_id: "claude_code".into(),
         model: "deepseek-v4-flash".into(),
         thinking_level: ThinkingLevel::High,
@@ -915,12 +915,12 @@ async fn common_contract<C: ManagementClient>(client: &C, prefix: &str) -> Resul
     )?;
     need(
         client
-            .get_computer_catalog(Some(&workspace_id))
+            .get_machine_catalog(Some(&workspace_id))
             .await
             .map_err(|e| e.to_string())?[0]
             .id
-            == "fixture-computer",
-        "computer catalog",
+            == "fixture-machine",
+        "machine catalog",
     )?;
     need(
         client
@@ -934,7 +934,7 @@ async fn common_contract<C: ManagementClient>(client: &C, prefix: &str) -> Resul
         "harness catalog",
     )?;
     let models = client
-        .get_model_catalog(Some(&workspace_id), "fixture-computer", "claude_code")
+        .get_model_catalog(Some(&workspace_id), "fixture-machine", "claude_code")
         .await
         .map_err(|e| e.to_string())?;
     need(

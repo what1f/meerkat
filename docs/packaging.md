@@ -7,10 +7,10 @@
 ```text
 Lankide.app/Contents/
 ├── MacOS/Lankide
-├── Library/LaunchAgents/com.lankide.runtime.plist
-├── Library/LaunchAgents/com.lankide.computer.plist
-├── Library/LaunchServices/lankide-runtime-daemon
-├── Library/LaunchServices/lankide-computer-daemon
+├── Library/LaunchAgents/com.lankide.daemon.plist
+├── Library/LaunchAgents/com.lankide.machine.plist
+├── Library/LaunchServices/lankided
+├── Library/LaunchServices/lankide-machine
 ├── Resources/bin/lankide
 ├── Resources/AppIcon.icns
 ├── Resources/LICENSE
@@ -19,7 +19,7 @@ Lankide.app/Contents/
 └── Info.plist
 ```
 
-用户只需打开 `Lankide.app`。macOS 通过当前用户的后台项目管理 Runtime 和 Computer；Desktop 确认它们可用后连接管理界面。关闭 Desktop 不会中断消息接收或正在进行的 Agent 工作，Dock 中也不会保留 Lankide 图标。用户可以随时在系统设置的登录项中允许或停用 Lankide 后台运行。
+用户只需打开 `Lankide.app`。macOS 通过当前用户的后台项目管理 Runtime 和 Machine；Desktop 确认它们可用后连接管理界面。关闭 Desktop 不会中断消息接收或正在进行的 Agent 工作，Dock 中也不会保留 Lankide 图标。用户可以随时在系统设置的登录项中允许或停用 Lankide 后台运行。
 
 直接运行未打包的开发二进制时，Desktop 临时启动本次运行所需的两个进程，并在退出时清理；这一开发回退不会注册系统后台项目。
 
@@ -93,7 +93,7 @@ package-provenance.json
 2. App 与内部可执行文件签名有效；
 3. ZIP 完整且没有 App 外置的 daemon 或启动脚本；DMG 中的 App 与同一份签名凭据一致，Applications 快捷方式和安装图标位置正确；两个交付物的 SHA-256 一致；
 4. Bundle 包含并签署两个用户级 LaunchAgent 描述；
-5. 隔离 smoke 路径只启动 Desktop 即可自动启动 Runtime 和 Computer，并在退出后清理临时 daemon、socket 和实例锁。
+5. 隔离 smoke 路径只启动 Desktop 即可自动启动 Runtime 和 Machine，并在退出后清理临时 daemon、socket 和实例锁。
 
 结果写入 `target/e2e-artifacts/package/<run_id>/result.json`。
 
@@ -102,9 +102,9 @@ package-provenance.json
 
 ## 其他桌面平台
 
-跨平台产品语义保持一致：Desktop 是可退出的管理界面，Runtime 和 Computer 由当前用户的系统后台机制托管，用户可以在系统设置中查看和停用。
+跨平台产品语义保持一致：Desktop 是可退出的管理界面，Runtime 和 Machine 由当前用户的系统后台机制托管，用户可以在系统设置中查看和停用。
 
-- Windows 的发行包应使用 MSIX `windows.startupTask` 启动独立后台可执行文件。若提供非 MSIX 安装包，则使用当前用户的 Task Scheduler 登录触发任务并配置失败重启；不要把依赖用户配置、凭据和 Harness CLI 的 Computer 安装成 LocalSystem 服务。
-- Linux 使用 `systemd --user` service，分别声明 Runtime 和 Computer 的启动顺序、失败重启和用户会话生命周期。默认随用户登录运行；只有产品明确需要用户退出登录后仍运行时，才由用户显式启用 linger。
+- Windows 的发行包应使用 MSIX `windows.startupTask` 启动独立后台可执行文件。若提供非 MSIX 安装包，则使用当前用户的 Task Scheduler 登录触发任务并配置失败重启；不要把依赖用户配置、凭据和 Harness CLI 的 Machine 安装成 LocalSystem 服务。
+- Linux 使用 `systemd --user` service，分别声明 Runtime 和 Machine 的启动顺序、失败重启和用户会话生命周期。默认随用户登录运行；只有产品明确需要用户退出登录后仍运行时，才由用户显式启用 linger。
 
-Windows/Linux adapter 尚未加入当前 macOS 交付物；实现时复用同一后台生命周期接口，不改变 Desktop、Runtime 或 Computer 的业务接口。
+Windows/Linux adapter 尚未加入当前 macOS 交付物；实现时复用同一后台生命周期接口，不改变 Desktop、Runtime 或 Machine 的业务接口。

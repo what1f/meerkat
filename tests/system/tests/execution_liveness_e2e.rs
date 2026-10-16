@@ -8,7 +8,7 @@ use tokio::time::{Instant, timeout};
 fn config(idle: Duration, total: Duration) -> RigConfig {
     RigConfig {
         harness_executable: env!("CARGO_BIN_EXE_system-harness").into(),
-        execution_liveness: lankide_computer::ExecutionLiveness {
+        execution_liveness: lankide_machine_core::ExecutionLiveness {
             idle_timeout: idle,
             total_budget: total,
             cancel_grace: Duration::from_millis(200),

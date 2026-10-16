@@ -24,8 +24,8 @@ workspaces_root=""
 workspace_root=""
 workspace_id=""
 database=""
-computer_root=""
-computer_state=""
+machine_root=""
+machine_state=""
 state_existed=0
 backup_root=""
 service_domain=""
@@ -56,9 +56,9 @@ Options:
                         LANKIDE_WORKSPACE_ID, the current workspace directory,
                         or the only workspace in the local database.
       --backup-dir PATH Store the recoverable backup under this directory.
-      --restart          Start Runtime and Computer again and verify that old
+      --restart          Start Runtime and Machine again and verify that old
                         local history is not reintroduced (default).
-      --no-restart       Leave Runtime and Computer stopped after the reset.
+      --no-restart       Leave Runtime and Machine stopped after the reset.
       --dry-run          Resolve and report the target without changing files.
   -y, --yes             Skip the destructive-operation confirmation prompt.
   -h, --help            Show this help.
@@ -261,16 +261,16 @@ resolve_database() {
   reject_symlink "$database"
 }
 
-resolve_computer_state() {
-  computer_root="$workspaces_root/.computer"
-  if [ -e "$computer_root" ] || [ -L "$computer_root" ]; then
-    reject_symlink "$computer_root"
-    [ -d "$computer_root" ] || die "Computer state directory is not a directory: $computer_root"
+resolve_machine_state() {
+  machine_root="$workspaces_root/.machine"
+  if [ -e "$machine_root" ] || [ -L "$machine_root" ]; then
+    reject_symlink "$machine_root"
+    [ -d "$machine_root" ] || die "Machine state directory is not a directory: $machine_root"
   fi
-  computer_state="$computer_root/state.json"
-  if [ -e "$computer_state" ] || [ -L "$computer_state" ]; then
-    reject_symlink "$computer_state"
-    [ -f "$computer_state" ] || die "Computer state is not a regular file: $computer_state"
+  machine_state="$machine_root/state.json"
+  if [ -e "$machine_state" ] || [ -L "$machine_state" ]; then
+    reject_symlink "$machine_state"
+    [ -f "$machine_state" ] || die "Machine state is not a regular file: $machine_state"
     state_existed=1
   fi
 }
@@ -304,7 +304,7 @@ validate_database() {
   [ "$workspace_count" = "1" ] || die "workspace $workspace_id is not present in $database"
 
   if [ "$state_existed" -eq 1 ]; then
-    jq -e 'type == "object"' "$computer_state" >/dev/null || die "Computer state is not valid JSON: $computer_state"
+    jq -e 'type == "object"' "$machine_state" >/dev/null || die "Machine state is not valid JSON: $machine_state"
   fi
 }
 
@@ -474,10 +474,10 @@ print_target() {
   printf 'Lankide home:              %s\n' "$lankide_home"
   printf 'Runtime database:          %s\n' "$database"
   printf 'Workspace directory:       %s\n' "$workspace_root"
-  printf 'Computer state:            %s\n' "$computer_state"
+  printf 'Machine state:            %s\n' "$machine_state"
   printf 'Harness user homes:        untouched\n'
   printf 'Preserved resource files:  %s\n' "${keep_resource_names:-none}"
-  printf 'Runtime/Computer restart:  %s\n' "$([ "$restart" -eq 1 ] && printf 'yes' || printf 'no')"
+  printf 'Runtime/Machine restart:  %s\n' "$([ "$restart" -eq 1 ] && printf 'yes' || printf 'no')"
   printf 'Current local state:\n'
   print_counts
 }
@@ -573,32 +573,32 @@ stop_loaded_service() {
   fi
   output="$(launchctl bootout "$service" 2>&1)" || die "could not stop service $service: $output"
   case "$label" in
-    com.lankide.runtime) wait_for_lock_release "$lankide_home/run/runtime.lock" ;;
-    com.lankide.computer) wait_for_lock_release "$lankide_home/run/computer.lock" ;;
+    com.lankide.daemon) wait_for_lock_release "$lankide_home/run/runtime.lock" ;;
+    com.lankide.machine) wait_for_lock_release "$lankide_home/run/machine.lock" ;;
   esac
 }
 
 stop_daemons() {
   if command -v launchctl >/dev/null 2>&1; then
     service_domain="gui/$(id -u)"
-    stop_loaded_service com.lankide.computer
-    stop_loaded_service com.lankide.runtime
+    stop_loaded_service com.lankide.machine
+    stop_loaded_service com.lankide.daemon
   fi
-  stop_lock_process "$lankide_home/run/computer.lock" lankide-computer-daemon
-  stop_lock_process "$lankide_home/run/runtime.lock" lankide-runtime-daemon
+  stop_lock_process "$lankide_home/run/machine.lock" lankide-machine
+  stop_lock_process "$lankide_home/run/runtime.lock" lankided
 }
 
 target_processes() {
   local pids pid command_line
   pids="$(ps -axo pid=,command= | awk '
-    $0 ~ /lankide-runtime-daemon|lankide-computer-daemon|(^|[[:space:]])pi([[:space:]]|$)|\/pi([[:space:]]|$)|codex app-server|(^|[[:space:]])claude([[:space:]]|$)|\/claude([[:space:]]|$)/ { print $1 }
+    $0 ~ /lankided|lankide-machine|(^|[[:space:]])pi([[:space:]]|$)|\/pi([[:space:]]|$)|codex app-server|(^|[[:space:]])claude([[:space:]]|$)|\/claude([[:space:]]|$)/ { print $1 }
   ' | sort -u)"
   for pid in $pids; do
     [ "$pid" != "$$" ] || continue
     [ "$pid" != "$PPID" ] || continue
     command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
     case "$command_line" in
-      *lankide-runtime-daemon*|*lankide-computer-daemon*)
+      *lankided*|*lankide-machine*)
         case "$command_line" in
           *"$lankide_home"*) printf '%s\n' "$pid" ;;
         esac
@@ -614,7 +614,7 @@ target_processes() {
 
 active_lock_pids() {
   local lock pid
-  for lock in "$lankide_home/run/computer.lock" "$lankide_home/run/runtime.lock"; do
+  for lock in "$lankide_home/run/machine.lock" "$lankide_home/run/runtime.lock"; do
     if [ -e "$lock" ]; then
       pid="$(lock_pid "$lock")"
       if kill -0 "$pid" 2>/dev/null; then
@@ -631,7 +631,7 @@ wait_for_idle() {
     openers="$(lsof -t "$database" 2>/dev/null || true)"
     state_openers=""
     if [ "$state_existed" -eq 1 ]; then
-      state_openers="$(lsof -t "$computer_state" 2>/dev/null || true)"
+      state_openers="$(lsof -t "$machine_state" 2>/dev/null || true)"
     fi
     locks="$(active_lock_pids)"
     processes="$(target_processes)"
@@ -641,7 +641,7 @@ wait_for_idle() {
     sleep 0.2
   done
   printf 'Openers of the Runtime database:\n%s\n' "$openers" >&2
-  printf 'Openers of the Computer state:\n%s\n' "$state_openers" >&2
+  printf 'Openers of the Machine state:\n%s\n' "$state_openers" >&2
   printf 'Target daemon locks:\n%s\n' "$locks" >&2
   printf 'Target processes:\n%s\n' "$processes" >&2
   die "the selected workspace or its local services are still active; refusing to reset"
@@ -685,9 +685,9 @@ prepare_backup() {
   [ "$(sqlite3 "$backup_root/runtime.db" 'PRAGMA integrity_check;')" = "ok" ] || die "SQLite backup failed integrity check"
 
   if [ "$state_existed" -eq 1 ]; then
-    state_backup="$backup_root/computer/state.json"
+    state_backup="$backup_root/machine/state.json"
     mkdir -p "$(dirname "$state_backup")"
-    cp -p "$computer_state" "$state_backup"
+    cp -p "$machine_state" "$state_backup"
     chmod 600 "$state_backup"
   fi
 }
@@ -755,9 +755,9 @@ quarantine_resources() {
   fi
 }
 
-clear_computer_state() {
+clear_machine_state() {
   [ "$state_existed" -eq 1 ] || return 0
-  temporary_state="$(mktemp "${computer_state}.reset.XXXXXX")"
+  temporary_state="$(mktemp "${machine_state}.reset.XXXXXX")"
   if ! jq \
     --arg prefix "$workspace_id/" \
     --argjson execution_ids "$target_execution_ids_json" \
@@ -774,11 +774,11 @@ clear_computer_state() {
         | if has("pending_events") then
             .pending_events |= with_entries(select(selected_execution))
           else . end
-    ' "$computer_state" > "$temporary_state"; then
-    die "could not update Computer state"
+    ' "$machine_state" > "$temporary_state"; then
+    die "could not update Machine state"
   fi
   chmod 600 "$temporary_state"
-  mv "$temporary_state" "$computer_state"
+  mv "$temporary_state" "$machine_state"
   temporary_state=""
 }
 
@@ -844,7 +844,7 @@ check_zero() {
   [ "$count" = "0" ] || die "$label still contains $count rows"
 }
 
-verify_computer_state() {
+verify_machine_state() {
   [ "$state_existed" -eq 1 ] || return 0
   jq -e \
     --arg prefix "$workspace_id/" \
@@ -856,7 +856,7 @@ verify_computer_state() {
       ((.sessions // {} | keys | map(select(startswith($prefix))) | length) == 0)
       and ((.accepted_assignments // {} | keys | map(select(selected_execution)) | length) == 0)
       and ((.pending_events // {} | keys | map(select(selected_execution)) | length) == 0)
-    ' "$computer_state" >/dev/null || die "Computer state still contains the selected workspace"
+    ' "$machine_state" >/dev/null || die "Machine state still contains the selected workspace"
 }
 
 verify_workspace_files() {
@@ -910,7 +910,7 @@ verify_zero_state() {
   check_zero tool_invocations "SELECT count(*) FROM tool_invocations t JOIN executions e USING(execution_id) WHERE e.workspace_id=$w;"
   check_zero removable_resources "SELECT count(*) FROM resource_metadata WHERE workspace_id=$w AND resource_id NOT IN ($resource_ids_sql);"
   [ -z "$(sqlite3 -readonly "$database" 'PRAGMA foreign_key_check;')" ] || die "PRAGMA foreign_key_check returned rows"
-  verify_computer_state
+  verify_machine_state
   verify_workspace_files
 }
 
@@ -942,12 +942,12 @@ service_ready() {
 }
 
 restart_daemons_and_verify() {
-  local label plist service output attempt runtime_ready computer_ready
+  local label plist service output attempt runtime_ready machine_ready
   [ "$lankide_home" = "$default_lankide_home" ] || die "--restart with a custom --home is unsafe; use --no-restart"
   require_command launchctl
   service_domain="gui/$(id -u)"
 
-  for label in com.lankide.runtime com.lankide.computer; do
+  for label in com.lankide.daemon com.lankide.machine; do
     plist="$user_home/Library/LaunchAgents/$label.plist"
     [ -f "$plist" ] || die "LaunchAgent plist not found: $plist"
     reject_symlink "$plist"
@@ -960,21 +960,21 @@ restart_daemons_and_verify() {
   done
 
   runtime_ready=0
-  computer_ready=0
+  machine_ready=0
   for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60
   do
-    if service_ready com.lankide.runtime lankide-runtime-daemon "$lankide_home/run/runtime.lock"; then
+    if service_ready com.lankide.daemon lankided "$lankide_home/run/runtime.lock"; then
       runtime_ready=1
     fi
-    if service_ready com.lankide.computer lankide-computer-daemon "$lankide_home/run/computer.lock"; then
-      computer_ready=1
+    if service_ready com.lankide.machine lankide-machine "$lankide_home/run/machine.lock"; then
+      machine_ready=1
     fi
-    if [ "$runtime_ready" -eq 1 ] && [ "$computer_ready" -eq 1 ]; then
+    if [ "$runtime_ready" -eq 1 ] && [ "$machine_ready" -eq 1 ]; then
       break
     fi
     sleep 0.2
   done
-  [ "$runtime_ready" -eq 1 ] && [ "$computer_ready" -eq 1 ] || die "Runtime and Computer did not become ready after the reset"
+  [ "$runtime_ready" -eq 1 ] && [ "$machine_ready" -eq 1 ] || die "Runtime and Machine did not become ready after the reset"
 
   sleep 2
   if ! (verify_zero_state); then
@@ -992,7 +992,7 @@ main() {
   resolve_lankide_home
   resolve_database
   resolve_workspace
-  resolve_computer_state
+  resolve_machine_state
   validate_database
   load_workspace_records
   validate_agent_paths
@@ -1012,7 +1012,7 @@ main() {
   fi
 
   if [ "$confirmed" -eq 0 ]; then
-    printf '\nThis will clear local history for workspace %s and move its Harness/session files into a recoverable backup:\n  %s\nWorkspace and Agent configuration, credentials, and normal user Harness homes will be preserved.\nAfterward Runtime and Computer will be %s.\nType RESET to continue: ' "$workspace_id" "$workspace_root" "$([ "$restart" -eq 1 ] && printf 'restarted' || printf 'left stopped')"
+    printf '\nThis will clear local history for workspace %s and move its Harness/session files into a recoverable backup:\n  %s\nWorkspace and Agent configuration, credentials, and normal user Harness homes will be preserved.\nAfterward Runtime and Machine will be %s.\nType RESET to continue: ' "$workspace_id" "$workspace_root" "$([ "$restart" -eq 1 ] && printf 'restarted' || printf 'left stopped')"
     local confirmation
     IFS= read -r confirmation || die "confirmation was not provided"
     [ "$confirmation" = "RESET" ] || die "reset cancelled"
@@ -1026,7 +1026,7 @@ main() {
   prepare_backup
   quarantine_agent_files
   quarantine_resources
-  clear_computer_state
+  clear_machine_state
   clear_database
   verify_zero_state
   [ "$(configuration_hash)" = "$config_before_hash" ] || die "Workspace/Agent configuration changed during reset"
@@ -1040,9 +1040,9 @@ main() {
   printf '\nZero-context reset completed.\n'
   printf '  Recoverable backup: %s\n' "$backup_root"
   if [ "$restart" -eq 0 ]; then
-    printf '  Runtime and Computer: stopped; start them when the test is ready.\n'
+    printf '  Runtime and Machine: stopped; start them when the test is ready.\n'
   else
-    printf '  Runtime and Computer: restarted with zero local workspace history.\n'
+    printf '  Runtime and Machine: restarted with zero local workspace history.\n'
   fi
 }
 

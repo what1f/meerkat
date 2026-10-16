@@ -360,7 +360,7 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
             request.get_ref().agent.as_ref(),
             &request.get_ref().name,
             &request.get_ref().harness_id,
-            &request.get_ref().computer_id,
+            &request.get_ref().machine_id,
             request.get_ref().attention.as_ref(),
         )?;
         Ok(Response::new(
@@ -476,13 +476,13 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
         ))
     }
 
-    pub async fn get_computer_catalog(
+    pub async fn get_machine_catalog(
         &self,
         request: Request<CatalogRequest>,
-    ) -> Result<Response<ComputerCatalog>, Status> {
+    ) -> Result<Response<MachineCatalog>, Status> {
         validate_catalog_request(request.get_ref())?;
         Ok(Response::new(
-            self.peer.get_computer_catalog(request.into_inner()).await?,
+            self.peer.get_machine_catalog(request.into_inner()).await?,
         ))
     }
 
@@ -495,25 +495,25 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
             self.peer.create_pairing_code(request.into_inner()).await?,
         ))
     }
-    pub async fn rename_computer(
+    pub async fn rename_machine(
         &self,
-        request: Request<RenameComputerRequest>,
-    ) -> Result<Response<ComputerCatalog>, Status> {
+        request: Request<RenameMachineRequest>,
+    ) -> Result<Response<MachineCatalog>, Status> {
         validate_request_id(&request.get_ref().request_id)?;
-        require_text(&request.get_ref().computer_id, "computer_id")?;
+        require_text(&request.get_ref().machine_id, "machine_id")?;
         Ok(Response::new(
-            self.peer.rename_computer(request.into_inner()).await?,
+            self.peer.rename_machine(request.into_inner()).await?,
         ))
     }
 
-    pub async fn revoke_computer(
+    pub async fn revoke_machine(
         &self,
-        request: Request<RevokeComputerRequest>,
-    ) -> Result<Response<ComputerCatalog>, Status> {
+        request: Request<RevokeMachineRequest>,
+    ) -> Result<Response<MachineCatalog>, Status> {
         validate_request_id(&request.get_ref().request_id)?;
-        require_text(&request.get_ref().computer_id, "computer_id")?;
+        require_text(&request.get_ref().machine_id, "machine_id")?;
         Ok(Response::new(
-            self.peer.revoke_computer(request.into_inner()).await?,
+            self.peer.revoke_machine(request.into_inner()).await?,
         ))
     }
 
@@ -536,7 +536,7 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
         if input.workspace.is_some() {
             validate_workspace_ref(input.workspace.as_ref())?;
         }
-        require_text(&input.computer_id, "computer_id")?;
+        require_text(&input.machine_id, "machine_id")?;
         require_text(&input.harness_id, "harness_id")?;
         Ok(Response::new(
             self.peer.get_model_catalog(request.into_inner()).await?,
@@ -584,7 +584,7 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
                     }
                     let kind = ManagementEventKind::try_from(event.kind)
                         .map_err(|_| Status::invalid_argument("unknown_management_event_kind"))?;
-                    if kind != ManagementEventKind::ComputerCatalogChanged {
+                    if kind != ManagementEventKind::MachineCatalogChanged {
                         validate_workspace_ref(event.workspace.as_ref())?;
                     }
                     if event.agent.is_some() {

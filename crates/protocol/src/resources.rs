@@ -1,6 +1,6 @@
-//! HTTP resources and Computer WebSocket upgrades on one listener.
+//! HTTP resources and Machine WebSocket upgrades on one listener.
 use crate::{
-    AgentRunContext, ComputerPeer, ExecutionRef, ResourceRequest, RuntimePeer, TransportConfig,
+    AgentRunContext, ExecutionRef, MachinePeer, ResourceRequest, RuntimePeer, TransportConfig,
 };
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
@@ -12,7 +12,7 @@ use tokio_stream::StreamExt;
 
 type Body = Full<Bytes>;
 
-/// Resource requests use the attempt's token, never the Computer link secret.
+/// Resource requests use the attempt's token, never the Machine link secret.
 /// Agent resource calls use the same business authorization boundary.
 pub async fn serve<P, F>(
     listener: TcpListener,
@@ -22,7 +22,7 @@ pub async fn serve<P, F>(
     shutdown: F,
 ) -> Result<(), crate::link::LinkError>
 where
-    P: RuntimePeer + ComputerPeer + Clone,
+    P: RuntimePeer + MachinePeer + Clone,
     F: Future<Output = ()> + Send,
 {
     serve_inner(
@@ -50,7 +50,7 @@ pub async fn serve_with_settings<P, F>(
     shutdown: F,
 ) -> Result<(), crate::link::LinkError>
 where
-    P: RuntimePeer + ComputerPeer + Clone,
+    P: RuntimePeer + MachinePeer + Clone,
     F: Future<Output = ()> + Send,
 {
     serve_inner(
@@ -59,7 +59,7 @@ where
     .await
 }
 
-/// Serve management, Computer links, and resources on the same TCP listener.
+/// Serve management, Machine links, and resources on the same TCP listener.
 pub async fn serve_with_management<P, F>(
     listener: TcpListener,
     secret: String,
@@ -70,7 +70,7 @@ pub async fn serve_with_management<P, F>(
     shutdown: F,
 ) -> Result<(), crate::link::LinkError>
 where
-    P: RuntimePeer + ComputerPeer + Clone,
+    P: RuntimePeer + MachinePeer + Clone,
     F: Future<Output = ()> + Send,
 {
     serve_inner(
@@ -88,7 +88,7 @@ where
     .await
 }
 
-/// Local management with live remote access control, or a Computer-only TLS listener.
+/// Local management with live remote access control, or a Machine-only TLS listener.
 pub async fn serve_configured<P, F>(
     listener: TcpListener,
     secret: String,
@@ -100,7 +100,7 @@ pub async fn serve_configured<P, F>(
     shutdown: F,
 ) -> Result<(), crate::link::LinkError>
 where
-    P: RuntimePeer + ComputerPeer + Clone,
+    P: RuntimePeer + MachinePeer + Clone,
     F: Future<Output = ()> + Send,
 {
     serve_inner(
@@ -133,7 +133,7 @@ async fn serve_inner<P, F>(
     shutdown: F,
 ) -> Result<(), crate::link::LinkError>
 where
-    P: RuntimePeer + ComputerPeer + Clone,
+    P: RuntimePeer + MachinePeer + Clone,
     F: Future<Output = ()> + Send,
 {
     let mut tasks = tokio::task::JoinSet::new();
@@ -151,7 +151,7 @@ where
                 let remote = remote.clone();
                 let tls = tls.clone();
                 tasks.spawn(async move {
-                    let computer_only = tls.is_some();
+                    let machine_only = tls.is_some();
                     let socket: Box<dyn Socket> = if let Some(tls) = tls {
                         match tokio::time::timeout(settings.handshake_timeout, tls.accept(socket)).await {
                             Ok(Ok(socket)) => Box::new(socket),
@@ -167,7 +167,7 @@ where
                         let secret = secret.clone();
                         let upgrades = upgrades.clone();
                         async move {
-                            let response = if computer_only && request.uri().path() != "/" && request.uri().path() != "/computers/pair" {
+                            let response = if machine_only && request.uri().path() != "/" && request.uri().path() != "/machines/pair" {
                                 empty(StatusCode::NOT_FOUND)
                             } else if request.uri().path().starts_with(crate::management::PREFIX) {
                                 let credential = request.headers().get("authorization").and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
@@ -200,14 +200,14 @@ where
                                 } else { crate::management_http::dispatch(request, peer, config).await }
                             } else if request.uri().path().starts_with("/resources/") {
                                 download(request, peer).await
-                            } else if request.uri().path() == "/computers/pair" {
+                            } else if request.uri().path() == "/machines/pair" {
                                 pair(request, peer, &secret, config.max_message_bytes).await
                             } else if request.uri().path() == "/" {
                                 let credential = request.headers().get("authorization").and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
                                 if let Err(reason) = peer.authorize_link(credential, &secret).await {
                                     empty(match reason {
-                                        crate::link::CloseReason::ComputerRevoked => StatusCode::FORBIDDEN,
-                                        crate::link::CloseReason::ComputerUnknown => StatusCode::NOT_FOUND,
+                                        crate::link::CloseReason::MachineRevoked => StatusCode::FORBIDDEN,
+                                        crate::link::CloseReason::MachineUnknown => StatusCode::NOT_FOUND,
                                         _ => StatusCode::UNAUTHORIZED,
                                     })
                                 } else {
@@ -370,7 +370,7 @@ async fn download<P: RuntimePeer>(request: Request<Incoming>, peer: P) -> Respon
         .expect("HTTP response")
 }
 
-async fn pair<P: ComputerPeer>(
+async fn pair<P: MachinePeer>(
     request: Request<Incoming>,
     peer: P,
     secret: &str,
@@ -390,7 +390,7 @@ async fn pair<P: ComputerPeer>(
         Ok(request) => request,
         Err(_) => return empty(StatusCode::BAD_REQUEST),
     };
-    match peer.pair_computer(request, secret).await {
+    match peer.pair_machine(request, secret).await {
         Ok(value) => Response::builder()
             .header("content-type", "application/json")
             .body(Full::new(Bytes::from(

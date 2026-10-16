@@ -1,5 +1,5 @@
-#[path = "../../../tests/support/registered_computer.rs"]
-mod registered_computer;
+#[path = "../../../tests/support/registered_machine.rs"]
+mod registered_machine;
 #[path = "../../protocol/tests/support/ws.rs"]
 mod ws;
 use lankide_core::{
@@ -9,13 +9,13 @@ use lankide_core::{
 use lankide_protocol::{
     ActiveAttempt, AgentAttention, AgentAvatarUpload, AgentRef, AgentRunContext,
     AgentRuntimeProfile, AssignExecution, AssignmentResult, AttentionMode, CapabilityInvokeRequest,
-    ChannelAttention, ComputerFrame, ComputerHeartbeat, ComputerHello, ContentKind, ContentRequest,
-    CreateAgentRequest, CreateWorkspaceRequest, DEFAULT_MAX_MESSAGE_BYTES, DeleteAgentRequest,
-    Delivery, DeliveryKind, DeliveryResult, ExecutionEvent, ExecutionEventKind, ExecutionRef,
-    HarnessConfig, ListWorkspacesRequest, ManagementSubscription, PROTOCOL_VERSION, ResourceChunk,
-    ResourceDescriptor, ResourceRequest, RuntimePeer, SendMessageRequest, SessionAction,
-    SessionDirective, TransportConfig, UpdateAgentRequest, UpdateSelfProfileRequest,
-    UpdateWorkspaceRequest, WorkspaceRef, computer_frame, runtime_frame,
+    ChannelAttention, ContentKind, ContentRequest, CreateAgentRequest, CreateWorkspaceRequest,
+    DEFAULT_MAX_MESSAGE_BYTES, DeleteAgentRequest, Delivery, DeliveryKind, DeliveryResult,
+    ExecutionEvent, ExecutionEventKind, ExecutionRef, HarnessConfig, ListWorkspacesRequest,
+    MachineFrame, MachineHeartbeat, MachineHello, ManagementSubscription, PROTOCOL_VERSION,
+    ResourceChunk, ResourceDescriptor, ResourceRequest, RuntimePeer, SendMessageRequest,
+    SessionAction, SessionDirective, TransportConfig, UpdateAgentRequest, UpdateSelfProfileRequest,
+    UpdateWorkspaceRequest, WorkspaceRef, machine_frame, runtime_frame,
 };
 use lankide_provider::{
     AgentContext, AgentRuntimeContext, AutoReactionContext, ChannelDefaultAttention,
@@ -27,8 +27,8 @@ use lankide_provider::{
     SendMessageContext, SendMessageResult, ToolDefinition, WorkspaceContext,
 };
 use lankide_runtime::{
-    AgentRuntimeConfig, AttentionPolicy, ComputerCompletion, ComputerError, ComputerExecutor,
-    ComputerFuture, ComputerOutcome, ExecutionProgress, ExecutionReply, ProviderFactoryRegistry,
+    AgentRuntimeConfig, AttentionPolicy, ExecutionProgress, ExecutionReply, MachineCompletion,
+    MachineError, MachineExecutor, MachineFuture, MachineOutcome, ProviderFactoryRegistry,
     ProviderTypeFactory, Runtime, RuntimeApplication, RuntimeConfig, RuntimePeerAdapter,
 };
 use lankide_storage::{
@@ -158,7 +158,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
         runtime
             .storage()
             .create_agent(AgentSpec {
-                computer_id: "fixture-computer".into(),
+                machine_id: "fixture-machine".into(),
                 workspace_id: workspace.clone(),
                 id: agent.clone(),
                 name: agent.to_string(),
@@ -247,7 +247,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
             == 2,
         "always and schedule enqueue while mute does not",
     )?;
-    let no_reply = || ComputerOutcome::Succeeded {
+    let no_reply = || MachineOutcome::Succeeded {
         output: "completed without sending".into(),
         reply: None,
     };
@@ -257,7 +257,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
                 .execute_ready(
                     &workspace_b,
                     &agent_b,
-                    &ScriptComputer::new(state_b.clone(), None, no_reply()),
+                    &ScriptMachine::new(state_b.clone(), None, no_reply()),
                     101
                 )
                 .await
@@ -275,7 +275,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
                 .execute_ready(
                     &workspace_b,
                     &agent_b,
-                    &ScriptComputer::new(state_b.clone(), None, no_reply()),
+                    &ScriptMachine::new(state_b.clone(), None, no_reply()),
                     102
                 )
                 .await
@@ -290,7 +290,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
                 .execute_ready(
                     &workspace_b,
                     &agent_b,
-                    &ScriptComputer::new(state_b.clone(), None, no_reply()),
+                    &ScriptMachine::new(state_b.clone(), None, no_reply()),
                     300_000
                 )
                 .await
@@ -351,7 +351,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
         "canonical dedup",
     )?;
     state_a.push_send(SendMode::Sent("provider_reply_1".into()));
-    let computer = ScriptComputer::new(
+    let machine = ScriptMachine::new(
         state_a.clone(),
         Some(message(
             &channel,
@@ -361,7 +361,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
             &agent_a,
             "human",
         )),
-        ComputerOutcome::Succeeded {
+        MachineOutcome::Succeeded {
             output: "answer one".into(),
             reply: Some(ExecutionReply {
                 channel_id: channel.clone(),
@@ -371,7 +371,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
         },
     );
     let progress = runtime
-        .execute_ready(&workspace_a, &agent_a, &computer, 20)
+        .execute_ready(&workspace_a, &agent_a, &machine, 20)
         .await
         .map_err(err)?;
     ensure(
@@ -384,7 +384,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
         ),
         "first commit",
     )?;
-    let assignments = computer.assignments.lock().map_err(err)?.clone();
+    let assignments = machine.assignments.lock().map_err(err)?.clone();
     let rendered = &assignments[0]
         .initial_delivery
         .as_ref()
@@ -469,7 +469,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
     let frozen_spec = lankide_provider::AgentRuntimeSpec {
         agent_config: provider_contexts[0].agent_config.clone(),
         provider_agent_config: provider_contexts[0].provider_agent_config.clone(),
-        computer_id: provider_contexts[0].computer_id.clone(),
+        machine_id: provider_contexts[0].machine_id.clone(),
         harness_id: provider_contexts[0].harness_id.clone(),
         model: provider_contexts[0].model.clone(),
         thinking_level: provider_contexts[0].thinking_level.clone(),
@@ -493,7 +493,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
     ensure(tool_first == tool_repeat, "tool callback idempotency")?;
     let log = state_a.log.lock().map_err(err)?.clone();
     ensure(
-        log.iter().position(|v| v == "auto_reaction") < log.iter().position(|v| v == "computer"),
+        log.iter().position(|v| v == "auto_reaction") < log.iter().position(|v| v == "machine"),
         "auto reaction precedes dispatch",
     )?;
     let cursors_after_first = runtime
@@ -512,7 +512,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
         .execute_ready(
             &workspace_a,
             &agent_a,
-            &ScriptComputer::new(
+            &ScriptMachine::new(
                 state_a.clone(),
                 None,
                 successful_reply(&channel, "chat_a", "retry answer"),
@@ -540,7 +540,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
                 .execute_ready(
                     &workspace_a,
                     &agent_a,
-                    &ScriptComputer::new(
+                    &ScriptMachine::new(
                         state_a.clone(),
                         None,
                         successful_reply(&channel, "chat_a", "retry answer"),
@@ -585,7 +585,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
                 .execute_ready(
                     &workspace_a,
                     &agent_a,
-                    &ScriptComputer::new(
+                    &ScriptMachine::new(
                         state_a.clone(),
                         None,
                         successful_reply(&channel, "chat_a", "reaction answer"),
@@ -621,7 +621,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
         .execute_ready(
             &workspace_a,
             &agent_a,
-            &ScriptComputer::new(state_a.clone(), None, ComputerOutcome::Cancelled),
+            &ScriptMachine::new(state_a.clone(), None, MachineOutcome::Cancelled),
             27,
         )
         .await
@@ -656,7 +656,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
         .execute_ready(
             &workspace_a,
             &agent_a,
-            &ScriptComputer::new(
+            &ScriptMachine::new(
                 state_a.clone(),
                 None,
                 successful_reply(&channel, "chat_a", "unknown answer"),
@@ -825,7 +825,7 @@ async fn pause_drain_scenario(db: &Path) -> Result<(), String> {
     runtime
         .storage()
         .create_agent(AgentSpec {
-            computer_id: "fixture-computer".into(),
+            machine_id: "fixture-machine".into(),
             workspace_id: workspace.clone(),
             id: agent.clone(),
             name: "Pause Agent".into(),
@@ -864,21 +864,21 @@ async fn pause_drain_scenario(db: &Path) -> Result<(), String> {
         .map_err(err)?;
     let runtime = Arc::new(runtime);
     let (release_tx, release_rx) = oneshot::channel();
-    let computer = Arc::new(GateComputer {
+    let machine = Arc::new(GateMachine {
         release: tokio::sync::Mutex::new(Some(release_rx)),
         started: tokio::sync::Notify::new(),
         outcome: no_reply_outcome(),
     });
     let task_runtime = runtime.clone();
-    let task_computer = computer.clone();
+    let task_machine = machine.clone();
     let task_workspace = workspace.clone();
     let task_agent = agent.clone();
     let execution = tokio::spawn(async move {
         task_runtime
-            .execute_ready(&task_workspace, &task_agent, task_computer.as_ref(), 3)
+            .execute_ready(&task_workspace, &task_agent, task_machine.as_ref(), 3)
             .await
     });
-    computer.started.notified().await;
+    machine.started.notified().await;
     runtime.pause_workspace(&workspace, 4).await.map_err(err)?;
     ensure(
         state.shutdowns.load(Ordering::SeqCst) == 0
@@ -887,7 +887,7 @@ async fn pause_drain_scenario(db: &Path) -> Result<(), String> {
                 .execute_ready(
                     &workspace,
                     &agent,
-                    &ScriptComputer::new(state.clone(), None, no_reply_outcome()),
+                    &ScriptMachine::new(state.clone(), None, no_reply_outcome()),
                     5,
                 )
                 .await
@@ -951,7 +951,7 @@ async fn collaboration_fencing_scenario(db: &Path) -> Result<(), String> {
         runtime
             .storage()
             .create_agent(AgentSpec {
-                computer_id: "fixture-computer".into(),
+                machine_id: "fixture-machine".into(),
                 workspace_id: workspace.clone(),
                 id: agent.clone(),
                 name: agent.to_string(),
@@ -993,21 +993,21 @@ async fn collaboration_fencing_scenario(db: &Path) -> Result<(), String> {
 
     let runtime = Arc::new(runtime);
     let (release_tx, release_rx) = oneshot::channel();
-    let clark_computer = Arc::new(GateComputer {
+    let clark_machine = Arc::new(GateMachine {
         release: tokio::sync::Mutex::new(Some(release_rx)),
         started: tokio::sync::Notify::new(),
         outcome: successful_reply(&channel, "team_chat", "Clark stale reply"),
     });
     let task_runtime = runtime.clone();
-    let task_computer = clark_computer.clone();
+    let task_machine = clark_machine.clone();
     let task_workspace = workspace.clone();
     let task_clark = clark.clone();
     let clark_execution = tokio::spawn(async move {
         task_runtime
-            .execute_ready(&task_workspace, &task_clark, task_computer.as_ref(), 3)
+            .execute_ready(&task_workspace, &task_clark, task_machine.as_ref(), 3)
             .await
     });
-    clark_computer.started.notified().await;
+    clark_machine.started.notified().await;
 
     state.push_send(SendMode::Sent("provider_bruce_message".into()));
     ensure(
@@ -1016,7 +1016,7 @@ async fn collaboration_fencing_scenario(db: &Path) -> Result<(), String> {
                 .execute_ready(
                     &workspace,
                     &bruce,
-                    &ScriptComputer::new(
+                    &ScriptMachine::new(
                         state.clone(),
                         None,
                         successful_reply(&channel, "team_chat", "Bruce introduced himself"),
@@ -1070,7 +1070,7 @@ async fn collaboration_fencing_scenario(db: &Path) -> Result<(), String> {
                 .execute_ready(
                     &workspace,
                     &clark,
-                    &ScriptComputer::new(state.clone(), None, no_reply_outcome()),
+                    &ScriptMachine::new(state.clone(), None, no_reply_outcome()),
                     6
                 )
                 .await
@@ -1090,7 +1090,7 @@ async fn collaboration_fencing_scenario(db: &Path) -> Result<(), String> {
         ))
         .await?;
     pull(&runtime, &workspace, 6).await?;
-    let reader = ScriptComputer::new(state.clone(), None, no_reply_outcome());
+    let reader = ScriptMachine::new(state.clone(), None, no_reply_outcome());
     let next = runtime
         .execute_ready(&workspace, &clark, &reader, 6)
         .await
@@ -1175,7 +1175,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
     runtime
         .storage()
         .create_agent(AgentSpec {
-            computer_id: "fixture-computer".into(),
+            machine_id: "fixture-machine".into(),
             workspace_id: workspace_id.clone(),
             id: agent_id.clone(),
             name: "Attempt Agent".into(),
@@ -1186,7 +1186,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         .storage()
         .agent_record(&workspace_id, &agent_id)
         .map_err(err)?;
-    placement.computer_id = "computer-attempt".into();
+    placement.machine_id = "machine-attempt".into();
     runtime
         .storage()
         .update_agent_record(placement)
@@ -1226,13 +1226,13 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         .create_execution(&workspace_id, &agent_id, "attempt", 4)
         .map_err(err)?
         .ok_or("attempt execution missing")?;
-    let broker = runtime.new_computer_broker();
-    let hello = ComputerHello {
+    let broker = runtime.new_machine_broker();
+    let hello = MachineHello {
         device_credential: String::new(),
         protocol_version: PROTOCOL_VERSION,
-        computer_id: "computer-attempt".into(),
+        machine_id: "machine-attempt".into(),
         instance_id: "instance-stable".into(),
-        computer_version: "1".into(),
+        machine_version: "1".into(),
         os: "test".into(),
         arch: "test".into(),
         harnesses: Vec::new(),
@@ -1275,7 +1275,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         execution_token: "token".into(),
         created_at: 4,
     };
-    let executor = broker.executor("computer-attempt");
+    let executor = broker.executor("machine-attempt");
     let execution_task = tokio::spawn(async move { executor.execute(assignment).await });
     ensure(
         matches!(
@@ -1289,11 +1289,11 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
     )?;
     broker
         .handle_frame(
-            "computer-attempt",
+            "machine-attempt",
             "instance-stable",
-            ComputerFrame {
+            MachineFrame {
                 protocol_version: lankide_protocol::PROTOCOL_VERSION,
-                frame: Some(computer_frame::Frame::AssignmentResult(AssignmentResult {
+                frame: Some(machine_frame::Frame::AssignmentResult(AssignmentResult {
                     failure: None,
                     execution: Some(execution.clone()),
                     accepted: true,
@@ -1306,11 +1306,11 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         .map_err(err)?;
     broker
         .handle_frame(
-            "computer-attempt",
+            "machine-attempt",
             "instance-stable",
-            ComputerFrame {
+            MachineFrame {
                 protocol_version: lankide_protocol::PROTOCOL_VERSION,
-                frame: Some(computer_frame::Frame::DeliveryResult(DeliveryResult {
+                frame: Some(machine_frame::Frame::DeliveryResult(DeliveryResult {
                     execution: Some(execution.clone()),
                     delivery_id: created.delivery_id,
                     accepted: true,
@@ -1323,11 +1323,11 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         .map_err(err)?;
     broker
         .handle_frame(
-            "computer-attempt",
+            "machine-attempt",
             "instance-stable",
-            ComputerFrame {
+            MachineFrame {
                 protocol_version: lankide_protocol::PROTOCOL_VERSION,
-                frame: Some(computer_frame::Frame::ExecutionEvent(ExecutionEvent {
+                frame: Some(machine_frame::Frame::ExecutionEvent(ExecutionEvent {
                     execution: Some(execution.clone()),
                     sequence: 1,
                     occurred_at: 5,
@@ -1368,12 +1368,12 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         } else {
             broker
                 .handle_frame(
-                    "computer-attempt",
+                    "machine-attempt",
                     "instance-stable",
-                    ComputerFrame {
+                    MachineFrame {
                         protocol_version: lankide_protocol::PROTOCOL_VERSION,
-                        frame: Some(computer_frame::Frame::Heartbeat(ComputerHeartbeat {
-                            computer_id: "computer-attempt".into(),
+                        frame: Some(machine_frame::Frame::Heartbeat(MachineHeartbeat {
+                            machine_id: "machine-attempt".into(),
                             instance_id: "instance-stable".into(),
                             sent_at: SystemTime::now()
                                 .duration_since(UNIX_EPOCH)
@@ -1392,7 +1392,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             .map_err(err)?
             .map_err(err)?;
         ensure(
-            matches!(result, Err(ComputerError { code }) if code == expected_code),
+            matches!(result, Err(MachineError { code }) if code == expected_code),
             "lease expiry must release pending execution",
         )?;
         ensure(
@@ -1415,14 +1415,14 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             "lost execution is finalized",
         )?;
         broker
-            .disconnect("computer-attempt", "instance-stable")
+            .disconnect("machine-attempt", "instance-stable")
             .await
             .map_err(err)?;
         runtime.shutdown().await.map_err(err)?;
         return Ok(());
     }
     broker
-        .disconnect("computer-attempt", "instance-stable")
+        .disconnect("machine-attempt", "instance-stable")
         .await
         .map_err(err)?;
     ensure(
@@ -1443,12 +1443,12 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
     let _ = resumed.next().await;
     broker
         .handle_frame(
-            "computer-attempt",
+            "machine-attempt",
             "instance-stable",
-            ComputerFrame {
+            MachineFrame {
                 protocol_version: lankide_protocol::PROTOCOL_VERSION,
-                frame: Some(computer_frame::Frame::Heartbeat(ComputerHeartbeat {
-                    computer_id: "computer-attempt".into(),
+                frame: Some(machine_frame::Frame::Heartbeat(MachineHeartbeat {
+                    machine_id: "machine-attempt".into(),
                     instance_id: "instance-stable".into(),
                     sent_at: 6,
                     active_attempts: vec![ActiveAttempt {
@@ -1470,9 +1470,9 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             == lankide_storage::ExecutionState::Running,
         "same instance continues",
     )?;
-    let completed = ComputerFrame {
+    let completed = MachineFrame {
         protocol_version: lankide_protocol::PROTOCOL_VERSION,
-        frame: Some(computer_frame::Frame::ExecutionEvent(ExecutionEvent {
+        frame: Some(machine_frame::Frame::ExecutionEvent(ExecutionEvent {
             execution: Some(execution.clone()),
             sequence: 2,
             occurred_at: 7,
@@ -1481,7 +1481,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         })),
     };
     broker
-        .handle_frame("computer-attempt", "instance-stable", completed.clone())
+        .handle_frame("machine-attempt", "instance-stable", completed.clone())
         .await
         .map_err(err)?;
     let completion = tokio::time::timeout(Duration::from_secs(2), execution_task)
@@ -1491,7 +1491,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         .map_err(|error| error.code)?;
     ensure(
         completion.delivery_accepted
-            && matches!(completion.outcome, ComputerOutcome::Succeeded { .. }),
+            && matches!(completion.outcome, MachineOutcome::Succeeded { .. }),
         "re-adopted waiter keeps acceptance and receives completion",
     )?;
     ensure(
@@ -1515,7 +1515,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         "commit follows durable transaction",
     )?;
     broker
-        .handle_frame("computer-attempt", "instance-stable", completed)
+        .handle_frame("machine-attempt", "instance-stable", completed)
         .await
         .map_err(err)?;
     let _ = resumed.next().await;
@@ -1557,7 +1557,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         "cursor committed once",
     )?;
     broker
-        .disconnect("computer-attempt", "instance-stable")
+        .disconnect("machine-attempt", "instance-stable")
         .await
         .map_err(err)?;
     runtime.shutdown().await.map_err(err)?;
@@ -1571,15 +1571,15 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     let channel_id = ChannelId::new("chat").map_err(err)?;
     let token = "application-token";
     let storage = Storage::open(DatabaseConfig::new(db)).map_err(err)?;
-    registered_computer::register(&storage, &["fixture-computer"]).map_err(err)?;
-    for computer_id in ["computer-a", "computer-b", "computer-delete"] {
+    registered_machine::register(&storage, &["fixture-machine"]).map_err(err)?;
+    for machine_id in ["machine-a", "machine-b", "machine-delete"] {
         storage
-            .pair_computer(
-                &lankide_storage::ComputerRecord {
+            .pair_machine(
+                &lankide_storage::MachineRecord {
                     is_local: false,
-                    computer_id: computer_id.into(),
-                    display_name: computer_id.into(),
-                    credential_hash: Sha256::digest(format!("fixture-{computer_id}").as_bytes())
+                    machine_id: machine_id.into(),
+                    display_name: machine_id.into(),
+                    credential_hash: Sha256::digest(format!("fixture-{machine_id}").as_bytes())
                         .iter()
                         .map(|b| format!("{b:02x}"))
                         .collect(),
@@ -1614,7 +1614,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .map_err(err)?;
     storage
         .create_agent(AgentSpec {
-            computer_id: "fixture-computer".into(),
+            machine_id: "fixture-machine".into(),
             workspace_id: workspace_id.clone(),
             id: agent_id.clone(),
             name: "Application Agent".into(),
@@ -1626,7 +1626,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .map_err(err)?;
     agent.role = "assistant".into();
     agent.bio = "fixture".into();
-    agent.computer_id = "computer-a".into();
+    agent.machine_id = "machine-a".into();
     agent.harness_id = "fixture".into();
     agent.model = "fixture".into();
     agent.thinking = "low".into();
@@ -1699,7 +1699,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     let frozen_context_json = json!({
         "agent_config": {},
         "provider_agent_config": {},
-        "computer_id": "computer-a",
+        "machine_id": "machine-a",
         "harness_id": "fixture",
         "model": "fixture",
         "thinking_level": "low",
@@ -1766,7 +1766,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .offer_execution_attempt(
             execution.execution_id,
             1,
-            "computer-a",
+            "machine-a",
             "instance-2",
             i64::MAX,
             4,
@@ -1803,17 +1803,17 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     ensure(
         application.readiness().management_ready
             && application.readiness().providers_started
-            && !application.readiness().computer_connected,
-        "management readiness does not require Computer",
+            && !application.readiness().machine_connected,
+        "management readiness does not require Machine",
     )?;
-    let broker = application.computer_broker();
+    let broker = application.machine_broker();
     let mut first_connection = broker
-        .connect(ComputerHello {
-            device_credential: "fixture-computer-a".into(),
+        .connect(MachineHello {
+            device_credential: "fixture-machine-a".into(),
             protocol_version: PROTOCOL_VERSION,
-            computer_id: "computer-a".into(),
+            machine_id: "machine-a".into(),
             instance_id: "instance-1".into(),
-            computer_version: "1".into(),
+            machine_version: "1".into(),
             os: "test".into(),
             arch: "test".into(),
             harnesses: Vec::new(),
@@ -1828,15 +1828,15 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
                 frame: Some(runtime_frame::Frame::Hello(_)),
             }))
         ),
-        "Computer hello",
+        "Machine hello",
     )?;
     let mut second_connection = broker
-        .connect(ComputerHello {
-            device_credential: "fixture-computer-a".into(),
+        .connect(MachineHello {
+            device_credential: "fixture-machine-a".into(),
             protocol_version: PROTOCOL_VERSION,
-            computer_id: "computer-a".into(),
+            machine_id: "machine-a".into(),
             instance_id: "instance-2".into(),
-            computer_version: "1".into(),
+            machine_version: "1".into(),
             os: "test".into(),
             arch: "test".into(),
             harnesses: Vec::new(),
@@ -1851,23 +1851,23 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
                 frame: Some(runtime_frame::Frame::Shutdown(_)),
             }))
         ),
-        "Computer reconnect replaces old connection",
+        "Machine reconnect replaces old connection",
     )?;
     let _ = second_connection.next().await;
     broker
-        .disconnect("computer-a", "instance-1")
+        .disconnect("machine-a", "instance-1")
         .await
         .map_err(err)?;
     ensure(
-        broker.is_connected("computer-a"),
-        "stale disconnect keeps reconnected Computer",
+        broker.is_connected("machine-a"),
+        "stale disconnect keeps reconnected Machine",
     )?;
-    let same_instance = ComputerHello {
+    let same_instance = MachineHello {
         device_credential: String::new(),
         protocol_version: PROTOCOL_VERSION,
-        computer_id: "computer-same-instance".into(),
+        machine_id: "machine-same-instance".into(),
         instance_id: "stable-instance".into(),
-        computer_version: "1".into(),
+        machine_version: "1".into(),
         os: "test".into(),
         arch: "test".into(),
         harnesses: Vec::new(),
@@ -1882,15 +1882,15 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     let _ = new_connection.next().await;
     broker
         .disconnect_connection(
-            "computer-same-instance",
+            "machine-same-instance",
             "stable-instance",
             old_connection_id,
         )
         .await
         .map_err(err)?;
     ensure(
-        broker.is_connected("computer-same-instance"),
-        "old same-instance stream keeps reconnected Computer",
+        broker.is_connected("machine-same-instance"),
+        "old same-instance stream keeps reconnected Machine",
     )?;
     for _ in 0..100 {
         if state.sink.lock().map_err(err)?.is_some() {
@@ -2163,7 +2163,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             soul: String::new(),
             cli_path: String::new(),
             environment_variables: Vec::new(),
-            computer_id: "computer-b".into(),
+            machine_id: "machine-b".into(),
             attention: Some(AgentAttention {
                 channels: vec![ChannelAttention {
                     channel_id: "chat".into(),
@@ -2200,7 +2200,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             soul: None,
             cli_path: None,
             environment_variables: None,
-            computer_id: None,
+            machine_id: None,
             avatar: None,
             attention: None,
             provider_agent_config_json: Some(json!({"tenant":"opaque-updated"}).to_string()),
@@ -2428,7 +2428,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             soul: None,
             cli_path: None,
             environment_variables: None,
-            computer_id: None,
+            machine_id: None,
             avatar: None,
             attention: None,
             provider_agent_config_json: Some(json!({"deny_echo":true}).to_string()),
@@ -2550,16 +2550,16 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "tool call idempotency",
     )?;
     // A delayed external Tool must not block the same transport's heartbeat.
-    let (computer_frames, computer_input) = tokio::sync::mpsc::channel(8);
-    computer_frames
-        .send(ComputerFrame {
+    let (machine_frames, machine_input) = tokio::sync::mpsc::channel(8);
+    machine_frames
+        .send(MachineFrame {
             protocol_version: lankide_protocol::PROTOCOL_VERSION,
-            frame: Some(computer_frame::Frame::Hello(ComputerHello {
-                device_credential: "fixture-computer-a".into(),
+            frame: Some(machine_frame::Frame::Hello(MachineHello {
+                device_credential: "fixture-machine-a".into(),
                 protocol_version: PROTOCOL_VERSION,
-                computer_id: "computer-a".into(),
+                machine_id: "machine-a".into(),
                 instance_id: "instance-2".into(),
-                computer_version: "test".into(),
+                machine_version: "test".into(),
                 os: "test".into(),
                 arch: "test".into(),
                 harnesses: vec![lankide_protocol::HarnessInfo {
@@ -2572,20 +2572,20 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         })
         .await
         .map_err(err)?;
-    let mut computer_output = ws::connect_stream(
+    let mut machine_output = ws::connect_stream(
         &socket,
-        tokio_stream::wrappers::ReceiverStream::new(computer_input),
+        tokio_stream::wrappers::ReceiverStream::new(machine_input),
     )
     .await
     .map_err(err)?
     .into_inner();
-    let _ = computer_output.message().await.map_err(err)?;
+    let _ = machine_output.message().await.map_err(err)?;
     let gate = Arc::new(tokio::sync::Notify::new());
     *state.tool_gate.lock().unwrap() = Some(gate.clone());
-    computer_frames
-        .send(ComputerFrame {
+    machine_frames
+        .send(MachineFrame {
             protocol_version: lankide_protocol::PROTOCOL_VERSION,
-            frame: Some(computer_frame::Frame::CapabilityRequest(
+            frame: Some(machine_frame::Frame::CapabilityRequest(
                 lankide_protocol::CapabilityRequest {
                     request_id: "slow-echo".into(),
                     method: "invoke_capability".into(),
@@ -2615,11 +2615,11 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis() as i64;
-    computer_frames
-        .send(ComputerFrame {
+    machine_frames
+        .send(MachineFrame {
             protocol_version: lankide_protocol::PROTOCOL_VERSION,
-            frame: Some(computer_frame::Frame::Heartbeat(ComputerHeartbeat {
-                computer_id: "computer-a".into(),
+            frame: Some(machine_frame::Frame::Heartbeat(MachineHeartbeat {
+                machine_id: "machine-a".into(),
                 instance_id: "instance-2".into(),
                 sent_at: heartbeat_at,
                 active_attempts: vec![ActiveAttempt {
@@ -2656,7 +2656,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     heartbeat_storage.close().map_err(err)?;
     *state.tool_gate.lock().unwrap() = None;
     gate.notify_one();
-    let tool_result = tokio::time::timeout(Duration::from_secs(2), computer_output.message())
+    let tool_result = tokio::time::timeout(Duration::from_secs(2), machine_output.message())
         .await
         .map_err(err)?
         .map_err(err)?
@@ -2875,10 +2875,10 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         ),
         ("invalid-edit-input", json!({}), "invalid_request"),
     ] {
-        computer_frames
-            .send(ComputerFrame {
+        machine_frames
+            .send(MachineFrame {
                 protocol_version: lankide_protocol::PROTOCOL_VERSION,
-                frame: Some(computer_frame::Frame::CapabilityRequest(
+                frame: Some(machine_frame::Frame::CapabilityRequest(
                     lankide_protocol::CapabilityRequest {
                         request_id: id.into(),
                         method: "invoke_capability".into(),
@@ -2897,13 +2897,13 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             })
             .await
             .map_err(err)?;
-        let response = tokio::time::timeout(Duration::from_secs(2), computer_output.message())
+        let response = tokio::time::timeout(Duration::from_secs(2), machine_output.message())
             .await
             .map_err(err)?
             .map_err(err)?
             .ok_or("tool failure stream closed")?;
         let Some(runtime_frame::Frame::CapabilityResponse(response)) = response.frame else {
-            return Err("tool failure was not returned to Computer".into());
+            return Err("tool failure was not returned to Machine".into());
         };
         let result: lankide_protocol::CapabilityInvokeResult =
             lankide_protocol::agent::decode(&response.payload).map_err(err)?;
@@ -2917,7 +2917,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             "tool failure must reach the native session",
         )?;
         serde_json::from_str::<Value>(&result.structured_content_json)
-            .map_err(|_| "tool failure payload must be consumable by Computer")?;
+            .map_err(|_| "tool failure payload must be consumable by Machine")?;
     }
     state.edit_supported.store(true, Ordering::SeqCst);
     for _ in 0..2 {
@@ -3185,7 +3185,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             soul: String::new(),
             cli_path: String::new(),
             environment_variables: Vec::new(),
-            computer_id: "computer-delete".into(),
+            machine_id: "machine-delete".into(),
             attention: None,
             provider_agent_config_json: "{}".into(),
             provider_agent_secrets_json: "{}".into(),
@@ -3213,23 +3213,23 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             .agent_record(&delete_workspace, &delete_agent)
             .is_err()
             && deletion_storage
-                .pending_agent_file_deletions("computer-delete")
+                .pending_agent_file_deletions("machine-delete")
                 .map_err(err)?
                 == vec![(delete_workspace.clone(), delete_agent.clone())],
-        "Agent deletion must commit before Computer cleanup",
+        "Agent deletion must commit before Machine cleanup",
     )?;
     deletion_storage.close().map_err(err)?;
 
-    let (delete_computer_frames, delete_computer_input) = tokio::sync::mpsc::channel(4);
-    delete_computer_frames
-        .send(ComputerFrame {
+    let (delete_machine_frames, delete_machine_input) = tokio::sync::mpsc::channel(4);
+    delete_machine_frames
+        .send(MachineFrame {
             protocol_version: lankide_protocol::PROTOCOL_VERSION,
-            frame: Some(computer_frame::Frame::Hello(ComputerHello {
-                device_credential: "fixture-computer-delete".into(),
+            frame: Some(machine_frame::Frame::Hello(MachineHello {
+                device_credential: "fixture-machine-delete".into(),
                 protocol_version: PROTOCOL_VERSION,
-                computer_id: "computer-delete".into(),
+                machine_id: "machine-delete".into(),
                 instance_id: "instance-delete".into(),
-                computer_version: "test".into(),
+                machine_version: "test".into(),
                 os: "test".into(),
                 arch: "test".into(),
                 harnesses: vec![lankide_protocol::HarnessInfo {
@@ -3242,20 +3242,20 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         })
         .await
         .map_err(err)?;
-    let mut delete_computer_output = ws::connect_stream(
+    let mut delete_machine_output = ws::connect_stream(
         &socket,
-        tokio_stream::wrappers::ReceiverStream::new(delete_computer_input),
+        tokio_stream::wrappers::ReceiverStream::new(delete_machine_input),
     )
     .await
     .map_err(err)?
     .into_inner();
     let cleanup = tokio::time::timeout(Duration::from_secs(2), async {
         loop {
-            let frame = delete_computer_output
+            let frame = delete_machine_output
                 .message()
                 .await
                 .map_err(err)?
-                .ok_or("delete Computer stream closed")?;
+                .ok_or("delete Machine stream closed")?;
             if let Some(runtime_frame::Frame::DeleteAgentFiles(request)) = frame.frame {
                 return Ok::<_, String>(request);
             }
@@ -3267,10 +3267,10 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         cleanup.agent == deleted.agent,
         "deferred Agent cleanup target",
     )?;
-    delete_computer_frames
-        .send(ComputerFrame {
+    delete_machine_frames
+        .send(MachineFrame {
             protocol_version: lankide_protocol::PROTOCOL_VERSION,
-            frame: Some(computer_frame::Frame::DeleteAgentFilesResult(
+            frame: Some(machine_frame::Frame::DeleteAgentFilesResult(
                 lankide_protocol::DeleteAgentFilesResult {
                     request_id: cleanup.request_id,
                     success: true,
@@ -3284,9 +3284,9 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             let storage = Storage::open(DatabaseConfig::new(db)).map_err(err)?;
-            registered_computer::register(&storage, &["fixture-computer"]).map_err(err)?;
+            registered_machine::register(&storage, &["fixture-machine"]).map_err(err)?;
             let pending = storage
-                .pending_agent_file_deletions("computer-delete")
+                .pending_agent_file_deletions("machine-delete")
                 .map_err(err)?;
             storage.close().map_err(err)?;
             if pending.is_empty() {
@@ -3315,7 +3315,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             soul: String::new(),
             cli_path: String::new(),
             environment_variables: Vec::new(),
-            computer_id: "computer-delete".into(),
+            machine_id: "machine-delete".into(),
             attention: None,
             provider_agent_config_json: "{}".into(),
             provider_agent_secrets_json: "{}".into(),
@@ -3332,10 +3332,10 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     )?;
 
     drop(subscription);
-    drop(delete_computer_frames);
-    drop(delete_computer_output);
-    drop(computer_frames);
-    drop(computer_output);
+    drop(delete_machine_frames);
+    drop(delete_machine_output);
+    drop(machine_frames);
+    drop(machine_output);
     drop(client);
     shutdown_tx
         .send(())
@@ -3488,7 +3488,7 @@ fn agent_config(
             role: "tester".into(),
             bio: "runtime e2e".into(),
         },
-        computer_id: "fixture-computer".into(),
+        machine_id: "fixture-machine".into(),
         harness: HarnessConfig {
             harness_id: "scripted".into(),
             executable_path: "/fixture".into(),
@@ -3575,8 +3575,8 @@ fn reaction(channel: &ChannelId, chat: &str, target: &str, event_id: &str) -> Pr
     }
 }
 
-fn successful_reply(channel: &ChannelId, chat: &str, content: &str) -> ComputerOutcome {
-    ComputerOutcome::Succeeded {
+fn successful_reply(channel: &ChannelId, chat: &str, content: &str) -> MachineOutcome {
+    MachineOutcome::Succeeded {
         output: content.into(),
         reply: Some(ExecutionReply {
             channel_id: channel.clone(),
@@ -3589,8 +3589,8 @@ fn successful_reply(channel: &ChannelId, chat: &str, content: &str) -> ComputerO
 fn ensure(value: bool, message: &str) -> Result<(), String> {
     value.then_some(()).ok_or_else(|| message.to_owned())
 }
-fn no_reply_outcome() -> ComputerOutcome {
-    ComputerOutcome::Succeeded {
+fn no_reply_outcome() -> MachineOutcome {
+    MachineOutcome::Succeeded {
         output: "done".into(),
         reply: None,
     }
@@ -4037,20 +4037,20 @@ impl InvocationHandler for RuntimeLookup {
     }
 }
 
-struct ScriptComputer {
+struct ScriptMachine {
     state: Arc<FakeState>,
     inject: Mutex<Option<ProviderEvent>>,
-    outcome: ComputerOutcome,
+    outcome: MachineOutcome,
     assignments: Mutex<Vec<AssignExecution>>,
 }
 
-struct GateComputer {
+struct GateMachine {
     release: tokio::sync::Mutex<Option<oneshot::Receiver<()>>>,
     started: tokio::sync::Notify,
-    outcome: ComputerOutcome,
+    outcome: MachineOutcome,
 }
-impl ComputerExecutor for GateComputer {
-    fn execute(&self, _: AssignExecution) -> ComputerFuture<'_, ComputerCompletion> {
+impl MachineExecutor for GateMachine {
+    fn execute(&self, _: AssignExecution) -> MachineFuture<'_, MachineCompletion> {
         Box::pin(async move {
             self.started.notify_one();
             let receiver = self
@@ -4058,21 +4058,21 @@ impl ComputerExecutor for GateComputer {
                 .lock()
                 .await
                 .take()
-                .ok_or_else(|| ComputerError {
+                .ok_or_else(|| MachineError {
                     code: "gate_reused".into(),
                 })?;
-            receiver.await.map_err(|_| ComputerError {
+            receiver.await.map_err(|_| MachineError {
                 code: "gate_closed".into(),
             })?;
-            Ok(ComputerCompletion {
+            Ok(MachineCompletion {
                 delivery_accepted: true,
                 outcome: self.outcome.clone(),
             })
         })
     }
 }
-impl ScriptComputer {
-    fn new(state: Arc<FakeState>, inject: Option<ProviderEvent>, outcome: ComputerOutcome) -> Self {
+impl ScriptMachine {
+    fn new(state: Arc<FakeState>, inject: Option<ProviderEvent>, outcome: MachineOutcome) -> Self {
         Self {
             state,
             inject: Mutex::new(inject),
@@ -4081,10 +4081,10 @@ impl ScriptComputer {
         }
     }
 }
-impl ComputerExecutor for ScriptComputer {
-    fn execute(&self, assignment: AssignExecution) -> ComputerFuture<'_, ComputerCompletion> {
+impl MachineExecutor for ScriptMachine {
+    fn execute(&self, assignment: AssignExecution) -> MachineFuture<'_, MachineCompletion> {
         Box::pin(async move {
-            self.state.log.lock().expect("log").push("computer".into());
+            self.state.log.lock().expect("log").push("machine".into());
             self.assignments
                 .lock()
                 .expect("assignments")
@@ -4094,9 +4094,9 @@ impl ComputerExecutor for ScriptComputer {
                 self.state
                     .emit(event)
                     .await
-                    .map_err(|code| ComputerError { code })?;
+                    .map_err(|code| MachineError { code })?;
             }
-            Ok(ComputerCompletion {
+            Ok(MachineCompletion {
                 delivery_accepted: true,
                 outcome: self.outcome.clone(),
             })
@@ -4169,7 +4169,7 @@ async fn profile_application() -> (tempfile::TempDir, RuntimeApplication, Arc<Fa
     let a = AgentId::new("profile_agent").unwrap();
     let p = ProviderId::new("fixture").unwrap();
     let storage = Storage::open(DatabaseConfig::new(&db)).unwrap();
-    registered_computer::register(&storage, &["fixture-computer"]).unwrap();
+    registered_machine::register(&storage, &["fixture-machine"]).unwrap();
     storage
         .create_workspace(WorkspaceSpec {
             id: w.clone(),
@@ -4183,7 +4183,7 @@ async fn profile_application() -> (tempfile::TempDir, RuntimeApplication, Arc<Fa
         .unwrap();
     storage
         .create_agent(AgentSpec {
-            computer_id: "fixture-computer".into(),
+            machine_id: "fixture-machine".into(),
             workspace_id: w.clone(),
             id: a.clone(),
             name: "Before".into(),
@@ -4192,11 +4192,11 @@ async fn profile_application() -> (tempfile::TempDir, RuntimeApplication, Arc<Fa
         .unwrap();
     let mut record = storage.agent_record(&w, &a).unwrap();
     storage
-        .pair_computer(
-            &lankide_storage::ComputerRecord {
+        .pair_machine(
+            &lankide_storage::MachineRecord {
                 is_local: false,
-                computer_id: "profile-computer".into(),
-                display_name: "Profile Computer".into(),
+                machine_id: "profile-machine".into(),
+                display_name: "Profile Machine".into(),
                 credential_hash: "profile-credential-hash".into(),
                 paired_at: 1,
                 revoked_at: None,
@@ -4215,7 +4215,7 @@ async fn profile_application() -> (tempfile::TempDir, RuntimeApplication, Arc<Fa
             600_000,
         )
         .unwrap();
-    record.computer_id = "profile-computer".into();
+    record.machine_id = "profile-machine".into();
     record.harness_id = "fixture".into();
     record.model = "fixture".into();
     record.thinking = "low".into();
@@ -4423,9 +4423,9 @@ impl Provider for PromptFailureProvider {
         })
     }
 }
-struct NeverAssignedComputer;
-impl ComputerExecutor for NeverAssignedComputer {
-    fn execute(&self, _: AssignExecution) -> ComputerFuture<'_, ComputerCompletion> {
+struct NeverAssignedMachine;
+impl MachineExecutor for NeverAssignedMachine {
+    fn execute(&self, _: AssignExecution) -> MachineFuture<'_, MachineCompletion> {
         Box::pin(async { panic!("failure must happen before assignment") })
     }
 }
@@ -4455,7 +4455,7 @@ async fn prompt_failure_recovery_scenario() {
     runtime
         .storage()
         .create_agent(AgentSpec {
-            computer_id: "fixture-computer".into(),
+            machine_id: "fixture-machine".into(),
             workspace_id: w.clone(),
             id: a.clone(),
             name: "Audit".into(),
@@ -4492,7 +4492,7 @@ async fn prompt_failure_recovery_scenario() {
         .await
         .unwrap();
     let result = runtime
-        .execute_ready(&w, &a, &NeverAssignedComputer, 3)
+        .execute_ready(&w, &a, &NeverAssignedMachine, 3)
         .await;
     assert!(
         result.is_err(),
@@ -4511,7 +4511,7 @@ async fn prompt_failure_recovery_scenario() {
     );
     assert!(matches!(
         runtime
-            .execute_ready(&w, &a, &NeverAssignedComputer, 60_002)
+            .execute_ready(&w, &a, &NeverAssignedMachine, 60_002)
             .await
             .unwrap(),
         ExecutionProgress::Idle
@@ -4579,7 +4579,7 @@ async fn durable_ingress_retry_scenario() {
     runtime
         .storage()
         .create_agent(AgentSpec {
-            computer_id: "fixture-computer".into(),
+            machine_id: "fixture-machine".into(),
             workspace_id: w.clone(),
             id: a.clone(),
             name: "Receipt".into(),
@@ -4688,12 +4688,12 @@ async fn configured_assignment_scenario() {
         })
         .await
         .unwrap();
-        let broker = app.computer_broker();
+        let broker = app.machine_broker();
         let mut connection = broker
-            .connect(ComputerHello {
+            .connect(MachineHello {
                 device_credential: String::new(),
                 protocol_version: PROTOCOL_VERSION,
-                computer_id: "profile-computer".into(),
+                machine_id: "profile-machine".into(),
                 instance_id: "config-audit".into(),
                 ..Default::default()
             })
@@ -4702,12 +4702,12 @@ async fn configured_assignment_scenario() {
         let _ = connection.next().await.unwrap().unwrap();
         broker
             .handle_frame(
-                "profile-computer",
+                "profile-machine",
                 "config-audit",
-                ComputerFrame {
+                MachineFrame {
                     protocol_version: lankide_protocol::PROTOCOL_VERSION,
-                    frame: Some(computer_frame::Frame::Heartbeat(ComputerHeartbeat {
-                        computer_id: "profile-computer".into(),
+                    frame: Some(machine_frame::Frame::Heartbeat(MachineHeartbeat {
+                        machine_id: "profile-machine".into(),
                         instance_id: "config-audit".into(),
                         sent_at: 0,
                         active_attempts: Vec::new(),
@@ -4729,7 +4729,7 @@ async fn configured_assignment_scenario() {
             .unwrap();
         let assignment = tokio::time::timeout(Duration::from_secs(5), async {
             loop {
-                let frame = connection.next().await.expect("Computer stream").unwrap();
+                let frame = connection.next().await.expect("Machine stream").unwrap();
                 if let Some(runtime_frame::Frame::AssignExecution(assignment)) = frame.frame {
                     break assignment;
                 }
@@ -4775,7 +4775,7 @@ async fn configured_assignment_scenario() {
 
 fn scenario_runtime(config: RuntimeConfig) -> Result<Runtime, lankide_runtime::RuntimeError> {
     let runtime = Runtime::new(config)?;
-    registered_computer::register(runtime.storage(), &["fixture-computer", "computer-attempt"])?;
+    registered_machine::register(runtime.storage(), &["fixture-machine", "machine-attempt"])?;
     Ok(runtime)
 }
 
@@ -4837,7 +4837,7 @@ async fn dm_task_can_read_and_post_to_received_group() {
         execution.snapshot.chats[0].chat.provider_chat_id,
         "owner-dm"
     );
-    let frozen = json!({"computer_id":"profile-computer", "harness_id":"fixture", "model":"fixture", "thinking_level":"low", "trigger_reason":"owner DM", "chats":[]}).to_string();
+    let frozen = json!({"machine_id":"profile-machine", "harness_id":"fixture", "model":"fixture", "thinking_level":"low", "trigger_reason":"owner DM", "chats":[]}).to_string();
     storage
         .freeze_attempt_authorization(AttemptAuthorization {
             execution_id: execution.execution_id,
@@ -4866,7 +4866,7 @@ async fn dm_task_can_read_and_post_to_received_group() {
         .offer_execution_attempt(
             execution.execution_id,
             1,
-            "profile-computer",
+            "profile-machine",
             "group-test",
             i64::MAX,
             4,
@@ -5009,7 +5009,7 @@ async fn dm_task_can_read_and_post_to_received_group() {
             agent_id: "other_agent".into(),
         }),
         name: "Other".into(),
-        computer_id: "profile-computer".into(),
+        machine_id: "profile-machine".into(),
         harness_id: "fixture".into(),
         model: "fixture".into(),
         ..Default::default()

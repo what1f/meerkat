@@ -7,9 +7,9 @@ mod agent_profile;
 mod application;
 mod capability;
 mod capability_link;
-mod computer_broker;
 mod coordination;
 mod database;
+mod machine_broker;
 use database::Database;
 mod error;
 mod execution;
@@ -23,19 +23,19 @@ mod provider_registry;
 mod resource_store;
 mod retry;
 pub use application::*;
-pub use computer_broker::*;
 pub use coordination::{AttentionPolicy, CoordinatedEvent};
 pub use error::RuntimeError;
 pub(crate) use execution::token_hash;
 pub use execution::{
-    ComputerCompletion, ComputerError, ComputerExecutor, ComputerFuture, ComputerOutcome,
-    DynamicExecutionInput, ExecutionProgress, ExecutionReply, ToolProgress,
+    DynamicExecutionInput, ExecutionProgress, ExecutionReply, MachineCompletion, MachineError,
+    MachineExecutor, MachineFuture, MachineOutcome, ToolProgress,
 };
 use execution::{
     ToolInvocationGuard, lowercase_sha256, message_json, provider_send_idempotency_key,
 };
 use lifecycle::ProviderInstance;
 pub use lifecycle::{AgentRuntimeConfig, ProviderFactory};
+pub use machine_broker::*;
 pub use peer::*;
 pub use provider_ops::ValidatedRunContext;
 pub use provider_registry::{ProviderFactoryFuture, ProviderFactoryRegistry, ProviderTypeFactory};
@@ -144,8 +144,8 @@ impl Runtime {
 
     /// Creates a detached Broker for embedding Runtime without RuntimeApplication.
     /// Production management paths must use RuntimeApplication's connected Broker.
-    pub fn new_computer_broker(&self) -> ComputerBroker {
-        ComputerBroker::with_database(self.storage.clone())
+    pub fn new_machine_broker(&self) -> MachineBroker {
+        MachineBroker::with_database(self.storage.clone())
     }
 }
 

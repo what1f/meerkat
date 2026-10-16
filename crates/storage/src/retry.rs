@@ -73,7 +73,7 @@ impl Storage {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
         t.execute("UPDATE agents SET pause_reason=?3,failure_streak=CASE WHEN failure_fingerprint=?4 THEN failure_streak+1 ELSE 1 END,failure_fingerprint=?4 WHERE workspace_id=?1 AND agent_id=?2",params![w,a,pause_reason,fingerprint])?;
-        // Terminal Computer events have already released the claims. Delivery
+        // Terminal Machine events have already released the claims. Delivery
         // membership identifies exactly the frozen batch, including after restart.
         t.execute("UPDATE agent_inbox_items SET failure_count=failure_count+1,retry_batch_id=coalesce(retry_batch_id,?1),available_at=coalesce(?2,available_at),state=CASE WHEN ?2 IS NULL THEN 'failed' ELSE 'pending' END,claimed_execution_id=NULL WHERE inbox_item_id IN (SELECT inbox_item_id FROM execution_delivery_items JOIN execution_deliveries USING(delivery_id) WHERE execution_id=?1) AND state!='consumed'",params![id,retry_at])?;
         if notice {

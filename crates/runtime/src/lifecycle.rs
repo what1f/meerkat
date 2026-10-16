@@ -376,7 +376,7 @@ pub struct AgentRuntimeConfig {
     pub agent_config: serde_json::Value,
     pub provider_agent_config: serde_json::Value,
     pub agent_profile: AgentRuntimeProfile,
-    pub computer_id: String,
+    pub machine_id: String,
     pub harness: HarnessConfig,
     pub session: SessionDirective,
     pub execution_token: String,

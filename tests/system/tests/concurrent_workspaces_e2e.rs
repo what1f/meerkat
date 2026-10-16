@@ -39,8 +39,8 @@ async fn concurrent_workspaces_deliver_each_reply_once_while_management_lists_ag
     tokio::time::timeout(Duration::from_secs(2), async {
         let workspaces = rig.management().list_workspaces().await?;
         assert_eq!(workspaces.len(), 3);
-        let computers = rig.management().get_computer_catalog(None).await?;
-        assert!(computers.iter().any(|computer| computer.available));
+        let machines = rig.management().get_machine_catalog(None).await?;
+        assert!(machines.iter().any(|machine| machine.available));
         for name in ["north", "south", "west"] {
             assert_eq!(rig.management().list_agents(name).await?.len(), 2);
         }
@@ -56,7 +56,7 @@ async fn concurrent_workspaces_deliver_each_reply_once_while_management_lists_ag
     let reads = async {
         for _ in 0..12 {
             assert_eq!(rig.management().list_workspaces().await?.len(), 3);
-            rig.management().get_computer_catalog(None).await?;
+            rig.management().get_machine_catalog(None).await?;
         }
         Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
     };

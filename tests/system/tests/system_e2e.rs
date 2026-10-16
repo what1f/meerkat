@@ -91,7 +91,7 @@ async fn s7_1_a_message_received_without_steer_waits_for_the_next_run() -> Resul
 }
 
 #[tokio::test]
-async fn restarting_the_computer_during_a_run_delivers_the_reply_exactly_once() -> Result<()> {
+async fn restarting_the_machine_during_a_run_delivers_the_reply_exactly_once() -> Result<()> {
     let mut rig = SystemRig::start(RigConfig {
         retry: lankide_runtime::RetryConfig {
             base_ms: 50,
@@ -112,7 +112,7 @@ async fn restarting_the_computer_during_a_run_delivers_the_reply_exactly_once() 
         bruce.wait_until_running().await?;
         assert!(team.outbound(&bruce, "team-chat").is_empty());
     }
-    rig.restart_computer().await?;
+    rig.restart_machine().await?;
     rig.existing_workspace("team")
         .existing_agent("bruce")
         .release_run()
@@ -125,7 +125,7 @@ async fn restarting_the_computer_during_a_run_delivers_the_reply_exactly_once() 
     let executions = bruce.executions().await?;
     assert_eq!(executions.len(), 2, "{executions:?}");
     assert_eq!(executions[0].state, "failed");
-    assert_eq!(executions[0].error_code.as_deref(), Some("computer_lost"));
+    assert_eq!(executions[0].error_code.as_deref(), Some("machine_lost"));
     assert_eq!(executions[1].state, "succeeded");
     assert!(executions[1].created_at >= executions[0].completed_at.unwrap() + 50);
     assert_eq!(executions[1].trigger_messages, ["hello"]);

@@ -34,7 +34,7 @@ async fn a_paused_workspace_loses_its_offline_attempt_and_retries_only_after_res
         .set_workspace_state("team", WorkspaceStatus::Paused)
         .await?;
     rig.proxy.as_ref().unwrap().cut();
-    // The owner's execution details must show Computer loss even while every
+    // The owner's execution details must show Machine loss even while every
     // Workspace is paused and no Provider is receiving another event.
     tokio::time::timeout(Duration::from_secs(3), async {
         loop {
@@ -58,7 +58,7 @@ async fn a_paused_workspace_loses_its_offline_attempt_and_retries_only_after_res
     rig.settle().await?;
     let runs = agent.executions().await?;
     assert_eq!(runs.len(), 2);
-    assert_eq!(runs[0].error_code.as_deref(), Some("computer_lost"));
+    assert_eq!(runs[0].error_code.as_deref(), Some("machine_lost"));
     assert_eq!(runs[1].state, "succeeded");
     assert_eq!(team.dm_transcript(&agent, "alice"), ["hello", "done"]);
     assert_eq!(team.outbound(&agent, "alice").len(), 1);

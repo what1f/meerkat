@@ -7,7 +7,7 @@ default:
 
 dev:
     ./scripts/verify-production-boundary
-    cargo build --locked --bin lankide-runtime-daemon --bin lankide-computer-daemon --bin lankide
+    cargo build --locked --bin lankided --bin lankide-machine --bin lankide
     cargo run --locked -p lankide-desktop
 
 check:

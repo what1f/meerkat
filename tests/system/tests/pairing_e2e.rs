@@ -1,6 +1,6 @@
 use lankide_client::ManagementClient;
-use lankide_computer_daemon::{ComputerDaemonPaths, pair, read_credentials};
-use lankide_protocol::link::{self, CloseReason, ComputerLink, ComputerPayload, LinkError};
+use lankide_machine::{MachineDaemonPaths, pair, read_credentials};
+use lankide_protocol::link::{self, CloseReason, LinkError, MachineLink, MachinePayload};
 use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::time::timeout;
@@ -8,15 +8,15 @@ use tokio::time::timeout;
 fn config() -> RigConfig {
     RigConfig {
         harness_executable: env!("CARGO_BIN_EXE_system-harness").into(),
-        auto_start_computer: false,
+        auto_start_machine: false,
         ..Default::default()
     }
 }
-async fn pair_rig(rig: &SystemRig) -> Result<lankide_computer_daemon::DeviceCredentials> {
+async fn pair_rig(rig: &SystemRig) -> Result<lankide_machine::DeviceCredentials> {
     let code = rig.management().create_pairing_code().await?;
     let (url, _) = rig.local_pairing_endpoint()?;
     Ok(pair(
-        &ComputerDaemonPaths::for_home(rig.computer_home())?,
+        &MachineDaemonPaths::for_home(rig.machine_home())?,
         &url,
         &code.code,
     )
@@ -27,7 +27,7 @@ async fn wait_offline(rig: &SystemRig, id: &str) -> Result<()> {
         loop {
             if rig
                 .management()
-                .get_computer_catalog(None)
+                .get_machine_catalog(None)
                 .await?
                 .iter()
                 .any(|c| c.id == id && !c.available)
@@ -46,31 +46,31 @@ async fn s12_1_pair_fresh_code_register_and_connect() -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let mut rig = SystemRig::start(config()).await?;
     let credentials = pair_rig(&rig).await?;
-    assert_ne!(credentials.computer_id, "fixture-computer");
+    assert_ne!(credentials.machine_id, "fixture-machine");
     assert_eq!(credentials.device_credential.len(), 64);
-    let file = rig.computer_home().join("computer-credentials.json");
+    let file = rig.machine_home().join("machine-credentials.json");
     assert_eq!(
         std::fs::metadata(&file)?.permissions().mode() & 0o777,
         0o600
     );
     assert_eq!(
-        read_credentials(rig.computer_home())?.unwrap().runtime_url,
+        read_credentials(rig.machine_home())?.unwrap().runtime_url,
         credentials.runtime_url
     );
     let db = rusqlite::Connection::open(rig.runtime_home().join("runtime.db"))?;
     let hash: String = db.query_row(
-        "SELECT credential_hash FROM computers WHERE computer_id=?1",
-        [&credentials.computer_id],
+        "SELECT credential_hash FROM machines WHERE machine_id=?1",
+        [&credentials.machine_id],
         |r| r.get(0),
     )?;
     assert_ne!(hash, credentials.device_credential);
     drop(db);
-    rig.start_paired_computer()?;
-    rig.wait_computer_online().await?;
-    let catalog = rig.management().get_computer_catalog(None).await?;
+    rig.start_paired_machine()?;
+    rig.wait_machine_online().await?;
+    let catalog = rig.management().get_machine_catalog(None).await?;
     let device = catalog
         .iter()
-        .find(|c| c.id == credentials.computer_id)
+        .find(|c| c.id == credentials.machine_id)
         .unwrap();
     assert!(device.registered && device.available && device.revoked_at.is_none());
     assert!(device.last_seen_at.is_some());
@@ -86,8 +86,8 @@ async fn s12_1_pair_fresh_code_register_and_connect() -> Result<()> {
         rig.management()
             .get_agent("team", "bruce")
             .await?
-            .computer_id,
-        credentials.computer_id
+            .machine_id,
+        credentials.machine_id
     );
     team.direct_message(&agent, "alice", "hello").await?;
     rig.settle().await?;
@@ -105,7 +105,7 @@ async fn s12_2_codes_are_single_use_and_expire() -> Result<()> {
     let code = rig.management().create_pairing_code().await?;
     let (url, _) = rig.local_pairing_endpoint()?;
     pair(
-        &ComputerDaemonPaths::for_home(rig.computer_home())?,
+        &MachineDaemonPaths::for_home(rig.machine_home())?,
         &url,
         &code.code,
     )
@@ -113,7 +113,7 @@ async fn s12_2_codes_are_single_use_and_expire() -> Result<()> {
     let other = tempfile::tempdir()?;
     assert!(
         pair(
-            &ComputerDaemonPaths::for_home(other.path())?,
+            &MachineDaemonPaths::for_home(other.path())?,
             &url,
             &code.code
         )
@@ -136,34 +136,34 @@ async fn s12_2_codes_are_single_use_and_expire() -> Result<()> {
     .await?;
     assert!(
         pair(
-            &ComputerDaemonPaths::for_home(other.path())?,
+            &MachineDaemonPaths::for_home(other.path())?,
             &url,
             &expired.code
         )
         .await
         .is_err()
     );
-    assert!(!other.path().join("computer-credentials.json").exists());
-    assert_eq!(rig.management().get_computer_catalog(None).await?.len(), 1);
+    assert!(!other.path().join("machine-credentials.json").exists());
+    assert_eq!(rig.management().get_machine_catalog(None).await?.len(), 1);
     rig.close().await
 }
 
 #[tokio::test]
-async fn s12_3_stopped_computer_stays_registered_with_inventory() -> Result<()> {
+async fn s12_3_stopped_machine_stays_registered_with_inventory() -> Result<()> {
     let mut rig = SystemRig::start(config()).await?;
     let device = pair_rig(&rig).await?;
-    rig.start_paired_computer()?;
-    rig.wait_computer_online().await?;
-    rig.stop_computer()?;
-    wait_offline(&rig, &device.computer_id).await?;
-    let catalog = rig.management().get_computer_catalog(None).await?;
-    let computer = &catalog[0];
-    assert!(computer.registered && !computer.available && computer.revoked_at.is_none());
-    assert!(computer.last_seen_at.is_some());
-    assert!(computer.inventory.iter().any(|h| h.harness_id == "pi"));
-    rig.start_paired_computer()?;
-    rig.wait_computer_online().await?;
-    assert_eq!(rig.management().get_computer_catalog(None).await?.len(), 1);
+    rig.start_paired_machine()?;
+    rig.wait_machine_online().await?;
+    rig.stop_machine()?;
+    wait_offline(&rig, &device.machine_id).await?;
+    let catalog = rig.management().get_machine_catalog(None).await?;
+    let machine = &catalog[0];
+    assert!(machine.registered && !machine.available && machine.revoked_at.is_none());
+    assert!(machine.last_seen_at.is_some());
+    assert!(machine.inventory.iter().any(|h| h.harness_id == "pi"));
+    rig.start_paired_machine()?;
+    rig.wait_machine_online().await?;
+    assert_eq!(rig.management().get_machine_catalog(None).await?.len(), 1);
     rig.close().await
 }
 
@@ -171,18 +171,16 @@ async fn s12_3_stopped_computer_stays_registered_with_inventory() -> Result<()> 
 async fn s12_4_revocation_closes_link_and_stops_daemon() -> Result<()> {
     let mut rig = SystemRig::start(config()).await?;
     let device = pair_rig(&rig).await?;
-    rig.start_paired_computer()?;
-    rig.wait_computer_online().await?;
-    rig.management()
-        .revoke_computer(&device.computer_id)
-        .await?;
+    rig.start_paired_machine()?;
+    rig.wait_machine_online().await?;
+    rig.management().revoke_machine(&device.machine_id).await?;
     assert!(
-        rig.await_terminal_computer()
+        rig.await_terminal_machine()
             .await?
-            .contains("computer_revoked")
+            .contains("machine_revoked")
     );
-    wait_offline(&rig, &device.computer_id).await?;
-    let catalog = rig.management().get_computer_catalog(None).await?;
+    wait_offline(&rig, &device.machine_id).await?;
+    let catalog = rig.management().get_machine_catalog(None).await?;
     assert!(catalog[0].registered && catalog[0].revoked_at.is_some() && !catalog[0].available);
     rig.close().await
 }
@@ -191,15 +189,13 @@ async fn s12_4_revocation_closes_link_and_stops_daemon() -> Result<()> {
 async fn s12_5_copied_revoked_home_cannot_connect() -> Result<()> {
     let rig = SystemRig::start(config()).await?;
     let device = pair_rig(&rig).await?;
-    rig.management()
-        .revoke_computer(&device.computer_id)
-        .await?;
+    rig.management().revoke_machine(&device.machine_id).await?;
     let copied = tempfile::tempdir()?;
     std::fs::copy(
-        rig.computer_home().join("computer-credentials.json"),
-        copied.path().join("computer-credentials.json"),
+        rig.machine_home().join("machine-credentials.json"),
+        copied.path().join("machine-credentials.json"),
     )?;
-    let mut daemon = std::process::Command::new(env!("CARGO_BIN_EXE_system-computer"))
+    let mut daemon = std::process::Command::new(env!("CARGO_BIN_EXE_system-machine"))
         .arg(copied.path())
         .arg(&device.runtime_url)
         .arg(copied.path().join("unused-secret"))
@@ -220,11 +216,11 @@ async fn s12_5_copied_revoked_home_cannot_connect() -> Result<()> {
     let output = daemon.wait_with_output()?;
     assert!(!output.status.success());
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("computer_revoked"),
+        String::from_utf8_lossy(&output.stderr).contains("machine_revoked"),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(!rig.computer_online().await?);
+    assert!(!rig.machine_online().await?);
     rig.close().await
 }
 
@@ -238,15 +234,15 @@ async fn local_self_pairing_places_new_agents_and_reuses_credentials() -> Result
     rig.workspace("team").await?;
     rig.restart_runtime().await?;
     let team = rig.existing_workspace("team");
-    let credentials = read_credentials(rig.computer_home())?.unwrap();
+    let credentials = read_credentials(rig.machine_home())?.unwrap();
     assert!(credentials.local_discovery);
     assert!(matches!(
         rig.management()
-            .revoke_computer(&credentials.computer_id)
+            .revoke_machine(&credentials.machine_id)
             .await,
-        Err(lankide_client::ClientError::LocalComputerCannotBeRemoved)
+        Err(lankide_client::ClientError::LocalMachineCannotBeRemoved)
     ));
-    assert!(rig.management().get_computer_catalog(None).await?[0].available);
+    assert!(rig.management().get_machine_catalog(None).await?[0].available);
     let agent = team
         .agent("bruce")
         .harness(Script::reply("hi"))
@@ -256,20 +252,20 @@ async fn local_self_pairing_places_new_agents_and_reuses_credentials() -> Result
         rig.management()
             .get_agent("team", "bruce")
             .await?
-            .computer_id,
-        credentials.computer_id
+            .machine_id,
+        credentials.machine_id
     );
     team.direct_message(&agent, "alice", "hello").await?;
     rig.settle().await?;
     assert_eq!(team.dm_transcript(&agent, "alice"), ["hello", "hi"]);
     rig.restart_runtime().await?;
     assert_eq!(
-        read_credentials(rig.computer_home())?
+        read_credentials(rig.machine_home())?
             .unwrap()
             .device_credential,
         credentials.device_credential
     );
-    assert_eq!(rig.management().get_computer_catalog(None).await?.len(), 1);
+    assert_eq!(rig.management().get_machine_catalog(None).await?.len(), 1);
     rig.close().await
 }
 
@@ -285,7 +281,7 @@ async fn local_secret_and_unknown_or_mismatched_devices_cannot_authorize_links()
             lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES
         )
         .await,
-        Err(LinkError::Closed(CloseReason::ComputerUnknown))
+        Err(LinkError::Closed(CloseReason::MachineUnknown))
     ));
     let mut socket = link::connect(
         &url,
@@ -294,14 +290,14 @@ async fn local_secret_and_unknown_or_mismatched_devices_cannot_authorize_links()
     )
     .await?;
     socket
-        .send(link::ComputerFrame {
+        .send(link::MachineFrame {
             protocol_version: lankide_protocol::PROTOCOL_VERSION,
-            frame: Some(ComputerPayload::Hello(link::ComputerHello {
+            frame: Some(MachinePayload::Hello(link::MachineHello {
                 protocol_version: lankide_protocol::PROTOCOL_VERSION,
-                computer_id: "unknown".into(),
+                machine_id: "unknown".into(),
                 device_credential: device.device_credential.clone(),
                 instance_id: "one".into(),
-                computer_version: "1".into(),
+                machine_version: "1".into(),
                 os: "test".into(),
                 arch: "test".into(),
                 ..Default::default()
@@ -310,77 +306,77 @@ async fn local_secret_and_unknown_or_mismatched_devices_cannot_authorize_links()
         .await?;
     assert!(matches!(
         timeout(Duration::from_secs(3), socket.receive()).await?,
-        Err(LinkError::Closed(CloseReason::ComputerUnknown))
+        Err(LinkError::Closed(CloseReason::MachineUnknown))
     ));
     let unknown_home = tempfile::tempdir()?;
-    let unknown = lankide_computer_daemon::DeviceCredentials {
+    let unknown = lankide_machine::DeviceCredentials {
         cert_sha256: None,
-        computer_id: "unknown".into(),
+        machine_id: "unknown".into(),
         ..device
     };
     std::fs::write(
-        unknown_home.path().join("computer-credentials.json"),
+        unknown_home.path().join("machine-credentials.json"),
         serde_json::to_vec(&unknown)?,
     )?;
-    let config = lankide_computer_daemon::DaemonConfig::for_home(unknown_home.path())?;
+    let config = lankide_machine::DaemonConfig::for_home(unknown_home.path())?;
     let error = timeout(
         Duration::from_secs(3),
-        lankide_computer_daemon::run_with_harnesses(config, vec![]),
+        lankide_machine::run_with_harnesses(config, vec![]),
     )
     .await?
-    .expect_err("unknown Computer must stop");
-    assert!(error.to_string().contains("computer_unknown"));
+    .expect_err("unknown Machine must stop");
+    assert!(error.to_string().contains("machine_unknown"));
     rig.close().await
 }
 
 #[tokio::test]
-async fn owner_renames_computer_and_name_survives_daemon_and_runtime_restart() -> Result<()> {
+async fn owner_renames_machine_and_name_survives_daemon_and_runtime_restart() -> Result<()> {
     use lankide_client::{ClientError, ManagementEventKind};
     let mut rig = SystemRig::start(config()).await?;
     let device = pair_rig(&rig).await?;
-    rig.start_paired_computer()?;
-    rig.wait_computer_online().await?;
+    rig.start_paired_machine()?;
+    rig.wait_machine_online().await?;
     let client = rig.management().clone();
     let mut events = client.subscribe_management_events(None, 0).await?;
     client
-        .rename_computer(&device.computer_id, "  Studio Mac  ")
+        .rename_machine(&device.machine_id, "  Studio Mac  ")
         .await?;
     loop {
         let event = timeout(Duration::from_secs(5), events.next())
             .await?
             .ok_or("events ended")??;
-        if event.kind == ManagementEventKind::ComputerCatalogChanged {
+        if event.kind == ManagementEventKind::MachineCatalogChanged {
             break;
         }
     }
     assert_eq!(
-        client.get_computer_catalog(None).await?[0].name,
+        client.get_machine_catalog(None).await?[0].name,
         "Studio Mac"
     );
     for name in [" ".to_owned(), "a".repeat(81)] {
         assert!(matches!(
-            client.rename_computer(&device.computer_id, &name).await,
-            Err(ClientError::ComputerNameInvalid)
+            client.rename_machine(&device.machine_id, &name).await,
+            Err(ClientError::MachineNameInvalid)
         ));
     }
-    rig.stop_computer()?;
-    wait_offline(&rig, &device.computer_id).await?;
+    rig.stop_machine()?;
+    wait_offline(&rig, &device.machine_id).await?;
     client
-        .rename_computer(&device.computer_id, "Office Mac")
+        .rename_machine(&device.machine_id, "Office Mac")
         .await?;
     rig.restart_runtime().await?;
-    rig.wait_computer_online().await?;
-    let catalog = client.get_computer_catalog(None).await?;
+    rig.wait_machine_online().await?;
+    let catalog = client.get_machine_catalog(None).await?;
     assert_eq!(catalog[0].name, "Office Mac");
-    client.revoke_computer(&device.computer_id).await?;
+    client.revoke_machine(&device.machine_id).await?;
     assert!(
-        rig.await_terminal_computer()
+        rig.await_terminal_machine()
             .await?
-            .contains("computer_revoked")
+            .contains("machine_revoked")
     );
     assert!(
         client
-            .rename_computer(&device.computer_id, "Removed")
+            .rename_machine(&device.machine_id, "Removed")
             .await
             .is_err()
     );

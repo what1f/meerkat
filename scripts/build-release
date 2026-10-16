@@ -8,6 +8,6 @@ mkdir -p "$BUILD_DIR"
 SNAPSHOT="$(mktemp "$BUILD_DIR/source-before-build.XXXXXX")"
 trap 'rm -f "$SNAPSHOT"' EXIT
 ./scripts/release-provenance snapshot --output "$SNAPSHOT"
-cargo build --release --locked --bin lankide-desktop --bin lankide-runtime-daemon --bin lankide-computer-daemon --bin lankide
+cargo build --release --locked --bin lankide-desktop --bin lankided --bin lankide-machine --bin lankide
 ./scripts/release-provenance record --binary-dir "$BUILD_DIR" --source-snapshot "$SNAPSHOT" --output "$BUILD_DIR/build-provenance.json"
 printf 'Release build and source receipt: %s\n' "$BUILD_DIR/build-provenance.json"

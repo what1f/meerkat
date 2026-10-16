@@ -31,7 +31,7 @@ if (( APP_ONLY == 0 )); then
   command -v uv >/dev/null || { print -u2 'Install uv to build the DMG'; exit 2; }
 fi
 
-for binary in lankide-desktop lankide-runtime-daemon lankide-computer-daemon lankide; do
+for binary in lankide-desktop lankided lankide-machine lankide; do
   [[ -x "$RELEASE_DIR/$binary" ]] || {
     print -u2 "release binary is missing: $RELEASE_DIR/$binary"
     exit 4
@@ -51,11 +51,11 @@ mkdir -p \
   "$CONTENTS/Resources/bin"
 
 cp "$RELEASE_DIR/lankide-desktop" "$CONTENTS/MacOS/Lankide"
-cp "$RELEASE_DIR/lankide-runtime-daemon" "$CONTENTS/Library/LaunchServices/lankide-runtime-daemon"
-cp "$RELEASE_DIR/lankide-computer-daemon" "$CONTENTS/Library/LaunchServices/lankide-computer-daemon"
+cp "$RELEASE_DIR/lankided" "$CONTENTS/Library/LaunchServices/lankided"
+cp "$RELEASE_DIR/lankide-machine" "$CONTENTS/Library/LaunchServices/lankide-machine"
 cp "$RELEASE_DIR/lankide" "$CONTENTS/Resources/bin/lankide"
-cp "$ROOT_DIR/apps/desktop/macos/com.lankide.runtime.plist" "$CONTENTS/Library/LaunchAgents/com.lankide.runtime.plist"
-cp "$ROOT_DIR/apps/desktop/macos/com.lankide.computer.plist" "$CONTENTS/Library/LaunchAgents/com.lankide.computer.plist"
+cp "$ROOT_DIR/apps/desktop/macos/com.lankide.daemon.plist" "$CONTENTS/Library/LaunchAgents/com.lankide.daemon.plist"
+cp "$ROOT_DIR/apps/desktop/macos/com.lankide.machine.plist" "$CONTENTS/Library/LaunchAgents/com.lankide.machine.plist"
 cp "$ROOT_DIR/apps/desktop/Info.plist" "$CONTENTS/Info.plist"
 cp "$ROOT_DIR/LICENSE" "$ROOT_DIR/THIRD_PARTY_LICENSES.md" "$CONTENTS/Resources/"
 cp -R "$ROOT_DIR/licenses" "$CONTENTS/Resources/licenses"
@@ -63,8 +63,8 @@ if [[ "$SIGNING_IDENTITY" == "-" ]]; then
   touch "$CONTENTS/Resources/AdHocBackgroundServices"
 fi
 plutil -lint \
-  "$CONTENTS/Library/LaunchAgents/com.lankide.runtime.plist" \
-  "$CONTENTS/Library/LaunchAgents/com.lankide.computer.plist" >/dev/null
+  "$CONTENTS/Library/LaunchAgents/com.lankide.daemon.plist" \
+  "$CONTENTS/Library/LaunchAgents/com.lankide.machine.plist" >/dev/null
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$CONTENTS/Info.plist"
 plutil -replace CFBundleVersion -string "$VERSION" "$CONTENTS/Info.plist"
 
@@ -88,15 +88,15 @@ iconutil -c icns "$ICONSET" -o "$CONTENTS/Resources/AppIcon.icns"
 
 chmod 755 \
   "$CONTENTS/MacOS/Lankide" \
-  "$CONTENTS/Library/LaunchServices/lankide-runtime-daemon" \
-  "$CONTENTS/Library/LaunchServices/lankide-computer-daemon" \
+  "$CONTENTS/Library/LaunchServices/lankided" \
+  "$CONTENTS/Library/LaunchServices/lankide-machine" \
   "$CONTENTS/Resources/bin/lankide"
 xattr -cr "$APP_DIR"
 "$ROOT_DIR/scripts/package-provenance" stage --binary-dir "$RELEASE_DIR" \
   --build-provenance "$PROVENANCE" --bundle "$APP_DIR" --output "$ICON_TEMP/stage.json"
 for helper in \
-  "$CONTENTS/Library/LaunchServices/lankide-runtime-daemon" \
-  "$CONTENTS/Library/LaunchServices/lankide-computer-daemon" \
+  "$CONTENTS/Library/LaunchServices/lankided" \
+  "$CONTENTS/Library/LaunchServices/lankide-machine" \
   "$CONTENTS/Resources/bin/lankide" \
   "$CONTENTS/MacOS/Lankide"; do
   codesign --force --sign "$SIGNING_IDENTITY" "$helper"

@@ -339,7 +339,7 @@ async fn messages_during_backoff_keep_their_own_batch() -> Result<()> {
 }
 
 // The native Harness boundary supplies the structured category. The real
-// Computer busy rejection is covered by computer_e2e's parallel-run scenario.
+// Machine busy rejection is covered by machine_e2e's parallel-run scenario.
 #[tokio::test]
 async fn ownership_conflicts_do_not_spend_the_failure_budget_or_send_notices() -> Result<()> {
     let rig = SystemRig::start(config()).await?;

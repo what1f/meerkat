@@ -4,16 +4,16 @@ use crate::wire::*;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeSet, HashMap};
 
-pub fn validate_computer_hello(hello: &ComputerHello, expected_version: u32) -> Result<(), Status> {
+pub fn validate_machine_hello(hello: &MachineHello, expected_version: u32) -> Result<(), Status> {
     if hello.protocol_version != expected_version {
         return Err(Status::failed_precondition(format!(
             "protocol_version_mismatch: expected {expected_version}, received {}",
             hello.protocol_version
         )));
     }
-    require_text(&hello.computer_id, "computer_id")?;
+    require_text(&hello.machine_id, "machine_id")?;
     require_text(&hello.instance_id, "instance_id")?;
-    require_text(&hello.computer_version, "computer_version")?;
+    require_text(&hello.machine_version, "machine_version")?;
     require_text(&hello.os, "os")?;
     require_text(&hello.arch, "arch")?;
     for harness in &hello.harnesses {
@@ -53,17 +53,17 @@ pub fn validate_runtime_frame(frame: &RuntimeFrame) -> Result<(), Status> {
 }
 
 #[derive(Default)]
-pub(super) struct ComputerFrameValidator {
+pub(super) struct MachineFrameValidator {
     last_sequences: HashMap<(i64, u32), u64>,
 }
 
-impl ComputerFrameValidator {
-    pub(super) fn validate(&mut self, frame: &ComputerFrame) -> Result<(), Status> {
+impl MachineFrameValidator {
+    pub(super) fn validate(&mut self, frame: &MachineFrame) -> Result<(), Status> {
         match frame.frame.as_ref() {
-            Some(computer_frame::Frame::Hello(_)) => {
-                Err(Status::invalid_argument("duplicate_computer_hello"))
+            Some(machine_frame::Frame::Hello(_)) => {
+                Err(Status::invalid_argument("duplicate_machine_hello"))
             }
-            Some(computer_frame::Frame::ExecutionEvent(event)) => {
+            Some(machine_frame::Frame::ExecutionEvent(event)) => {
                 let execution = event.execution.as_ref();
                 validate_execution_ref(execution)?;
                 if event.sequence == 0 {
@@ -81,17 +81,17 @@ impl ComputerFrameValidator {
                 self.last_sequences.insert(key, event.sequence);
                 Ok(())
             }
-            Some(computer_frame::Frame::AssignmentResult(result)) => {
+            Some(machine_frame::Frame::AssignmentResult(result)) => {
                 validate_execution_ref(result.execution.as_ref())
             }
-            Some(computer_frame::Frame::DeliveryResult(result)) => {
+            Some(machine_frame::Frame::DeliveryResult(result)) => {
                 validate_execution_ref(result.execution.as_ref())
             }
-            Some(computer_frame::Frame::DeleteAgentFilesResult(result)) => {
+            Some(machine_frame::Frame::DeleteAgentFilesResult(result)) => {
                 validate_request_id(&result.request_id)
             }
             Some(_) => Ok(()),
-            None => Err(Status::invalid_argument("unknown_computer_frame")),
+            None => Err(Status::invalid_argument("unknown_machine_frame")),
         }
     }
 }
@@ -321,14 +321,14 @@ pub(super) fn validate_agent_write(
     agent: Option<&AgentRef>,
     name: &str,
     harness_id: &str,
-    computer_id: &str,
+    machine_id: &str,
     attention: Option<&AgentAttention>,
 ) -> Result<(), Status> {
     validate_request_id(request_id)?;
     validate_agent_ref(agent)?;
     require_text(name, "agent_name")?;
     require_text(harness_id, "harness_id")?;
-    require_text(computer_id, "computer_id")?;
+    require_text(machine_id, "machine_id")?;
     if let Some(attention) = attention {
         validate_attention(attention)?;
     }

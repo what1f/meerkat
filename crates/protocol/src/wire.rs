@@ -2,29 +2,29 @@
 pub use crate::link::{
     ActiveAttempt, AgentRef, AgentRunContext, AgentRuntimeProfile, AssignExecution,
     AssignmentResult, AttemptFailure, CancelExecution, CapabilityRequest, CapabilityResponse,
-    CliCommand, ComputerHeartbeat, ComputerHello, DeleteAgentFiles, DeleteAgentFilesResult,
-    DeliverSteer, Delivery, DeliveryResult, EnvironmentVariable, ExecutionCommitted,
-    ExecutionEvent, ExecutionEventAck, ExecutionRef, HarnessConfig, HarnessInfo, InventoryChanged,
-    ModelCatalog, ModelCatalogItem, PairComputerRequest, PairComputerResponse, ResourceRef,
-    ResourceTransferResult, RuntimeHello, SessionDirective, Shutdown, ToolDefinition, ToolError,
-    ToolResult, WorkspaceRef,
+    CliCommand, DeleteAgentFiles, DeleteAgentFilesResult, DeliverSteer, Delivery, DeliveryResult,
+    EnvironmentVariable, ExecutionCommitted, ExecutionEvent, ExecutionEventAck, ExecutionRef,
+    HarnessConfig, HarnessInfo, InventoryChanged, MachineHeartbeat, MachineHello, ModelCatalog,
+    ModelCatalogItem, PairMachineRequest, PairMachineResponse, ResourceRef, ResourceTransferResult,
+    RuntimeHello, SessionDirective, Shutdown, ToolDefinition, ToolError, ToolResult, WorkspaceRef,
 };
 pub use crate::management::{
     AdvanceAgentOnboardingRequest, AdvanceProviderOnboardingRequest, Agent, AgentAttention,
     AgentAvatarFile, AgentAvatarUpload, AgentOnboardingState, CancelAttemptRequest,
-    CancelAttemptResponse, CatalogRequest, ChannelAttention, ComputerCatalog, ComputerCatalogItem,
-    CreateAgentRequest, CreateWorkspaceRequest, DeleteAgentRequest, DeleteAgentResponse,
-    EnvironmentVariableSet, ExecutionAttemptDetails, ExecutionDetails, GetAgentAvatarRequest,
-    GetAgentAvatarResponse, GetAgentOnboardingRequest, GetAgentRequest, GetExecutionDetailsRequest,
+    CancelAttemptResponse, CatalogRequest, ChannelAttention, CreateAgentRequest,
+    CreateWorkspaceRequest, DeleteAgentRequest, DeleteAgentResponse, EnvironmentVariableSet,
+    ExecutionAttemptDetails, ExecutionDetails, GetAgentAvatarRequest, GetAgentAvatarResponse,
+    GetAgentOnboardingRequest, GetAgentRequest, GetExecutionDetailsRequest,
     GetProviderOnboardingRequest, GetWorkspaceRequest, HarnessCatalog, HarnessCatalogItem,
     InvokeProviderInterfaceRequest, InvokeProviderInterfaceResponse, ListAgentsRequest,
     ListAgentsResponse, ListProviderInterfacesRequest, ListProviderInterfacesResponse,
-    ListWorkspacesRequest, ListWorkspacesResponse, ManagementEvent, ManagementSubscription,
-    ModelCatalogRequest, PairingCode, ProviderCatalog, ProviderCatalogItem, ProviderInterface,
-    ProviderOnboardingState, ReactionCatalog, ReactionCatalogItem, RemoteAccess,
-    RenameComputerRequest, RevokeComputerRequest, SetRemoteAccessRequest, SetWorkspaceStateRequest,
-    UpdateAgentRequest, UpdateWorkspaceRequest, UploadWorkspaceImageRequest,
-    UploadWorkspaceImageResponse, Workspace, WorkspaceImageRequest, WorkspaceImageResponse,
+    ListWorkspacesRequest, ListWorkspacesResponse, MachineCatalog, MachineCatalogItem,
+    ManagementEvent, ManagementSubscription, ModelCatalogRequest, PairingCode, ProviderCatalog,
+    ProviderCatalogItem, ProviderInterface, ProviderOnboardingState, ReactionCatalog,
+    ReactionCatalogItem, RemoteAccess, RenameMachineRequest, RevokeMachineRequest,
+    SetRemoteAccessRequest, SetWorkspaceStateRequest, UpdateAgentRequest, UpdateWorkspaceRequest,
+    UploadWorkspaceImageRequest, UploadWorkspaceImageResponse, Workspace, WorkspaceImageRequest,
+    WorkspaceImageResponse,
 };
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
@@ -365,7 +365,7 @@ pub enum ManagementEventKind {
     ProviderOnboardingChanged = 6,
     CatalogChanged = 7,
     AgentDeleted = 8,
-    ComputerCatalogChanged = 9,
+    MachineCatalogChanged = 9,
 }
 impl Default for ManagementEventKind {
     fn default() -> Self {
@@ -385,7 +385,7 @@ impl TryFrom<i32> for ManagementEventKind {
             6 => Ok(Self::ProviderOnboardingChanged),
             7 => Ok(Self::CatalogChanged),
             8 => Ok(Self::AgentDeleted),
-            9 => Ok(Self::ComputerCatalogChanged),
+            9 => Ok(Self::MachineCatalogChanged),
             _ => Err(crate::Status::invalid_argument("unknown_enum_value")),
         }
     }
@@ -444,13 +444,13 @@ impl TryFrom<i32> for ContentKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Eq)]
-pub struct ComputerFrame {
+pub struct MachineFrame {
     pub protocol_version: u32,
     #[serde(flatten)]
-    pub frame: Option<crate::link::ComputerPayload>,
+    pub frame: Option<crate::link::MachinePayload>,
 }
-pub mod computer_frame {
-    pub use crate::link::ComputerPayload as Frame;
+pub mod machine_frame {
+    pub use crate::link::MachinePayload as Frame;
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Eq)]
 pub struct RuntimeFrame {
@@ -528,13 +528,13 @@ impl From<ContentKind> for i32 {
     }
 }
 
-impl<'de> Deserialize<'de> for ComputerFrame {
+impl<'de> Deserialize<'de> for MachineFrame {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
         struct Envelope {
             protocol_version: u32,
             #[serde(flatten)]
-            frame: crate::link::ComputerPayload,
+            frame: crate::link::MachinePayload,
         }
         let value = Envelope::deserialize(deserializer)?;
         Ok(Self {

@@ -34,7 +34,7 @@ async fn failed_details(
 }
 
 #[tokio::test]
-async fn s4_1_spawn_failure_keeps_original_detail_and_identifies_the_attempt_in_computer_logs()
+async fn s4_1_spawn_failure_keeps_original_detail_and_identifies_the_attempt_in_machine_logs()
 -> Result<()> {
     let rig = SystemRig::start(config()).await?;
     let team = rig.workspace("team").await?;
@@ -54,7 +54,7 @@ async fn s4_1_spawn_failure_keeps_original_detail_and_identifies_the_attempt_in_
     assert!(!failure.retryable);
     assert_eq!(failure.detail, text);
     assert_eq!(failure.fingerprint.len(), 64);
-    let logs = rig.computer_failure_log()?;
+    let logs = rig.machine_failure_log()?;
     let records = logs
         .lines()
         .map(serde_json::from_str::<serde_json::Value>)
@@ -65,7 +65,7 @@ async fn s4_1_spawn_failure_keeps_original_detail_and_identifies_the_attempt_in_
             .any(|record| record["execution_id"] == details.execution_id
                 && record["attempt"] == attempt.attempt
                 && record["agent_id"] == "bruce"
-                && record["computer_id"] == attempt.computer_id
+                && record["machine_id"] == attempt.machine_id
                 && record["failure"]["detail"] == text
                 && record["failure"]["fingerprint"] == failure.fingerprint)
     );

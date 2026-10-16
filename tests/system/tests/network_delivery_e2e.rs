@@ -9,7 +9,7 @@ fn config() -> RigConfig {
             heartbeat_interval: Duration::from_millis(200),
             handshake_timeout: Duration::from_millis(400),
         },
-        reconnect: lankide_computer::ReconnectPolicy {
+        reconnect: lankide_machine_core::ReconnectPolicy {
             initial: Duration::from_millis(50),
             maximum: Duration::from_millis(800),
             healthy_duration: Duration::from_secs(1),
@@ -47,7 +47,7 @@ async fn s10_1_cut_mid_turn_replays_one_reply() -> Result<()> {
     let attempts = proxy.attempts().len();
     proxy.cut();
     agent.release_run().await?;
-    wait(async || Ok(!rig.computer_online().await? && proxy.attempts().len() >= attempts + 4))
+    wait(async || Ok(!rig.machine_online().await? && proxy.attempts().len() >= attempts + 4))
         .await?;
     assert!(
         proxy
@@ -74,28 +74,28 @@ async fn s10_2_stalled_frames_close_both_sides() -> Result<()> {
     let attempts = proxy.attempts().len();
     let paused = Instant::now();
     proxy.pause();
-    wait(async || Ok(!rig.computer_online().await?)).await?;
+    wait(async || Ok(!rig.machine_online().await?)).await?;
     let runtime_detected = paused.elapsed();
     wait(async || Ok(proxy.attempts().len() > attempts)).await?;
-    let computer_detected = proxy.attempts()[attempts] - paused;
+    let machine_detected = proxy.attempts()[attempts] - paused;
     // Scheduling allowance and first reconnect jitter are separate from liveness.
     assert!(
         runtime_detected < Duration::from_millis(750),
         "Runtime detection: {runtime_detected:?}"
     );
     assert!(
-        computer_detected < Duration::from_millis(850),
-        "Computer reconnect: {computer_detected:?}"
+        machine_detected < Duration::from_millis(850),
+        "Machine reconnect: {machine_detected:?}"
     );
     proxy.restore();
-    wait(async || rig.computer_online().await).await?;
+    wait(async || rig.machine_online().await).await?;
     rig.close().await
 }
 
 #[tokio::test]
 async fn s10_3_sigkill_after_finish_before_ack_replays_once() -> Result<()> {
     let mut cfg = config();
-    cfg.computer_process = Some(env!("CARGO_BIN_EXE_system-computer").into());
+    cfg.machine_process = Some(env!("CARGO_BIN_EXE_system-machine").into());
     let mut rig = SystemRig::start(cfg).await?;
     {
         let team = rig.workspace("team").await?;
@@ -120,7 +120,7 @@ async fn s10_3_sigkill_after_finish_before_ack_replays_once() -> Result<()> {
         rig.proxy.as_ref().unwrap().pause_replies();
         agent.release_run().await?;
         wait(async || {
-            let state = rig.computer_state()?;
+            let state = rig.machine_state()?;
             Ok(state["pending_events"]
                 .as_object()
                 .unwrap()
@@ -135,14 +135,14 @@ async fn s10_3_sigkill_after_finish_before_ack_replays_once() -> Result<()> {
         rig.settle().await?;
         assert_eq!(team.dm_transcript(&agent, "alice"), ["hello", "durable"]);
     }
-    rig.kill_computer_process()?; // Child::kill sends SIGKILL on Unix.
+    rig.kill_machine_process()?; // Child::kill sends SIGKILL on Unix.
     rig.proxy.as_ref().unwrap().cut();
-    wait(async || Ok(!rig.computer_online().await?)).await?;
+    wait(async || Ok(!rig.machine_online().await?)).await?;
     rig.proxy.as_ref().unwrap().restore();
-    rig.restart_computer_process()?;
+    rig.restart_machine_process()?;
     wait(async || {
-        Ok(rig.computer_online().await?
-            && rig.computer_state()?["pending_events"]
+        Ok(rig.machine_online().await?
+            && rig.machine_state()?["pending_events"]
                 .as_object()
                 .unwrap()
                 .is_empty())
@@ -186,9 +186,9 @@ async fn s10_4_ten_flaps_follow_backoff_and_complete() -> Result<()> {
             "flap {flap}: {reconnect_gap:?} expected nominal {nominal:?}"
         );
         nominal = (nominal * 4).min(maximum);
-        wait(async || Ok(!rig.computer_online().await?)).await?;
+        wait(async || Ok(!rig.machine_online().await?)).await?;
         proxy.restore();
-        wait(async || rig.computer_online().await).await?;
+        wait(async || rig.machine_online().await).await?;
     }
     assert!(start.elapsed() < maximum * 40 + healthy_duration);
     let attempts = proxy.attempts();
@@ -201,7 +201,7 @@ async fn s10_4_ten_flaps_follow_backoff_and_complete() -> Result<()> {
     // Observe a healthy connection for the configured reset duration.
     let healthy_since = Instant::now();
     wait(async || {
-        Ok(rig.computer_online().await?
+        Ok(rig.machine_online().await?
             && healthy_since.elapsed() >= healthy_duration + Duration::from_millis(100))
     })
     .await?;
@@ -216,7 +216,7 @@ async fn s10_4_ten_flaps_follow_backoff_and_complete() -> Result<()> {
         "healthy connection did not reset backoff: {gap:?}"
     );
     proxy.restore();
-    wait(async || rig.computer_online().await).await?;
+    wait(async || rig.machine_online().await).await?;
     agent.release_run().await?;
     rig.settle().await?;
     assert_eq!(team.dm_transcript(&agent, "alice"), ["hello", "done"]);
@@ -247,17 +247,17 @@ async fn offline_past_attempt_lease_fails_the_run() -> Result<()> {
     .await?;
     let executions = agent.executions().await?;
     assert_eq!(executions.len(), 1);
-    assert_eq!(executions[0].error_code.as_deref(), Some("computer_lost"));
+    assert_eq!(executions[0].error_code.as_deref(), Some("machine_lost"));
     assert_eq!(team.dm_transcript(&agent, "alice"), ["hello"]);
     rig.close().await
 }
 
 #[tokio::test]
 async fn silent_tcp_and_ws_peers_release_runtime_connections() -> Result<()> {
-    use lankide_protocol::link::{CloseReason, ComputerLink, LinkError};
+    use lankide_protocol::link::{CloseReason, LinkError, MachineLink};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let rig = SystemRig::start(config()).await?;
-    let (url, secret) = rig.computer_endpoint()?;
+    let (url, secret) = rig.machine_endpoint()?;
     // Both an empty connection and an incomplete HTTP head must release the socket.
     for head in [
         b"".as_slice(),
@@ -278,6 +278,6 @@ async fn silent_tcp_and_ws_peers_release_runtime_connections() -> Result<()> {
         timeout(Duration::from_secs(2), ws.receive()).await?,
         Err(LinkError::Closed(CloseReason::Timeout))
     ));
-    assert!(rig.computer_online().await?);
+    assert!(rig.machine_online().await?);
     rig.close().await
 }

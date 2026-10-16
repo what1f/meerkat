@@ -247,7 +247,7 @@ impl LankideApp {
         self.reset_agent_form(window, cx);
         self.reload_provider_status(cx);
         self.modal = Some(Modal::CreateAgent);
-        self.reload_computers(None, window, cx);
+        self.reload_machines(None, window, cx);
         self.update_thinking_choices(window, cx);
         cx.notify();
     }
@@ -317,7 +317,7 @@ impl LankideApp {
         self.advanced_open = false;
         self.error = None;
         self.modal = Some(Modal::EditAgent(id));
-        self.reload_computers(Some(agent.computer_id.clone()), window, cx);
+        self.reload_machines(Some(agent.machine_id.clone()), window, cx);
         let client = self.client.clone();
         let workspace_id = agent.workspace_id.clone();
         let agent_id = agent.id.clone();
@@ -518,13 +518,13 @@ impl LankideApp {
             cx.notify();
             return;
         }
-        let Some(computer_id) = self
-            .agent_computer
+        let Some(machine_id) = self
+            .agent_machine
             .read(cx)
             .selected_value()
             .cloned()
             .filter(|id| {
-                self.computers
+                self.machines
                     .iter()
                     .any(|c| &c.id == id && c.registered && c.revoked_at.is_none())
             })
@@ -570,7 +570,7 @@ impl LankideApp {
             else {
                 return;
             };
-            agent.computer_id = computer_id;
+            agent.machine_id = machine_id;
             agent.name = name.trim().into();
             agent.role = role;
             agent.bio = bio;
@@ -689,7 +689,7 @@ impl LankideApp {
                 bio,
                 avatar,
                 soul,
-                computer_id,
+                machine_id,
                 harness_id,
                 model,
                 thinking_level,
