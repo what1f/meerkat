@@ -369,7 +369,6 @@ async fn owner_renames_computer_and_name_survives_daemon_and_runtime_restart() -
         .rename_computer(&device.computer_id, "Office Mac")
         .await?;
     rig.restart_runtime().await?;
-    rig.start_paired_computer()?;
     rig.wait_computer_online().await?;
     let catalog = client.get_computer_catalog(None).await?;
     assert_eq!(catalog[0].name, "Office Mac");

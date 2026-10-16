@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "lankide-provider"
 version.workspace = true
 edition.workspace = true
@@ -14,9 +15,16 @@ serde_json.workspace = true
 tokio.workspace = true
 
 [package.metadata.lankide.e2e]
-command = "cargo test -p lankide-provider --test provider_e2e"
+command = "cargo test -p lankide-provider --test e2e provider_e2e::"
 scenario = "Carry the receiving Agent on normalized direct-message and reaction events; run an external conformance Provider through lifecycle, dynamic interfaces/capabilities, send/recall/reaction, backpressure, timeout, and shutdown. Carry every native message part and explicit custom-event mentions through the public Provider contract."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
 status = "implemented"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"
+
+[lib]
+test = false

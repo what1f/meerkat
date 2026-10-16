@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "lankide-provider-feishu"
 version.workspace = true
 edition.workspace = true
@@ -32,7 +33,7 @@ lankide-testkit = { path = "../../crates/testkit" }
 tempfile.workspace = true
 
 [package.metadata.lankide.e2e]
-command = "LANKIDE_E2E_LIVE=1 cargo test -p lankide-provider-feishu --test feishu_e2e -- --ignored --nocapture"
+command = "LANKIDE_E2E_LIVE=1 cargo test -p lankide-provider-feishu --test e2e feishu_e2e:: -- --ignored --nocapture"
 scenario = "Run one complete Feishu Provider scenario covering public mention, normalization, and diagnostic contracts together with real receive/send, reply, attachment, reaction, and task behavior. Resolve the receiving Agent from the receiving App for direct messages and reactions. Preserve the receiving App identity on group messages for per-Agent conversation access."
 prerequisites = "Existing secure Feishu fixture; Lankide E2E Chat and Tasklist; feishu-live prerequisite probe"
 classification = "live"
@@ -40,9 +41,16 @@ unattended = "yes after live opt-in and preflight"
 status = "implemented"
 
 [package.metadata.lankide.e2e-additional.provider-feishu-hermetic]
-command = "cargo test -p lankide-provider-feishu --test mock_server_e2e"
+command = "cargo test -p lankide-provider-feishu --test e2e mock_server_e2e::"
 scenario = "S2.1 binds two bot accounts to separate Agents and verifies direct messages and reactions identify the receiving Agent. Separate S2.2 group-mention and S2.3 attachment-reply scenarios: Run the real Feishu Provider lifecycle against a loopback IM server; deliver a group mention of bot B, download an attachment, reply with its exact bytes in the same chat and parent, react, recall, and shut down. Preserve the platform pbbp2 WebSocket envelope without a prost dependency (S17). Skip permanently failed and malformed events so the next message arrives; recover temporary IM outages without duplicate delivery, cap retry delays without discarding transient events, and deliver three concurrent Agents' messages and reactions once each in the same chat under the correct sender. Drop Agent message echoes by workspace sender identity before and after send completion, preserving one sent message, all native part IDs, resources, and one mention wake without waking the sender. Process and dispatch a human message while another Agent attachment upload is held open by the mock IM server; keep Agent reactions recorded. Validate local-file attachment inputs, identify PNG content and group names, resolve pending bot observations on existing-app binding via stable app IDs, reject unresolved mentions, record own DM reactions without waking the actor, send native rich task-comment mentions, name task actions and actors without self-targeting, validate due dates, and start human DMs by open ID. Preserve the receiving App identity on group messages for per-Agent conversation access."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
 status = "implemented"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"
+
+[lib]
+test = false

@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "lankide-harness-pi"
 version.workspace = true
 edition.workspace = true
@@ -19,7 +20,7 @@ serde.workspace = true
 lankide-testkit = { path = "../../crates/testkit" }
 
 [package.metadata.lankide.e2e]
-command = "LANKIDE_E2E_LIVE=1 cargo test -p lankide-harness-pi --test pi_e2e -- --ignored --nocapture"
+command = "LANKIDE_E2E_LIVE=1 cargo test -p lankide-harness-pi --test e2e pi_e2e:: -- --ignored --nocapture"
 scenario = "Start and resume a Pi Native Session, execute a native shell command, exchange an injected Tool Result, steer, cancel, and verify process cleanup. Verify S7.3: a real Pi Agent uses a skill authored in its home (live opt-in only)."
 prerequisites = "Pi CLI; deepseek-v4-flash; harness-live prerequisite probe"
 classification = "live"
@@ -27,9 +28,16 @@ unattended = "yes after live opt-in and preflight"
 status = "implemented"
 
 [package.metadata.lankide.e2e-additional.harness-pi-hermetic]
-command = "cargo test -p lankide-harness-pi --test output_record_e2e --test failures_e2e --test native_defaults_e2e"
+command = "cargo test -p lankide-harness-pi --test e2e"
 scenario = "Stream ten thousand Pi deltas through a configured native CLI, retain final events without streaming deltas, and rotate bounded output records. Classify missing CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through native process boundaries. Start native executions in isolated process groups for Computer-owned tree cleanup. Verify S7.2: full-access native launch, enabled skills/context/templates, Agent-home skills and newly authored skills reachable, and model catalog without native resource suppression. Classify missing or non-executable CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through native process boundaries. Native execution receives the private LANKIDE_AGENT_SOCKET and strips inherited Runtime directory settings; tool calls use the Computer capability link."
 prerequisites = "Python 3"
 classification = "hermetic"
 unattended = "yes"
 status = "implemented"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"
+
+[lib]
+test = false

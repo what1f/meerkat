@@ -36,7 +36,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     team.mention(&bruce, "team-chat", "alice", "Please read this message")
         .await?;
     let home = bruce.resource_directory()?.parent().unwrap().to_path_buf();
-    let report: Value = timeout(Duration::from_secs(20), async {
+    let report = timeout(Duration::from_secs(20), async {
         loop {
             if let Ok(bytes) = std::fs::read(home.join("proxy-report.json")) {
                 break serde_json::from_slice(&bytes);
@@ -44,7 +44,19 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
-    .await??;
+    .await;
+    let report: Value = match report {
+        Ok(report) => report?,
+        Err(error) => {
+            return Err(format!(
+                "{error}; executions: {:?}; Computer diagnostics: {:?}; CLI journal: {:?}",
+                bruce.executions().await?,
+                rig.computer_failure_log(),
+                std::fs::read_to_string(home.join("proxy-cli.log")),
+            )
+            .into());
+        }
+    };
     for result in report["invalid_attachments"].as_array().unwrap() {
         assert_eq!(
             result["error"]["code"], "invalid_input",

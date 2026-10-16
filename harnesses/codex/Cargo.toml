@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "lankide-harness-codex"
 version.workspace = true
 edition.workspace = true
@@ -18,7 +19,7 @@ lankide-testkit = { path = "../../crates/testkit" }
 tempfile.workspace = true
 
 [package.metadata.lankide.e2e]
-command = "LANKIDE_E2E_LIVE=1 cargo test -p lankide-harness-codex --test codex_e2e -- --ignored --nocapture"
+command = "LANKIDE_E2E_LIVE=1 cargo test -p lankide-harness-codex --test e2e codex_e2e:: -- --ignored --nocapture"
 scenario = "Start, resume, steer, cancel, and collect output from a Codex native session."
 prerequisites = "Codex CLI; gpt-5.6-luna with low reasoning; harness-live prerequisite probe"
 classification = "live"
@@ -26,9 +27,16 @@ unattended = "yes after live opt-in and preflight"
 status = "implemented"
 
 [package.metadata.lankide.e2e-additional.harness-codex-hermetic]
-command = "cargo test -p lankide-harness-codex --test failures_e2e --test native_defaults_e2e"
+command = "cargo test -p lankide-harness-codex --test e2e"
 scenario = "Classify missing CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through the public native Harness API; retain original error text and stderr. Start native executions in isolated process groups for Computer-owned tree cleanup. Verify S7.2: full-access native launch with never approval and danger-full-access, Agent-home skills at the native project path, and preserved auth/config overlay and tool/socket wiring. Classify missing or non-executable CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through the public native Harness API; retain original error text and stderr. Validate private LANKIDE_AGENT_SOCKET paths and strip inherited Runtime directory settings from native execution."
 prerequisites = "Python 3"
 classification = "hermetic"
 unattended = "yes"
 status = "implemented"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"
+
+[lib]
+test = false

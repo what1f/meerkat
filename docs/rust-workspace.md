@@ -107,10 +107,14 @@ LANKIDE_E2E_LIVE=1 ./scripts/verify-all --gate full-release
 
 `just check` verifies open-source and production boundaries, formatting, the
 workspace build, module contracts, and the Desktop UI boundary. `just test`
-(`verify-all --gate hermetic`) runs all workspace integration scenarios once in
-one Cargo invocation with the Computer and Harness `test-support` features.
-Ignored live tests stay opt-in. The daemon self-spawning scenarios are Cargo
-test targets; the prerequisite probe and CLI forwarding examples are already
+(`verify-all --gate hermetic`) runs all workspace integration scenarios once with the Computer and Harness
+`test-support` features. Each crate has one `tests/e2e/main.rs` integration
+target, with scenario modules running on parallel test threads. The gate builds
+Cargo's integration targets once, then runs up to three independent crate suites
+together, keeping each suite's output and exit status. Empty source
+unit-test harnesses are disabled.
+Ignored live tests stay opt-in. The daemon self-spawning helpers are non-shipping Cargo examples, built with
+the integration suites in the same Cargo invocation; the prerequisite probe and CLI forwarding examples are already
 covered by integration scenarios. The system rig builds the shipped CLI
 entrypoint as its test-only `system-cli` binary, without a nested Cargo build.
 Focused module commands remain available
@@ -149,8 +153,8 @@ A module is not complete merely because its crate compiles. Its delivery must
 include:
 
 1. A public module API that can be entered from a CLI test.
-2. A real scenario in `tests/<scenario>_e2e.rs` (or the documented equivalent
-   for an application process).
+2. A real scenario in `tests/<scenario>_e2e.rs`, included by that crate's
+   `tests/e2e/main.rs` (or the documented equivalent for an application process).
 3. A manifest row with all fields above.
 4. A command that proves the scenario and exits non-zero on a business failure.
 5. A report of external prerequisites and whether the test is unattended.
@@ -160,3 +164,8 @@ The GPUI application is the one exception to the CLI-only rule: its visual and
 interaction acceptance may use a live macOS window. Its data contract still
 comes from `lankide-client`, so the test support and Runtime client can be
 verified independently.
+
+Hermetic system rigs configure `runtime.json` with `remote_access_port: 0`.
+Automatic remote access still detects the LAN address, but the OS assigns its
+port while the listener stays bound. Product homes default to port 7443. This
+keeps repeated and concurrent scenarios independent of local product instances.

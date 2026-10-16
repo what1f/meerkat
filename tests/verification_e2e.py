@@ -23,6 +23,7 @@ def run():
         scripts = root / "scripts"
         scripts.mkdir()
         shutil.copy2(ROOT / "scripts/verify-all", scripts / "verify-all")
+        shutil.copy2(ROOT / "scripts/run-hermetic-tests", scripts / "run-hermetic-tests")
         (root / "tests").mkdir()
         (root / "tests/e2e-modules.tsv").write_text(
             "# module_id\tpackage\tkind\tclassification\tcommand\tscenario\tprerequisites\tunattended\tstatus\n"
@@ -37,6 +38,32 @@ def run():
         executable(root / "cargo", '#!/bin/sh\nexit 42\n')
         result = subprocess.run([str(scripts / "verify-all"), "--gate", "hermetic"], env=env, capture_output=True, text=True)
         assert result.returncode == 42, result.stdout + result.stderr
+
+        # Run every Cargo integration executable, keep bin artifacts out, and
+        # report a scenario failure only after the other suites finish cleanup.
+        calls = root / "calls"
+        calls.mkdir()
+        artifacts = []
+        for name, kind, code in [("passing", "test", 0), ("failing", "test", 7), ("product", "bin", 9)]:
+            scenario = root / name
+            executable(scenario, f"#!/bin/sh\ntouch '{calls / name}'\nexit {code}\n")
+            artifacts.append({"reason": "compiler-artifact", "package_id": name,
+                              "executable": str(scenario),
+                              "target": {"kind": [kind], "src_path": str(root / "tests/e2e/main.rs")}})
+        executable(root / "cargo", "#!/usr/bin/env python3\nimport sys\n"
+                   f"artifacts = {artifacts!r}\n"
+                   "if '--message-format=json' in sys.argv:\n"
+                   " import json\n"
+                   " for artifact in artifacts: print(json.dumps(artifact))\n")
+        result = subprocess.run([str(scripts / "verify-all"), "--gate", "hermetic"], env=env, capture_output=True, text=True)
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert {path.name for path in calls.iterdir()} == {"passing", "failing"}
+        executable(root / "failing", "#!/bin/sh\nexit 0\n")
+        result = subprocess.run([str(scripts / "verify-all"), "--gate", "hermetic"], env=env, capture_output=True, text=True)
+        assert result.returncode == 0, result.stdout + result.stderr
+        executable(root / "cargo", "#!/bin/sh\ncase \"$*\" in *--message-format=json*) exit 43;; esac\nexit 0\n")
+        result = subprocess.run([str(scripts / "verify-all"), "--gate", "hermetic"], env=env, capture_output=True, text=True)
+        assert result.returncode == 43, result.stdout + result.stderr
 
         # Release process checks must propagate failures at the public gate.
         desktop_tests = root / "apps/desktop/tests"

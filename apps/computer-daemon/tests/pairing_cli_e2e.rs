@@ -126,7 +126,7 @@ async fn pinned_pair_command_reconnects_and_remote_address_changes_live() -> Res
     let second_home = tempfile::tempdir()?;
     std::fs::write(
         runtime_home.path().join("runtime.json"),
-        r#"{"pairing_validity_ms":3000}"#,
+        r#"{"pairing_validity_ms":1000}"#,
     )?;
     let paths = RuntimePaths::for_home(runtime_home.path())?;
     let server = Server::start(&paths).await?;
@@ -228,7 +228,7 @@ async fn pinned_pair_command_reconnects_and_remote_address_changes_live() -> Res
     );
     rejected(&url, &code.code, Some(&pin), "rejected or expired").await?;
     let expired = client.create_pairing_code().await?;
-    tokio::time::sleep(Duration::from_millis(3100)).await;
+    tokio::time::sleep(Duration::from_millis(1100)).await;
     rejected(&url, &expired.code, Some(&pin), "rejected or expired").await?;
     // The TLS entry point exposes neither management nor resource routes.
     let http = reqwest::Client::builder()
