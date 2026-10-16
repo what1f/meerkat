@@ -396,7 +396,7 @@ async fn a_temporary_im_outage_delivers_a_batch_once_without_replaying_its_prefi
     server.deliver("200:local", team_message(1, false));
     server.deliver("200:local", team_message(2, true));
     server.deliver("200:local", team_message(3, false));
-    server.fail_requests("/bot200:local/getFile", 503, 8);
+    server.fail_requests("/bot200:local/getFile", 503, 3);
     server.fail_requests("/bot200:local/getUpdates", 429, 1);
     let host = event_host(&server, &services).await;
     for id in 1..=3 {
@@ -427,6 +427,25 @@ async fn a_temporary_im_outage_delivers_a_batch_once_without_replaying_its_prefi
             .is_err(),
         "duplicate delivery"
     );
+    host.shutdown().await.unwrap();
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_lasting_im_outage_skips_the_event_and_delivers_later_messages() {
+    let server = TelegramServer::start();
+    let services = Services::new("telegram");
+    server.deliver("200:local", team_message(2, true));
+    server.deliver("200:local", team_message(3, false));
+    server.fail_requests("/bot200:local/getFile", 503, usize::MAX);
+    let host = event_host(&server, &services).await;
+    let (event, receipt) = tokio::time::timeout(Duration::from_secs(5), host.next_event())
+        .await
+        .expect("a failing event blocked the next message")
+        .unwrap()
+        .into_parts();
+    assert!(
+        matches!(event.kind, ProviderEventKind::Message(ref m) if m.provider_message_id == "13")
+    );
+    receipt.accept();
     host.shutdown().await.unwrap();
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

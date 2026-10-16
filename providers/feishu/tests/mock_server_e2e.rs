@@ -378,7 +378,7 @@ async fn a_temporary_im_outage_delivers_the_reaction_and_next_message_once() {
         .unwrap()
         .unwrap();
     delivery.into_parts().1.accept();
-    server.fail_requests("/open-apis/im/v1/messages/om_before", 503, 8);
+    server.fail_requests("/open-apis/im/v1/messages/om_before", 503, 3);
     server.fail_requests("/open-apis/im/v1/chats/oc_team", 400, 1);
     server.deliver("cli_beta", reaction("before"));
     server.deliver("cli_beta", team_message("after"));
@@ -404,6 +404,30 @@ async fn a_temporary_im_outage_delivers_the_reaction_and_next_message_once() {
             .is_err(),
         "duplicate delivery"
     );
+    host.shutdown().await.unwrap();
+    assert_eq!(server.acknowledgements(), 3);
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_lasting_im_outage_skips_the_event_and_delivers_later_messages() {
+    let server = FeishuServer::start();
+    let services = Services::new("feishu");
+    let host = event_host(&server, &services).await;
+    server.deliver("cli_beta", team_message("before"));
+    let delivery = tokio::time::timeout(Duration::from_secs(3), host.next_event())
+        .await
+        .unwrap()
+        .unwrap();
+    delivery.into_parts().1.accept();
+    server.fail_requests("/open-apis/im/v1/messages/om_before", 503, usize::MAX);
+    server.deliver("cli_beta", reaction("before"));
+    server.deliver("cli_beta", team_message("after"));
+    let (event, receipt) = tokio::time::timeout(Duration::from_secs(5), host.next_event())
+        .await
+        .expect("a failing event blocked the next message")
+        .unwrap()
+        .into_parts();
+    assert!(matches!(event.kind, ProviderEventKind::Message(ref m) if m.content == "after"));
+    receipt.accept();
     host.shutdown().await.unwrap();
     assert_eq!(server.acknowledgements(), 3);
 }

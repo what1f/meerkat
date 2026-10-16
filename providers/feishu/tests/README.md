@@ -34,8 +34,10 @@ malformed events, and three Agents concurrently sending and reacting in one chat
 requests, including each sending account.
 
 Event acceptance retries use workspace configuration: `event_retry_initial_ms`
-(default 250) and `event_retry_max_ms` (default 30000). Backoff doubles until
-the maximum. Transient events remain pending until recovery or shutdown.
+(default 250), `event_retry_max_ms` (default 30000), and
+`event_retry_max_attempts` (default 8). Backoff doubles until the maximum. An
+event that still fails after the last attempt is logged and skipped, so it
+never holds back later events.
 A permanent error is logged once and skipped; its platform acknowledgement
 lets later events flow. Source reconnects use capped backoff until recovery or
 shutdown.

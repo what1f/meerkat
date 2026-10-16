@@ -912,6 +912,7 @@ async fn normalization_config(
 struct EventRetry {
     initial: Duration,
     maximum: Duration,
+    attempts: u64,
 }
 impl EventRetry {
     fn configured(context: &InitContext) -> Self {
@@ -931,7 +932,15 @@ impl EventRetry {
                     .unwrap_or(30_000)
                     .max(1),
             ),
+            attempts: config
+                .get("event_retry_max_attempts")
+                .and_then(Value::as_u64)
+                .unwrap_or(8)
+                .max(1),
         }
+    }
+    fn exhausted(&self, failures: u64) -> bool {
+        failures >= self.attempts
     }
     fn delay(&self, failures: u64) -> Duration {
         self.initial
@@ -1040,7 +1049,8 @@ fn spawn_poller(
                         Ok(()) => break,
                         Err(error) => {
                             failures += 1;
-                            if !error.retryable {
+                            // One event must not hold back the ones after it.
+                            if !error.retryable || retry.exhausted(failures) {
                                 context.logger().log(
                                     lankide_provider::LogLevel::Warn,
                                     &format!("Telegram event skipped: {}", error.reason),
