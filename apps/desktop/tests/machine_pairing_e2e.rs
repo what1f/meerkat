@@ -300,7 +300,10 @@ fn local_online_offline_selection_and_pairing_dialog() {
         wait(cx, &clock, |cx| {
             cx.debug_bounds("pairing-command").is_some()
         });
-        assert!(cx.debug_bounds("pairing-address-input").is_none());
+        // The address stays editable above the command; Apply appears only
+        // after it changes.
+        assert!(cx.debug_bounds("pairing-address-input").is_some());
+        assert!(cx.debug_bounds("enable-machine-access").is_none());
         click(cx, &clock, "copy-pairing-command");
         let automatic = cx.update(|_, cx| cx.read_from_clipboard().unwrap().text().unwrap());
         let endpoint = automatic.split_whitespace().nth(2).unwrap();
@@ -319,17 +322,13 @@ fn local_online_offline_selection_and_pairing_dialog() {
                 .address
                 .is_some_and(|address| endpoint == format!("wss://{address}"))
         );
-        click(cx, &clock, "change-pairing-address");
-        wait(cx, &clock, |cx| {
-            cx.debug_bounds("pairing-address-input").is_some()
-        });
         let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = socket.local_addr().unwrap().to_string();
         drop(socket);
         fill(cx, &clock, "pairing-address-input", &address);
         click(cx, &clock, "enable-machine-access");
         wait(cx, &clock, |cx| {
-            cx.debug_bounds("pairing-command").is_some()
+            cx.debug_bounds("enable-machine-access").is_none()
         });
         assert!(cx.debug_bounds("pairing-code").is_none());
         assert!(cx.debug_bounds("pairing-waiting-hint").is_none());

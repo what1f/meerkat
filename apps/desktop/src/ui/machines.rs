@@ -185,9 +185,7 @@ impl LankideApp {
             cx.background_executor().timer(delay).await;
             if !this
                 .update(cx, |this, _| {
-                    this.pairing_active(request)
-                        && !this.pairing_editing
-                        && this.pairing_connected.is_none()
+                    this.pairing_active(request) && this.pairing_connected.is_none()
                 })
                 .unwrap_or(false)
             {
@@ -219,10 +217,7 @@ impl LankideApp {
                 .timer(Duration::from_secs(30))
                 .await;
             let _ = this.update(cx, |this, cx| {
-                if this.pairing_active(request)
-                    && !this.pairing_editing
-                    && this.pairing_connected.is_none()
-                {
+                if this.pairing_active(request) && this.pairing_connected.is_none() {
                     this.pairing_waiting_hint = true;
                     this.notify_dialog_changed(cx);
                 }
@@ -310,7 +305,7 @@ impl LankideApp {
         .detach();
     }
 
-    fn open_pair_machine(&mut self, cx: &mut Context<Self>) {
+    fn open_pair_machine(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.modal = Some(Modal::PairMachine);
         self.pairing_code = None;
         self.pairing_waiting_hint = false;
@@ -320,12 +315,11 @@ impl LankideApp {
         self.pairing_connected = None;
         self.pairing_copied = false;
         self.pairing_loading = true;
-        self.pairing_editing = false;
         self.pairing_request += 1;
         let request = self.pairing_request;
         self.error = None;
         let client = self.client.clone();
-        cx.spawn(async move |this, cx| {
+        cx.spawn_in(window, async move |this, window| {
             let result = async {
                 let access = client.enable_remote_access().await?;
                 let catalog = client.get_machine_catalog(None).await?;
@@ -337,13 +331,16 @@ impl LankideApp {
                 Ok::<_, ClientError>((access, catalog, code))
             }
             .await;
-            let _ = this.update(cx, |this, cx| {
+            let _ = this.update_in(window, |this, window, cx| {
                 if !this.pairing_active(request) {
                     return;
                 }
                 this.pairing_loading = false;
                 match result {
                     Ok((access, catalog, code)) => {
+                        let address = access.address.clone().unwrap_or_default();
+                        this.pairing_address_input
+                            .update(cx, |input, cx| input.set_value(address, window, cx));
                         this.pairing_known = catalog.iter().map(|c| c.id.clone()).collect();
                         this.machines = catalog
                             .into_iter()
@@ -351,7 +348,6 @@ impl LankideApp {
                             .collect();
                         this.pairing_address = access.address;
                         this.pairing_pin = access.cert_sha256;
-                        this.pairing_editing = this.pairing_address.is_none();
                         this.pairing_code = code;
                         if this.pairing_code.is_some() {
                             this.start_pairing_hint(cx);
@@ -385,28 +381,23 @@ impl LankideApp {
         .detach();
     }
 
-    fn edit_pairing_address(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let address = self.pairing_address.clone().unwrap_or_default();
-        self.pairing_address_input
-            .update(cx, |input, cx| input.set_value(address, window, cx));
-        self.pairing_editing = true;
-        self.pairing_waiting_hint = false;
-        self.pairing_hint_task = None;
-        self.error = None;
-        self.notify_dialog_changed(cx);
-    }
-
     fn pairing_active(&self, request: u64) -> bool {
         self.pairing_request == request && matches!(self.modal, Some(Modal::PairMachine))
     }
 
-    fn enable_remote_machines(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn enable_remote_machines(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let address = self
             .pairing_address_input
             .read(cx)
             .value()
             .trim()
             .to_owned();
+        if self.pairing_loading
+            || address.is_empty()
+            || self.pairing_address.as_deref() == Some(address.as_str())
+        {
+            return;
+        }
         self.pairing_loading = true;
         self.error = None;
         let client = self.client.clone();
@@ -428,7 +419,7 @@ impl LankideApp {
                         this.pairing_address = access.address;
                         this.pairing_pin = access.cert_sha256;
                         this.pairing_code = Some(code);
-                        this.pairing_editing = false;
+                        this.pairing_connected = None;
                         this.pairing_copied = false;
                         this.start_pairing_hint(cx);
                         this.renew_pairing_code_at_expiry(cx);
@@ -605,7 +596,9 @@ impl LankideApp {
                             .debug_selector(|| "pair-machine".into())
                             .tooltip(self.tr("添加机器", "Add Machine"))
                             .child(muted_themed_icon("icons/lucide/plus.svg", 16., theme))
-                            .on_click(cx.listener(|this, _, _, cx| this.open_pair_machine(cx))),
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.open_pair_machine(window, cx)
+                            })),
                     ),
             )
             .when(!self.machines.is_empty(), |section| {
@@ -776,7 +769,7 @@ impl LankideApp {
                 format!("--cert-sha256 {}", self.pairing_pin.as_ref()?),
             ])
         });
-        let editing = self.pairing_editing;
+        let saved_address = self.pairing_address.clone().unwrap_or_default();
         let loading = self.pairing_loading;
         let copied = self.pairing_copied;
         let connected = self.pairing_connected.clone();
@@ -785,7 +778,6 @@ impl LankideApp {
         let theme = self.theme();
         let error = self.error.as_ref().map(|e| e.text(language));
         let enable_app = app.clone();
-        let edit_app = app.clone();
         let copy_app = app.clone();
         DesktopDialog::from(dialog)
             .width(px(660.))
@@ -799,10 +791,15 @@ impl LankideApp {
                 });
                 true
             })
-            .content(move |content, _, _| {
+            .content(move |content, _, cx| {
                 let enable_app = enable_app.clone();
-                let edit_app = edit_app.clone();
                 let copy_app = copy_app.clone();
+                // Applying is offered only once the address differs.
+                let edited = {
+                    let value = address_input.read(cx).value();
+                    let value = value.trim();
+                    !value.is_empty() && value != saved_address
+                };
                 content
                     .child(DesktopDialogHeader::new(
                         language.text("添加机器", "Add Machine"),
@@ -814,59 +811,59 @@ impl LankideApp {
                             .flex()
                             .flex_col()
                             .gap(px(14.))
-                            .when(loading, |body| body.child(Spinner::new()))
-                            .when(editing, |body| {
-                                body.child(
-                                    div()
-                                        .debug_selector(|| "pairing-address-input".into())
-                                        .child(DesktopInput::mono_large(&address_input)),
-                                )
-                            })
-                            .when(!editing, |body| {
-                                body.when_some(command_lines.clone(), |body, lines| {
-                                    body.child(div().text_color(theme.text_secondary).child(
-                                        language.text(
-                                            "在要添加的机器上运行",
-                                            "Run this on the machine you want to add",
-                                        ),
-                                    ))
-                                    .child(pairing_command_block(
-                                        lines,
-                                        copied,
-                                        theme,
-                                        language,
-                                        copy_app.clone(),
-                                    ))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(8.))
                                     .child(
-                                        pairing_status_row(
-                                            connected.clone(),
-                                            waiting_hint,
-                                            theme,
-                                            language,
-                                            edit_app.clone(),
-                                        ),
+                                        div()
+                                            .flex_1()
+                                            .debug_selector(|| "pairing-address-input".into())
+                                            .child(DesktopInput::mono_large(&address_input)),
                                     )
-                                })
-                            })
-                            .when(editing, |body| {
-                                body.child(
-                                    div().flex().justify_end().child(desktop_dialog_button(
-                                        "enable-machine-access",
-                                        DesktopButton::primary_loading(
+                                    .when(edited, |row| {
+                                        row.child(desktop_dialog_button(
                                             "enable-machine-access",
-                                            language.text("保存", "Save"),
-                                            loading,
-                                        )
-                                        .disabled(loading)
-                                        .on_click(
-                                            move |_, window, cx| {
-                                                enable_app.update(cx, |this, cx| {
-                                                    this.enable_remote_machines(window, cx)
-                                                })
-                                            },
-                                        ),
-                                    )),
-                                )
+                                            DesktopButton::primary_loading(
+                                                "enable-machine-access",
+                                                language.text("应用", "Apply"),
+                                                loading,
+                                            )
+                                            .disabled(loading)
+                                            .on_click(
+                                                move |_, window, cx| {
+                                                    enable_app.update(cx, |this, cx| {
+                                                        this.enable_remote_machines(window, cx)
+                                                    })
+                                                },
+                                            ),
+                                        ))
+                                    }),
+                            )
+                            .when(loading && command_lines.is_none(), |body| {
+                                body.child(Spinner::new())
+                            })
+                            .when_some(command_lines.clone(), |body, lines| {
+                                body.child(div().text_color(theme.text_secondary).child(
+                                    language.text(
+                                        "在要添加的机器上运行",
+                                        "Run this on the machine you want to add",
+                                    ),
+                                ))
+                                .child(pairing_command_block(
+                                    lines,
+                                    copied,
+                                    theme,
+                                    language,
+                                    copy_app.clone(),
+                                ))
+                                .child(pairing_status_row(
+                                    connected.clone(),
+                                    waiting_hint,
+                                    theme,
+                                    language,
+                                ))
                             })
                             .when_some(error.clone(), |body, error| {
                                 body.child(DesktopBanner::error(theme, error))
@@ -935,7 +932,6 @@ fn pairing_status_row(
     waiting_hint: bool,
     theme: DesktopTheme,
     language: DesktopLanguage,
-    app: Entity<LankideApp>,
 ) -> Div {
     let waiting = connected.is_none();
     let status = connected.unwrap_or_else(|| {
@@ -966,39 +962,22 @@ fn pairing_status_row(
                 dot.opacity(if waiting { pulse } else { 1. })
             },
         );
-    let change_address = div()
-        .id("change-pairing-address")
-        .role(gpui::Role::Button)
-        .debug_selector(|| "change-pairing-address".into())
-        .cursor_pointer()
-        .text_color(theme.text_secondary)
-        .hover(|button| button.text_color(theme.text))
-        .child(language.text("更改地址", "Change address"))
-        .on_click(move |_, window, cx| {
-            app.update(cx, |this, cx| this.edit_pairing_address(window, cx))
-        });
-    div()
-        .flex()
-        .items_center()
-        .justify_between()
-        .text_size(px(12.))
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .text_color(theme.text_tertiary)
-                .child(dot)
-                .child(
-                    div()
-                        .when(!waiting, |status| {
-                            status.debug_selector(|| "pairing-connected".into())
-                        })
-                        .when(waiting && waiting_hint, |status| {
-                            status.debug_selector(|| "pairing-waiting-hint".into())
-                        })
-                        .child(status),
-                ),
-        )
-        .child(change_address)
+    div().flex().items_center().text_size(px(12.)).child(
+        div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .text_color(theme.text_tertiary)
+            .child(dot)
+            .child(
+                div()
+                    .when(!waiting, |status| {
+                        status.debug_selector(|| "pairing-connected".into())
+                    })
+                    .when(waiting && waiting_hint, |status| {
+                        status.debug_selector(|| "pairing-waiting-hint".into())
+                    })
+                    .child(status),
+            ),
+    )
 }

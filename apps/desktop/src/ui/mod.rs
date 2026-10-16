@@ -225,7 +225,6 @@ pub struct LankideApp {
     pairing_address: Option<String>,
     pairing_pin: Option<String>,
     pairing_address_input: Entity<InputState>,
-    pairing_editing: bool,
     pairing_copied: bool,
     pairing_connected: Option<String>,
     machines: Vec<lankide_client::MachineOption>,
@@ -597,6 +596,21 @@ impl LankideApp {
         )
         .detach();
 
+        let pairing_address_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("192.168.1.20:7443"));
+        cx.subscribe_in(
+            &pairing_address_input,
+            window,
+            |this, _, event: &InputEvent, window, cx| match event {
+                InputEvent::PressEnter { .. } => this.enable_remote_machines(window, cx),
+                InputEvent::Change => {
+                    this.error = None;
+                    this.notify_dialog_changed(cx);
+                }
+                _ => {}
+            },
+        )
+        .detach();
         let machine_name_input = cx.new(|cx| InputState::new(window, cx));
         cx.subscribe_in(
             &machine_name_input,
@@ -686,9 +700,7 @@ impl LankideApp {
             machine_choices_changed: false,
             pairing_address: None,
             pairing_pin: None,
-            pairing_address_input: cx
-                .new(|cx| InputState::new(window, cx).placeholder("192.168.1.20:7443")),
-            pairing_editing: false,
+            pairing_address_input,
             pairing_copied: false,
             pairing_connected: None,
             machines: Vec::new(),
