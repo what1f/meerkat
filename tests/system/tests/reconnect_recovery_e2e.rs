@@ -43,7 +43,7 @@ async fn held_run_is_readopted_with_messages_during_repeated_disconnects() -> Re
     let proxy = rig.proxy.as_ref().unwrap();
     for flap in 0..4 {
         proxy.cut();
-        wait(async || Ok(!rig.computer_online().await?)).await?;
+        wait(async || Ok(!rig.machine_online().await?)).await?;
         agent
             .wait_for(|runs, _| runs.len() == 1 && runs[0].state == "recovering")
             .await?;
@@ -54,7 +54,7 @@ async fn held_run_is_readopted_with_messages_during_repeated_disconnects() -> Re
         assert_eq!(agent.executions().await?.len(), 1);
         assert!(agent.view().await?.pause_reason.is_none());
         proxy.restore();
-        wait(async || rig.computer_online().await).await?;
+        wait(async || rig.machine_online().await).await?;
         agent
             .wait_for(|runs, _| runs.len() == 1 && runs[0].state == "running")
             .await?;
@@ -125,7 +125,7 @@ async fn expired_offline_attempt_is_closed_on_return_before_queued_work_runs() -
     rig.settle().await?;
     let runs = agent.executions().await?;
     assert_eq!(runs.len(), 2);
-    assert_eq!(runs[0].error_code.as_deref(), Some("computer_lost"));
+    assert_eq!(runs[0].error_code.as_deref(), Some("machine_lost"));
     assert_eq!(runs[1].state, "succeeded");
     assert_eq!(team.dm_transcript(&agent, "alice"), ["hello", "done"]);
     assert!(agent.view().await?.pause_reason.is_none());

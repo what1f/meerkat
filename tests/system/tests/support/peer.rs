@@ -309,7 +309,7 @@ fn main() {
                         }
                         let result = received
                             .recv_timeout(Duration::from_secs(10))
-                            .expect("Tool result over Computer link");
+                            .expect("Tool result over Machine link");
                         assert_eq!(result["op"], "tool_result");
                         assert_eq!(result["request"]["tool_call_id"], call_id);
                         assert_eq!(result["request"]["success"], true, "Tool failed: {result}");

@@ -1,5 +1,5 @@
-#[path = "../../../tests/support/registered_computer.rs"]
-mod registered_computer;
+#[path = "../../../tests/support/registered_machine.rs"]
+mod registered_machine;
 use lankide_core::{
     AgentId, ChannelId, MessageAuthorType, PersonId, ProviderId, ResourceId, WorkspaceId,
 };
@@ -116,8 +116,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     let config = DatabaseConfig::new(&db_path);
 
     let storage = Storage::open(config.clone()).map_err(|error| error.to_string())?;
-    registered_computer::register(&storage, &["fixture-computer", "computer-a", "computer-b"])
-        .unwrap();
+    registered_machine::register(&storage, &["fixture-machine", "machine-a", "machine-b"]).unwrap();
     assert_eq!(storage.schema_version().unwrap(), 1);
     assert_eq!(storage.sqlite_settings().unwrap().journal_mode, "wal");
     assert!(storage.sqlite_settings().unwrap().foreign_keys);
@@ -145,7 +144,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
             .unwrap();
         storage
             .create_agent(AgentSpec {
-                computer_id: "fixture-computer".into(),
+                machine_id: "fixture-machine".into(),
                 workspace_id: workspace_id.clone(),
                 id: agent_id.clone(),
                 name: "Same visible name".to_owned(),
@@ -366,7 +365,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     assert!(storage.agent_record(&workspace_a, &departed_id).is_err());
     assert_eq!(
         storage
-            .pending_agent_file_deletions("fixture-computer")
+            .pending_agent_file_deletions("fixture-machine")
             .unwrap(),
         vec![(workspace_a.clone(), departed_id.clone())]
     );
@@ -383,7 +382,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     );
     assert!(
         storage
-            .pending_agent_file_deletions("fixture-computer")
+            .pending_agent_file_deletions("fixture-machine")
             .unwrap()
             .is_empty()
     );
@@ -1141,7 +1140,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     );
 
     // A real disk-backed Attempt survives a short disconnect, while a new
-    // Computer instance makes the old Attempt terminal without consuming its Inbox.
+    // Machine instance makes the old Attempt terminal without consuming its Inbox.
     let lost = storage
         .create_execution(&workspace_a, &agent_id, "attempt-recovery", 4_200)
         .unwrap()
@@ -1150,7 +1149,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         .offer_execution_attempt(
             lost.execution_id,
             1,
-            "fixture-computer",
+            "fixture-machine",
             "instance-a",
             4_300,
             4_201,
@@ -1170,8 +1169,8 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         .record_execution_event(RecordExecutionEvent {
             execution_id: lost.execution_id,
             attempt: 1,
-            computer_id: "fixture-computer".into(),
-            computer_instance_id: "instance-a".into(),
+            machine_id: "fixture-machine".into(),
+            machine_instance_id: "instance-a".into(),
             sequence: 1,
             kind: "started".into(),
             payload: br#"{"kind":"started"}"#.to_vec(),
@@ -1184,8 +1183,8 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         .mark_execution_recovering(lost.execution_id, 4_205)
         .unwrap();
     let continued = storage
-        .reconcile_computer_heartbeat(
-            "fixture-computer",
+        .reconcile_machine_heartbeat(
+            "fixture-machine",
             "instance-a",
             &[(lost.execution_id, 1)],
             4_206,
@@ -1194,15 +1193,15 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         .unwrap();
     assert_eq!(continued.continued, vec![(lost.execution_id, 1)]);
     let replaced = storage
-        .reconcile_computer_heartbeat("fixture-computer", "instance-b", &[], 4_207, 4_500)
+        .reconcile_machine_heartbeat("fixture-machine", "instance-b", &[], 4_207, 4_500)
         .unwrap();
     assert_eq!(replaced.lost, vec![(lost.execution_id, 1)]);
     let late_completed = storage
         .record_execution_event(RecordExecutionEvent {
             execution_id: lost.execution_id,
             attempt: 1,
-            computer_id: "fixture-computer".into(),
-            computer_instance_id: "instance-a".into(),
+            machine_id: "fixture-machine".into(),
+            machine_instance_id: "instance-a".into(),
             sequence: 2,
             kind: "completed".into(),
             payload: br#"{"kind":"completed","final_output":"late"}"#.to_vec(),
@@ -1233,7 +1232,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         .offer_execution_attempt(
             resumed.execution_id,
             1,
-            "fixture-computer",
+            "fixture-machine",
             "instance-b",
             4_500,
             4_211,
@@ -1257,8 +1256,8 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
             .record_execution_event(RecordExecutionEvent {
                 execution_id: resumed.execution_id,
                 attempt: 1,
-                computer_id: "fixture-computer".into(),
-                computer_instance_id: "instance-b".into(),
+                machine_id: "fixture-machine".into(),
+                machine_instance_id: "instance-b".into(),
                 sequence,
                 kind: kind.into(),
                 payload: payload.to_vec(),
@@ -1275,8 +1274,8 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         .record_execution_event(RecordExecutionEvent {
             execution_id: resumed.execution_id,
             attempt: 1,
-            computer_id: "fixture-computer".into(),
-            computer_instance_id: "instance-b".into(),
+            machine_id: "fixture-machine".into(),
+            machine_instance_id: "instance-b".into(),
             sequence: 2,
             kind: "completed".into(),
             payload: br#"{"kind":"completed","final_output":"durable"}"#.to_vec(),
@@ -1327,7 +1326,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         .offer_execution_attempt(
             leased.execution_id,
             1,
-            "fixture-computer",
+            "fixture-machine",
             "instance-b",
             4_219,
             4_218,
@@ -1531,7 +1530,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         .offer_execution_attempt(
             recovering.execution_id,
             1,
-            "fixture-computer",
+            "fixture-machine",
             "instance-restart",
             6_000,
             5_201,
@@ -1795,7 +1794,7 @@ fn agent_record(
         bio: "Helps the team".to_owned(),
         avatar: Some("avatar.png".to_owned()),
         soul: "Be useful".to_owned(),
-        computer_id: "fixture-computer".to_owned(),
+        machine_id: "fixture-machine".to_owned(),
         placement_generation: 1,
         harness_id: "codex".to_owned(),
         model: "gpt-5.6-luna".to_owned(),
@@ -1904,9 +1903,9 @@ fn placement_changes_preserve_queued_work_and_invalidates_old_authorizations() {
             now: 1,
         })
         .unwrap();
-    registered_computer::register(&storage, &["computer-a"]).unwrap();
+    registered_machine::register(&storage, &["machine-a"]).unwrap();
     let mut record = agent_record(&workspace, &agent, "bot-bruce", 2);
-    record.computer_id = "computer-a".into();
+    record.machine_id = "machine-a".into();
     storage.upsert_agent_record(record).unwrap();
     storage
         .ingest_event(event(
@@ -1922,8 +1921,7 @@ fn placement_changes_preserve_queued_work_and_invalidates_old_authorizations() {
         .unwrap();
     storage.close().unwrap();
     let storage = Storage::open(config.clone()).unwrap();
-    registered_computer::register(&storage, &["fixture-computer", "computer-a", "computer-b"])
-        .unwrap();
+    registered_machine::register(&storage, &["fixture-machine", "machine-a", "machine-b"]).unwrap();
     assert_eq!(storage.schema_version().unwrap(), 1);
     assert_eq!(storage.inbox_items(&workspace, &agent).unwrap().len(), 1);
     let run = storage
@@ -1962,7 +1960,7 @@ fn placement_changes_preserve_queued_work_and_invalidates_old_authorizations() {
             .is_some()
     );
     storage
-        .offer_execution_attempt(run.execution_id, 1, "computer-a", "instance-a", 1000, 5)
+        .offer_execution_attempt(run.execution_id, 1, "machine-a", "instance-a", 1000, 5)
         .unwrap();
     storage
         .accept_execution_attempt(run.execution_id, 1, true, 5)
@@ -1979,8 +1977,8 @@ fn placement_changes_preserve_queued_work_and_invalidates_old_authorizations() {
         .record_execution_event(RecordExecutionEvent {
             execution_id: run.execution_id,
             attempt: 1,
-            computer_id: "computer-a".into(),
-            computer_instance_id: "instance-a".into(),
+            machine_id: "machine-a".into(),
+            machine_instance_id: "instance-a".into(),
             sequence: 1,
             kind: "completed".into(),
             payload: br#"{"kind":"completed","final_output":"late"}"#.to_vec(),
@@ -2015,8 +2013,7 @@ fn baseline_reopens_and_unsupported_versions_are_refused() {
     let home = tempfile::tempdir().unwrap();
     let config = DatabaseConfig::new(home.path().join("runtime.db"));
     let storage = Storage::open(config.clone()).unwrap();
-    registered_computer::register(&storage, &["fixture-computer", "computer-a", "computer-b"])
-        .unwrap();
+    registered_machine::register(&storage, &["fixture-machine", "machine-a", "machine-b"]).unwrap();
     assert_eq!(storage.schema_version().unwrap(), 1);
     storage.close().unwrap();
     Storage::open(config.clone()).unwrap().close().unwrap();
@@ -2043,7 +2040,7 @@ fn direct_conversations_stay_separate_after_reopening() {
     let home = tempfile::tempdir().unwrap();
     let config = DatabaseConfig::new(home.path().join("runtime.db"));
     let storage = Storage::open(config.clone()).unwrap();
-    registered_computer::register(&storage, &["fixture-computer"]).unwrap();
+    registered_machine::register(&storage, &["fixture-machine"]).unwrap();
     let workspace = WorkspaceId::new("team").unwrap();
     let provider = ProviderId::new("fixture").unwrap();
     let channel = ChannelId::new("private_chat").unwrap();

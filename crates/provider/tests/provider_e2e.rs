@@ -912,7 +912,7 @@ fn agent_spec() -> AgentSpec {
         bio: "Build".into(),
         avatar: None,
         soul: "Precise".into(),
-        computer_id: "fixture-computer".into(),
+        machine_id: "fixture-machine".into(),
         harness_id: "codex".into(),
         model: "model".into(),
         thinking_level: "low".into(),
@@ -932,7 +932,7 @@ fn runtime_spec_with_permission(permission: &str) -> AgentRuntimeSpec {
     AgentRuntimeSpec {
         agent_config: json!({}),
         provider_agent_config: json!({"tasks":true,"permission":permission}),
-        computer_id: "fixture-computer".into(),
+        machine_id: "fixture-machine".into(),
         harness_id: "codex".into(),
         model: "model".into(),
         thinking_level: "low".into(),

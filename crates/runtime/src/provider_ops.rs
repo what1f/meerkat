@@ -354,7 +354,7 @@ fn frozen_runtime_spec(value: &str) -> Result<AgentRuntimeSpec, RuntimeError> {
             .get("provider_agent_config")
             .cloned()
             .unwrap_or_default(),
-        computer_id: text("computer_id")?,
+        machine_id: text("machine_id")?,
         harness_id: text("harness_id")?,
         model: text("model")?,
         thinking_level: text("thinking_level")?,

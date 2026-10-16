@@ -4,8 +4,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-mod computer;
-pub use computer::ComputerRecord;
+mod machine;
+pub use machine::MachineRecord;
 mod agent;
 mod attempt;
 mod error;

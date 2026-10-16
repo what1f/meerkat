@@ -14,15 +14,15 @@ use objc2_service_management::{SMAppService, SMAppServiceStatus};
 use std::io::Write as _;
 
 #[cfg(target_os = "macos")]
-const RUNTIME_AGENT_PLIST: &str = "com.lankide.runtime.plist";
+const RUNTIME_AGENT_PLIST: &str = "com.lankide.daemon.plist";
 #[cfg(target_os = "macos")]
-const COMPUTER_AGENT_PLIST: &str = "com.lankide.computer.plist";
+const MACHINE_AGENT_PLIST: &str = "com.lankide.machine.plist";
 #[cfg(target_os = "macos")]
 const AD_HOC_BACKGROUND_SERVICES_MARKER: &str = "AdHocBackgroundServices";
 #[cfg(target_os = "macos")]
-const RUNTIME_AGENT_LABEL: &str = "com.lankide.runtime";
+const RUNTIME_AGENT_LABEL: &str = "com.lankide.daemon";
 #[cfg(target_os = "macos")]
-const COMPUTER_AGENT_LABEL: &str = "com.lankide.computer";
+const MACHINE_AGENT_LABEL: &str = "com.lankide.machine";
 
 pub(crate) struct BackgroundServices {
     adapter: Adapter,
@@ -32,7 +32,7 @@ pub(crate) struct BackgroundServices {
 enum Adapter {
     Transient {
         runtime: Option<Child>,
-        computer: Option<Child>,
+        machine: Option<Child>,
     },
     #[cfg(target_os = "macos")]
     ModernLaunchAgents,
@@ -58,7 +58,7 @@ impl BackgroundServices {
             stopping: false,
             adapter: Adapter::Transient {
                 runtime: None,
-                computer: None,
+                machine: None,
             },
         }
     }
@@ -67,38 +67,23 @@ impl BackgroundServices {
         #[cfg(target_os = "macos")]
         match self.adapter {
             Adapter::ModernLaunchAgents => {
-                prepare_launch_agent(
-                    home,
-                    "runtime.lock",
-                    "lankide-runtime-daemon",
-                    RUNTIME_AGENT_PLIST,
-                )?;
-                prepare_launch_agent(
-                    home,
-                    "computer.lock",
-                    "lankide-computer-daemon",
-                    COMPUTER_AGENT_PLIST,
-                )?;
+                prepare_launch_agent(home, "runtime.lock", "lankided", RUNTIME_AGENT_PLIST)?;
+                prepare_launch_agent(home, "machine.lock", "lankide-machine", MACHINE_AGENT_PLIST)?;
                 return Ok(());
             }
             Adapter::AdHocLaunchAgents => {
                 if !ad_hoc_launch_agent_is_loaded(RUNTIME_AGENT_LABEL)
-                    && !ad_hoc_launch_agent_is_loaded(COMPUTER_AGENT_LABEL)
+                    && !ad_hoc_launch_agent_is_loaded(MACHINE_AGENT_LABEL)
                 {
                     unregister_modern_launch_agent(RUNTIME_AGENT_PLIST);
-                    unregister_modern_launch_agent(COMPUTER_AGENT_PLIST);
+                    unregister_modern_launch_agent(MACHINE_AGENT_PLIST);
                 }
+                install_ad_hoc_launch_agent(home, RUNTIME_AGENT_LABEL, "lankided", "runtime.lock")?;
                 install_ad_hoc_launch_agent(
                     home,
-                    RUNTIME_AGENT_LABEL,
-                    "lankide-runtime-daemon",
-                    "runtime.lock",
-                )?;
-                install_ad_hoc_launch_agent(
-                    home,
-                    COMPUTER_AGENT_LABEL,
-                    "lankide-computer-daemon",
-                    "computer.lock",
+                    MACHINE_AGENT_LABEL,
+                    "lankide-machine",
+                    "machine.lock",
                 )?;
                 return Ok(());
             }
@@ -115,7 +100,7 @@ impl BackgroundServices {
         match &mut self.adapter {
             Adapter::Transient { runtime, .. } => {
                 if runtime.is_none() {
-                    let executable = helper_executable("lankide-runtime-daemon")?;
+                    let executable = helper_executable("lankided")?;
                     *runtime = Some(spawn_helper(&executable, home)?);
                 }
                 Ok(())
@@ -127,28 +112,28 @@ impl BackgroundServices {
         }
     }
 
-    pub(crate) fn ensure_computer(&mut self, home: &Path) -> Result<(), ClientError> {
+    pub(crate) fn ensure_machine(&mut self, home: &Path) -> Result<(), ClientError> {
         if self.stopping {
             return Ok(());
         }
         match &mut self.adapter {
-            Adapter::Transient { computer, .. } => {
-                if computer.is_none() {
-                    let executable = helper_executable("lankide-computer-daemon")?;
-                    *computer = Some(spawn_helper(&executable, home)?);
+            Adapter::Transient { machine, .. } => {
+                if machine.is_none() {
+                    let executable = helper_executable("lankide-machine")?;
+                    *machine = Some(spawn_helper(&executable, home)?);
                 }
                 Ok(())
             }
             #[cfg(target_os = "macos")]
-            Adapter::ModernLaunchAgents => ensure_launch_agent(COMPUTER_AGENT_PLIST),
+            Adapter::ModernLaunchAgents => ensure_launch_agent(MACHINE_AGENT_PLIST),
             #[cfg(target_os = "macos")]
-            Adapter::AdHocLaunchAgents => ensure_ad_hoc_launch_agent(COMPUTER_AGENT_LABEL),
+            Adapter::AdHocLaunchAgents => ensure_ad_hoc_launch_agent(MACHINE_AGENT_LABEL),
         }
     }
 
-    pub(crate) fn computer_exited(&mut self) -> Result<Option<String>, ClientError> {
+    pub(crate) fn machine_exited(&mut self) -> Result<Option<String>, ClientError> {
         match &mut self.adapter {
-            Adapter::Transient { computer, .. } => computer
+            Adapter::Transient { machine, .. } => machine
                 .as_mut()
                 .map(|child| {
                     child
@@ -166,8 +151,8 @@ impl BackgroundServices {
     pub(crate) fn stop_owned(&mut self) {
         self.stopping = true;
         match &mut self.adapter {
-            Adapter::Transient { runtime, computer } => {
-                for child in [computer.take(), runtime.take()].into_iter().flatten() {
+            Adapter::Transient { runtime, machine } => {
+                for child in [machine.take(), runtime.take()].into_iter().flatten() {
                     stop_helper(child);
                 }
             }
@@ -191,7 +176,7 @@ fn bundled_launch_agents_available() -> bool {
     let Some(contents) = executable.parent().and_then(Path::parent) else {
         return false;
     };
-    [RUNTIME_AGENT_PLIST, COMPUTER_AGENT_PLIST]
+    [RUNTIME_AGENT_PLIST, MACHINE_AGENT_PLIST]
         .into_iter()
         .all(|name| contents.join("Library/LaunchAgents").join(name).is_file())
 }
@@ -519,16 +504,16 @@ fn stop_helper(mut child: Child) {
 fn replace_outdated_local_services(home: &Path) -> Result<(), ClientError> {
     let runtime = local_service(
         &home.join("run/runtime.lock"),
-        &helper_executable("lankide-runtime-daemon")?,
+        &helper_executable("lankided")?,
         true,
     )?;
-    let computer = local_service(
-        &home.join("run/computer.lock"),
-        &helper_executable("lankide-computer-daemon")?,
+    let machine = local_service(
+        &home.join("run/machine.lock"),
+        &helper_executable("lankide-machine")?,
         true,
     )?;
 
-    if let Some(instance) = computer {
+    if let Some(instance) = machine {
         stop_local_service(instance)?;
     }
     if let Some(instance) = runtime {

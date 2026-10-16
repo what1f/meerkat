@@ -27,7 +27,7 @@ def reuse_running_services(binaries, artifact_dir):
         owners = []
         with (artifact_dir / "existing-owner.log").open("w") as log:
             try:
-                for name in ("lankide-runtime-daemon", "lankide-computer-daemon"):
+                for name in ("lankided", "lankide-machine"):
                     owners.append(subprocess.Popen(
                         [str(binaries[name]), "--home", str(home)],
                         env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
@@ -44,7 +44,7 @@ def reuse_running_services(binaries, artifact_dir):
                     if probe.returncode == 0:
                         break
                     time.sleep(0.05)
-                locks = {name: (home / f"run/{name}.lock").read_bytes() for name in ("runtime", "computer")}
+                locks = {name: (home / f"run/{name}.lock").read_bytes() for name in ("runtime", "machine")}
                 for attempt in range(2):
                     output = artifact_dir / f"existing-owner-{attempt}.json"
                     process = subprocess.Popen(
@@ -54,7 +54,7 @@ def reuse_running_services(binaries, artifact_dir):
                     try:
                         assert process.wait(timeout=40) == 0, "Desktop could not reuse services"
                         payload = json.loads(output.read_text())
-                        assert payload["runtime_ready"] and payload["computer_connected"] and payload["management"], payload
+                        assert payload["runtime_ready"] and payload["machine_connected"] and payload["management"], payload
                         assert not group_members(process.pid), "Desktop left a helper alive"
                         assert all(owner.poll() is None for owner in owners), "Desktop stopped an external owner"
                         for name, contents in locks.items():
@@ -79,7 +79,7 @@ def reuse_running_services(binaries, artifact_dir):
 
 
 def run(binary_dir, artifact_dir):
-    names = ("lankide-desktop", "lankide-runtime-daemon", "lankide-computer-daemon", "lankide")
+    names = ("lankide-desktop", "lankided", "lankide-machine", "lankide")
     binaries = {name: binary_dir / name for name in names}
     for binary in binaries.values():
         assert binary.is_file() and os.access(binary, os.X_OK), f"build required: {binary}"
@@ -88,8 +88,8 @@ def run(binary_dir, artifact_dir):
     for scenario, failed_helper in (
         ("ready", None),
         ("unbundled-default-home-ready", None),
-        ("runtime-exits", "lankide-runtime-daemon"),
-        ("computer-exits", "lankide-computer-daemon"),
+        ("runtime-exits", "lankided"),
+        ("machine-exits", "lankide-machine"),
     ):
         result = {"scenario": scenario, "status": "failed"}
         scenarios.append(result)
@@ -133,16 +133,16 @@ def run(binary_dir, artifact_dir):
                     result["bootstrap"] = payload
                     if failed_helper is None:
                         assert code == 0 and payload["status"] == "passed", payload
-                        assert payload["runtime_ready"] and payload["computer_connected"] and payload["management"], payload
-                        credentials = json.loads((home / "computer-credentials.json").read_text())
-                        assert credentials["local_discovery"] and credentials["computer_id"] != "local", "first launch did not self-pair"
-                        assert payload["local_computer_id"] == credentials["computer_id"], "Desktop waited for another Computer"
-                        for name in ("lankide-runtime-daemon", "lankide-computer-daemon"):
+                        assert payload["runtime_ready"] and payload["machine_connected"] and payload["management"], payload
+                        credentials = json.loads((home / "machine-credentials.json").read_text())
+                        assert credentials["local_discovery"] and credentials["machine_id"] != "local", "first launch did not self-pair"
+                        assert payload["local_machine_id"] == credentials["machine_id"], "Desktop waited for another Machine"
+                        for name in ("lankided", "lankide-machine"):
                             assert (home / "logs" / f"{name}.log").is_file(), "Desktop did not start its helper"
                     else:
                         assert code != 0 and payload["status"] == "failed", payload
-                        assert not payload["computer_connected"], payload
-                        assert payload["runtime_ready"] == (failed_helper == "lankide-computer-daemon"), payload
+                        assert not payload["machine_connected"], payload
+                        assert payload["runtime_ready"] == (failed_helper == "lankide-machine"), payload
                         # A helper that fails before logger setup still reports
                         # its failure through the inherited foreground stream.
                         helper_output = (artifact_dir / f"{scenario}.log").read_text()

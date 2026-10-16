@@ -1,6 +1,6 @@
 # Actual Desktop acceptance
 
-`../visual-e2e.sh` validates a recorded human or Computer Use review. It does not
+`../visual-e2e.sh` validates a recorded human or Machine Use review. It does not
 automate UI interaction or infer visual correctness from OCR. No hidden Desktop
 flags, injected view state, Mock client, or test-only product composition is allowed.
 
@@ -8,7 +8,7 @@ flags, injected view state, Mock client, or test-only product composition is all
    acceptance, `LANKIDE_RELEASE_BIN_DIR` and `LANKIDE_RELEASE_REQUIRED=1`.
 2. Run `apps/desktop/visual-e2e.sh --prepare <new-artifact-directory>`. This creates
    a **pending** template bound to the exact source and binary SHA-256.
-3. Launch those binaries in a private home. Record Desktop, Runtime and Computer
+3. Launch those binaries in a private home. Record Desktop, Runtime and Machine
    PIDs and `ps -p <pid> -o lstart=` values in `owned_processes`. Use only authorized
    live Provider test accounts; never inject fixture rows into the Runtime database.
 4. Operate the real window for every scenario in the template. Save an unaltered
@@ -35,16 +35,16 @@ reused for a different release binary.
 
 Task 14 scenarios:
 
-- `first-launch-local-computer`: launch the product Desktop in a fresh private
-  home. In Settings, the local Computer appears online without a pairing dialog.
-- `computer-list-offline`: pair a second Computer through the product daemon,
+- `first-launch-local-machine`: launch the product Desktop in a fresh private
+  home. In Settings, the local Machine appears online without a pairing dialog.
+- `machine-list-offline`: pair a second Machine through the product daemon,
   connect it, then stop it. In Settings and the Agent create/edit selector, both
-  Computers remain visible with the second offline. Revoked Computers are absent.
-  Create an Agent on the chosen Computer and save an edited placement; verify it
-  through management. A new form defaults to the local Computer.
-- `pairing-code-dialog`: Add Computer first shows one address input and Enable.
+  Machines remain visible with the second offline. Revoked Machines are absent.
+  Create an Agent on the chosen Machine and save an edited placement; verify it
+  through management. A new form defaults to the local Machine.
+- `pairing-code-dialog`: Add Machine first shows one address input and Enable.
   After enabling remote access, it shows one selectable command and Copy command.
-  Run the copied command with a second private Computer home; verify the connected
+  Run the copied command with a second private Machine home; verify the connected
   name, automatic close, and updated list. Check command renewal after expiry.
   Review Settings, address, command, and connected states in English and Chinese,
   in both themes, including wrapping, contrast, spacing, and button alignment.

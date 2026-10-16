@@ -1,0 +1,55 @@
+[package]
+autotests = false
+name = "lankide-machine-core"
+version.workspace = true
+edition.workspace = true
+description = "Machine daemon execution boundary for Lankide"
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+log.workspace = true
+uuid.workspace = true
+async-trait.workspace = true
+reqwest.workspace = true
+lankide-core = { path = "../core" }
+lankide-protocol = { path = "../protocol" }
+lankide-harness = { path = "../harness" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1.4", features = ["process"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[package.metadata.lankide.e2e]
+command = "cargo test -p lankide-machine-core --features test-support --test e2e"
+scenario = "Run a real authenticated JSON/WS Machine peer through parallel assignments, session recovery, steer, resource and Tool routing, expand real message content files locally with failure short-circuiting, replay, cancellation, forced process cleanup, and startup expiration of output records while preserving native sessions. Report structured attempt failures and log original diagnostics with execution, attempt, Agent, and Machine IDs. Enforce configured idle and total attempt deadlines, report timeout failures, and cancel then kill isolated native process groups after the configured grace period. Declare Harness capabilities in inventory and guard resume, steer, and native cancel; close attempts when native cancellation is unavailable. Download attachments over HTTP using the discovered or configured WS base, resume partial files with Range, and reject size or SHA-256 mismatches before atomic publication. Persist and replay the outbox with file and directory fsync; detect silent links with two-sided heartbeats and reconnect with jittered exponential backoff that resets only after a configured healthy duration (S10.1-S10.4 system scenarios). Authenticate hello with stored device credentials and stop reconnecting with a distinct terminal error for unknown or revoked devices (S12 system scenarios). Classify Agent busy rejections as retryable ownership conflicts; include preparing sessions in active-attempt reports. Serve owner-only attempt proxy sockets, carry CLI and native Harness calls as correlated bounded capability_request/response chunks over the authenticated Machine link, reject other attempt credentials, fail calls on disconnect or timeout, and remove sockets when attempts finish (S15 system scenarios). Use bounded per-attempt JSON sockets and JSON capability payloads on the Machine link (S17). Replay a backpressured offline event backlog while draining acknowledgements and heartbeats; persist and replay accepted initial assignment and delivery receipts before events (system reliability scenarios). Verify a configured certificate pin on every secure link connection. Receive secure assignment and Tool-result attachments through the existing Machine resource capability with shared path and integrity checks. Route attempt diagnostics and link failures to the daemon logger. Deliver failed capability RPC results to the native Harness with valid structured JSON instead of dropping them. Deliver repeated HTTP attachments to the same Machine with independent contents and integrity checks (system-resources-http scenario); expose awaitable authenticated connection readiness used by the foreground daemon."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"
+
+[[bin]]
+name = "machine-harness-peer"
+path = "tests/fixtures/harness_peer.rs"
+test = false
+bench = false
+required-features = ["test-support"]
+
+[features]
+test-support = []
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"
+required-features = ["test-support"]
+
+[lib]
+test = false

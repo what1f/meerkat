@@ -248,11 +248,11 @@ impl HttpManagementTransport {
         let response: json::ProviderCatalog = self.call("get_provider_catalog", &request).await?;
         Ok(Response::new(response))
     }
-    pub async fn get_computer_catalog(
+    pub async fn get_machine_catalog(
         &self,
         request: wire::CatalogRequest,
-    ) -> Result<Response<wire::ComputerCatalog>, Status> {
-        let response: json::ComputerCatalog = self.call("get_computer_catalog", &request).await?;
+    ) -> Result<Response<wire::MachineCatalog>, Status> {
+        let response: json::MachineCatalog = self.call("get_machine_catalog", &request).await?;
         Ok(Response::new(response))
     }
     pub async fn create_pairing_code(
@@ -262,18 +262,18 @@ impl HttpManagementTransport {
         let response: json::PairingCode = self.call("create_pairing_code", &request).await?;
         Ok(Response::new(response))
     }
-    pub async fn rename_computer(
+    pub async fn rename_machine(
         &self,
-        request: wire::RenameComputerRequest,
-    ) -> Result<Response<wire::ComputerCatalog>, Status> {
-        let response: json::ComputerCatalog = self.call("rename_computer", &request).await?;
+        request: wire::RenameMachineRequest,
+    ) -> Result<Response<wire::MachineCatalog>, Status> {
+        let response: json::MachineCatalog = self.call("rename_machine", &request).await?;
         Ok(Response::new(response))
     }
-    pub async fn revoke_computer(
+    pub async fn revoke_machine(
         &self,
-        request: wire::RevokeComputerRequest,
-    ) -> Result<Response<wire::ComputerCatalog>, Status> {
-        let response: json::ComputerCatalog = self.call("revoke_computer", &request).await?;
+        request: wire::RevokeMachineRequest,
+    ) -> Result<Response<wire::MachineCatalog>, Status> {
+        let response: json::MachineCatalog = self.call("revoke_machine", &request).await?;
         Ok(Response::new(response))
     }
     pub async fn get_harness_catalog(

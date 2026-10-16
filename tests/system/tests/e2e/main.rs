@@ -2,12 +2,12 @@
 mod agent_proxy_e2e;
 #[path = "../attempt_failures_e2e.rs"]
 mod attempt_failures_e2e;
-#[path = "../computer_link_e2e.rs"]
-mod computer_link_e2e;
 #[path = "../concurrent_workspaces_e2e.rs"]
 mod concurrent_workspaces_e2e;
 #[path = "../execution_liveness_e2e.rs"]
 mod execution_liveness_e2e;
+#[path = "../machine_link_e2e.rs"]
+mod machine_link_e2e;
 #[path = "../management_http_e2e.rs"]
 mod management_http_e2e;
 #[path = "../network_delivery_e2e.rs"]

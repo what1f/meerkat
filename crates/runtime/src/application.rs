@@ -30,15 +30,15 @@ pub struct RuntimeApplication {
 
 pub(crate) struct ApplicationInner {
     pub(crate) pairing_validity_ms: AtomicI64,
-    pub(crate) computer_registration: tokio::sync::Mutex<()>,
+    pub(crate) machine_registration: tokio::sync::Mutex<()>,
     runtime: StdMutex<Option<Arc<Runtime>>>,
     factories: ProviderFactoryRegistry,
     state: AtomicU8,
     sequence: AtomicU64,
     events: broadcast::Sender<lankide_protocol::ManagementEvent>,
     recovery: StdMutex<Option<RecoveryReport>>,
-    computer_connected: AtomicBool,
-    broker: ComputerBroker,
+    machine_connected: AtomicBool,
+    broker: MachineBroker,
     resources: StdMutex<Option<Arc<dyn ResourceStore>>>,
     profiles: AgentProfileFiles,
     workspace_tasks: StdMutex<BTreeMap<WorkspaceId, JoinHandle<()>>>,
@@ -53,7 +53,7 @@ pub(crate) struct ApplicationInner {
 pub struct ApplicationReadiness {
     pub management_ready: bool,
     pub providers_started: bool,
-    pub computer_connected: bool,
+    pub machine_connected: bool,
     pub state: &'static str,
 }
 
@@ -68,7 +68,7 @@ pub struct RecoveryReport {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RecoveryAction {
-    WaitForComputer { execution_id: i64 },
+    WaitForMachine { execution_id: i64 },
     ReconcileProviderSend { request_key: String },
 }
 
@@ -129,7 +129,7 @@ impl RuntimeApplication {
                 .await
                 .map_err(|error| RuntimeError::Application(error.to_string()))??,
         );
-        let broker = ComputerBroker::with_database(runtime.database());
+        let broker = MachineBroker::with_database(runtime.database());
         let resources: Arc<dyn ResourceStore> = Arc::new(LocalResourceStore::with_database(
             runtime.database(),
             resource_root,
@@ -137,14 +137,14 @@ impl RuntimeApplication {
         let application = Self {
             inner: Arc::new(ApplicationInner {
                 pairing_validity_ms: AtomicI64::new(600_000),
-                computer_registration: tokio::sync::Mutex::new(()),
+                machine_registration: tokio::sync::Mutex::new(()),
                 runtime: StdMutex::new(Some(runtime)),
                 factories,
                 state: AtomicU8::new(APP_NEW),
                 sequence: AtomicU64::new(0),
                 events: broadcast::channel(256).0,
                 recovery: StdMutex::new(None),
-                computer_connected: AtomicBool::new(false),
+                machine_connected: AtomicBool::new(false),
                 broker,
                 resources: StdMutex::new(Some(resources)),
                 profiles,
@@ -220,7 +220,7 @@ impl RuntimeApplication {
             report.recovering_execution_ids.push(execution_id);
             report
                 .actions
-                .push(RecoveryAction::WaitForComputer { execution_id });
+                .push(RecoveryAction::WaitForMachine { execution_id });
         }
         for send in state.sends {
             let request_key = send.attempt.request_key;
@@ -251,7 +251,7 @@ impl RuntimeApplication {
         ApplicationReadiness {
             management_ready: matches!(state, APP_READY | APP_RUNNING),
             providers_started: state == APP_RUNNING,
-            computer_connected: self.inner.computer_connected.load(Ordering::Acquire),
+            machine_connected: self.inner.machine_connected.load(Ordering::Acquire),
             state: match state {
                 APP_NEW => "starting",
                 APP_READY => "ready",
@@ -314,9 +314,7 @@ impl RuntimeApplication {
         while background_tasks.join_next().await.is_some() {}
         let runtime = self.runtime()?;
         runtime.shutdown().await?;
-        self.inner
-            .computer_connected
-            .store(false, Ordering::Release);
+        self.inner.machine_connected.store(false, Ordering::Release);
         drop(runtime);
         Ok(())
     }
@@ -365,7 +363,7 @@ impl RuntimeApplication {
         self.inner.events.subscribe()
     }
 
-    pub fn computer_broker(&self) -> ComputerBroker {
+    pub fn machine_broker(&self) -> MachineBroker {
         self.inner.broker.clone()
     }
 
@@ -382,9 +380,9 @@ impl RuntimeApplication {
         &self.inner.profiles
     }
 
-    pub(crate) fn set_computer_connected(&self, connected: bool) {
+    pub(crate) fn set_machine_connected(&self, connected: bool) {
         self.inner
-            .computer_connected
+            .machine_connected
             .store(connected, Ordering::Release);
     }
 
@@ -578,7 +576,7 @@ impl RuntimeApplication {
             let agents = runtime.database().list_agent_records(&workspace_id).await?;
             for agent in agents {
                 let connected = self.inner.broker.can_dispatch(
-                    &agent.computer_id,
+                    &agent.machine_id,
                     &workspace_id,
                     &agent.agent_id,
                 );
@@ -606,7 +604,7 @@ impl RuntimeApplication {
                     next_due = Some(next_due.map_or(due, |current: i64| current.min(due)));
                     continue;
                 }
-                let executor = self.inner.broker.executor(agent.computer_id);
+                let executor = self.inner.broker.executor(agent.machine_id);
                 let execution_runtime = runtime.clone();
                 let execution_application = self.clone();
                 let execution_workspace = workspace_id.clone();
@@ -705,12 +703,12 @@ impl RuntimeApplication {
         Ok(())
     }
 
-    pub(crate) fn emit_computer_catalog_changed(&self) {
+    pub(crate) fn emit_machine_catalog_changed(&self) {
         let sequence = self.inner.sequence.fetch_add(1, Ordering::AcqRel) + 1;
         let _ = self.inner.events.send(lankide_protocol::ManagementEvent {
             sequence,
             occurred_at: now_millis(),
-            kind: lankide_protocol::ManagementEventKind::ComputerCatalogChanged as i32,
+            kind: lankide_protocol::ManagementEventKind::MachineCatalogChanged as i32,
             workspace: None,
             agent: None,
         });
@@ -811,7 +809,7 @@ pub(crate) fn agent_runtime_config(
             role: agent.role,
             bio: agent.bio,
         },
-        computer_id: agent.computer_id,
+        machine_id: agent.machine_id,
         harness: HarnessConfig {
             harness_id: agent.harness_id,
             executable_path: agent.cli_path.unwrap_or_default(),

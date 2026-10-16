@@ -2,7 +2,7 @@ use super::*;
 
 impl Runtime {
     /// Builds Provider-owned prompt and capabilities from the same runtime
-    /// context that will be sent to Computer.
+    /// context that will be sent to Machine.
     pub async fn dynamic_execution_input(
         &self,
         workspace_id: &WorkspaceId,
@@ -40,11 +40,11 @@ impl Runtime {
 
     /// Claims all currently available unread Chats for one Agent and executes
     /// exactly that frozen multi-Chat snapshot.
-    pub async fn execute_ready<C: ComputerExecutor>(
+    pub async fn execute_ready<C: MachineExecutor>(
         &self,
         workspace_id: &WorkspaceId,
         agent_id: &AgentId,
-        computer: &C,
+        machine: &C,
         now: i64,
     ) -> Result<ExecutionProgress, RuntimeError> {
         self.require_active(workspace_id)?;
@@ -95,7 +95,7 @@ impl Runtime {
         let runtime_spec = AgentRuntimeSpec {
             agent_config: agent.agent_config.clone(),
             provider_agent_config: agent.provider_agent_config.clone(),
-            computer_id: agent.computer_id.clone(),
+            machine_id: agent.machine_id.clone(),
             harness_id: agent.harness.harness_id.clone(),
             model: agent.harness.model.clone(),
             thinking_level: agent.harness.thinking_level.clone(),
@@ -242,21 +242,21 @@ impl Runtime {
         self.storage
             .mark_execution_running(created.execution_id, now)
             .await?;
-        let completion = match computer.execute(assignment).await {
+        let completion = match machine.execute(assignment).await {
             Ok(completion) => completion,
             Err(error) => {
                 log::error!(
-                    "execution={} computer failed: {}",
+                    "execution={} machine failed: {}",
                     created.execution_id,
                     error.code
                 );
-                if error.code == "computer_disconnected" {
+                if error.code == "machine_disconnected" {
                     self.storage
                         .mark_execution_recovering(created.execution_id, now)
                         .await?;
                 } else {
                     self.storage
-                        .fail_execution(created.execution_id, "computer_unavailable", now)
+                        .fail_execution(created.execution_id, "machine_unavailable", now)
                         .await?;
                 }
                 return Ok(ExecutionProgress::Failed {
@@ -266,7 +266,7 @@ impl Runtime {
             }
         };
         if !completion.delivery_accepted
-            && matches!(completion.outcome, ComputerOutcome::Succeeded { .. })
+            && matches!(completion.outcome, MachineOutcome::Succeeded { .. })
         {
             self.storage
                 .fail_execution(created.execution_id, "delivery_rejected", now)
@@ -282,7 +282,7 @@ impl Runtime {
                 .await?;
         }
         match completion.outcome {
-            ComputerOutcome::Failed { code } => {
+            MachineOutcome::Failed { code } => {
                 log::error!("execution={} failed: {code}", created.execution_id);
                 self.storage
                     .fail_execution(created.execution_id, &code, now_millis())
@@ -294,7 +294,7 @@ impl Runtime {
                     code,
                 })
             }
-            ComputerOutcome::Cancelled => {
+            MachineOutcome::Cancelled => {
                 self.storage
                     .cancel_execution(created.execution_id, now)
                     .await?;
@@ -304,7 +304,7 @@ impl Runtime {
                     execution_id: created.execution_id,
                 })
             }
-            ComputerOutcome::Succeeded { output, reply } => {
+            MachineOutcome::Succeeded { output, reply } => {
                 let Some(reply) = reply else {
                     let committed = self
                         .storage
@@ -511,26 +511,25 @@ pub struct DynamicExecutionInput {
     pub cli_commands: Vec<CliCommand>,
 }
 
-pub type ComputerFuture<'a, T> =
-    Pin<Box<dyn Future<Output = Result<T, ComputerError>> + Send + 'a>>;
+pub type MachineFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, MachineError>> + Send + 'a>>;
 
-pub trait ComputerExecutor: Send + Sync {
-    fn execute(&self, assignment: AssignExecution) -> ComputerFuture<'_, ComputerCompletion>;
+pub trait MachineExecutor: Send + Sync {
+    fn execute(&self, assignment: AssignExecution) -> MachineFuture<'_, MachineCompletion>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ComputerError {
+pub struct MachineError {
     pub code: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct ComputerCompletion {
+pub struct MachineCompletion {
     pub delivery_accepted: bool,
-    pub outcome: ComputerOutcome,
+    pub outcome: MachineOutcome,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ComputerOutcome {
+pub enum MachineOutcome {
     Succeeded {
         output: String,
         reply: Option<ExecutionReply>,
@@ -834,7 +833,7 @@ fn frozen_runtime_spec_json(spec: &AgentRuntimeSpec) -> serde_json::Value {
     serde_json::json!({
         "agent_config": spec.agent_config,
         "provider_agent_config": spec.provider_agent_config,
-        "computer_id": spec.computer_id,
+        "machine_id": spec.machine_id,
         "harness_id": spec.harness_id,
         "model": spec.model,
         "thinking_level": spec.thinking_level,

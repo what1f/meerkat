@@ -1,5 +1,5 @@
 use lankide_protocol::{
-    link::{self, ComputerLink},
+    link::{self, MachineLink},
     *,
 };
 use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
@@ -13,7 +13,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     let binary = std::path::Path::new(env!("CARGO_BIN_EXE_system-cli"));
     let mut rig = SystemRig::start(RigConfig {
         harness_executable: env!("CARGO_BIN_EXE_system-harness").into(),
-        computer_ws_only: true,
+        machine_ws_only: true,
         network_proxy: true,
         link: link::LinkSettings {
             heartbeat_interval: Duration::from_millis(200),
@@ -24,7 +24,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     })
     .await?;
     assert!(rig.homes_are_separate());
-    assert!(!rig.computer_has_runtime_socket());
+    assert!(!rig.machine_has_runtime_socket());
     let team = rig.workspace("team").await?;
     let bruce = team
         .agent("bruce")
@@ -49,9 +49,9 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
         Ok(report) => report?,
         Err(error) => {
             return Err(format!(
-                "{error}; executions: {:?}; Computer diagnostics: {:?}; CLI journal: {:?}",
+                "{error}; executions: {:?}; Machine diagnostics: {:?}; CLI journal: {:?}",
                 bruce.executions().await?,
-                rig.computer_failure_log(),
+                rig.machine_failure_log(),
                 std::fs::read_to_string(home.join("proxy-cli.log")),
             )
             .into());
@@ -85,7 +85,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
         "{env:?}"
     );
     let socket = PathBuf::from(env["LANKIDE_AGENT_SOCKET"].as_str().unwrap());
-    assert!(socket.starts_with(rig.computer_home()));
+    assert!(socket.starts_with(rig.machine_home()));
     use std::os::unix::fs::PermissionsExt;
     assert_eq!(
         std::fs::metadata(&socket)?.permissions().mode() & 0o777,
@@ -136,7 +136,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
         "Runtime uses HTTP discovery"
     );
     // Stall replies at the network boundary: the call must fail as retryable
-    // Unavailable when the Computer detects the silent link.
+    // Unavailable when the Machine detects the silent link.
     rig.proxy.as_ref().unwrap().pause();
     let failure = timeout(
         Duration::from_secs(3),
@@ -154,7 +154,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     .unwrap_err();
     assert_eq!(failure.code(), lankide_protocol::Code::Unavailable);
     rig.proxy.as_ref().unwrap().restore();
-    rig.wait_computer_online().await?;
+    rig.wait_machine_online().await?;
     timeout(Duration::from_secs(3), async {
         loop {
             if local.list_capabilities(old_context.clone()).await.is_ok() {
@@ -180,22 +180,22 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     assert!(sends[0].reply_to.is_some());
     assert_eq!(sends[0].resources.len(), 1);
     assert_eq!(sends[0].resources[0].resource.size_bytes, 1_200_000);
-    rig.stop_computer()?;
+    rig.stop_machine()?;
     // S15.3: replay the credential on an authenticated WS after the attempt finishes.
-    let (url, _) = rig.computer_endpoint()?;
+    let (url, _) = rig.machine_endpoint()?;
     let credentials: Value = serde_json::from_slice(&std::fs::read(
-        rig.computer_home().join("computer-credentials.json"),
+        rig.machine_home().join("machine-credentials.json"),
     )?)?;
     let secret = credentials["device_credential"].as_str().unwrap();
-    let computer_id = credentials["computer_id"].as_str().unwrap();
+    let machine_id = credentials["machine_id"].as_str().unwrap();
     let mut link = link::connect(&url, secret, DEFAULT_MAX_MESSAGE_BYTES).await?;
-    link.send(link::ComputerFrame {
+    link.send(link::MachineFrame {
         protocol_version: PROTOCOL_VERSION,
-        frame: Some(link::ComputerPayload::Hello(link::ComputerHello {
+        frame: Some(link::MachinePayload::Hello(link::MachineHello {
             device_credential: secret.into(),
-            computer_id: computer_id.into(),
+            machine_id: machine_id.into(),
             instance_id: "credential-replay".into(),
-            computer_version: "1".into(),
+            machine_version: "1".into(),
             os: "test".into(),
             arch: "test".into(),
             protocol_version: PROTOCOL_VERSION,
@@ -204,9 +204,9 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     })
     .await?;
 
-    link.send(link::ComputerFrame {
+    link.send(link::MachineFrame {
         protocol_version: PROTOCOL_VERSION,
-        frame: Some(link::ComputerPayload::CapabilityRequest(
+        frame: Some(link::MachinePayload::CapabilityRequest(
             link::CapabilityRequest {
                 request_id: "finished-token".into(),
                 method: "list_capabilities".into(),

@@ -43,8 +43,8 @@ impl LankideApp {
             Some(Modal::CreateWorkspace { step }) => {
                 self.workspace_dialog(dialog, app, step, window, cx)
             }
-            Some(Modal::RemoveComputer(id)) => self.remove_computer_dialog(dialog, app, id, window),
-            Some(Modal::PairComputer) => self.pair_computer_dialog(dialog, app, window),
+            Some(Modal::RemoveMachine(id)) => self.remove_machine_dialog(dialog, app, id, window),
+            Some(Modal::PairMachine) => self.pair_machine_dialog(dialog, app, window),
             Some(Modal::CreateAgent) => self.agent_dialog(dialog, app, None, window, cx),
             Some(Modal::EditAgent(id)) => self.agent_dialog(dialog, app, Some(id), window, cx),
             Some(Modal::DeleteAgent(id)) => self.delete_agent_dialog(dialog, app, id, window),
@@ -413,7 +413,7 @@ impl LankideApp {
         let cli_input = self.agent_cli_input.clone();
         let provider_handle_input = self.agent_provider_handle_input.clone();
         let secret_input = self.agent_secret_input.clone();
-        let computer = self.agent_computer.clone();
+        let machine = self.agent_machine.clone();
         let harness = self.agent_harness.clone();
         let thinking = self.agent_thinking.clone();
         let reaction_options = self.reaction_options.clone();
@@ -766,8 +766,8 @@ impl LankideApp {
                 }
                 form = form.child(DesktopFormField::new(
                     theme, language.text("机器", "Machine"),
-                    div().debug_selector(|| "agent-computer-select".into())
-                        .child(DesktopSelect::large(&computer).w_full()),
+                    div().debug_selector(|| "agent-machine-select".into())
+                        .child(DesktopSelect::large(&machine).w_full()),
                 ));
                 form = form.child(
                     div()

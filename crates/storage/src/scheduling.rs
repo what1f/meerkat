@@ -3,8 +3,8 @@ use lankide_core::{AgentId, WorkspaceId};
 use rusqlite::params;
 
 impl Storage {
-    /// Earliest business work for this Agent. Offline Computers keep their inbox
-    /// queued, but failure policy and notices do not require a Computer link.
+    /// Earliest business work for this Agent. Offline Machines keep their inbox
+    /// queued, but failure policy and notices do not require a Machine link.
     pub fn next_agent_work_at(
         &self,
         workspace: &WorkspaceId,
@@ -34,12 +34,12 @@ impl Storage {
 
     pub fn next_attempt_lease_at(&self) -> Result<Option<i64>> {
         Ok(self.read_conn()?.query_row(
-            "SELECT min(CASE WHEN p.computer_id!=e.placement_computer_id
+            "SELECT min(CASE WHEN p.machine_id!=e.placement_machine_id
                 OR p.placement_generation!=e.placement_generation OR c.revoked_at IS NOT NULL
                 THEN 0 ELSE a.lease_expires_at END)
              FROM execution_attempts a JOIN executions e USING(execution_id)
              JOIN agents p ON p.workspace_id=e.workspace_id AND p.agent_id=e.agent_id
-             JOIN computers c ON c.computer_id=a.computer_id
+             JOIN machines c ON c.machine_id=a.machine_id
              WHERE e.attempt=a.attempt AND e.state IN('assigning','running','recovering')
                AND a.state IN('offered','accepted','running')",
             [],

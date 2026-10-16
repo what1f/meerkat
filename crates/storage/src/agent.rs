@@ -31,7 +31,7 @@ type StoredAgentRow = (
 );
 #[derive(Clone, Debug)]
 pub struct AgentSpec {
-    pub computer_id: String,
+    pub machine_id: String,
     pub workspace_id: WorkspaceId,
     pub id: AgentId,
     pub name: String,
@@ -52,8 +52,8 @@ pub struct AgentRecord {
     pub bio: String,
     pub avatar: Option<String>,
     pub soul: String,
-    pub computer_id: String,
-    /// Storage-owned revision of the Computer/Harness placement.
+    pub machine_id: String,
+    /// Storage-owned revision of the Machine/Harness placement.
     pub placement_generation: i64,
     pub harness_id: String,
     pub model: String,
@@ -181,7 +181,7 @@ fn delete_agent_state(
 }
 
 fn load_agent_record(c: &Connection, w: &WorkspaceId, a: &AgentId) -> Result<AgentRecord> {
-    let row:StoredAgentRow=c.query_row("SELECT name,agent_id,created_at,updated_at,role,bio,avatar,soul,computer_id,harness_id,model,thinking,auto_reaction,cli_path,env_json,provider_agent_config_json,session_config_json,attention_json,provider_state_json,placement_generation FROM agents WHERE workspace_id=?1 AND agent_id=?2",params![w.as_str(),a.as_str()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?,r.get(11)?,r.get(12)?,r.get(13)?,r.get(14)?,r.get(15)?,r.get(16)?,r.get(17)?,r.get(18)?,r.get(19)?)))?;
+    let row:StoredAgentRow=c.query_row("SELECT name,agent_id,created_at,updated_at,role,bio,avatar,soul,machine_id,harness_id,model,thinking,auto_reaction,cli_path,env_json,provider_agent_config_json,session_config_json,attention_json,provider_state_json,placement_generation FROM agents WHERE workspace_id=?1 AND agent_id=?2",params![w.as_str(),a.as_str()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?,r.get(11)?,r.get(12)?,r.get(13)?,r.get(14)?,r.get(15)?,r.get(16)?,r.get(17)?,r.get(18)?,r.get(19)?)))?;
     Ok(AgentRecord {
         workspace_id: w.clone(),
         agent_id: aid(row.1)?,
@@ -192,7 +192,7 @@ fn load_agent_record(c: &Connection, w: &WorkspaceId, a: &AgentId) -> Result<Age
         bio: row.5,
         avatar: row.6,
         soul: row.7,
-        computer_id: row.8,
+        machine_id: row.8,
         placement_generation: row.19,
         harness_id: row.9,
         model: row.10,
@@ -213,8 +213,8 @@ pub(super) fn aid(s: String) -> rusqlite::Result<AgentId> {
 impl Storage {
     pub fn create_agent(&self, s: AgentSpec) -> Result<()> {
         self.conn()?.execute(
-            "INSERT INTO agents(workspace_id,agent_id,name,created_at,updated_at,computer_id) VALUES(?1,?2,?3,?4,?4,?5)",
-            params![s.workspace_id.as_str(), s.id.as_str(), s.name, s.now, s.computer_id],
+            "INSERT INTO agents(workspace_id,agent_id,name,created_at,updated_at,machine_id) VALUES(?1,?2,?3,?4,?4,?5)",
+            params![s.workspace_id.as_str(), s.id.as_str(), s.name, s.now, s.machine_id],
         )?;
         Ok(())
     }
@@ -312,9 +312,9 @@ impl Storage {
         let mut c = self.conn()?;
         let t = c.transaction()?;
         let changed = if insert {
-            t.execute("INSERT INTO agents(workspace_id,agent_id,name,created_at,updated_at,role,bio,avatar,soul,computer_id,harness_id,model,thinking,auto_reaction,cli_path,env_json,provider_agent_config_json,session_config_json,attention_json,provider_state_json)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",params![record.workspace_id.as_str(),record.agent_id.as_str(),record.name,record.created_at,record.updated_at,record.role,record.bio,record.avatar,record.soul,record.computer_id,record.harness_id,record.model,record.thinking,record.auto_reaction,record.cli_path,serde_json::to_string(&record.env)?,serde_json::to_string(&record.provider_agent_config)?,serde_json::to_string(&record.session_config)?,serde_json::to_string(&record.attention)?,serde_json::to_string(&record.provider_state)?])?
+            t.execute("INSERT INTO agents(workspace_id,agent_id,name,created_at,updated_at,role,bio,avatar,soul,machine_id,harness_id,model,thinking,auto_reaction,cli_path,env_json,provider_agent_config_json,session_config_json,attention_json,provider_state_json)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",params![record.workspace_id.as_str(),record.agent_id.as_str(),record.name,record.created_at,record.updated_at,record.role,record.bio,record.avatar,record.soul,record.machine_id,record.harness_id,record.model,record.thinking,record.auto_reaction,record.cli_path,serde_json::to_string(&record.env)?,serde_json::to_string(&record.provider_agent_config)?,serde_json::to_string(&record.session_config)?,serde_json::to_string(&record.attention)?,serde_json::to_string(&record.provider_state)?])?
         } else {
-            t.execute("UPDATE agents SET name=?3,updated_at=?4,role=?5,bio=?6,avatar=?7,soul=?8,computer_id=?9,harness_id=?10,model=?11,thinking=?12,auto_reaction=?13,cli_path=?14,env_json=?15,provider_agent_config_json=?16,session_config_json=?17,attention_json=?18,provider_state_json=?19 WHERE workspace_id=?1 AND agent_id=?2",params![record.workspace_id.as_str(),record.agent_id.as_str(),record.name,record.updated_at,record.role,record.bio,record.avatar,record.soul,record.computer_id,record.harness_id,record.model,record.thinking,record.auto_reaction,record.cli_path,serde_json::to_string(&record.env)?,serde_json::to_string(&record.provider_agent_config)?,serde_json::to_string(&record.session_config)?,serde_json::to_string(&record.attention)?,serde_json::to_string(&record.provider_state)?])?
+            t.execute("UPDATE agents SET name=?3,updated_at=?4,role=?5,bio=?6,avatar=?7,soul=?8,machine_id=?9,harness_id=?10,model=?11,thinking=?12,auto_reaction=?13,cli_path=?14,env_json=?15,provider_agent_config_json=?16,session_config_json=?17,attention_json=?18,provider_state_json=?19 WHERE workspace_id=?1 AND agent_id=?2",params![record.workspace_id.as_str(),record.agent_id.as_str(),record.name,record.updated_at,record.role,record.bio,record.avatar,record.soul,record.machine_id,record.harness_id,record.model,record.thinking,record.auto_reaction,record.cli_path,serde_json::to_string(&record.env)?,serde_json::to_string(&record.provider_agent_config)?,serde_json::to_string(&record.session_config)?,serde_json::to_string(&record.attention)?,serde_json::to_string(&record.provider_state)?])?
         };
         if changed != 1 {
             return Err(StorageError::Invalid(format!(
@@ -361,21 +361,21 @@ impl Storage {
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|error| StorageError::Invalid(error.to_string()))?
             .as_millis() as i64;
-        let computer_id = transaction
+        let machine_id = transaction
             .query_row(
-                "SELECT computer_id FROM agents WHERE workspace_id=?1 AND agent_id=?2",
+                "SELECT machine_id FROM agents WHERE workspace_id=?1 AND agent_id=?2",
                 params![w.as_str(), a.as_str()],
                 |row| row.get::<_, String>(0),
             )
             .optional()?;
-        let Some(computer_id) = computer_id else {
+        let Some(machine_id) = machine_id else {
             transaction.commit()?;
             return Ok(false);
         };
-        if !computer_id.is_empty() {
+        if !machine_id.is_empty() {
             transaction.execute(
-                "INSERT INTO agent_file_deletions(workspace_id,agent_id,computer_id,created_at) VALUES(?1,?2,?3,?4) ON CONFLICT(workspace_id,agent_id) DO UPDATE SET computer_id=excluded.computer_id,created_at=excluded.created_at",
-                params![w.as_str(), a.as_str(), computer_id, now],
+                "INSERT INTO agent_file_deletions(workspace_id,agent_id,machine_id,created_at) VALUES(?1,?2,?3,?4) ON CONFLICT(workspace_id,agent_id) DO UPDATE SET machine_id=excluded.machine_id,created_at=excluded.created_at",
+                params![w.as_str(), a.as_str(), machine_id, now],
             )?;
         }
         delete_agent_state(&transaction, w, a)?;
@@ -388,14 +388,14 @@ impl Storage {
     }
     pub fn pending_agent_file_deletions(
         &self,
-        computer_id: &str,
+        machine_id: &str,
     ) -> Result<Vec<(WorkspaceId, AgentId)>> {
         let connection = self.read_conn()?;
         let mut statement = connection.prepare(
-            "SELECT workspace_id,agent_id FROM agent_file_deletions WHERE computer_id=?1 ORDER BY created_at,workspace_id,agent_id",
+            "SELECT workspace_id,agent_id FROM agent_file_deletions WHERE machine_id=?1 ORDER BY created_at,workspace_id,agent_id",
         )?;
         Ok(statement
-            .query_map([computer_id], |row| {
+            .query_map([machine_id], |row| {
                 Ok((wid(row.get(0)?)?, aid(row.get(1)?)?))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?)

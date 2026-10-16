@@ -3,7 +3,7 @@
 //! Optional: --capture /absolute/path.png --scale-factor 2
 //! Scenario: inspect all brand icons at 14/16/18/20/22/30 px on light/dark surfaces.
 //! Prerequisites: macOS window session; no accounts, credentials or daemons.
-//! The runner opens the complete gallery without user input; use Computer Use to
+//! The runner opens the complete gallery without user input; use Machine Use to
 //! retain the real-window capture and inspect small-size edge quality.
 
 #[path = "../src/assets.rs"]

@@ -3,8 +3,8 @@ use crate::wire::*;
 use std::pin::Pin;
 use tokio_stream::Stream;
 
-pub type ComputerFrameStream =
-    Pin<Box<dyn Stream<Item = Result<ComputerFrame, Status>> + Send + 'static>>;
+pub type MachineFrameStream =
+    Pin<Box<dyn Stream<Item = Result<MachineFrame, Status>> + Send + 'static>>;
 pub type ResourceChunkStream =
     Pin<Box<dyn Stream<Item = Result<ResourceChunk, Status>> + Send + 'static>>;
 pub type RuntimeFrameStream =
@@ -152,23 +152,23 @@ pub trait RuntimePeer: Send + Sync + 'static {
     async fn create_pairing_code(&self, _request: CatalogRequest) -> Result<PairingCode, Status> {
         Err(Status::unimplemented("create_pairing_code"))
     }
-    async fn rename_computer(
+    async fn rename_machine(
         &self,
-        _request: RenameComputerRequest,
-    ) -> Result<ComputerCatalog, Status> {
-        Err(Status::unimplemented("rename_computer"))
+        _request: RenameMachineRequest,
+    ) -> Result<MachineCatalog, Status> {
+        Err(Status::unimplemented("rename_machine"))
     }
-    async fn revoke_computer(
+    async fn revoke_machine(
         &self,
-        _request: RevokeComputerRequest,
-    ) -> Result<ComputerCatalog, Status> {
-        Err(Status::unimplemented("revoke_computer"))
+        _request: RevokeMachineRequest,
+    ) -> Result<MachineCatalog, Status> {
+        Err(Status::unimplemented("revoke_machine"))
     }
-    async fn get_computer_catalog(
+    async fn get_machine_catalog(
         &self,
         _request: CatalogRequest,
-    ) -> Result<ComputerCatalog, Status> {
-        Err(Status::unimplemented("get_computer_catalog"))
+    ) -> Result<MachineCatalog, Status> {
+        Err(Status::unimplemented("get_machine_catalog"))
     }
 
     async fn get_harness_catalog(
@@ -247,9 +247,9 @@ pub trait RuntimePeer: Send + Sync + 'static {
     }
 }
 
-/// Accept a validated Computer connection, independent of the management transport.
+/// Accept a validated Machine connection, independent of the management transport.
 #[async_trait::async_trait]
-pub trait ComputerPeer: Send + Sync + 'static {
+pub trait MachinePeer: Send + Sync + 'static {
     async fn authorize_link(
         &self,
         _credential: &str,
@@ -257,19 +257,19 @@ pub trait ComputerPeer: Send + Sync + 'static {
     ) -> Result<(), crate::link::CloseReason> {
         Err(crate::link::CloseReason::Unauthorized)
     }
-    async fn pair_computer(
+    async fn pair_machine(
         &self,
-        _request: crate::link::PairComputerRequest,
+        _request: crate::link::PairMachineRequest,
         _local_secret: &str,
-    ) -> Result<crate::link::PairComputerResponse, Status> {
-        Err(Status::unimplemented("pair_computer"))
+    ) -> Result<crate::link::PairMachineResponse, Status> {
+        Err(Status::unimplemented("pair_machine"))
     }
 
-    async fn link_rejected(&self, _hello: ComputerHello, _reason: crate::link::CloseReason) {}
+    async fn link_rejected(&self, _hello: MachineHello, _reason: crate::link::CloseReason) {}
 
-    async fn connect_computer(
+    async fn connect_machine(
         &self,
-        hello: ComputerHello,
-        frames: ComputerFrameStream,
+        hello: MachineHello,
+        frames: MachineFrameStream,
     ) -> Result<RuntimeFrameStream, Status>;
 }

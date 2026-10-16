@@ -9,7 +9,7 @@ fn config() -> RigConfig {
             heartbeat_interval: Duration::from_millis(200),
             handshake_timeout: Duration::from_secs(1),
         },
-        reconnect: lankide_computer::ReconnectPolicy {
+        reconnect: lankide_machine_core::ReconnectPolicy {
             initial: Duration::from_millis(30),
             maximum: Duration::from_millis(100),
             ..Default::default()
@@ -55,7 +55,7 @@ async fn large_offline_event_backlog_replays_and_delivers_once() -> Result<()> {
     agent.wait_until_running().await?;
     let proxy = rig.proxy.as_ref().unwrap();
     proxy.cut();
-    wait(async || Ok(!rig.computer_online().await?)).await?;
+    wait(async || Ok(!rig.machine_online().await?)).await?;
     tokio::time::sleep(Duration::from_millis(700)).await;
     agent.release_run().await?;
     timeout(Duration::from_secs(30), async {
@@ -72,7 +72,7 @@ async fn large_offline_event_backlog_replays_and_delivers_once() -> Result<()> {
     })
     .await
     .map_err(|_| "offline backlog accumulation timed out")??;
-    proxy.delay_computer_frames(Duration::from_millis(2));
+    proxy.delay_machine_frames(Duration::from_millis(2));
     proxy.restore();
     rig.settle().await?;
     assert_eq!(team.dm_transcript(&agent, "alice"), ["hello", "done"]);
@@ -89,8 +89,8 @@ async fn offline_queued_message_survives_runtime_restart() -> Result<()> {
         .harness(Script::reply("done"))
         .create()
         .await?;
-    rig.stop_computer()?;
-    wait(async || Ok(!rig.computer_online().await?)).await?;
+    rig.stop_machine()?;
+    wait(async || Ok(!rig.machine_online().await?)).await?;
     let team = rig.existing_workspace("team");
     let agent = team.existing_agent("bruce");
     team.direct_message(&agent, "alice", "waiting").await?;
@@ -138,7 +138,7 @@ async fn management_cancel_stops_surviving_run_after_runtime_crash() -> Result<(
 }
 
 #[tokio::test]
-async fn repeated_computer_loss_uses_backoff_and_pauses_with_one_notice() -> Result<()> {
+async fn repeated_machine_loss_uses_backoff_and_pauses_with_one_notice() -> Result<()> {
     let mut rig = SystemRig::start(RigConfig {
         attempt_lease: Duration::from_millis(350),
         retry: lankide_runtime::RetryConfig {
@@ -163,15 +163,15 @@ async fn repeated_computer_loss_uses_backoff_and_pauses_with_one_notice() -> Res
             let delay = if n == 1 { 100 } else { 200 };
             assert!(
                 runs[n].created_at >= runs[n - 1].completed_at.unwrap() + delay,
-                "Computer loss bypassed retry backoff"
+                "Machine loss bypassed retry backoff"
             );
         }
-        rig.stop_computer()?;
+        rig.stop_machine()?;
         let team = rig.existing_workspace("team");
         let agent = team.existing_agent("bruce");
         agent.wait_for(|runs, _| runs[n].state == "failed").await?;
-        rig.start_paired_computer()?;
-        rig.wait_computer_online().await?;
+        rig.start_paired_machine()?;
+        rig.wait_machine_online().await?;
     }
     rig.settle().await?;
     let team = rig.existing_workspace("team");
@@ -180,7 +180,7 @@ async fn repeated_computer_loss_uses_backoff_and_pauses_with_one_notice() -> Res
     assert!(agent.view().await?.pause_reason.is_some());
     assert_eq!(team.outbound(&agent, "alice").len(), 1);
     for run in agent.executions().await? {
-        assert_eq!(run.error_code.as_deref(), Some("computer_lost"));
+        assert_eq!(run.error_code.as_deref(), Some("machine_lost"));
         let details = rig.execution_details(run.id).await?;
         assert_eq!(
             details.attempts[0]
@@ -188,7 +188,7 @@ async fn repeated_computer_loss_uses_backoff_and_pauses_with_one_notice() -> Res
                 .as_ref()
                 .ok_or("lost failure missing")?
                 .code,
-            "computer_lost"
+            "machine_lost"
         );
         assert_eq!(
             details.attempts[0]
@@ -219,7 +219,7 @@ async fn lost_initial_delivery_receipt_replays_completion_without_rerun() -> Res
         .create()
         .await?;
     let proxy = rig.proxy.as_ref().unwrap();
-    proxy.discard_computer_frame("delivery_result");
+    proxy.discard_machine_frame("delivery_result");
     team.direct_message(&agent, "alice", "hello").await?;
     agent
         .wait_for(|runs, _| runs.len() == 1 && runs[0].state == "running")
@@ -235,11 +235,11 @@ async fn lost_initial_delivery_receipt_replays_completion_without_rerun() -> Res
     })
     .await?;
     proxy.cut();
-    wait(async || Ok(!rig.computer_online().await?)).await?;
+    wait(async || Ok(!rig.machine_online().await?)).await?;
     tokio::time::sleep(Duration::from_millis(700)).await;
     agent.release_run().await?;
     wait(async || {
-        Ok(rig.computer_state()?["pending_events"]
+        Ok(rig.machine_state()?["pending_events"]
             .as_object()
             .unwrap()
             .values()
@@ -300,16 +300,16 @@ async fn cut_after_acceptance_replays_receipt_before_live_reply() -> Result<()> 
         .create()
         .await?;
     let proxy = rig.proxy.as_ref().unwrap();
-    proxy.cut_before_computer_frame("delivery_result");
+    proxy.cut_before_machine_frame("delivery_result");
     team.direct_message(&agent, "alice", "hello").await?;
     agent
         .wait_for(|runs, _| runs.len() == 1 && runs[0].state == "running")
         .await?;
-    wait(async || Ok(!rig.computer_online().await?)).await?;
+    wait(async || Ok(!rig.machine_online().await?)).await?;
     tokio::time::sleep(Duration::from_millis(700)).await;
     agent.release_run().await?;
     wait(async || {
-        Ok(rig.computer_state()?["pending_events"]
+        Ok(rig.machine_state()?["pending_events"]
             .as_object()
             .unwrap()
             .values()

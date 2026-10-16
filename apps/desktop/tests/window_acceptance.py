@@ -1,4 +1,4 @@
-"""Validate an explicit human/Computer Use review of the actual product window.
+"""Validate an explicit human/Machine Use review of the actual product window.
 
 This is an evidence gate, not UI automation. It never manufactures a passing
 review from OCR, a bootstrap response, or a test-only composition.
@@ -15,14 +15,14 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[3]
 SCENARIOS = (
-    "first-launch-local-computer", "computer-list-offline", "pairing-code-dialog",
+    "first-launch-local-machine", "machine-list-offline", "pairing-code-dialog",
     "empty-state", "agent-list", "agent-list-hover", "feishu-create-agent",
     "telegram-create-agent", "edit-agent", "edit-agent-reaction", "edit-agent-advanced",
     "workspace-settings", "create-workspace", "create-workspace-provider", "agent-onboarding",
     "settings", "dark-agent-list", "dark-create-workspace", "dark-edit-agent",
     "dark-workspace-settings", "dark-settings", "real-profile-images",
 )
-BINARY_NAMES = ("lankide-desktop", "lankide-runtime-daemon", "lankide-computer-daemon", "lankide")
+BINARY_NAMES = ("lankide-desktop", "lankided", "lankide-machine", "lankide")
 
 
 def digest(path):
@@ -64,7 +64,7 @@ def attachment(review_dir, value):
 
 
 def screenshot_size(data):
-    # Computer Use may return JPEG. Preserve the original bytes instead of
+    # Machine Use may return JPEG. Preserve the original bytes instead of
     # relabelling them as PNG or requiring a lossy re-encode of evidence.
     if data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) >= 24 and data[12:16] == b"IHDR":
         return struct.unpack(">II", data[16:24])
@@ -136,7 +136,7 @@ def main():
         if not attachment(review_path.parent, scenario["actions"]).read_text().strip():
             raise ValueError("scenario action/evidence log is empty")
     owned = review["owned_processes"]
-    if not {"desktop", "runtime", "computer"}.issubset({item["role"] for item in owned}) or review["cleanup"] != "passed":
+    if not {"desktop", "runtime", "machine"}.issubset({item["role"] for item in owned}) or review["cleanup"] != "passed":
         raise ValueError("owned process cleanup was not reviewed")
     for item in owned:
         pid = int(item["pid"])
@@ -148,7 +148,7 @@ def main():
     home = Path(review["runtime_home"])
     if not home.is_absolute() or not home.name or home == Path.home() / ".lankide":
         raise ValueError("review must identify its isolated Runtime home")
-    for name in ("runtime.sock", "runtime.lock", "computer.lock"):
+    for name in ("runtime.sock", "runtime.lock", "machine.lock"):
         if (home / "run" / name).exists():
             raise ValueError(f"review left a service endpoint: {name}")
     result = {"status": "passed", "classification": "actual-window-reviewed", "review": str(review_path),

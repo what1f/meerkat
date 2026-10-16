@@ -102,7 +102,7 @@ impl DesktopBackend {
                 _services: services,
             },
             Err(error) => {
-                // Computer can wait for a Runtime that becomes available later.
+                // Machine can wait for a Runtime that becomes available later.
                 let client = {
                     let _guard = tokio.enter();
                     RuntimeManagementClient::connect_local_lazy(&run)
@@ -173,7 +173,7 @@ fn start_services(
         let mut services = services
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        runtime.block_on(ensure_computer_ready(&client, &mut services, home))?;
+        runtime.block_on(ensure_machine_ready(&client, &mut services, home))?;
     }
     Ok(())
 }
@@ -195,24 +195,24 @@ pub fn run_local_bootstrap_smoke() -> i32 {
         .block_on(backend.client.list_workspaces())
         .is_ok();
     let runtime_ready = management;
-    let mut computer_connected = false;
+    let mut machine_connected = false;
     if startup_ready && runtime_ready {
         for _ in 0..60 {
             let catalog = backend
                 ._tokio
-                .block_on(backend.client.get_computer_catalog(None));
+                .block_on(backend.client.get_machine_catalog(None));
             if catalog.is_ok_and(|items| {
                 items
                     .iter()
-                    .any(|item| local_computer_online(&lankide_home(), item))
+                    .any(|item| local_machine_online(&lankide_home(), item))
             }) {
-                computer_connected = true;
+                machine_connected = true;
                 break;
             }
             std::thread::sleep(Duration::from_millis(100));
         }
     }
-    let status = if startup_ready && runtime_ready && computer_connected && management {
+    let status = if startup_ready && runtime_ready && machine_connected && management {
         "passed"
     } else {
         "failed"
@@ -220,8 +220,8 @@ pub fn run_local_bootstrap_smoke() -> i32 {
     let payload = serde_json::json!({
         "status": status,
         "runtime_ready": runtime_ready,
-        "computer_connected": computer_connected,
-        "local_computer_id": crate::ui::local_computer_id(&lankide_home()),
+        "machine_connected": machine_connected,
+        "local_machine_id": crate::ui::local_machine_id(&lankide_home()),
         "management": management,
     });
     let write_result = result_path
@@ -260,30 +260,30 @@ async fn connect_with_retry(run: &Path) -> Result<RuntimeManagementClient, Clien
     Err(last_error)
 }
 
-async fn ensure_computer_ready(
+async fn ensure_machine_ready(
     client: &RuntimeManagementClient,
     services: &mut BackgroundServices,
     home: &Path,
 ) -> Result<(), ClientError> {
     if client
-        .get_computer_catalog(None)
+        .get_machine_catalog(None)
         .await?
         .iter()
-        .any(|item| local_computer_online(home, item))
+        .any(|item| local_machine_online(home, item))
     {
         return Ok(());
     }
-    services.ensure_computer(home)?;
+    services.ensure_machine(home)?;
     for _ in 0..60 {
         if client
-            .get_computer_catalog(None)
+            .get_machine_catalog(None)
             .await?
             .iter()
-            .any(|item| local_computer_online(home, item))
+            .any(|item| local_machine_online(home, item))
         {
             return Ok(());
         }
-        if let Some(status) = services.computer_exited()? {
+        if let Some(status) = services.machine_exited()? {
             return Err(ClientError::Unavailable(format!(
                 "本地执行服务已退出（{status}），请查看服务日志后重试。"
             )));
@@ -295,10 +295,10 @@ async fn ensure_computer_ready(
     ))
 }
 
-fn local_computer_online(home: &Path, computer: &lankide_client::ComputerOption) -> bool {
-    let id = crate::ui::local_computer_id(home);
-    computer.registered
-        && computer.revoked_at.is_none()
-        && computer.available
-        && id.as_deref() == Some(computer.id.as_str())
+fn local_machine_online(home: &Path, machine: &lankide_client::MachineOption) -> bool {
+    let id = crate::ui::local_machine_id(home);
+    machine.registered
+        && machine.revoked_at.is_none()
+        && machine.available
+        && id.as_deref() == Some(machine.id.as_str())
 }

@@ -8,15 +8,15 @@ cd "$ROOT_DIR"
 profile=(--profile test)
 if [[ -n "${LANKIDE_RELEASE_BIN_DIR:-}" ]]; then
   profile=(--release)
-  for binary in lankide-runtime-daemon lankide-computer-daemon lankide; do
+  for binary in lankided lankide-machine lankide; do
     [[ -x "$LANKIDE_RELEASE_BIN_DIR/$binary" ]] || { printf 'release composition binary missing: %s\n' "$binary" >&2; exit 4; }
   done
-  LANKIDE_E2E_COMPUTER_BIN="$LANKIDE_RELEASE_BIN_DIR/lankide-computer-daemon"
+  LANKIDE_E2E_MACHINE_BIN="$LANKIDE_RELEASE_BIN_DIR/lankide-machine"
 else
   [[ "${LANKIDE_RELEASE_REQUIRED:-}" != 1 ]] || { printf 'release binary directory missing\n' >&2; exit 4; }
-  cargo build --locked -p lankide-runtime-daemon -p lankide-computer-daemon -p lankide-cli
-  LANKIDE_E2E_COMPUTER_BIN="${CARGO_TARGET_DIR:-$ROOT_DIR/target}/debug/lankide-computer-daemon"
+  cargo build --locked -p lankided -p lankide-machine -p lankide-cli
+  LANKIDE_E2E_MACHINE_BIN="${CARGO_TARGET_DIR:-$ROOT_DIR/target}/debug/lankide-machine"
 fi
-export LANKIDE_E2E_COMPUTER_BIN
-cargo test --locked "${profile[@]}" -p lankide-runtime-daemon --test e2e live_provider_management_e2e:: -- --ignored --nocapture
-cargo test --locked "${profile[@]}" -p lankide-runtime-daemon --test e2e feishu_team_live_e2e:: -- --ignored --nocapture
+export LANKIDE_E2E_MACHINE_BIN
+cargo test --locked "${profile[@]}" -p lankided --test e2e live_provider_management_e2e:: -- --ignored --nocapture
+cargo test --locked "${profile[@]}" -p lankided --test e2e feishu_team_live_e2e:: -- --ignored --nocapture

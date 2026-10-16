@@ -159,7 +159,7 @@ pub struct Agent {
     pub bio: String,
     pub avatar: Avatar,
     pub soul: String,
-    pub computer_id: String,
+    pub machine_id: String,
     pub harness_id: String,
     pub model: String,
     pub thinking_level: ThinkingLevel,
@@ -178,7 +178,7 @@ pub struct AgentDraft {
     pub bio: String,
     pub avatar: Avatar,
     pub soul: String,
-    pub computer_id: String,
+    pub machine_id: String,
     pub harness_id: String,
     pub model: String,
     pub thinking_level: ThinkingLevel,
@@ -198,7 +198,7 @@ impl Default for AgentDraft {
             bio: String::new(),
             avatar: Avatar::Custom(String::new()),
             soul: String::new(),
-            computer_id: String::new(),
+            machine_id: String::new(),
             harness_id: "pi".into(),
             model: String::new(),
             thinking_level: ThinkingLevel::High,
@@ -243,7 +243,7 @@ pub struct AgentOnboardingState {
     pub error: Option<ClientError>,
 }
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
-pub struct ComputerOption {
+pub struct MachineOption {
     pub registered: bool,
     pub revoked_at: Option<i64>,
     pub last_seen_at: Option<i64>,
@@ -279,7 +279,7 @@ pub enum ManagementEventKind {
     AgentDeleted,
     ProviderOnboardingChanged,
     CatalogChanged,
-    ComputerCatalogChanged,
+    MachineCatalogChanged,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ManagementEvent {
@@ -296,12 +296,12 @@ pub enum ClientError {
     AgentNotFound(String),
     DuplicateAgentId(String),
     InvalidAgentId,
-    ComputerNotRegistered,
-    ComputerRevoked,
-    ComputerHasAssignedAgents,
-    LocalComputerCannotBeRemoved,
-    ComputerNameInvalid,
-    HarnessUnavailableOnComputer,
+    MachineNotRegistered,
+    MachineRevoked,
+    MachineHasAssignedAgents,
+    LocalMachineCannotBeRemoved,
+    MachineNameInvalid,
+    HarnessUnavailableOnMachine,
     Validation(String),
     Provider(String),
     Unavailable(String),
@@ -316,12 +316,12 @@ impl std::fmt::Display for ClientError {
             Self::DuplicateWorkspaceId(v) => write!(f, "workspace id already exists: {v}"),
             Self::AgentNotFound(v) => write!(f, "agent not found: {v}"),
             Self::DuplicateAgentId(v) => write!(f, "agent id already exists: {v}"),
-            Self::ComputerNotRegistered => f.write_str("computer_not_registered"),
-            Self::ComputerHasAssignedAgents => f.write_str("computer_has_assigned_agents"),
-            Self::LocalComputerCannotBeRemoved => f.write_str("local_computer_cannot_be_removed"),
-            Self::ComputerNameInvalid => f.write_str("computer_name_invalid"),
-            Self::ComputerRevoked => f.write_str("computer_revoked"),
-            Self::HarnessUnavailableOnComputer => f.write_str("harness_unavailable_on_computer"),
+            Self::MachineNotRegistered => f.write_str("machine_not_registered"),
+            Self::MachineHasAssignedAgents => f.write_str("machine_has_assigned_agents"),
+            Self::LocalMachineCannotBeRemoved => f.write_str("local_machine_cannot_be_removed"),
+            Self::MachineNameInvalid => f.write_str("machine_name_invalid"),
+            Self::MachineRevoked => f.write_str("machine_revoked"),
+            Self::HarnessUnavailableOnMachine => f.write_str("harness_unavailable_on_machine"),
             Self::InvalidAgentId => write!(
                 f,
                 "agent id must use lowercase letters, numbers, and underscores"
@@ -495,16 +495,16 @@ pub trait ManagementClient: Send + Sync {
     async fn create_pairing_code(&self) -> Result<PairingCode, ClientError> {
         Err(ClientError::Protocol("pairing_unavailable".into()))
     }
-    async fn rename_computer(&self, _computer_id: &str, _name: &str) -> Result<(), ClientError> {
+    async fn rename_machine(&self, _machine_id: &str, _name: &str) -> Result<(), ClientError> {
         Err(ClientError::Protocol("rename_unavailable".into()))
     }
-    async fn revoke_computer(&self, _computer_id: &str) -> Result<(), ClientError> {
+    async fn revoke_machine(&self, _machine_id: &str) -> Result<(), ClientError> {
         Err(ClientError::Protocol("revocation_unavailable".into()))
     }
-    async fn get_computer_catalog(
+    async fn get_machine_catalog(
         &self,
         workspace_id: Option<&str>,
-    ) -> Result<Vec<ComputerOption>, ClientError>;
+    ) -> Result<Vec<MachineOption>, ClientError>;
     async fn get_harness_catalog(
         &self,
         workspace_id: Option<&str>,
@@ -512,7 +512,7 @@ pub trait ManagementClient: Send + Sync {
     async fn get_model_catalog(
         &self,
         workspace_id: Option<&str>,
-        computer_id: &str,
+        machine_id: &str,
         harness_id: &str,
     ) -> Result<Vec<ModelOption>, ClientError>;
     async fn get_reaction_catalog(
@@ -600,15 +600,15 @@ fn aref(w: &str, a: &str) -> wire::AgentRef {
 }
 fn map_status(s: lankide_protocol::Status) -> ClientError {
     match s.detail() {
-        Some("computer_not_registered") => return ClientError::ComputerNotRegistered,
-        Some("computer_has_assigned_agents") => return ClientError::ComputerHasAssignedAgents,
-        Some("local_computer_cannot_be_removed") => {
-            return ClientError::LocalComputerCannotBeRemoved;
+        Some("machine_not_registered") => return ClientError::MachineNotRegistered,
+        Some("machine_has_assigned_agents") => return ClientError::MachineHasAssignedAgents,
+        Some("local_machine_cannot_be_removed") => {
+            return ClientError::LocalMachineCannotBeRemoved;
         }
-        Some("computer_name_invalid") => return ClientError::ComputerNameInvalid,
-        Some("computer_revoked") => return ClientError::ComputerRevoked,
-        Some("harness_unavailable_on_computer") => {
-            return ClientError::HarnessUnavailableOnComputer;
+        Some("machine_name_invalid") => return ClientError::MachineNameInvalid,
+        Some("machine_revoked") => return ClientError::MachineRevoked,
+        Some("harness_unavailable_on_machine") => {
+            return ClientError::HarnessUnavailableOnMachine;
         }
         _ => {}
     }
@@ -711,7 +711,7 @@ fn from_agent(v: wire::Agent) -> Result<Agent, ClientError> {
             Avatar::Path(v.avatar_path)
         },
         soul: v.soul,
-        computer_id: v.computer_id,
+        machine_id: v.machine_id,
         harness_id: v.harness_id,
         model: v.model,
         thinking_level: ThinkingLevel::parse(&v.thinking_level)?,
@@ -1123,15 +1123,15 @@ impl ManagementClient for RuntimeManagementClient {
     }
     async fn create_agent(&self, w: &str, mut d: AgentDraft) -> Result<Agent, ClientError> {
         validate_agent_choice(&d.harness_id, &d.cli_path)?;
-        if d.computer_id.is_empty() {
-            let computers = self
-                .get_computer_catalog(None)
+        if d.machine_id.is_empty() {
+            let machines = self
+                .get_machine_catalog(None)
                 .await?
                 .into_iter()
                 .filter(|c| c.registered && c.revoked_at.is_none())
                 .collect::<Vec<_>>();
-            if let [computer] = computers.as_slice() {
-                d.computer_id = computer.id.clone();
+            if let [machine] = machines.as_slice() {
+                d.machine_id = machine.id.clone();
             }
         }
         let expected = d.id.clone();
@@ -1153,7 +1153,7 @@ impl ManagementClient for RuntimeManagementClient {
                     soul: d.soul,
                     cli_path: d.cli_path,
                     environment_variables: envs(&d.environment_variables),
-                    computer_id: d.computer_id,
+                    machine_id: d.machine_id,
                     attention: None,
                     provider_agent_config_json: d.provider_agent_config.to_string(),
                     provider_agent_secrets_json: d.provider_agent_secrets.to_string(),
@@ -1209,7 +1209,7 @@ impl ManagementClient for RuntimeManagementClient {
                     environment_variables: Some(wire::EnvironmentVariableSet {
                         entries: envs(&a.environment_variables),
                     }),
-                    computer_id: Some(a.computer_id),
+                    machine_id: Some(a.machine_id),
                     avatar: avatar.map(|avatar| wire::AgentAvatarUpload {
                         media_type: avatar.media_type,
                         bytes: avatar.bytes,
@@ -1382,43 +1382,43 @@ impl ManagementClient for RuntimeManagementClient {
             expires_at: value.expires_at,
         })
     }
-    async fn rename_computer(&self, computer_id: &str, name: &str) -> Result<(), ClientError> {
+    async fn rename_machine(&self, machine_id: &str, name: &str) -> Result<(), ClientError> {
         self.client
             .clone()
-            .rename_computer(wire::RenameComputerRequest {
+            .rename_machine(wire::RenameMachineRequest {
                 request_id: self.request_id(),
-                computer_id: computer_id.into(),
+                machine_id: machine_id.into(),
                 name: name.into(),
             })
             .await
             .map_err(map_status)?;
         Ok(())
     }
-    async fn revoke_computer(&self, computer_id: &str) -> Result<(), ClientError> {
+    async fn revoke_machine(&self, machine_id: &str) -> Result<(), ClientError> {
         self.client
             .clone()
-            .revoke_computer(wire::RevokeComputerRequest {
+            .revoke_machine(wire::RevokeMachineRequest {
                 request_id: self.request_id(),
-                computer_id: computer_id.into(),
+                machine_id: machine_id.into(),
             })
             .await
             .map_err(map_status)?;
         Ok(())
     }
-    async fn get_computer_catalog(
+    async fn get_machine_catalog(
         &self,
         w: Option<&str>,
-    ) -> Result<Vec<ComputerOption>, ClientError> {
+    ) -> Result<Vec<MachineOption>, ClientError> {
         Ok(self
             .client
             .clone()
-            .get_computer_catalog(catalog(self.request_id(), w))
+            .get_machine_catalog(catalog(self.request_id(), w))
             .await
             .map_err(map_status)?
             .into_inner()
-            .computers
+            .machines
             .into_iter()
-            .map(|c| ComputerOption {
+            .map(|c| MachineOption {
                 registered: c.registered,
                 revoked_at: c.revoked_at,
                 last_seen_at: c.last_seen_at,
@@ -1426,7 +1426,7 @@ impl ManagementClient for RuntimeManagementClient {
                 os: c.os,
                 version: c.version,
                 inventory: c.harnesses,
-                id: c.computer_id,
+                id: c.machine_id,
                 name: c.display_name,
                 available: c.observed_state == wire::ObservedState::Running as i32,
             })
@@ -1464,7 +1464,7 @@ impl ManagementClient for RuntimeManagementClient {
             .get_model_catalog(wire::ModelCatalogRequest {
                 request_id: self.request_id(),
                 workspace: w.map(wref),
-                computer_id: c.into(),
+                machine_id: c.into(),
                 harness_id: h.into(),
             })
             .await
@@ -1629,8 +1629,8 @@ impl ManagementClient for RuntimeManagementClient {
                         wire::ManagementEventKind::ProviderOnboardingChanged => {
                             ManagementEventKind::ProviderOnboardingChanged
                         }
-                        wire::ManagementEventKind::ComputerCatalogChanged => {
-                            ManagementEventKind::ComputerCatalogChanged
+                        wire::ManagementEventKind::MachineCatalogChanged => {
+                            ManagementEventKind::MachineCatalogChanged
                         }
                         wire::ManagementEventKind::CatalogChanged => {
                             ManagementEventKind::CatalogChanged
@@ -1639,9 +1639,7 @@ impl ManagementClient for RuntimeManagementClient {
                     };
                     let workspace_id = match e.workspace {
                         Some(workspace) => workspace.workspace_id,
-                        None if kind == ManagementEventKind::ComputerCatalogChanged => {
-                            String::new()
-                        }
+                        None if kind == ManagementEventKind::MachineCatalogChanged => String::new(),
                         None => {
                             return Err(ClientError::Protocol("event workspace missing".into()));
                         }

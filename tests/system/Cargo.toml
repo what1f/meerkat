@@ -18,10 +18,10 @@ lankide-provider = { path = "../../crates/provider" }
 lankide-runtime = { path = "../../crates/runtime" }
 lankide-storage = { path = "../../crates/storage" }
 lankide-harness = { path = "../../crates/harness", features = ["test-support"] }
-lankide-computer = { path = "../../crates/computer" }
+lankide-machine-core = { path = "../../crates/machine-core" }
 lankide-client = { path = "../../crates/client" }
-lankide-runtime-daemon = { path = "../../apps/runtime-daemon" }
-lankide-computer-daemon = { path = "../../apps/computer-daemon" }
+lankided = { path = "../../apps/daemon" }
+lankide-machine = { path = "../../apps/machine" }
 lankide-cli = { path = "../../apps/lankide-cli" }
 serde.workspace = true
 serde_json.workspace = true
@@ -38,7 +38,7 @@ bench = false
 
 [package.metadata.lankide.e2e]
 command = "cargo test -p lankide-system-e2e"
-scenario = "Mention one Agent in a group, queue a message during its run, and restart the Computer during a run; verify chat replies and execution isolation through both real daemons over authenticated JSON/WS Computer links. Verify S4.1-S4.3: classify spawn and mid-turn failures, preserve original diagnostics in client details and Computer logs, and keep failures out of every chat. S1.1 routes a DM only to its receiving Agent, S1.2 isolates two bot conversations with the same person, and S1.3 preserves unmentioned group attention policies. Verify S7.1: a Harness without Steer queues the next message and records no native steer; absent Resume starts fresh and absent Cancel closes a running Agent during deletion. S5.1-S5.8 cover model repair, third-attempt recovery, five-attempt limits, repeated fingerprints, durable notice dedupe, localized private notices, Runtime restart during backoff, and owner resume of queued messages. Verify S12.1-S12.5 and local self-pairing, new Agent placement on the paired Computer, persisted credential reuse, and rejection of local secrets and mismatched device IDs. Verify held-run re-adoption across repeated disconnects with new messages queued for the same Agent, one reply per batch, no overlapping executions, and no notices. Six ownership conflicts followed by a transient failure still complete without pause or notice. Close attempts that expired offline when their Computer returns and acknowledge abandoned terminal outboxes before queued work resumes. Verify S13.1-S13.4: typed placement errors, two independently paired Computers with separate homes, queued offline messages, and refusal to remove an assigned Computer while preserving its delayed result; verify placement generation invalidates old tokens and events. All management calls use owner-authenticated HTTP JSON and event WebSocket subscriptions on the shared listener. Computer restart retries respect configured backoff before the single reply is delivered. Failed Provider Tool results reach native Tool calls and the CLI promptly, and the run continues; failed capability RPC results also reach the Harness. Three bots reacting to a human create no extra work; a bot reacting to another bot wakes only the author, self reactions do not wake it, and human reactions still wake all eligible Agents. Run six Agents across three Workspaces concurrently while management serves Workspace, Agent and Computer listings; deliver every reply exactly once and shut down cleanly. A paused Workspace still records loss of its offline Computer attempt; queued work retries once after the owner resumes it. Verify initial Harness prompts name the reacting Agent or human, show the emoji and exact target preview including an already-read message, and show canonical Agent sends under Runtime display names distinct from their IDs; platform Agent echoes do not start extra turns. Verify Runtime-owned Computer names survive daemon and Runtime restarts, reject invalid names, protect local and assigned Computers, and revoke idle remote Computers. Invalid Agent Tool arguments return a non-retryable invalid_request result to the Harness, which continues the run."
+scenario = "Mention one Agent in a group, queue a message during its run, and restart the Machine during a run; verify chat replies and execution isolation through both real daemons over authenticated JSON/WS Machine links. Verify S4.1-S4.3: classify spawn and mid-turn failures, preserve original diagnostics in client details and Machine logs, and keep failures out of every chat. S1.1 routes a DM only to its receiving Agent, S1.2 isolates two bot conversations with the same person, and S1.3 preserves unmentioned group attention policies. Verify S7.1: a Harness without Steer queues the next message and records no native steer; absent Resume starts fresh and absent Cancel closes a running Agent during deletion. S5.1-S5.8 cover model repair, third-attempt recovery, five-attempt limits, repeated fingerprints, durable notice dedupe, localized private notices, Runtime restart during backoff, and owner resume of queued messages. Verify S12.1-S12.5 and local self-pairing, new Agent placement on the paired Machine, persisted credential reuse, and rejection of local secrets and mismatched device IDs. Verify held-run re-adoption across repeated disconnects with new messages queued for the same Agent, one reply per batch, no overlapping executions, and no notices. Six ownership conflicts followed by a transient failure still complete without pause or notice. Close attempts that expired offline when their Machine returns and acknowledge abandoned terminal outboxes before queued work resumes. Verify S13.1-S13.4: typed placement errors, two independently paired Machines with separate homes, queued offline messages, and refusal to remove an assigned Machine while preserving its delayed result; verify placement generation invalidates old tokens and events. All management calls use owner-authenticated HTTP JSON and event WebSocket subscriptions on the shared listener. Machine restart retries respect configured backoff before the single reply is delivered. Failed Provider Tool results reach native Tool calls and the CLI promptly, and the run continues; failed capability RPC results also reach the Harness. Three bots reacting to a human create no extra work; a bot reacting to another bot wakes only the author, self reactions do not wake it, and human reactions still wake all eligible Agents. Run six Agents across three Workspaces concurrently while management serves Workspace, Agent and Machine listings; deliver every reply exactly once and shut down cleanly. A paused Workspace still records loss of its offline Machine attempt; queued work retries once after the owner resumes it. Verify initial Harness prompts name the reacting Agent or human, show the emoji and exact target preview including an already-read message, and show canonical Agent sends under Runtime display names distinct from their IDs; platform Agent echoes do not start extra turns. Verify Runtime-owned Machine names survive daemon and Runtime restarts, reject invalid names, protect local and assigned Machines, and revoke idle remote Machines. Invalid Agent Tool arguments return a non-retryable invalid_request result to the Harness, which continues the run."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
@@ -52,9 +52,9 @@ classification = "hermetic"
 unattended = "yes"
 status = "implemented"
 
-[package.metadata.lankide.e2e-additional.system-computer-link]
-command = "cargo test -p lankide-system-e2e --test e2e computer_link_e2e::"
-scenario = "Verify S9.1: reject a newer Computer version with a typed close reason, expose it through the Computer error API and management catalog, and clear it on a compatible reconnect. Verify S9.2: separate Runtime and Computer homes reply once to a mention using only loopback WS and paired device credentials. Reject missing or wrong credentials, malformed JSON, unknown frame types, and oversized messages; keep local discovery files private and valid Computers working."
+[package.metadata.lankide.e2e-additional.system-machine-link]
+command = "cargo test -p lankide-system-e2e --test e2e machine_link_e2e::"
+scenario = "Verify S9.1: reject a newer Machine version with a typed close reason, expose it through the Machine error API and management catalog, and clear it on a compatible reconnect. Verify S9.2: separate Runtime and Machine homes reply once to a mention using only loopback WS and paired device credentials. Reject missing or wrong credentials, malformed JSON, unknown frame types, and oversized messages; keep local discovery files private and valid Machines working."
 prerequisites = "None"
 unattended = "yes"
 status = "implemented"
@@ -62,21 +62,21 @@ classification = "hermetic"
 
 [package.metadata.lankide.e2e-additional.system-resources-http]
 command = "cargo test -p lankide-system-e2e --test e2e resources_http_e2e::"
-scenario = "Verify S11.1-S11.3 through real daemons on private separate homes: image-only and captioned messages reach the Agent snapshot with existing local file paths and the right hash, a byte-count network cut resumes with Range, and foreign or wall-clock-expired attempt tokens cannot fetch resources. Reject foreign workspace resources, invalid ranges, and corrupted bytes before Harness startup or atomic publication. Pair a pinned TLS Computer and deliver a large image through the existing Computer capability path with exact-byte and SHA-256 checks while the remote resource HTTP route remains closed. Deliver two sequential attachments on one Computer with their own exact bytes, hashes and Harness input paths."
+scenario = "Verify S11.1-S11.3 through real daemons on private separate homes: image-only and captioned messages reach the Agent snapshot with existing local file paths and the right hash, a byte-count network cut resumes with Range, and foreign or wall-clock-expired attempt tokens cannot fetch resources. Reject foreign workspace resources, invalid ranges, and corrupted bytes before Harness startup or atomic publication. Pair a pinned TLS Machine and deliver a large image through the existing Machine capability path with exact-byte and SHA-256 checks while the remote resource HTTP route remains closed. Deliver two sequential attachments on one Machine with their own exact bytes, hashes and Harness input paths."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
 status = "implemented"
 
 [[bin]]
-name = "system-computer"
-path = "tests/support/computer.rs"
+name = "system-machine"
+path = "tests/support/machine.rs"
 test = false
 bench = false
 
 [package.metadata.lankide.e2e-additional.system-network-delivery]
 command = "cargo test -p lankide-system-e2e --test e2e network_delivery_e2e::"
-scenario = "Verify S10.1-S10.4 through real daemons and a reusable TCP proxy: cut mid-turn and replay one reply, detect stalled frames on both sides within three heartbeat intervals, SIGKILL the Computer after Harness completion before acknowledgement and drain its durable outbox once after restart, and flap ten times with connection timestamps proving exponential backoff and healthy-duration reset while the same held execution completes. A Computer offline past its configured attempt lease still loses the run. Bound silent WebSocket handshakes and hello waits."
+scenario = "Verify S10.1-S10.4 through real daemons and a reusable TCP proxy: cut mid-turn and replay one reply, detect stalled frames on both sides within three heartbeat intervals, SIGKILL the Machine after Harness completion before acknowledgement and drain its durable outbox once after restart, and flap ten times with connection timestamps proving exponential backoff and healthy-duration reset while the same held execution completes. A Machine offline past its configured attempt lease still loses the run. Bound silent WebSocket handshakes and hello waits."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
@@ -84,7 +84,7 @@ status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-pairing]
 command = "cargo test -p lankide-system-e2e --test e2e pairing_e2e::"
-scenario = "Verify S12.1 fresh-code pairing and online registration; S12.2 single use and configurable ten-minute expiry; S12.3 offline registration and inventory; S12.4 immediate revocation and terminal daemon stop; S12.5 copied revoked home rejected. Verify local self-pairing with fresh homes, an Agent reply, new Agent placement on the paired Computer, credential reuse across Runtime restart, private atomic credential files, and rejection of local pairing secrets and mismatched device IDs as link credentials. Rename an online and offline Computer, preserve its trimmed name through daemon and Runtime restart, reject empty and overlong names, and refuse local Computer removal."
+scenario = "Verify S12.1 fresh-code pairing and online registration; S12.2 single use and configurable ten-minute expiry; S12.3 offline registration and inventory; S12.4 immediate revocation and terminal daemon stop; S12.5 copied revoked home rejected. Verify local self-pairing with fresh homes, an Agent reply, new Agent placement on the paired Machine, credential reuse across Runtime restart, private atomic credential files, and rejection of local pairing secrets and mismatched device IDs as link credentials. Rename an online and offline Machine, preserve its trimmed name through daemon and Runtime restart, reject empty and overlong names, and refuse local Machine removal."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
@@ -92,7 +92,7 @@ status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-agent-proxy]
 command = "cargo test -p lankide-system-e2e --test e2e agent_proxy_e2e::"
-scenario = "Verify S15.1-S15.3 with the real lankide CLI and daemons on separate homes using only WS for Computer access: send content-file text with an attachment, read chat content, list and invoke capabilities, update a profile, transfer multi-frame resources, assert no Runtime address in recorded Harness environment, check owner-only socket permissions and removal, and reject wrong or finished credentials. Verify JSON capability payloads and the length-prefixed JSON Agent socket with no Runtime UDS listener (S17). Reject unsupported attachment objects and local Markdown paths with actionable invalid_input results through the real CLI, Computer proxy, and Runtime gateway."
+scenario = "Verify S15.1-S15.3 with the real lankide CLI and daemons on separate homes using only WS for Machine access: send content-file text with an attachment, read chat content, list and invoke capabilities, update a profile, transfer multi-frame resources, assert no Runtime address in recorded Harness environment, check owner-only socket permissions and removal, and reject wrong or finished credentials. Verify JSON capability payloads and the length-prefixed JSON Agent socket with no Runtime UDS listener (S17). Reject unsupported attachment objects and local Markdown paths with actionable invalid_input results through the real CLI, Machine proxy, and Runtime gateway."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
@@ -100,7 +100,7 @@ status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-placement]
 command = "cargo test -p lankide-system-e2e --test e2e placement_e2e::"
-scenario = "Verify S13.1-S13.4 through public management and real daemons: reject unknown or revoked Computers and missing Harnesses with typed errors, run two Agents only on their paired Computers, queue offline work until reconnect without failures or notices, refuse removal while Agents remain assigned and preserve their delayed results. Invalidate capability tokens, HTTP resources, and Computer events after a placement change; discard stale unacknowledged progress after restart while keeping the registered Computer connected. Move assigned Agents before removal; an attempted removal during a buffered reply is refused and the result is preserved."
+scenario = "Verify S13.1-S13.4 through public management and real daemons: reject unknown or revoked Machines and missing Harnesses with typed errors, run two Agents only on their paired Machines, queue offline work until reconnect without failures or notices, refuse removal while Agents remain assigned and preserve their delayed results. Invalidate capability tokens, HTTP resources, and Machine events after a placement change; discard stale unacknowledged progress after restart while keeping the registered Machine connected. Move assigned Agents before removal; an attempted removal during a buffered reply is refused and the result is preserved."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
@@ -108,7 +108,7 @@ status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-management-http]
 command = "cargo test -p lankide-system-e2e --test e2e management_http_e2e::"
-scenario = "Verify S16 through real daemons on private homes: owner-authenticated HTTP workspace calls and a scoped event WebSocket work, missing/wrong/device/pairing credentials receive 401 from HTTP and the event upgrade, the owner cannot open a Computer link, the owner file is 0600, and its credential is reused after Runtime restart. Verify loopback management closes open event subscriptions on shutdown and reject configuration that would expose management on a public plaintext listener. Rename an Agent in a paused workspace after restart, then resume and process a message. Subscribe through the management client before pairing, then observe registered-offline, online, offline and revoked catalog state after events, and resubscribe with the same client after Runtime restart, including a scoped subscription."
+scenario = "Verify S16 through real daemons on private homes: owner-authenticated HTTP workspace calls and a scoped event WebSocket work, missing/wrong/device/pairing credentials receive 401 from HTTP and the event upgrade, the owner cannot open a Machine link, the owner file is 0600, and its credential is reused after Runtime restart. Verify loopback management closes open event subscriptions on shutdown and reject configuration that would expose management on a public plaintext listener. Rename an Agent in a paused workspace after restart, then resume and process a message. Subscribe through the management client before pairing, then observe registered-offline, online, offline and revoked catalog state after events, and resubscribe with the same client after Runtime restart, including a scoped subscription."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
@@ -116,7 +116,7 @@ status = "implemented"
 
 [package.metadata.lankide.e2e-additional.system-reliability]
 command = "cargo test -p lankide-system-e2e --test e2e reliability_e2e::"
-scenario = "Replay 300 offline events under TCP backpressure and deliver one reply; replay lost initial delivery receipts for both completed and live runs without rerunning the batch. Crash Runtime during input preparation and requeue the message; preserve offline queued messages across restart. Cancel the same surviving Harness after Runtime crash. Repeated Computer loss follows exponential backoff, pauses after the existing fingerprint limit, and sends one notice. Observe the scripted Harness reply confirmation before disconnect, then recover the completed reply once after reconnect."
+scenario = "Replay 300 offline events under TCP backpressure and deliver one reply; replay lost initial delivery receipts for both completed and live runs without rerunning the batch. Crash Runtime during input preparation and requeue the message; preserve offline queued messages across restart. Cancel the same surviving Harness after Runtime crash. Repeated Machine loss follows exponential backoff, pauses after the existing fingerprint limit, and sends one notice. Observe the scripted Harness reply confirmation before disconnect, then recover the completed reply once after reconnect."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

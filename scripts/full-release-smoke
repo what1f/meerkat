@@ -5,12 +5,12 @@ usage() { echo 'usage: full-release-smoke --release-bin-dir DIR --artifact-dir D
 safe_run_id() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,29}$ ]]; }
 
 write_result() {
-  python3 - "$ARTIFACT_DIR/result.json" "$RUN_ID" "$1" "$2" "$3" "$RUNTIME_READY" "$COMPUTER_STARTED" "$CLI_BOUNDARY" "$DESKTOP_CONTRACT" <<'PY'
+  python3 - "$ARTIFACT_DIR/result.json" "$RUN_ID" "$1" "$2" "$3" "$RUNTIME_READY" "$MACHINE_STARTED" "$CLI_BOUNDARY" "$DESKTOP_CONTRACT" <<'PY'
 import json,sys
 from datetime import datetime,timezone
 from pathlib import Path
-p,run,status,reason,cleanup,ready,computer,cli,desktop=sys.argv[1:]
-Path(p).write_text(json.dumps({"run_id":run,"module":"full-release-smoke","classification":"release-local","status":status,"reason":reason or None,"checks":{"runtime_ready":ready=="1","computer_started":computer=="1","execution_scoped_cli_boundary":cli=="1","desktop_release_contract":desktop=="1"},"cleanup":cleanup,"finished_at":datetime.now(timezone.utc).isoformat()},indent=2)+"\n")
+p,run,status,reason,cleanup,ready,machine,cli,desktop=sys.argv[1:]
+Path(p).write_text(json.dumps({"run_id":run,"module":"full-release-smoke","classification":"release-local","status":status,"reason":reason or None,"checks":{"runtime_ready":ready=="1","machine_started":machine=="1","execution_scoped_cli_boundary":cli=="1","desktop_release_contract":desktop=="1"},"cleanup":cleanup,"finished_at":datetime.now(timezone.utc).isoformat()},indent=2)+"\n")
 PY
 }
 
@@ -33,7 +33,7 @@ cleanup() {
   local code=$? cleanup_status=passed
   trap - EXIT INT TERM
   reap desktop "${DESKTOP_PID:-}" || cleanup_status=failed
-  reap computer "${COMPUTER_PID:-}" || cleanup_status=failed
+  reap machine "${MACHINE_PID:-}" || cleanup_status=failed
   reap runtime "${RUNTIME_PID:-}" || cleanup_status=failed
   [[ -z "${TEMP_ROOT:-}" || ! -d "$TEMP_ROOT" ]] || rm -rf "$TEMP_ROOT"
   if (( code == 0 )) && [[ "$cleanup_status" == passed ]]; then write_result passed "" passed
@@ -71,7 +71,7 @@ desktop_contract() {
   [[ -f "$result" ]] || { FAIL_REASON='Desktop release-smoke result is missing'; return 1; }
   python3 - "$result" <<'PY' || { FAIL_REASON='Desktop release-smoke contract failed'; return 1; }
 import json,sys
-i=json.load(open(sys.argv[1])); keys=("runtime_ready","computer_connected","management")
+i=json.load(open(sys.argv[1])); keys=("runtime_ready","machine_connected","management")
 raise SystemExit(0 if i.get("status")=="passed" and all(i.get(k) is True for k in keys) else 1)
 PY
   for n in {1..100}; do kill -0 "$DESKTOP_PID" 2>/dev/null || break; sleep 0.1; done
@@ -83,7 +83,7 @@ PY
 
 run_smoke() {
   local b cli_status
-  for b in "$RUNTIME_BIN" "$COMPUTER_BIN" "$CLI_BIN" "$DESKTOP_BIN"; do [[ -x "$b" ]] || { FAIL_REASON="required release binary is missing: $(basename "$b")"; return 1; }; done
+  for b in "$RUNTIME_BIN" "$MACHINE_BIN" "$CLI_BIN" "$DESKTOP_BIN"; do [[ -x "$b" ]] || { FAIL_REASON="required release binary is missing: $(basename "$b")"; return 1; }; done
   PID_JOURNAL="$ARTIFACT_DIR/pids.tsv"; : > "$PID_JOURNAL"
   # Unix-domain socket paths are short on macOS; keep the private temp root
   # under /tmp rather than the much longer per-user TMPDIR.
@@ -93,9 +93,9 @@ run_smoke() {
   "$RUNTIME_BIN" --home "$LANKIDE_HOME" > "$RUNTIME_LOG" 2>&1 &
   RUNTIME_PID=$!; printf 'spawned\truntime\t%s\n' "$RUNTIME_PID" >> "$PID_JOURNAL"
   wait_runtime || return $?; RUNTIME_READY=1
-  "$COMPUTER_BIN" --home "$LANKIDE_HOME" --instance-id "release-$RUN_ID" > "$ARTIFACT_DIR/computer.log" 2>&1 &
-  COMPUTER_PID=$!; printf 'spawned\tcomputer\t%s\n' "$COMPUTER_PID" >> "$PID_JOURNAL"
-  sleep 1; kill -0 "$COMPUTER_PID" 2>/dev/null || { FAIL_REASON='Computer exited before connecting'; return 1; }; COMPUTER_STARTED=1
+  "$MACHINE_BIN" --home "$LANKIDE_HOME" --instance-id "release-$RUN_ID" > "$ARTIFACT_DIR/machine.log" 2>&1 &
+  MACHINE_PID=$!; printf 'spawned\tmachine\t%s\n' "$MACHINE_PID" >> "$PID_JOURNAL"
+  sleep 1; kill -0 "$MACHINE_PID" 2>/dev/null || { FAIL_REASON='Machine exited before connecting'; return 1; }; MACHINE_STARTED=1
   env -u LANKIDE_AGENT_SOCKET LANKIDE_EXECUTION_ID=1 LANKIDE_EXECUTION_ATTEMPT=1 LANKIDE_EXECUTION_TOKEN=invalid-e2e-token "$CLI_BIN" capabilities > "$ARTIFACT_DIR/cli-boundary.log" 2>&1
   cli_status=$?
   if (( cli_status == 0 )) || ! grep -Fxq 'LANKIDE_AGENT_SOCKET' "$ARTIFACT_DIR/cli-boundary.log"; then FAIL_REASON='execution-scoped CLI accepted a call without an Agent socket'; return 1; fi
@@ -110,19 +110,19 @@ self_test() {
 from pathlib import Path
 import sys
 r=Path(sys.argv[1]); files={
-"lankide-runtime-daemon":'''#!/usr/bin/env python3
+"lankided":'''#!/usr/bin/env python3
 import json,os,signal,sys,time
 h=sys.argv[sys.argv.index("--home")+1]; p=os.path.join(h,"run","management.url"); os.makedirs(os.path.dirname(p),exist_ok=True)
 open(p,"w").write("http://127.0.0.1:12345"); print(json.dumps({"event":"ready","management_ready":True,"management_url":"http://127.0.0.1:12345"}),flush=True)
 signal.signal(signal.SIGTERM,lambda *_:sys.exit(0))
 while True: time.sleep(1)
 ''',
-"lankide-computer-daemon":"#!/bin/sh\ntrap 'exit 0' TERM INT\nwhile :; do sleep 1; done\n",
+"lankide-machine":"#!/bin/sh\ntrap 'exit 0' TERM INT\nwhile :; do sleep 1; done\n",
 "lankide":"#!/bin/sh\necho 'LANKIDE_AGENT_SOCKET' >&2\nexit 2\n",
 "lankide-desktop":'''#!/usr/bin/env python3
 # --local-bootstrap-smoke
 import json,sys
-p=sys.argv[sys.argv.index("--result")+1]; json.dump({"status":"passed","runtime_ready":True,"computer_connected":True,"management":True,"execution_scoped_cli":True},open(p,"w"))
+p=sys.argv[sys.argv.index("--result")+1]; json.dump({"status":"passed","runtime_ready":True,"machine_connected":True,"management":True,"execution_scoped_cli":True},open(p,"w"))
 '''}
 for n,t in files.items(): p=r/n; p.write_text(t); p.chmod(0o755)
 PY
@@ -159,8 +159,8 @@ while (( $# )); do case "$1" in --release-bin-dir) RELEASE_BIN_DIR="${2:-}"; shi
 [[ -n "$RELEASE_BIN_DIR" && -n "$ARTIFACT_DIR" && -n "$RUN_ID" ]] && safe_run_id "$RUN_ID" || { usage; exit 2; }
 [[ ! -e "$ARTIFACT_DIR" ]] || { printf 'artifact reservation already exists: %s\n' "$ARTIFACT_DIR" >&2; exit 5; }
 mkdir -p "$ARTIFACT_DIR" || exit 1
-RUNTIME_BIN="$RELEASE_BIN_DIR/lankide-runtime-daemon"; COMPUTER_BIN="$RELEASE_BIN_DIR/lankide-computer-daemon"; CLI_BIN="$RELEASE_BIN_DIR/lankide"; DESKTOP_BIN="$RELEASE_BIN_DIR/lankide-desktop"
-PID_JOURNAL="$ARTIFACT_DIR/pids.tsv"; TEMP_ROOT=""; RUNTIME_URL_FILE=""; RUNTIME_LOG=""; RUNTIME_PID=""; COMPUTER_PID=""; DESKTOP_PID=""
-RUNTIME_READY=0; COMPUTER_STARTED=0; CLI_BOUNDARY=0; DESKTOP_CONTRACT=0; FAIL_REASON=""
+RUNTIME_BIN="$RELEASE_BIN_DIR/lankided"; MACHINE_BIN="$RELEASE_BIN_DIR/lankide-machine"; CLI_BIN="$RELEASE_BIN_DIR/lankide"; DESKTOP_BIN="$RELEASE_BIN_DIR/lankide-desktop"
+PID_JOURNAL="$ARTIFACT_DIR/pids.tsv"; TEMP_ROOT=""; RUNTIME_URL_FILE=""; RUNTIME_LOG=""; RUNTIME_PID=""; MACHINE_PID=""; DESKTOP_PID=""
+RUNTIME_READY=0; MACHINE_STARTED=0; CLI_BOUNDARY=0; DESKTOP_CONTRACT=0; FAIL_REASON=""
 trap cleanup EXIT INT TERM
 run_smoke

@@ -1,6 +1,6 @@
 use super::*;
-use lankide_protocol::link::{CloseReason, PairComputerRequest, PairComputerResponse};
-use lankide_storage::ComputerRecord;
+use lankide_protocol::link::{CloseReason, PairMachineRequest, PairMachineResponse};
+use lankide_storage::MachineRecord;
 use std::time::Duration;
 use subtle::ConstantTimeEq;
 
@@ -36,11 +36,11 @@ impl RuntimeApplication {
         })
     }
 
-    pub async fn pair_computer(
+    pub async fn pair_machine(
         &self,
-        request: PairComputerRequest,
+        request: PairMachineRequest,
         local_secret: &str,
-    ) -> Result<PairComputerResponse, RuntimeError> {
+    ) -> Result<PairMachineResponse, RuntimeError> {
         if request.code.is_empty()
             || request.display_name.trim().is_empty()
             || request.display_name.len() > 256
@@ -56,13 +56,13 @@ impl RuntimeApplication {
                     .ct_eq(credential_hash(local_secret).as_bytes()),
             );
         let device_credential = random_secret()?;
-        let computer_id = format!("computer-{}", random_secret()?);
+        let machine_id = format!("machine-{}", random_secret()?);
         let code_hash = credential_hash(&request.code);
         self.runtime()?
             .database()
-            .pair_computer(
-                &ComputerRecord {
-                    computer_id: computer_id.clone(),
+            .pair_machine(
+                &MachineRecord {
+                    machine_id: machine_id.clone(),
                     is_local: local,
                     display_name: request.display_name,
                     credential_hash: credential_hash(&device_credential),
@@ -77,58 +77,58 @@ impl RuntimeApplication {
                 self.inner.pairing_validity_ms.load(Ordering::Relaxed),
             )
             .await?;
-        self.emit_computer_catalog_changed();
-        Ok(PairComputerResponse {
-            computer_id,
+        self.emit_machine_catalog_changed();
+        Ok(PairMachineResponse {
+            machine_id,
             device_credential,
         })
     }
 
-    pub(crate) async fn authenticate_computer(
+    pub(crate) async fn authenticate_machine(
         &self,
-        computer_id: Option<&str>,
+        machine_id: Option<&str>,
         credential: &str,
     ) -> Result<(), CloseReason> {
         let hash = credential_hash(credential);
         let runtime = self.runtime().map_err(|_| CloseReason::Unauthorized)?;
-        let computers = runtime
+        let machines = runtime
             .database()
-            .registered_computers()
+            .registered_machines()
             .await
             .map_err(|_| CloseReason::Unauthorized)?;
-        for computer in computers {
-            let matches = bool::from(computer.credential_hash.as_bytes().ct_eq(hash.as_bytes()));
-            if matches && computer_id.is_none_or(|id| id == computer.computer_id) {
-                return if computer.revoked_at.is_some() {
-                    Err(CloseReason::ComputerRevoked)
+        for machine in machines {
+            let matches = bool::from(machine.credential_hash.as_bytes().ct_eq(hash.as_bytes()));
+            if matches && machine_id.is_none_or(|id| id == machine.machine_id) {
+                return if machine.revoked_at.is_some() {
+                    Err(CloseReason::MachineRevoked)
                 } else {
                     Ok(())
                 };
             }
         }
-        Err(CloseReason::ComputerUnknown)
+        Err(CloseReason::MachineUnknown)
     }
 
-    pub async fn rename_computer(&self, computer_id: &str, name: &str) -> Result<(), RuntimeError> {
+    pub async fn rename_machine(&self, machine_id: &str, name: &str) -> Result<(), RuntimeError> {
         self.runtime()?
             .database()
-            .rename_computer(computer_id, name)
+            .rename_machine(machine_id, name)
             .await
-            .map_err(computer_management_error)?;
-        self.emit_computer_catalog_changed();
+            .map_err(machine_management_error)?;
+        self.emit_machine_catalog_changed();
         Ok(())
     }
 
-    pub async fn revoke_computer(&self, computer_id: &str) -> Result<(), RuntimeError> {
+    pub async fn revoke_machine(&self, machine_id: &str) -> Result<(), RuntimeError> {
         // Serialize revocation against authenticated hello registration.
-        let _guard = self.inner.computer_registration.lock().await;
+        let _guard = self.inner.machine_registration.lock().await;
         self.runtime()?
             .database()
-            .revoke_computer(computer_id, application::now_millis())
+            .revoke_machine(machine_id, application::now_millis())
             .await
-            .map_err(computer_management_error)?;
-        self.computer_broker().revoke(computer_id)?;
-        self.emit_computer_catalog_changed();
+            .map_err(machine_management_error)?;
+        self.machine_broker().revoke(machine_id)?;
+        self.emit_machine_catalog_changed();
         Ok(())
     }
 }
@@ -147,18 +147,18 @@ fn random_secret() -> Result<String, RuntimeError> {
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-fn computer_management_error(error: lankide_storage::StorageError) -> RuntimeError {
+fn machine_management_error(error: lankide_storage::StorageError) -> RuntimeError {
     match error {
-        lankide_storage::StorageError::Invalid(code) if code == "computer_has_assigned_agents" => {
-            RuntimeError::ComputerHasAssignedAgents
+        lankide_storage::StorageError::Invalid(code) if code == "machine_has_assigned_agents" => {
+            RuntimeError::MachineHasAssignedAgents
         }
         lankide_storage::StorageError::Invalid(code)
-            if code == "local_computer_cannot_be_removed" =>
+            if code == "local_machine_cannot_be_removed" =>
         {
-            RuntimeError::LocalComputerCannotBeRemoved
+            RuntimeError::LocalMachineCannotBeRemoved
         }
-        lankide_storage::StorageError::Invalid(code) if code == "computer_name_invalid" => {
-            RuntimeError::ComputerNameInvalid
+        lankide_storage::StorageError::Invalid(code) if code == "machine_name_invalid" => {
+            RuntimeError::MachineNameInvalid
         }
         error => error.into(),
     }

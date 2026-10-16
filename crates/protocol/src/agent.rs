@@ -1,4 +1,4 @@
-//! Agent capability transport shared by the private local proxy and Computer link.
+//! Agent capability transport shared by the private local proxy and Machine link.
 use crate::Status;
 use crate::*;
 use serde::{Serialize, de::DeserializeOwned};

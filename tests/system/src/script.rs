@@ -28,7 +28,7 @@ pub enum Script {
         text: String,
     },
     /// Emits a capability request and terminal result without waiting for a response.
-    /// Used to replay a Computer's buffered output after authorization changes.
+    /// Used to replay a Machine's buffered output after authorization changes.
     BufferedReply {
         text: String,
     },

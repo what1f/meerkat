@@ -3,9 +3,9 @@ use super::*;
 use lankide_provider::ResourceUpload;
 
 impl SystemRig {
-    pub async fn route_computer_through(&mut self, url: &str) -> Result<()> {
-        std::fs::write(self.paths.run.join("computer-link.url"), url)?;
-        self.restart_computer().await
+    pub async fn route_machine_through(&mut self, url: &str) -> Result<()> {
+        std::fs::write(self.paths.run.join("machine-link.url"), url)?;
+        self.restart_machine().await
     }
 }
 
@@ -83,8 +83,8 @@ impl Workspace<'_> {
 
 impl Agent<'_> {
     pub fn resource_directory(&self) -> Result<PathBuf> {
-        Ok(lankide_computer::agent_directory(
-            &self.rig.computer_home.path().join("workspaces"),
+        Ok(lankide_machine_core::agent_directory(
+            &self.rig.machine_home.path().join("workspaces"),
             &self.workspace,
             &self.id,
         )?

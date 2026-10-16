@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
-//! Versioned wire contracts shared by Runtime, Computer, and clients.
+//! Versioned wire contracts shared by Runtime, Machine, and clients.
 //!
-//! Computer links use JSON/WebSocket through [`link::ComputerLink`]. Computer
+//! Machine links use JSON/WebSocket through [`link::MachineLink`]. Machine
 //! resources and management use HTTP on the same listener; management events use
 //! one WebSocket. Agent capabilities use private length-prefixed JSON sockets through [`RuntimePeer`].
 
@@ -27,7 +27,7 @@ pub mod wire;
 pub use wire::*;
 
 pub use peer::{
-    ComputerFrameStream, ComputerPeer, ManagementEventStream, ResourceChunkStream,
+    MachineFrameStream, MachinePeer, ManagementEventStream, ResourceChunkStream,
     RuntimeFrameStream, RuntimePeer,
 };
 pub use service::ValidatedRuntimeService;
@@ -35,7 +35,7 @@ pub use transport::{
     AgentClient, TransportConfig, TransportError, connect_uds, connect_uds_lazy,
     serve_agent_listener, serve_uds,
 };
-pub use validation::{validate_computer_hello, validate_runtime_frame};
+pub use validation::{validate_machine_hello, validate_runtime_frame};
 
 impl From<lankide_core::ResourceRef> for ResourceRef {
     fn from(value: lankide_core::ResourceRef) -> Self {

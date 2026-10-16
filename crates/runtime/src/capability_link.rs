@@ -1,4 +1,4 @@
-//! Capability calls received on an authenticated Computer connection.
+//! Capability calls received on an authenticated Machine connection.
 use crate::{RuntimeApplication, RuntimePeerAdapter};
 use lankide_protocol::Status;
 use lankide_protocol::{agent, *};
@@ -77,7 +77,7 @@ impl CapabilityCalls {
 }
 pub(crate) async fn respond(
     application: RuntimeApplication,
-    computer: String,
+    machine: String,
     instance: String,
     request: CapabilityRequest,
 ) {
@@ -96,7 +96,7 @@ pub(crate) async fn respond(
             .execution_placement_matches(
                 execution.execution_id,
                 i64::from(execution.attempt),
-                &computer,
+                &machine,
             )
             .await
             .map_err(|error| crate::peer::status(error.into()))?
@@ -139,9 +139,9 @@ pub(crate) async fn respond(
             error_message: error_message.clone(),
         };
         if application
-            .computer_broker()
+            .machine_broker()
             .send_frame(
-                &computer,
+                &machine,
                 &instance,
                 RuntimeFrame {
                     protocol_version: lankide_protocol::PROTOCOL_VERSION,

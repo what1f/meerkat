@@ -1,6 +1,6 @@
 //! Host services backed by the real SQLite and Runtime resource stores.
-#[path = "../../../../tests/support/registered_computer.rs"]
-mod registered_computer;
+#[path = "../../../../tests/support/registered_machine.rs"]
+mod registered_machine;
 use lankide_core::{
     AgentId, ChannelId, MessageId, PersonId, ProviderId, ResourceId, ResourceRef, WorkspaceId,
 };
@@ -40,7 +40,7 @@ impl Services {
         let db = Arc::new(
             Storage::open(DatabaseConfig::new(directory.path().join("runtime.sqlite"))).unwrap(),
         );
-        registered_computer::register(&db, &["fixture-computer"]).unwrap();
+        registered_machine::register(&db, &["fixture-machine"]).unwrap();
         let workspace = WorkspaceId::new("im_scenarios").unwrap();
         let provider = ProviderId::new(provider).unwrap();
         db.create_workspace(lankide_storage::WorkspaceSpec {
@@ -65,7 +65,7 @@ impl Services {
     pub fn agent(&self, id: &AgentId, secret_name: &str, secret: &str) {
         self.db
             .create_agent(lankide_storage::AgentSpec {
-                computer_id: "fixture-computer".into(),
+                machine_id: "fixture-machine".into(),
                 workspace_id: self.workspace.clone(),
                 id: id.clone(),
                 name: id.to_string(),
@@ -263,7 +263,7 @@ pub fn agent_spec(config: Value) -> AgentSpec {
         bio: String::new(),
         avatar: None,
         soul: String::new(),
-        computer_id: "computer".into(),
+        machine_id: "machine".into(),
         harness_id: "pi".into(),
         model: "model".into(),
         thinking_level: "low".into(),

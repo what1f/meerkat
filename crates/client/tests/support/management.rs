@@ -106,7 +106,7 @@ impl MockManagementClient {
             .into(),
             avatar: Avatar::Custom(name.into()),
             soul: String::new(),
-            computer_id: "fixture-computer".into(),
+            machine_id: "fixture-machine".into(),
             harness_id: "pi".into(),
             model: "deepseek/deepseek-v4-flash".into(),
             thinking_level: ThinkingLevel::High,
@@ -411,7 +411,7 @@ impl ManagementClient for MockManagementClient {
             bio: d.bio,
             avatar: d.avatar,
             soul: d.soul,
-            computer_id: d.computer_id,
+            machine_id: d.machine_id,
             harness_id: d.harness_id,
             model: d.model,
             thinking_level: d.thinking_level,
@@ -584,17 +584,17 @@ impl ManagementClient for MockManagementClient {
             },
         ])
     }
-    async fn get_computer_catalog(
+    async fn get_machine_catalog(
         &self,
         _: Option<&str>,
-    ) -> Result<Vec<ComputerOption>, ClientError> {
+    ) -> Result<Vec<MachineOption>, ClientError> {
         drop(self.lock().await?);
-        Ok(vec![ComputerOption {
+        Ok(vec![MachineOption {
             registered: true,
-            id: "fixture-computer".into(),
-            name: "Local Computer".into(),
+            id: "fixture-machine".into(),
+            name: "Local Machine".into(),
             available: true,
-            ..ComputerOption::default()
+            ..MachineOption::default()
         }])
     }
     async fn get_harness_catalog(

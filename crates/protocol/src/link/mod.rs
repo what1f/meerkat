@@ -1,4 +1,4 @@
-//! Versioned JSON frames and the authenticated WebSocket Computer transport.
+//! Versioned JSON frames and the authenticated WebSocket Machine transport.
 mod frames;
 pub use frames::*;
 use futures_util::{SinkExt, StreamExt};
@@ -24,8 +24,8 @@ pub enum CloseReason {
     EventSequenceRegression,
     MessageTooLarge,
     Unauthorized,
-    ComputerUnknown,
-    ComputerRevoked,
+    MachineUnknown,
+    MachineRevoked,
     Shutdown,
     Timeout,
 }
@@ -67,9 +67,9 @@ impl From<tungstenite::Error> for LinkError {
         } else if matches!(&e, tungstenite::Error::Http(response) if response.status() == 401) {
             Self::Closed(CloseReason::Unauthorized)
         } else if matches!(&e, tungstenite::Error::Http(response) if response.status() == 403) {
-            Self::Closed(CloseReason::ComputerRevoked)
+            Self::Closed(CloseReason::MachineRevoked)
         } else if matches!(&e, tungstenite::Error::Http(response) if response.status() == 404) {
-            Self::Closed(CloseReason::ComputerUnknown)
+            Self::Closed(CloseReason::MachineUnknown)
         } else {
             Self::WebSocket(e)
         }
@@ -78,7 +78,7 @@ impl From<tungstenite::Error> for LinkError {
 
 /// The business layer owns a single link. It has no dependency on a socket type.
 #[async_trait::async_trait]
-pub trait ComputerLink: Send {
+pub trait MachineLink: Send {
     type SendFrame: Send;
     type ReceiveFrame: Send;
     async fn send(&mut self, frame: Self::SendFrame) -> Result<(), LinkError>;
@@ -101,7 +101,7 @@ impl<S, Out, In> WebSocketLink<S, Out, In> {
     }
 }
 #[async_trait::async_trait]
-impl<S, Out, In> ComputerLink for WebSocketLink<S, Out, In>
+impl<S, Out, In> MachineLink for WebSocketLink<S, Out, In>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
     Out: Serialize + Send,
@@ -196,7 +196,7 @@ fn ws_config(limit: usize) -> WebSocketConfig {
         .max_message_size(Some(limit))
         .max_frame_size(Some(limit))
 }
-pub type ClientLink = WebSocketLink<MaybeTlsStream<TcpStream>, ComputerFrame, RuntimeFrame>;
+pub type ClientLink = WebSocketLink<MaybeTlsStream<TcpStream>, MachineFrame, RuntimeFrame>;
 pub async fn connect(url: &str, secret: &str, limit: usize) -> Result<ClientLink, LinkError> {
     connect_pinned(url, secret, limit, None).await
 }
@@ -252,7 +252,7 @@ pub(crate) async fn serve_upgraded<S, P>(
     override_heartbeat: bool,
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
-    P: crate::ComputerPeer,
+    P: crate::MachinePeer,
 {
     let socket = WebSocketStream::from_raw_socket(
         socket,
@@ -285,8 +285,8 @@ pub(crate) async fn serve_upgraded<S, P>(
 }
 
 async fn accept_link<
-    L: ComputerLink<SendFrame = RuntimeFrame, ReceiveFrame = ComputerFrame>,
-    P: crate::ComputerPeer,
+    L: MachineLink<SendFrame = RuntimeFrame, ReceiveFrame = MachineFrame>,
+    P: crate::MachinePeer,
 >(
     link: &mut L,
     peer: P,
@@ -298,35 +298,35 @@ async fn accept_link<
         .await
         .map_err(|_| LinkError::Closed(CloseReason::Timeout))??
         .ok_or(LinkError::Closed(CloseReason::InvalidFrame))?;
-    let Some(ComputerPayload::Hello(hello)) = first.frame else {
+    let Some(MachinePayload::Hello(hello)) = first.frame else {
         return Err(LinkError::Closed(CloseReason::InvalidFrame));
     };
     if first.protocol_version != config.protocol_version
         || hello.protocol_version != config.protocol_version
     {
-        crate::validate_computer_hello(&hello, hello.protocol_version)
+        crate::validate_machine_hello(&hello, hello.protocol_version)
             .map_err(|_| LinkError::Closed(CloseReason::InvalidFrame))?;
         peer.link_rejected(hello, CloseReason::ProtocolVersionUnsupported)
             .await;
         return Err(LinkError::Closed(CloseReason::ProtocolVersionUnsupported));
     }
-    crate::validate_computer_hello(&hello, config.protocol_version)
+    crate::validate_machine_hello(&hello, config.protocol_version)
         .map_err(|_| LinkError::Closed(CloseReason::InvalidFrame))?;
     let (sender, receiver) = tokio::sync::mpsc::channel(64);
     let mut output = peer
-        .connect_computer(
+        .connect_machine(
             hello,
             Box::pin(tokio_stream::wrappers::ReceiverStream::new(receiver)),
         )
         .await
         .map_err(|error| {
             LinkError::Closed(match error.message() {
-                "computer_revoked" => CloseReason::ComputerRevoked,
-                "computer_unknown" => CloseReason::ComputerUnknown,
+                "machine_revoked" => CloseReason::MachineRevoked,
+                "machine_unknown" => CloseReason::MachineUnknown,
                 _ => CloseReason::InvalidFrame,
             })
         })?;
-    let mut validator = crate::validation::ComputerFrameValidator::default();
+    let mut validator = crate::validation::MachineFrameValidator::default();
     let mut first = true;
     let mut interval = settings
         .heartbeat_interval
@@ -352,8 +352,8 @@ async fn accept_link<
             frame = output.next() => {
                 let Some(frame) = frame else { break };
                 let mut frame = frame.map_err(|error| LinkError::Closed(match error.message() {
-                    "computer_revoked" => CloseReason::ComputerRevoked,
-                    "computer_unknown" => CloseReason::ComputerUnknown,
+                    "machine_revoked" => CloseReason::MachineRevoked,
+                    "machine_unknown" => CloseReason::MachineUnknown,
                     _ => CloseReason::InvalidFrame,
                 }))?;
                 crate::validate_runtime_frame(&frame).map_err(|_| LinkError::Closed(CloseReason::InvalidFrame))?;
@@ -385,10 +385,10 @@ async fn accept_link<
 /// Read local pairing discovery from the private run directory.
 pub fn discover(run: &Path) -> Result<(String, String), std::io::Error> {
     Ok((
-        std::fs::read_to_string(run.join("computer-link.url"))?
+        std::fs::read_to_string(run.join("machine-link.url"))?
             .trim()
             .to_owned(),
-        std::fs::read_to_string(run.join("computer-link.secret"))?
+        std::fs::read_to_string(run.join("machine-link.secret"))?
             .trim()
             .to_owned(),
     ))
@@ -403,8 +403,8 @@ pub fn publish(run: &Path, url: &str) -> Result<String, std::io::Error> {
         uuid::Uuid::new_v4().simple()
     );
     for (name, value) in [
-        ("computer-link.secret", secret.as_str()),
-        ("computer-link.url", url),
+        ("machine-link.secret", secret.as_str()),
+        ("machine-link.url", url),
     ] {
         // Replace the entry instead of following an existing symlink.
         let path = run.join(name);

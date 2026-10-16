@@ -10,7 +10,7 @@ The current integrations are:
 
 - Feishu and Telegram messaging providers;
 - Pi, Codex, and Claude Code-compatible Agent harnesses;
-- a macOS desktop app with per-user Runtime and Computer services;
+- a macOS desktop app with per-user Runtime and Machine services;
 - an execution-scoped `lankide` capability CLI for Agents.
 
 Lankide is under active development. Configuration and compatibility may change
