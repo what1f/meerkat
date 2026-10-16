@@ -21,8 +21,10 @@ impl LankideApp {
     }
 
     pub(super) fn reload_workspaces(&mut self, cx: &mut Context<Self>) {
-        self.loading = true;
-        self.error = None;
+        // A reconnect retry keeps the current error state instead of flashing a loader.
+        if self.error.is_none() {
+            self.loading = true;
+        }
         let workspace_client = self.client.clone();
         let capability_client = self.client.clone();
         self.workspace_request += 1;
@@ -45,6 +47,7 @@ impl LankideApp {
                 match result {
                     Ok(workspaces) => {
                         this.loading = false;
+                        this.error = None;
                         this.workspace_loaded = true;
                         this.workspaces = workspaces;
                         this.workspace_startup_retries = 0;
@@ -77,12 +80,19 @@ impl LankideApp {
                     Err(_) if this.startup_pending || this.workspace_startup_retries < 50 => {
                         this.workspace_startup_retries =
                             this.workspace_startup_retries.saturating_add(1);
-                        this.schedule_workspace_startup_reload(cx);
+                        this.schedule_workspace_reload(cx);
                     }
                     Err(error) => {
+                        let reconnect = is_connection_error(&error);
                         this.loading = false;
                         this.error = Some(UiMessage::client(error));
                         this.finish_boot(cx);
+                        // launchd restarts the Runtime; keep trying until it answers.
+                        if reconnect {
+                            this.workspace_startup_retries =
+                                this.workspace_startup_retries.saturating_add(1);
+                            this.schedule_workspace_reload(cx);
+                        }
                     }
                 };
                 cx.notify();
@@ -92,12 +102,14 @@ impl LankideApp {
         .detach();
     }
 
-    fn schedule_workspace_startup_reload(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn schedule_workspace_reload(&mut self, cx: &mut Context<Self>) {
         let request = self.workspace_request;
+        // 300 ms while starting, then back off to 5 s.
+        let delay = Duration::from_millis(300)
+            .saturating_mul(1 << self.workspace_startup_retries.saturating_sub(50).min(4))
+            .min(Duration::from_secs(5));
         cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(300))
-                .await;
+            cx.background_executor().timer(delay).await;
             let _ = this.update(cx, |this, cx| {
                 if this.workspace_request == request {
                     this.reload_workspaces(cx);
@@ -422,4 +434,11 @@ impl LankideApp {
         })
         .detach();
     }
+}
+
+pub(super) fn is_connection_error(error: &ClientError) -> bool {
+    matches!(
+        error,
+        ClientError::Unavailable(_) | ClientError::Transport(_) | ClientError::StreamEnded
+    )
 }

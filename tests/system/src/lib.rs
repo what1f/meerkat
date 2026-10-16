@@ -497,12 +497,22 @@ impl SystemRig {
     }
 
     pub async fn restart_runtime(&mut self) -> Result<()> {
+        self.stop_runtime().await?;
+        self.start_runtime().await
+    }
+
+    /// Stop the Runtime gracefully and leave it down until `start_runtime`.
+    pub async fn stop_runtime(&mut self) -> Result<()> {
         if let Some(shutdown) = self.shutdown.take() {
             let _ = shutdown.send(());
         }
         if let Some(runtime) = self.runtime.take() {
             timeout(self.config.timeout, runtime).await???;
         }
+        Ok(())
+    }
+
+    pub async fn start_runtime(&mut self) -> Result<()> {
         let factories = factories(self.im.clone())?;
         let paths = self.paths.clone();
         let (shutdown, stopped) = oneshot::channel();

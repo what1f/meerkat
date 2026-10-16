@@ -922,14 +922,16 @@ async fn machine_e2e() {
             vec![],
         ))
         .await;
-        let tool_ops = fs::read_to_string(&harness_log).expect("tool harness log");
-        assert_eq!(
-            tool_ops
+        // The Harness writes its log asynchronously after each delivered result.
+        let tool_results = || {
+            fs::read_to_string(&harness_log)
+                .expect("tool harness log")
                 .lines()
                 .filter(|line| line.starts_with("tool_result\t"))
-                .count(),
-            5
-        );
+                .count()
+        };
+        wait_for(|| tool_results() >= 5).await;
+        assert_eq!(tool_results(), 5);
         peer.send(RuntimeFrame {
             protocol_version: lankide_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::DeliverSteer(DeliverSteer {

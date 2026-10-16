@@ -479,6 +479,60 @@ fn local_online_offline_selection_and_pairing_dialog() {
     runtime.block_on(rig.into_inner().close()).unwrap();
 }
 
+/// The Desktop opens while the Runtime is down, shows that it cannot connect,
+/// and loads the team by itself once launchd brings the Runtime back.
+#[test]
+fn desktop_reconnects_when_the_runtime_comes_back() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let _entered = runtime.enter();
+    let mut rig = runtime
+        .block_on(SystemRig::start(RigConfig {
+            harness_executable: "/usr/bin/false".into(),
+            ..Default::default()
+        }))
+        .unwrap();
+    runtime.block_on(rig.workspace("team")).unwrap();
+    let client = Arc::new(rig.management().clone());
+    runtime.block_on(rig.stop_runtime()).unwrap();
+    let rig = std::cell::RefCell::new(rig);
+    let scenario = std::panic::AssertUnwindSafe(|dispatcher: gpui::TestDispatcher| {
+        let clock = std::cell::Cell::new(Instant::now());
+        let mut cx = TestAppContext::build(dispatcher.clone(), Some("runtime_reconnect"));
+        let _refs = cx.app.borrow().ref_counts_drop_handle();
+        cx.update(|cx| cx.background_executor().allow_parking());
+        cx.update(|cx| {
+            gpui_component::init(cx);
+            apply_component_theme(DesktopTheme::dark(), cx);
+        });
+        let view_client = client.clone();
+        let local_home = rig.borrow().runtime_home().to_path_buf();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tx.send(Err(lankide_client::ClientError::Unavailable(
+            "Runtime is not running".into(),
+        )))
+        .unwrap();
+        let (_root, cx) = cx.add_window_view(move |window, cx| {
+            let view = cx.new(|cx| {
+                LankideApp::new_with_startup(view_client, rx, local_home, true, window, cx)
+            });
+            let frame = cx.new(|cx| LankideFrame::new(view, window, cx));
+            Root::new(frame, window, cx).bordered(false)
+        });
+        wait(cx, &clock, |cx| {
+            cx.debug_bounds("application-error").is_some()
+        });
+        assert!(cx.debug_bounds("empty-add-agent").is_none());
+        runtime.block_on(rig.borrow_mut().start_runtime()).unwrap();
+        wait(cx, &clock, |cx| {
+            cx.debug_bounds("empty-add-agent").is_some()
+        });
+        assert!(cx.debug_bounds("application-error").is_none());
+        cx.update(|_, cx| cx.quit());
+    });
+    gpui::run_test(1, &[], 0, &mut |dispatcher, _| scenario(dispatcher), None);
+    runtime.block_on(rig.into_inner().close()).unwrap();
+}
+
 /// Run the public Desktop bootstrap and app-quit lifecycle with real helpers.
 /// A subprocess provides private environment variables without mutating this test process.
 #[test]

@@ -338,11 +338,17 @@ impl LankideApp {
                         this.reload_workspaces(cx);
                     }
                     Ok(Err(error)) => {
-                        // Drop the pending workspace retry so it cannot clear this error.
+                        // Drop the pending workspace retry; reconnecting clears this
+                        // error only once the Runtime answers again.
                         this.workspace_request += 1;
+                        let reconnect = workspace_actions::is_connection_error(&error);
                         this.loading = false;
                         this.error = Some(UiMessage::client(error));
                         this.finish_boot(cx);
+                        if reconnect {
+                            this.workspace_startup_retries = u8::MAX;
+                            this.schedule_workspace_reload(cx);
+                        }
                         cx.notify();
                     }
                     Err(_) => {}
