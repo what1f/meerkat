@@ -271,11 +271,21 @@ async fn poll_permissions(
             });
             Ok(value)
         }
-        Ok(None) | Err(_) => Ok(onboarding(
+        Ok(None) => Ok(onboarding(
             "permissions",
             ProviderOnboardingStatus::Verifying,
             payload,
         )),
+        Err(error) if error.is_retryable() => Ok(onboarding(
+            "permissions",
+            ProviderOnboardingStatus::Verifying,
+            payload,
+        )),
+        Err(_) => Ok(ProviderOnboarding {
+            error_code: Some("inspection_failed".into()),
+            error_message: Some("无法读取飞书应用状态。".into()),
+            ..onboarding("permissions", ProviderOnboardingStatus::Error, payload)
+        }),
     }
 }
 

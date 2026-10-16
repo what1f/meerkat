@@ -75,7 +75,7 @@ impl<T: Transport> Registrar<T> {
             user_code: String,
             #[serde(default)]
             interval: u64,
-            #[serde(default, rename = "expire_in")]
+            #[serde(default)]
             expires_in: u64,
         }
         let (status, response): (u16, Response) = self

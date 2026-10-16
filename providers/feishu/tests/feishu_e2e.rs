@@ -847,6 +847,48 @@ async fn existing_agent_onboarding_repairs_missing_published_permissions() {
 }
 
 #[tokio::test]
+async fn new_app_permission_check_stops_on_lasting_failure() {
+    let transport = PermissionInspectionTransport::default();
+    let host = ProviderHost::new(
+        FeishuProvider::new()
+            .without_event_source()
+            .with_transport(transport.clone()),
+        WorkspaceId::new("feishu_permission_inspection").expect("workspace id"),
+        json!({"domain":"feishu"}),
+        live_services("fixture-secret".into(), Arc::new(LiveLogger::default())),
+    )
+    .expect("Feishu ProviderHost");
+    let config = json!({"mode": "new", "domain": "feishu"});
+    let payload = json!({
+        "phase": "permissions",
+        "app_id": "cli_permission_inspection",
+        "verification_uri": "https://open.feishu.cn/page/launcher",
+    });
+    let poll = |payload: Value| {
+        host.agent_onboarding(
+            AgentId::new("agent_e2e").expect("Agent id"),
+            "E2E Agent".into(),
+            config.clone(),
+            "poll".into(),
+            payload,
+        )
+    };
+
+    let throttled = poll(payload.clone()).await.expect("throttled inspection");
+    assert_eq!(throttled.step, "permissions");
+    assert_eq!(throttled.status, ProviderOnboardingStatus::Verifying);
+    assert!(throttled.poll_interval_seconds.is_some());
+
+    let failed = poll(throttled.opaque_payload)
+        .await
+        .expect("failed inspection");
+    assert_eq!(failed.step, "permissions");
+    assert_eq!(failed.status, ProviderOnboardingStatus::Error);
+    assert_eq!(failed.poll_interval_seconds, None);
+    assert_eq!(transport.version_requests.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
 async fn existing_agent_onboarding_falls_back_to_owner_confirmation() {
     let transport = AuthorizationUpgradeTransport::default();
     transport.reject_updates.store(true, Ordering::SeqCst);
@@ -1769,6 +1811,38 @@ struct FeishuFixtureTransport;
 struct RefreshingTokenTransport {
     token_requests: Arc<AtomicUsize>,
     bot_requests: Arc<AtomicUsize>,
+}
+
+#[derive(Clone, Default)]
+struct PermissionInspectionTransport {
+    version_requests: Arc<AtomicUsize>,
+}
+
+impl Transport for PermissionInspectionTransport {
+    fn execute(&self, request: Request) -> lankide_provider_feishu::http::TransportFuture<'_> {
+        Box::pin(async move {
+            if request
+                .path
+                .ends_with("/auth/v3/tenant_access_token/internal")
+            {
+                return json_response(
+                    200,
+                    json!({"code":0,"tenant_access_token":"inspection-token","expire":7200}),
+                );
+            }
+            if request.path.contains("/app_versions") && request.method == Method::Get {
+                let code = match self.version_requests.fetch_add(1, Ordering::SeqCst) {
+                    0 => 99991400,
+                    _ => 99991672,
+                };
+                return json_response(200, json!({"code":code,"msg":"fixture failure"}));
+            }
+            Err(TransportError::Failed(format!(
+                "unexpected Feishu permission inspection request: {}",
+                request.path
+            )))
+        })
+    }
 }
 
 #[derive(Clone, Default)]
