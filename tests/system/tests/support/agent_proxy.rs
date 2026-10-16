@@ -109,6 +109,10 @@ pub fn run(binary: &str, input: &str) {
             attachment.display().to_string(),
         ],
     );
+    assert_eq!(
+        uploaded["media_type"], "text/plain",
+        "the file type decides how a platform shows it"
+    );
     let downloaded_path = home.join("downloaded.txt");
     let downloaded = cli(
         binary,

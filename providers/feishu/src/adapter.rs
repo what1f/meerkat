@@ -10,7 +10,9 @@ use crate::events::{
     DispatchError, Dispatcher, EventSink as NormalizedEventSink, EventSource, SourceError,
 };
 use crate::http::{ReqwestTransport, Transport};
-use crate::mention::{MentionTarget, extract_agent_ids, render_card_markdown};
+use crate::mention::{
+    BARE_MENTION, MentionTarget, extract_agent_ids, has_bare_mention, render_card_markdown,
+};
 use crate::normalize::{NormalizationConfig, NormalizedEvent, SenderKind};
 use lankide_core::{
     AgentId, AttentionLevel, ChannelAbility, ChannelId, ProviderId, ResourceRef, markdown_mention,
@@ -1066,6 +1068,11 @@ impl NormalizedEventSink for FeishuEventBridge {
         event: NormalizedEvent,
     ) -> crate::events::EventFuture<'_, Result<(), crate::events::SinkError>> {
         Box::pin(async move {
+            if let NormalizedEvent::Task(task) = &event
+                && task.event_types.is_empty()
+            {
+                return Ok(());
+            }
             let event = if let NormalizedEvent::Message(mut message) = event {
                 if message.sender.kind == SenderKind::Bot {
                     let record = self
@@ -1542,6 +1549,17 @@ async fn feishu_mention_targets(
     auth: Auth,
 ) -> Result<Vec<MentionTarget>, ProviderError> {
     let (_, directory) = crate::identity::load(storage).await?;
+    if has_bare_mention(
+        content,
+        directory
+            .agents
+            .values()
+            .map(|agent| agent.display_name.as_str()),
+    ) {
+        return Err(ProviderError::InvalidInput {
+            field: BARE_MENTION,
+        });
+    }
     let sender_app_id =
         directory
             .agent_app_id(sender_agent_id)

@@ -1,7 +1,9 @@
 use crate::client::{Auth, Client as FeishuClient};
 use crate::dto::{TaskMember, TaskRecord, TasklistRecord};
 use crate::http::Transport;
-use crate::mention::{MentionTarget, extract_agent_ids, render_card_markdown};
+use crate::mention::{
+    BARE_MENTION, MentionTarget, extract_agent_ids, has_bare_mention, render_card_markdown,
+};
 use crate::tasks::{
     Comment, CreateTask, ListRequest, MemberIdentity, TaskMemberInput, TaskPatch, TasklistMember,
 };
@@ -892,6 +894,17 @@ impl TaskAccess {
         if native_at_start(content).is_some() {
             return Err(ProviderError::InvalidInput {
                 field: "content: 提及请使用 @名称[成员ID]",
+            });
+        }
+        if has_bare_mention(
+            content,
+            self.directory
+                .mention_targets
+                .values()
+                .map(|target| target.display_name.as_str()),
+        ) {
+            return Err(ProviderError::InvalidInput {
+                field: BARE_MENTION,
             });
         }
         let ids = extract_agent_ids(content);

@@ -554,6 +554,28 @@ async fn mock_unresolved_agent_mentions_fail_before_sending() {
     )
     .await
     .unwrap();
+    let send = |key: &str, content: &str| SendMessageSpec {
+        channel_id: ChannelId::new("group_chat").unwrap(),
+        chat_id: "oc_team".into(),
+        message_id: MessageId::new(100).unwrap(),
+        idempotency_key: key.into(),
+        content: content.into(),
+        reply_to: None,
+        mentions: vec![],
+        attachments: vec![],
+        force: false,
+        provider_agent_config: json!({}),
+    };
+    let bare = host
+        .send_message(
+            AgentId::new("beta").unwrap(),
+            send("bare-mention", "@Bot B please check"),
+        )
+        .await;
+    assert!(
+        matches!(&bare, Err(ProviderError::InvalidInput { field }) if field.contains("@名称[成员ID]")),
+        "a plain @Name would reach nobody: {bare:?}"
+    );
     let result = host
         .send_message(
             AgentId::new("beta").unwrap(),
@@ -1184,12 +1206,27 @@ async fn mock_task_comments_mention_members_and_events_name_the_actor() {
         .into_parts();
     ack.accept();
     let lead = services.get_or_create_person("on_alice").await.unwrap();
+    let bare = host
+        .invoke_tool_in_context(
+            AgentId::new("beta").unwrap(),
+            task_spec(),
+            "feishu_task_comment",
+            json!({"task_id":task_id,"content":"@Bot B check the report"}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        bare["error"]["code"], "invalid_input",
+        "a plain @Name would reach nobody: {bare}"
+    );
     let commented=host.invoke_tool_in_context(AgentId::new("beta").unwrap(),task_spec(),"feishu_task_comment",json!({"task_id":task_id,"content":format!("@Alpha[alpha] @Alice[{}] check the report",lead.person_id)})).await.unwrap();
     assert_eq!(
         commented["ok"], true,
         "task mentions must work without a prior cross-App IM mention: {commented}"
     );
     let comment_id = commented["comment_id"].as_str().unwrap();
+    // Feishu also reports the comment as a task update without the comment.
+    server.deliver("cli_beta",json!({"schema":"2.0","header":{"event_id":"comment-update-copy","event_type":"task.task.update_tenant_v1","app_id":"cli_beta","tenant_key":"tenant","create_time":"2999"},"event":{"task_guid":task_id,"event_types":["task_comment_create"]}}));
     server.deliver("cli_beta",json!({"schema":"2.0","header":{"event_id":"comment-created","event_type":"task.task.comment.updated_v1","app_id":"cli_beta","tenant_key":"tenant","create_time":"3000"},"event":{"task_id":task_id,"comment_id":comment_id,"obj_type":1}}));
     let (event, ack) = tokio::time::timeout(Duration::from_secs(3), host.next_event())
         .await

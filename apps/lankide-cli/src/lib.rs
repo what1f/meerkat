@@ -201,22 +201,11 @@ async fn profile(
 
 fn profile_avatar_upload(value: &str) -> Result<wire::AgentAvatarUpload, CliError> {
     let path = Path::new(value);
-    let media_type = match path
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("png") => "image/png",
-        Some("jpg" | "jpeg") => "image/jpeg",
-        Some("webp") => "image/webp",
-        Some("gif") => "image/gif",
-        _ => {
-            return Err(CliError::Usage(
-                "--avatar must be a PNG, JPEG, WebP, or GIF image".to_owned(),
-            ));
-        }
-    };
+    let media_type = media_type_for(path)
+        .filter(|value| value.starts_with("image/"))
+        .ok_or_else(|| {
+            CliError::Usage("--avatar must be a PNG, JPEG, WebP, or GIF image".to_owned())
+        })?;
     Ok(wire::AgentAvatarUpload {
         media_type: media_type.to_owned(),
         bytes: std::fs::read(path)?,
@@ -528,6 +517,26 @@ async fn download_command(
     Ok(json!({"resource_id": resource_id, "output": output, "size_bytes": bytes.len()}))
 }
 
+fn media_type_for(path: &Path) -> Option<&'static str> {
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    Some(match extension.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "pdf" => "application/pdf",
+        "txt" | "log" => "text/plain",
+        "md" => "text/markdown",
+        "csv" => "text/csv",
+        "json" => "application/json",
+        "html" | "htm" => "text/html",
+        "zip" => "application/zip",
+        "mp4" => "video/mp4",
+        "mp3" => "audio/mpeg",
+        _ => return None,
+    })
+}
+
 async fn upload_file(
     client: &mut wire::AgentClient,
     config: &RunConfig,
@@ -548,7 +557,10 @@ async fn upload_file(
     let transfer_id = unique_id();
     let descriptor = wire::ResourceDescriptor {
         file_name,
-        media_type: media_type.unwrap_or("application/octet-stream").to_owned(),
+        media_type: media_type
+            .or_else(|| media_type_for(path))
+            .unwrap_or("application/octet-stream")
+            .to_owned(),
         size_bytes: bytes.len() as u64,
         sha256,
         context: Some(config.context()?),

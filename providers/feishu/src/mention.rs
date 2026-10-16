@@ -43,6 +43,26 @@ pub fn extract_agent_ids(content: &str) -> Vec<String> {
     result
 }
 
+pub const BARE_MENTION: &str = "content: 纯文本 @名称 不会通知对方，请使用 @名称[成员ID]";
+
+/// Find a member written as plain `@Name`, which Feishu shows as text and
+/// never notifies.
+pub fn has_bare_mention<'a>(content: &str, names: impl IntoIterator<Item = &'a str>) -> bool {
+    names
+        .into_iter()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .any(|name| {
+            let needle = format!("@{name}");
+            content.match_indices(&needle).any(|(start, _)| {
+                let next = content[start + needle.len()..].chars().next();
+                let previous = content[..start].chars().next_back();
+                !next.is_some_and(|c| c == '[' || c.is_alphanumeric() || c == '_')
+                    && !previous.is_some_and(|c| c.is_alphanumeric())
+            })
+        })
+}
+
 /// Render markers using Feishu's native Card/Markdown `<at>` element.
 ///
 /// Unknown markers are retained verbatim.  This is important when Runtime

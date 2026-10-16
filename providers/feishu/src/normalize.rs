@@ -384,6 +384,13 @@ pub fn normalize_task(raw: &[u8]) -> Result<NormalizedTaskEvent, NormalizeError>
             }
             .to_owned(),
         ];
+    } else if non_empty(&envelope.event.comment_id).is_none() {
+        // Comment events carry the comment and its author; the task update
+        // copy has neither.
+        envelope
+            .event
+            .event_types
+            .retain(|kind| !kind.starts_with("task_comment_"));
     }
     let event_id = canonical_task_event_id(&envelope);
     Ok(NormalizedTaskEvent {
