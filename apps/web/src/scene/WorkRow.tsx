@@ -13,11 +13,11 @@ export type WorkRowProps = Omit<UIProps, 'className' | 'style'> & {
 };
 export function WorkRow({ title, status, menu, arriving, children, ...rest }: WorkRowProps) {
   return (
-    <section {...rest} className={css.root} data-arriving={arriving}>
+    <section {...rest} className={css.root} data-arriving={arriving} data-status={status}>
       <header>
-        {title}
         <StatusDot status={status} />
-        {menu}
+        {title}
+        {menu && <span className={css.menu}>{menu}</span>}
       </header>
       <div>{children}</div>
     </section>

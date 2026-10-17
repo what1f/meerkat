@@ -1,9 +1,11 @@
 import { Avatar } from '../design';
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
+import type { PegPosition } from './Hang';
 import type { UIProps, Status } from '../design/index';
-
 import css from './Badge.module.css';
 export type BadgeProps = Omit<UIProps, 'className' | 'style'> & {
+  ref?: Ref<HTMLElement>;
+  style?: PegPosition;
   avatar: {
     src?: string;
     status?: Status;
@@ -20,14 +22,38 @@ export type BadgeProps = Omit<UIProps, 'className' | 'style'> & {
   dimmed?: boolean;
   ghost?: boolean;
 };
-export function Badge({ avatar, name, role, bio, foot, size, dimmed, ghost, ...rest }: BadgeProps) {
+// Member badge: a plain white card. The avatar carries the color.
+export function Badge({
+  ref,
+  style,
+  avatar,
+  name,
+  role,
+  bio,
+  foot,
+  size,
+  dimmed,
+  ghost,
+  ...rest
+}: BadgeProps) {
   return (
-    <article {...rest} className={css.root} data-size={size} data-dimmed={dimmed} aria-busy={ghost}>
-      <Avatar {...avatar} size="fill" dimmed={dimmed} />
-      <header>{name}</header>
-      <div>{role}</div>
-      <div>{bio}</div>
-      <footer>{foot}</footer>
+    <article
+      {...rest}
+      ref={ref}
+      style={style}
+      className={css.root}
+      data-size={size}
+      data-dimmed={dimmed}
+      aria-busy={ghost}
+    >
+      <span className={css.slot} />
+      <div className={css.avatar}>
+        <Avatar {...avatar} size="fill" dimmed={dimmed} />
+      </div>
+      <header className={css.name}>{name}</header>
+      <div className={css.role}>{role}</div>
+      <div className={css.bio}>{bio}</div>
+      {foot !== undefined && <footer className={css.foot}>{foot}</footer>}
     </article>
   );
 }

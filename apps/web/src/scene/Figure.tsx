@@ -1,27 +1,13 @@
 import type { UIProps } from '../design/index';
-import { figures } from './figures';
-const frames = import.meta.glob<string>('../assets/figures/*/*.png', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-});
+import { figureFrame, type Pose } from './figures';
 import css from './Figure.module.css';
 export type FigureProps = Omit<UIProps, 'className' | 'style'> & {
   id: string;
-  pose: 'work' | 'sleep' | 'carry' | 'stand';
+  pose: Pose;
   scale?: number;
 };
 export function Figure({ id, pose, scale = 1, ...rest }: FigureProps) {
-  const frame = figures[id]?.[pose];
+  const frame = figureFrame(id, pose, scale);
   if (!frame) return null;
-  return (
-    <img
-      {...rest}
-      className={css.root}
-      src={frames[`../assets/figures/${id}/${pose}.png`]}
-      width={frame.width * scale}
-      height={frame.height * scale}
-      alt=""
-    />
-  );
+  return <img {...rest} className={css.root} {...frame} alt="" />;
 }

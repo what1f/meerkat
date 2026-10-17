@@ -39,7 +39,11 @@ export function Avatar({
         />
       )}
       {status && <StatusDot status={status} tip={statusTip} />}
-      {onEdit && <Icon name="pencil" />}
+      {onEdit && (
+        <span className={css.edit}>
+          <Icon name="pencil" size={size === 'fill' || size >= 60 ? 20 : 14} />
+        </span>
+      )}
     </>
   );
   const state = {

@@ -233,21 +233,6 @@ svg.i { display: block; flex: none; }
 .select.boxed { height: var(--h-md); width: 100%; padding: 0 8px 0 10px; margin: 0; background: var(--field); border-radius: var(--r-md); }
 .select.boxed .grow { flex: 1; text-align: left; }
 
-/* ---- Switch ---------------------------------------------------------- */
-.switch {
-  width: 34px; height: 20px; border-radius: 10px; border: 0; padding: 0; position: relative; flex: none;
-  background: var(--ink-4); transition: background var(--d-base) var(--ease);
-}
-.switch::after {
-  content: ""; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%;
-  background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2), 0 0 0 .5px rgba(0,0,0,.04);
-  transition: transform var(--d-base) var(--ease-pop), width var(--d-fast) var(--ease);
-}
-.switch:active::after { width: 20px; }
-.switch.on { background: var(--accent); }
-.switch.on::after { transform: translateX(14px); }
-.switch.on:active::after { transform: translateX(10px); }
-
 /* ---- Segmented ------------------------------------------------------- */
 .segmented {
   --n: 3; --i: 0;
@@ -266,6 +251,8 @@ svg.i { display: block; flex: none; }
   color: var(--ink-2); transition: color var(--d-fast);
 }
 .segmented button.on { color: var(--ink); font-weight: 500; }
+.segmented button:has(img) { display: flex; align-items: center; justify-content: center; gap: 7px; }
+.segmented img { width: 15px; height: 15px; }
 
 /* ---- Group & Row ----------------------------------------------------- */
 .group { background: var(--well); border-radius: var(--r-lg); }
@@ -319,9 +306,6 @@ svg.i { display: block; flex: none; }
 }
 .avatar.pop { animation: pop .5s var(--ease-pop); }
 @keyframes pop { 40% { transform: scale(1.08); } }
-.avatar-stack { display: flex; }
-.avatar-stack .avatar { box-shadow: 0 0 0 2px var(--surface); }
-.avatar-stack .avatar + .avatar { margin-left: -6px; }
 
 /* ---- Tag ------------------------------------------------------------- */
 .tag { height: 20px; padding: 0 7px; border-radius: var(--r-sm); background: var(--field); color: var(--ink-2); font-size: var(--t-caption); display: inline-flex; align-items: center; gap: 4px; flex: none; }
@@ -408,20 +392,6 @@ svg.i { display: block; flex: none; }
 .dashes i { width: 22px; height: 3px; border-radius: 2px; background: var(--ink-4); transition: background var(--d-slow) var(--ease), width var(--d-slow) var(--ease); }
 .dashes i.done { background: var(--ink-2); }
 .dashes i.cur { background: var(--ink); width: 34px; }
-
-/* ---- Choice card ----------------------------------------------------- */
-.choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.choice {
-  position: relative; padding: 14px; border-radius: var(--r-lg); border: 0; text-align: left;
-  background: var(--field); display: flex; align-items: center; gap: 10px; font-weight: 500;
-  box-shadow: inset 0 0 0 1px transparent;
-  transition: background var(--d-fast), box-shadow var(--d-base) var(--ease);
-}
-.choice:hover { background: var(--active); }
-.choice.on { background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 0 3px var(--accent-soft); }
-.choice img { width: 22px; height: 22px; }
-.choice .ck { margin-left: auto; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; transform: scale(0); transition: transform var(--d-base) var(--ease-pop); }
-.choice.on .ck { transform: scale(1); }
 
 /* ---- Skeleton -------------------------------------------------------- */
 .skel { border-radius: 4px; background: linear-gradient(90deg, var(--field) 0%, var(--active) 50%, var(--field) 100%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
@@ -910,16 +880,6 @@ body.grabbing, body.grabbing * { cursor: grabbing !important; }
 @keyframes sheet-in { from { transform: translateX(40px); opacity: 0; } }
 .sheet-panel section + section { margin-top: 26px; }
 .sheet-panel h5 { margin: 0 0 10px; font-size: var(--t-small); font-weight: 500; color: var(--ink-3); }
-.combo {
-  display: inline-flex; align-items: center; gap: 4px; height: var(--h-sm); width: 210px; padding: 0 6px 0 8px; margin-right: -6px; border-radius: var(--r-sm);
-  transition: background var(--d-fast), box-shadow var(--d-fast); cursor: text;
-}
-.combo:hover { background: var(--hover); }
-.combo:focus-within { background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong), 0 0 0 3px var(--accent-soft); }
-.combo input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font-size: 12px; color: var(--ink); text-align: right; padding: 0; }
-.combo:focus-within input { text-align: left; }
-.combo .i { color: var(--ink-3); flex: none; }
-.combo-menu { max-height: 240px; overflow: auto; }
 .rx-tile {
   width: 30px; height: 30px; border-radius: 8px; border: 0; padding: 0; background: var(--surface); display: flex; align-items: center; justify-content: center;
   box-shadow: 0 0 0 1px var(--line); transition: opacity var(--d-base) var(--ease), transform var(--d-base) var(--ease-pop), box-shadow var(--d-fast);
@@ -1089,8 +1049,6 @@ body.grabbing, body.grabbing * { cursor: grabbing !important; }
 .ob-go { margin-top: 40px; gap: 8px; }
 .ob-go img { width: 16px; height: 16px; }
 .ob-prov { margin-top: 22px; height: 34px; width: 240px; }
-.ob-prov button { display: flex; align-items: center; justify-content: center; gap: 7px; }
-.ob-prov img { width: 15px; height: 15px; }
 
 /* Welcome and ready: a desk in the office and the chat it answers. */
 .ob-hero.hello { margin-top: 48px; align-items: center; gap: 44px; }
@@ -1256,7 +1214,7 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
 <body>
 
 <div class="doc-top">
-  <div class="brand"><img src="avatars/00.jpg" alt="">Lankide</div>
+  <div class="brand"><img src="../../apps/web/src/assets/avatars/00.jpg" alt="">Lankide</div>
   <nav>
     <a href="#prototype">原型</a>
     <a href="#onboarding">引导</a>
@@ -1311,8 +1269,8 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
 <div class="principles">
   <div class="principle"><div class="num">一</div><h4>不解释直觉能懂的</h4><p>能用位置、头像、图标、状态点表达的，不写字。文字只留给缺了就看不懂的地方。</p></div>
   <div class="principle"><div class="num">二</div><h4>在原地完成</h4><p>点哪里就在哪里编辑。设置改完自动保存；成员的改动要同步到飞书，改了才出现「保存」。新建的东西出现在它该在的位置，进度也显示在那里。</p></div>
-  <div class="principle"><div class="num">三</div><h4>一种需求一个组件</h4><p>固定的两三项用 Segmented，会变多的用 Select，能输入的用 Combo；Switch 只出现在设置行；空位一律是虚线框。没有第二种写法。</p></div>
-  <div class="principle"><div class="num">四</div><h4>色彩留给生命</h4><p>界面是中性的白和墨色。颜色来自狐獴头像和状态点；品牌紫只用于聚焦、选中和开关。</p></div>
+  <div class="principle"><div class="num">三</div><h4>一种需求一个组件</h4><p>固定的两三项用 Segmented，会变多的用 Select；空位一律是虚线框。没有第二种写法。</p></div>
+  <div class="principle"><div class="num">四</div><h4>色彩留给生命</h4><p>界面是中性的白和墨色。颜色来自狐獴头像和状态点；品牌紫只用于聚焦和选中。</p></div>
   <div class="principle"><div class="num">五</div><h4>动效只说明变化</h4><p>出现、离开、状态切换才动，120 到 320 毫秒，只在出现时带一点回弹。只有正在进行的事情才循环。</p></div>
   <div class="principle"><div class="num">六</div><h4>说用户的话</h4><p>成员、团队、飞书、工区。界面上不出现 Agent、App、Bot、ID、IM。</p></div>
 </div>
@@ -1335,7 +1293,7 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
       <tr><td class="k">display</td><td>28 / 600 宋体</td><td style="font-family:var(--font-display);font-size:28px;font-weight:600">产品组</td></tr>
       <tr><td class="k">heading</td><td>22 / 600 宋体</td><td style="font-family:var(--font-display);font-size:22px;font-weight:600">小王</td></tr>
       <tr><td class="k">title</td><td>15 / 600</td><td style="font-size:15px;font-weight:600">添加工区</td></tr>
-      <tr><td class="k">body</td><td>13 / 400·500</td><td>接收消息</td></tr>
+      <tr><td class="k">body</td><td>13 / 400·500</td><td>同步资料</td></tr>
       <tr><td class="k">small</td><td>12 / 400</td><td style="font-size:12px;color:var(--ink-2)">产品经理</td></tr>
       <tr><td class="k">caption</td><td>11 / 400</td><td style="font-size:11px;color:var(--ink-3)" class="mono">gpt-5.5</td></tr>
     </table>
@@ -1348,7 +1306,7 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
       <tr><td class="k">r-xs</td><td>4</td><td><div class="rbox" style="border-radius:4px"></div></td><td>骨架</td></tr>
       <tr><td class="k">r-sm</td><td>6</td><td><div class="rbox" style="border-radius:6px"></div></td><td>菜单项、标签、分段内块、quiet select</td></tr>
       <tr><td class="k">r-md</td><td>8</td><td><div class="rbox" style="border-radius:8px"></div></td><td>输入框、图标按钮、分段控件</td></tr>
-      <tr><td class="k">r-lg</td><td>12</td><td><div class="rbox" style="border-radius:12px"></div></td><td>卡片、Group、Choice、文档编辑框</td></tr>
+      <tr><td class="k">r-lg</td><td>12</td><td><div class="rbox" style="border-radius:12px"></div></td><td>卡片、Group、文档编辑框</td></tr>
       <tr><td class="k">r-xl</td><td>16</td><td><div class="rbox" style="border-radius:16px"></div></td><td>弹窗</td></tr>
       <tr><td class="k">full</td><td>—</td><td><div class="rbox" style="border-radius:15px"></div></td><td>按钮、头像、状态点、toast</td></tr>
     </table>
@@ -1363,9 +1321,9 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
       <tr><td class="k">h-lg</td><td>40</td><td>引导页按钮、弹窗主输入</td></tr>
       <tr><td class="k">row</td><td>40</td><td>设置行</td></tr>
       <tr><td class="k">row-lg</td><td>56</td><td>带图标的列表行</td></tr>
-      <tr><td class="k">avatar</td><td>20 · 32 · 40 · 76 · 88</td><td>行内 · 列表 · 选择器 · 卡片 · 详情</td></tr>
+      <tr><td class="k">avatar</td><td>20 · 26 · 32 · 40 · 44 · 60 · 76 · 88</td><td>只用这几档；工卡上的头像跟着工卡缩放</td></tr>
       <tr><td class="k">space</td><td>4 · 8 · 12 · 16 · 24 · 32 · 48</td><td>内边距、间距</td></tr>
-      <tr><td class="k">width</td><td>360 · 400 · 560</td><td>详情栏 · 弹窗 · 单栏页面</td></tr>
+      <tr><td class="k">width</td><td>320 · 400 · 460 · 560</td><td>确认框 · 弹窗 · 宽弹窗 · 单栏页面</td></tr>
     </table>
   </div>
   <div class="card-doc">
@@ -1378,7 +1336,7 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
     </div>
     <table class="tok">
       <tr><td class="k" style="width:110px">fast 120</td><td><div class="motion-demo" data-motion="120ms var(--ease)"><i></i></div></td><td style="width:120px">悬停、按下</td></tr>
-      <tr><td class="k">base 200</td><td><div class="motion-demo" data-motion="200ms var(--ease)"><i></i></div></td><td>开关、菜单、淡入淡出</td></tr>
+      <tr><td class="k">base 200</td><td><div class="motion-demo" data-motion="200ms var(--ease)"><i></i></div></td><td>分段切换、菜单、淡入淡出</td></tr>
       <tr><td class="k">slow 320</td><td><div class="motion-demo" data-motion="320ms var(--ease)"><i></i></div></td><td>面板、页面、高度展开</td></tr>
       <tr><td class="k">pop</td><td><div class="motion-demo" data-motion="420ms var(--ease-pop)"><i></i></div></td><td>出现时的轻微回弹</td></tr>
     </table>
@@ -1415,7 +1373,7 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
 
   <div class="card-doc">
     <h4>Input · Doc · 就地编辑</h4>
-    <div class="sub">输入框没有边框，聚焦时出现品牌紫的光圈。就地编辑的文字平时就是文字。</div>
+    <div class="sub">输入框是浅底填充框，聚焦时出现品牌紫的光圈。就地编辑的文字平时就是文字。</div>
     <div class="specimen col">
       <input class="input" placeholder="名字">
       <input class="input err" value="product-1">
@@ -1426,43 +1384,24 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
   </div>
 
   <div class="card-doc">
-    <h4>Switch · Segmented · Select · Combo</h4>
-    <div class="sub">Switch 只用于设置行的开关；固定的两到四项用 Segmented；会增加的列表用 Select；既能选又能自己填的用 Combo，输入即过滤，回车采用。</div>
+    <h4>Segmented · Select · Menu · Group</h4>
+    <div class="sub">固定的两到四项用 Segmented；会增加的列表用 Select。Group 是唯一的容器：行高 40，标签在左，控件在右，行间是细线。</div>
     <div class="specimen">
-      <button class="switch on" data-switch></button>
-      <button class="switch" data-switch></button>
-      <div class="segmented" data-seg style="--n:3"><button class="on">低</button><button>中</button><button>高</button></div>
-      <button class="select" data-menu="engine"><img src="../../apps/desktop/assets/icons/lobehub/codex.svg" alt="">Codex<span class="chev" data-i="chev" data-s="14"></span></button>
-      <label class="combo" style="width:170px;margin:0"><input class="mono" value="gpt-5.5" spellcheck="false"><span class="chev" data-i="chev" data-s="14"></span></label>
+      <div class="segmented" data-seg style="--n:2"><button class="on"><img src="../../apps/web/src/assets/brand/feishu.svg" alt="">飞书</button><button><img src="../../apps/web/src/assets/brand/telegram.svg" alt="">Telegram</button></div>
+      <button class="select" data-menu="engine"><img src="../../apps/web/src/assets/brand/lobehub/codex.svg" alt="">Codex<span class="chev" data-i="chev" data-s="14"></span></button>
     </div>
     <div class="specimen" style="margin-top:14px;align-items:flex-start">
       <div class="menu static">
-        <div class="mi"><img src="../../apps/desktop/assets/icons/lobehub/codex.svg" alt=""><span class="grow">Codex</span><span class="ck" data-i="check" data-s="14"></span></div>
-        <div class="mi"><img src="../../apps/desktop/assets/icons/lobehub/claude-code.svg" alt=""><span class="grow">Claude Code</span></div>
+        <div class="mi"><img src="../../apps/web/src/assets/brand/lobehub/codex.svg" alt=""><span class="grow">Codex</span><span class="ck" data-i="check" data-s="14"></span></div>
+        <div class="mi"><img src="../../apps/web/src/assets/brand/lobehub/claude-code.svg" alt=""><span class="grow">Claude Code</span></div>
         <div class="sep"></div>
         <div class="mi"><span data-i="pause" data-s="14"></span><span class="grow">暂停</span></div>
         <div class="mi danger"><span data-i="trash" data-s="14"></span><span class="grow">删除</span></div>
       </div>
       <div class="cap" style="max-width:180px;margin:0">Menu：10 圆角、4 内边距、菜单项 30 高 6 圆角。选中用勾，危险项用红字。</div>
     </div>
-  </div>
-
-  <div class="card-doc">
-    <h4>Choice</h4>
-    <div class="sub">只用于一次性的、要靠品牌图标认出来的少量选项，比如连接飞书还是 Telegram。会变多的列表不用它。</div>
-    <div class="choices" data-choices>
-      <button class="choice on"><img src="../../apps/desktop/assets/icons/feishu.svg" alt="">飞书<span class="ck"><span data-i="check" data-s="11"></span></span></button>
-      <button class="choice"><img src="../../apps/desktop/assets/icons/telegram.svg" alt="">Telegram<span class="ck"><span data-i="check" data-s="11"></span></span></button>
-    </div>
-  </div>
-
-  <div class="card-doc">
-    <h4>Group · Row</h4>
-    <div class="sub">唯一的容器。行高 40，标签在左，控件在右，行间是细线。不再有面板套面板。</div>
-    <div class="group">
-      <div class="row"><span class="label">接收消息</span><button class="switch on" data-switch></button></div>
+    <div class="group" style="margin-top:16px">
       <div class="row"><span class="label">语言</span><button class="select" data-menu="lang">简体中文<span class="chev" data-i="chev" data-s="14"></span></button></div>
-      <div class="row"><span class="label">思考</span><div class="segmented" data-seg style="--n:3;--i:1"><button>低</button><button class="on">中</button><button>高</button></div></div>
     </div>
   </div>
 
@@ -1476,12 +1415,11 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
       <div class="stack"><span class="dot err"></span><div class="cap">需要处理</div></div>
     </div>
     <div class="specimen" style="margin-top:18px;align-items:flex-end">
-      <div class="stack"><span class="avatar" style="--s:20px;background-image:url(avatars/03.jpg)"></span><div class="cap">20</div></div>
-      <div class="stack"><span class="avatar" style="--s:32px;background-image:url(avatars/08.jpg)"><span class="dot ok"></span></span><div class="cap">32</div></div>
-      <div class="stack"><span class="avatar" style="--s:40px;background-image:url(avatars/11.jpg)"><span class="dot busy"></span></span><div class="cap">40</div></div>
-      <div class="stack"><span class="avatar paused" style="--s:76px;background-image:url(avatars/07.jpg)"><span class="dot"></span></span><div class="cap">76 暂停</div></div>
-      <div class="stack"><span class="avatar creating" style="--s:76px;background-image:url(avatars/05.jpg)"></span><div class="cap">76 创建中</div></div>
-      <div class="stack"><div class="avatar-stack"><span class="avatar" style="--s:20px;background-image:url(avatars/01.jpg)"></span><span class="avatar" style="--s:20px;background-image:url(avatars/11.jpg)"></span><span class="avatar" style="--s:20px;background-image:url(avatars/04.jpg)"></span></div><div class="cap">叠放</div></div>
+      <div class="stack"><span class="avatar" style="--s:20px;background-image:url(../../apps/web/src/assets/avatars/03.jpg)"></span><div class="cap">20</div></div>
+      <div class="stack"><span class="avatar" style="--s:32px;background-image:url(../../apps/web/src/assets/avatars/08.jpg)"><span class="dot ok"></span></span><div class="cap">32</div></div>
+      <div class="stack"><span class="avatar" style="--s:40px;background-image:url(../../apps/web/src/assets/avatars/11.jpg)"><span class="dot busy"></span></span><div class="cap">40</div></div>
+      <div class="stack"><span class="avatar paused" style="--s:76px;background-image:url(../../apps/web/src/assets/avatars/07.jpg)"><span class="dot"></span></span><div class="cap">76 暂停</div></div>
+      <div class="stack"><span class="avatar creating" style="--s:76px;background-image:url(../../apps/web/src/assets/avatars/05.jpg)"></span><div class="cap">76 创建中</div></div>
     </div>
   </div>
 
@@ -1516,13 +1454,13 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
     <div class="sub">弹窗只用于需要专注的新建。确认框只用于不可撤销的操作；能撤销的用 toast。</div>
     <div class="specimen" style="align-items:flex-start;gap:18px">
       <div class="dialog confirm static" style="box-shadow:var(--shadow-2)">
-        <div class="stack"><span class="avatar paused" style="--s:44px;background-image:url(avatars/07.jpg);opacity:.8"></span></div>
+        <div class="stack"><span class="avatar paused" style="--s:44px;background-image:url(../../apps/web/src/assets/avatars/07.jpg);opacity:.8"></span></div>
         <h3 style="margin-top:12px">删除老周？</h3>
         <p>TA 的飞书应用也会一起删除。</p>
         <div class="foot"><button class="btn">取消</button><button class="btn danger">删除</button></div>
       </div>
       <div class="specimen col" style="gap:10px">
-        <div class="toast static"><span class="avatar" style="--s:20px;background-image:url(avatars/01.jpg)"></span>小王加入了团队<button class="act">打开</button></div>
+        <div class="toast static"><span class="avatar" style="--s:20px;background-image:url(../../apps/web/src/assets/avatars/01.jpg)"></span>小王加入了团队<button class="act">打开</button></div>
         <div class="toast static">已删除老周<button class="act">撤销</button></div>
         <div class="toast static" style="padding-right:14px"><span data-i="check" data-s="14"></span>已复制</div>
       </div>
@@ -1537,7 +1475,7 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
       <div class="dashes" id="dashes-demo"><i class="done"></i><i class="cur"></i><i></i><i></i><i></i></div>
       <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><span class="skel" style="width:56px;height:56px;border-radius:50%"></span><span class="skel" style="width:64px;height:10px"></span><span class="skel" style="width:44px;height:8px"></span></div>
     </div>
-    <div class="empty" style="padding:28px 0 0"><div class="peek"><img src="../../apps/desktop/assets/meerkat-peek.png" alt=""></div><h4>还没有成员</h4><button class="btn primary">添加成员</button></div>
+    <div class="empty" style="padding:28px 0 0"><div class="peek"><img src="../../apps/web/src/assets/mascot/meerkat-peek.png" alt=""></div><h4>还没有成员</h4><button class="btn primary">添加成员</button></div>
   </div>
 </div>
 
@@ -1560,7 +1498,7 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
     <tr><td>浅色和深色</td><td>只在设置页里</td><td>右上角垂一根拉线，往下拉一下就开关灯，松手弹回去。设置页里的选项还在，可以跟随系统</td></tr>
     <tr><td>形象</td><td>没有</td><td>形象和头像分开：头像用在飞书和工卡上，形象是成员在工区里的样子。每个形象是一整套状态帧，换形象就是换一整套，不拼装。成员资料里能换，也能导入别人做的形象包</td></tr>
     <tr><td>外观</td><td>文字分段按钮</td><td>三张缩略图</td></tr>
-    <tr><td>选择</td><td>4 套实现，3 种选中态</td><td>Choice、Segmented、Select、Switch，各一种选中态</td></tr>
+    <tr><td>选择</td><td>4 套实现，3 种选中态</td><td>只留 Segmented 和 Select</td></tr>
     <tr><td>容器</td><td>7 种内嵌面板，圆角 12 到 28</td><td>只有 Group：浅底、无描边</td></tr>
     <tr><td>状态</td><td>5 种表达，含「已暂停」文字和 ✓ 前缀</td><td>只有 Dot；暂停的头像变灰</td></tr>
     <tr><td>删除</td><td>黑色主按钮确认</td><td>红色确认按钮；可撤销的操作用 toast 撤销</td></tr>
@@ -1615,8 +1553,8 @@ function hydrateIcons(root = document) {
 /* ======================================================================
    DATA
    ====================================================================== */
-const ASSET = '../../apps/desktop/assets/icons/';
-const AV = i => `avatars/${String(i).padStart(2, '0')}.jpg`;
+const ASSET = '../../apps/web/src/assets/brand/';
+const AV = i => `../../apps/web/src/assets/avatars/${String(i).padStart(2, '0')}.jpg`;
 const ENGINES = {
   codex: { label: 'Codex', icon: ASSET + 'lobehub/codex.svg', models: ['gpt-5.5', 'gpt-5.5-codex', 'gpt-5.5-mini', 'gpt-5.4'] },
   claude: { label: 'Claude Code', icon: ASSET + 'lobehub/claude-code.svg', models: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'] },
@@ -1629,7 +1567,7 @@ const LEVELS = {
   pi: () => ['低', '中', '高'],
 };
 const levelsOf = m => LEVELS[m.engine](m.model);
-const RX = id => `../../apps/desktop/assets/reactions/${id}.png`;
+const RX = id => `../../apps/web/src/assets/reactions/${id}.png`;
 const REACTIONS = ['OnIt','Get','THUMBSUP','OK','DONE','CheckMark','LGTM','GLANCE','Typing','OneSecond','THINKING','SMILE','CLAP','APPLAUSE','Fire','Hundred','MUSCLE','FISTBUMP','HIGHFIVE','THANKS','HEART','PARTY','WOW','Trophy','SALUTE','Coffee','Pin','Alarm','MeMeMe','YEAH','GoGoGo'];
 const MACHINES = [
   { id: 'mbp', name: 'MacBook Pro', kind: 'laptop', local: true, on: true, ais: ['codex', 'claude', 'pi'] },
@@ -1756,7 +1694,7 @@ const pinStyle = (kind, p) => { const r = at(kind, p); return `style="left:${r.x
 
 function pageMembers() {
   const ms = list(), lead = team().lead;
-  if (!ms.length && !lead) return `<div class="empty"><div class="peek"><img src="../../apps/desktop/assets/meerkat-peek.png" alt=""></div><h4>还没有成员</h4><button class="btn primary" data-act="add-member">添加成员</button></div>`;
+  if (!ms.length && !lead) return `<div class="empty"><div class="peek"><img src="../../apps/web/src/assets/mascot/meerkat-peek.png" alt=""></div><h4>还没有成员</h4><button class="btn primary" data-act="add-member">添加成员</button></div>`;
   const all = [...ms]; if (lead) all.splice(Math.min(team().leadAt || 0, all.length), 0, lead);
   const items = all.map(m => badge(m).replace(/^<div /, `<div data-sort="${m.id}" `));
   return `<div class="rails">${items.join('')}<div class="hang vacant" data-act="add-member"><span class="peg"></span><div class="slot-outline"><span class="plus">${icon('plus', 20)}</span>添加成员</div></div></div>`;
@@ -1773,7 +1711,7 @@ function pageMember(m) {
     <div class="rig" id="rig">
       ${notice ? `<div class="notice">${notice}</div>` : ''}
       <span class="hook l"><span class="peg"></span></span><span class="hook r"><span class="peg"></span></span>
-      <button class="rig-fig" data-act="figure-picker" data-tip="形象"><img src="figures/${figOf(m)}/stand.png" alt=""></button>
+      <button class="rig-fig" data-act="figure-picker" data-tip="形象"><img src="../../apps/web/src/assets/figures/${figOf(m)}/stand.png" alt=""></button>
       <div class="rig-body">
         <button class="rig-rx ${m.reaction ? '' : 'none'}" data-act="more-rx" data-tip="已读表情"><span class="sticker">${m.reaction ? `<img src="${RX(m.reaction)}" alt="">` : ''}</span></button>
         <button class="screen" data-act="brain">${screenBody(m)}</button>
@@ -1810,24 +1748,6 @@ const screenBody = m => {
     <span class="where"><span class="dot ${ws.on ? 'ok' : ''}"></span>${ws.name}</span>
     <span class="gauge">${lv.map((_, i) => `<i class="${i <= k ? 'on' : ''}"></i>`).join('')}<b>${lv[k]}</b></span>`;
 };
-
-// Model combobox: type to filter, Enter keeps a custom model.
-function comboMenu(input) {
-  const m = openMember(), q = input.value.trim().toLowerCase();
-  const all = ENGINES[m.engine].models;
-  let hits = all.filter(x => x.toLowerCase().includes(q));
-  if (!hits.length || input.dataset.fresh) hits = input.dataset.fresh ? all : [input.value.trim()];
-  const html = hits.map((x, i) => mi(`<span class="mono" style="font-size:12px">${x}</span>`, { on: x === m.model, data: `data-v="${x}" ${i === 0 ? 'data-first' : ''}` })).join('');
-  if (menuEl && menuEl.classList.contains('combo-menu')) { menuEl.innerHTML = html; return; }
-  openMenu(input.parentElement, html, { align: 'right', cls: 'combo-menu', minWidth: input.parentElement.offsetWidth });
-  menuEl.onmousedown = ev => ev.preventDefault();
-  menuEl.onclick = ev => { const it = ev.target.closest('[data-v]'); if (it) commitModel(input, it.dataset.v); };
-}
-function commitModel(input, v) {
-  const m = openMember(); v = (v || '').trim() || m.model;
-  input.value = v; closeMenu();
-  if (v !== m.model) { m.model = v; refreshFoot(m); flashSaved(); }
-}
 
 const taskRow = (x, i) => `<div class="task ${x.done ? 'done' : ''}" data-task="${i}">
   <button class="chk"><svg viewBox="0 0 18 18"><path d="M4.5 9.5l3 3 6-6.5"/></svg></button>
@@ -1868,7 +1788,7 @@ function pageTeam(enterTasks) {
 const FIG = {'01/carry':[96,180],'01/sleep':[169,250],'01/stand':[120,180],'01/work':[169,250],'04/carry':[144,203],'04/sleep':[169,250],'04/stand':[129,202],'04/work':[169,250],'07/carry':[99,184],'07/sleep':[169,250],'07/stand':[117,190],'07/work':[169,250],'11/carry':[98,184],'11/sleep':[169,250],'11/stand':[125,185],'11/work':[169,250],'14/carry':[111,179],'14/sleep':[169,250],'14/stand':[129,190],'14/work':[169,250],'15/carry':[137,168],'15/sleep':[169,250],'15/stand':[109,170],'15/work':[169,250]};
 const FS = .6;
 const figSize = (f, pose) => FIG[f + '/' + pose].map(v => v * FS);
-const figImg = (f, pose) => { const [w, h] = figSize(f, pose); return `<img src="figures/${f}/${pose}.png" width="${w}" height="${h}" alt="">`; };
+const figImg = (f, pose) => { const [w, h] = figSize(f, pose); return `<img src="../../apps/web/src/assets/figures/${f}/${pose}.png" width="${w}" height="${h}" alt="">`; };
 const figOf = m => m.figure;
 const FIGURES = ['01', '04', '07', '11', '14', '15'];
 const figThumb = f => figImg(f, 'stand');
@@ -1876,7 +1796,7 @@ const randomFigure = () => { const used = new Set([...Object.values(members).fla
 
 /* Workspaces: one row per computer. Each member has a desk, a chair and a computer setup of their own;
    the screen shows what they are doing. Offline rows are members asleep at dark screens. */
-// Desk art in office/: display height in px and the screen holes as corner quads, main screen first.
+// Desk art in ../../apps/web/src/assets/office/: display height in px and the screen holes as corner quads, main screen first.
 const DESKS = {
   laptop: { h: 141.5, screens: [[[72.5, 3], [148.5, 3], [148, 44.5], [73, 44.5]], [[19.5, 20.5], [56, 18.5], [58, 42], [21, 45]]] },
   mini: { h: 140, screens: [[[63.5, 2.5], [157.5, 2.5], [157.5, 46], [63.5, 46]]] },
@@ -1903,8 +1823,8 @@ function seat(m, x) {
   };
   const pose = x.on && statusOf(m) !== 'idle' ? 'work' : 'sleep';
   return `<div class="seat ${m.id === S.arrived ? 'arrive' : ''}" data-goto="${m.id}" data-tip="${m.name}">
-    <span class="floor"></span>${d.screens.map(scr).join('')}<img class="desk" src="office/desk-${computerOf(m, x)}.png" alt="">
-    ${!S.receive ? '<img class="chair" src="office/chair.png" alt="">' : `<img class="who" src="figures/${figOf(m)}/${pose}.png" alt="">${pose === 'sleep' ? '<span class="zz"><i>z</i><i>z</i><i>z</i></span>' : ''}`}</div>`;
+    <span class="floor"></span>${d.screens.map(scr).join('')}<img class="desk" src="../../apps/web/src/assets/office/desk-${computerOf(m, x)}.png" alt="">
+    ${!S.receive ? '<img class="chair" src="../../apps/web/src/assets/office/chair.png" alt="">' : `<img class="who" src="../../apps/web/src/assets/figures/${figOf(m)}/${pose}.png" alt="">${pose === 'sleep' ? '<span class="zz"><i>z</i><i>z</i><i>z</i></span>' : ''}`}</div>`;
 }
 function pageMachines() {
   const rows = MACHINES.map(x => {
@@ -1932,7 +1852,7 @@ document.addEventListener('pointermove', e => {
     if (Math.hypot(e.clientX - c.x0, e.clientY - c.y0) < 5) return;
     c.on = true; document.body.classList.add('grabbing');
     const m = list().find(x => x.id === +c.a.dataset.goto), [w, h] = FIG[figOf(m) + '/carry'];
-    c.ghost = document.createElement('img'); c.ghost.className = 'carry'; c.ghost.src = `figures/${figOf(m)}/carry.png`;
+    c.ghost = document.createElement('img'); c.ghost.className = 'carry'; c.ghost.src = `../../apps/web/src/assets/figures/${figOf(m)}/carry.png`;
     c.w = w * .5; c.ghost.width = c.w; c.ghost.height = h * .5; document.body.append(c.ghost);
     c.who.classList.add('lifted');
   }
@@ -2306,7 +2226,7 @@ let toggleSide;
 document.addEventListener('click', e => {
   const t = e.target;
   // menus close on outside click
-  if (menuEl && t.isConnected && !menuEl.contains(t) && !t.closest('[data-keep],[data-act="brain"],[data-act="back"],[data-menu],[data-act="team-menu"],[data-act="machine-menu"],[data-act="avatar-picker"],[data-act="figure-picker"],[data-act="more-rx"],[data-act="tasks-menu"],[data-combo],#new-av,#new-engine,#new-machine')) closeMenu();
+  if (menuEl && t.isConnected && !menuEl.contains(t) && !t.closest('[data-keep],[data-act="brain"],[data-act="back"],[data-menu],[data-act="team-menu"],[data-act="machine-menu"],[data-act="avatar-picker"],[data-act="figure-picker"],[data-act="more-rx"],[data-act="tasks-menu"],#new-av,#new-engine,#new-machine')) closeMenu();
 
   const navBtn = t.closest('[data-nav]');
   if (navBtn) { S.page = navBtn.dataset.nav; S.open = null; closeMenu(); render(); return; }
@@ -2326,17 +2246,6 @@ document.addEventListener('click', e => {
 
   if (t.closest('[data-close]')) { closeDialog(); return; }
 
-  const sw = t.closest('[data-switch]');
-  if (sw) {
-    sw.classList.toggle('on');
-    const k = sw.dataset.switch;
-    if (k && k in S) {
-      S[k] = sw.classList.contains('on');
-      if (k === 'receive') { renderSide(); }
-    }
-    return;
-  }
-
   const segBtn = t.closest('.segmented button');
   if (segBtn && !segBtn.dataset.setTheme) {
     const seg = segBtn.parentElement, i = [...seg.children].indexOf(segBtn);
@@ -2354,9 +2263,6 @@ document.addEventListener('click', e => {
     setTheme(S.themePref === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : S.themePref);
     renderPage(); return;
   }
-
-  const ch = t.closest('[data-choices] .choice');
-  if (ch) { ch.parentElement.querySelectorAll('.choice').forEach(x => x.classList.toggle('on', x === ch)); return; }
 
   const cp = t.closest('[data-copy]');
   if (cp) {
@@ -2579,14 +2485,11 @@ document.addEventListener('input', e => {
     m[f] = e.target.value;
     if (m.draft) { const c = $('[data-act="create"]'); if (c) c.disabled = !m.name.trim(); } else flashSaved();
   }
-  if (e.target.matches('[data-combo]')) { delete e.target.dataset.fresh; comboMenu(e.target); }
   if (e.target.matches('[data-team-name]')) { team().name = e.target.textContent.trim(); renderSide(); }
   if (e.target.matches('[data-rules]')) team().rules = e.target.value;
   if (e.target.matches('textarea.doc')) { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 2 + 'px'; }
 });
 
-document.addEventListener('focusin', e => { if (e.target.matches('[data-combo]')) { e.target.dataset.fresh = '1'; e.target.select(); comboMenu(e.target); } });
-document.addEventListener('focusout', e => { if (e.target.matches('[data-combo]') && openMember()) commitModel(e.target, e.target.value); });
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-team-name]')) { e.preventDefault(); e.target.blur(); return; }
   if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-new-task]') && e.target.value.trim()) {
@@ -2596,13 +2499,6 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (e.key === 'Enter' && e.target.matches && e.target.matches('.stage .bare.n') && S.draft && S.open === 'new') { createMember(); return; }
-  if (e.target.matches && e.target.matches('[data-combo]')) {
-    if (e.key === 'Enter') {
-      const f = menuEl && menuEl.querySelector('[data-first]'), q = e.target.value.trim().toLowerCase();
-      commitModel(e.target, f && q && f.dataset.v.toLowerCase().includes(q) ? f.dataset.v : e.target.value); e.target.blur(); return;
-    }
-    if (e.key === 'Escape') { e.target.value = openMember().model; closeMenu(); e.target.blur(); return; }
-  }
   if (e.key !== 'Escape') return;
   if (menuEl) return closeMenu();
   if (scrimEl) return closeDialog();
@@ -2616,7 +2512,7 @@ const TOKENS = [
   ['canvas', '窗口底、侧栏'], ['surface', '内容面'], ['elevated', '菜单、弹窗'], ['field', '输入框、填充按钮'],
   ['hover', '悬停'], ['active', '选中、按下'], ['line', '分隔、描边'], ['line-strong', '虚线占位'],
   ['ink', '正文、主按钮'], ['ink-2', '次要文字、图标'], ['ink-3', '说明、分组标题'], ['ink-4', '占位、禁用'],
-  ['accent', '聚焦、选中、开关'], ['accent-soft', '聚焦光圈'], ['ok', '运行'], ['busy', '处理中'], ['err', '需要处理'], ['idle', '停止'], ['danger', '删除按钮'],
+  ['accent', '聚焦、选中'], ['accent-soft', '聚焦光圈'], ['ok', '运行'], ['busy', '处理中'], ['err', '需要处理'], ['idle', '停止'], ['danger', '删除按钮'],
 ];
 $('#swatches').innerHTML = TOKENS.map(([k, u]) => `<div><div class="sw" style="background:var(--${k})"></div><div class="k">${k}</div><div class="u">${u}</div></div>`).join('');
 
@@ -2737,7 +2633,7 @@ function obAI() {
   }).join('') : '<div class="ai-none">这台 Mac 上还没有 AI</div>' + FOUND.map(k => `<div class="ai-row get"><img src="${ENGINES[k].icon}" alt=""><span class="nm">${ENGINES[k].label}</span><button class="get-btn">安装</button></div>`).join('');
   return `<h1 class="ob-title">选择 AI</h1>
     <div class="ob-hero"><div class="rig ob-rig"><span class="hook l"><span class="peg"></span></span><span class="hook r"><span class="peg"></span></span>
-      <span class="rig-fig"><img src="figures/01/stand.png" alt=""></span>
+      <span class="rig-fig"><img src="../../apps/web/src/assets/figures/01/stand.png" alt=""></span>
       <div class="rig-body"><div class="screen list">${rows}</div></div></div></div>`;
 }
 function obTest(k) {

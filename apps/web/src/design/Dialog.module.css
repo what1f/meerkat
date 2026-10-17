@@ -1,7 +1,108 @@
 .root {
-  display: block;
+  width: 400px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 48px);
+  padding: 24px;
+  overflow: auto;
+  color: var(--ink);
+  background: var(--elevated);
+  border-style: none;
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-3);
+  opacity: 0;
+  transform: translateY(4px) scale(0.98);
+  transition:
+    opacity var(--d-base) var(--ease),
+    transform var(--d-base) var(--ease),
+    overlay var(--d-base) allow-discrete,
+    display var(--d-base) allow-discrete;
 }
 
-.root:not([open]) {
-  display: none;
+.root[open] {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--d-slow) var(--ease),
+    transform var(--d-slow) var(--ease-pop),
+    overlay var(--d-slow) allow-discrete,
+    display var(--d-slow) allow-discrete;
+}
+
+@starting-style {
+  .root[open] {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+}
+
+.root::backdrop {
+  background: var(--clear);
+  backdrop-filter: blur(0);
+  transition:
+    background-color var(--d-base) var(--ease),
+    backdrop-filter var(--d-base) var(--ease),
+    overlay var(--d-base) allow-discrete,
+    display var(--d-base) allow-discrete;
+}
+
+.root[open]::backdrop {
+  background: var(--backdrop);
+  backdrop-filter: blur(2px);
+}
+
+@starting-style {
+  .root[open]::backdrop {
+    background: var(--clear);
+    backdrop-filter: blur(0);
+  }
+}
+
+.root[data-size='md'] {
+  width: 460px;
+}
+
+.root > header > h2 {
+  margin: 0;
+  font-size: var(--t-title);
+  font-weight: 600;
+}
+
+.root > div {
+  margin-top: 14px;
+  color: var(--ink-2);
+}
+
+.root > footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+/* Confirm: narrow and centered, two equal buttons, the leading mark above the title. */
+.root[data-confirm] {
+  width: 320px;
+  padding: 28px 24px 20px;
+  font-size: var(--t-small);
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.root[data-confirm][open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.root[data-confirm] > header > h2 {
+  margin-bottom: 6px;
+  color: var(--ink);
+}
+
+.root[data-confirm] > div {
+  display: contents;
+}
+
+.root[data-confirm] > footer {
+  width: 100%;
 }

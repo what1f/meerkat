@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import type { UIProps } from '../design/index';
-
 import css from './FlipCard.module.css';
 export type FlipCardProps = Omit<UIProps, 'className' | 'style'> & {
   flipped: boolean;
@@ -8,6 +7,7 @@ export type FlipCardProps = Omit<UIProps, 'className' | 'style'> & {
   back: ReactNode;
   onFlip: () => void;
 };
+// Two faces back to back; double-click turns it over.
 export function FlipCard({ flipped, front, back, onFlip, ...rest }: FlipCardProps) {
   return (
     <div
@@ -23,8 +23,12 @@ export function FlipCard({ flipped, front, back, onFlip, ...rest }: FlipCardProp
       }}
       tabIndex={0}
     >
-      <div hidden={flipped}>{front}</div>
-      <div hidden={!flipped}>{back}</div>
+      <div className={css.face} inert={flipped}>
+        {front}
+      </div>
+      <div className={css.face} inert={!flipped}>
+        {back}
+      </div>
     </div>
   );
 }

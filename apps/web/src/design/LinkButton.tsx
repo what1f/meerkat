@@ -8,7 +8,8 @@ export type LinkButtonProps = Omit<UIProps, 'className' | 'style'> & {
   children: ReactNode;
   disclosure?: boolean;
   open?: boolean;
-  onClick: () => void;
+  /** Optional only when the button is a Menu or Popover trigger. */
+  onClick?: () => void;
 };
 export function LinkButton({ children, disclosure, open, onClick, ...rest }: LinkButtonProps) {
   return (
@@ -20,7 +21,7 @@ export function LinkButton({ children, disclosure, open, onClick, ...rest }: Lin
       aria-expanded={rest['aria-expanded'] ?? (disclosure ? open : undefined)}
     >
       {children}
-      {disclosure && <Icon name={open ? 'up' : 'chev'} />}
+      {disclosure && <Icon name="chev" size={12} />}
     </button>
   );
 }

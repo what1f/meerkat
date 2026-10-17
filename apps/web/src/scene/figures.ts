@@ -108,3 +108,14 @@ export const figures: Record<string, Record<string, { width: number; height: num
     },
   },
 };
+const frames = import.meta.glob<string>('../assets/figures/*/*.png', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+});
+export type Pose = 'work' | 'sleep' | 'carry' | 'stand';
+export function figureFrame(id: string, pose: Pose, scale = 1) {
+  const size = figures[id]?.[pose];
+  const src = frames[`../assets/figures/${id}/${pose}.png`];
+  return size && src ? { src, width: size.width * scale, height: size.height * scale } : null;
+}

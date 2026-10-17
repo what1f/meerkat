@@ -1,3 +1,48 @@
 .root {
+  display: flex;
+  justify-content: center;
+  padding: 28px 0 4px;
+}
+
+.strip {
+  position: relative;
+  padding: 10px 36px 11px;
+  background: var(--card);
+  border-radius: var(--r-hairline);
+  box-shadow: var(--label-shadow);
+}
+
+.strip > :is(button, input):is(*, :hover, :focus) {
   display: block;
+  min-width: 2em;
+  padding: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-label-name);
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  background: var(--clear);
+  box-shadow: var(--none);
+}
+
+.tape {
+  position: absolute;
+  top: 50%;
+  width: 34px;
+  height: 16px;
+  margin-top: -8px;
+  background: var(--tape);
+  box-shadow: var(--tape-edge);
+}
+
+.tape:first-child {
+  left: -16px;
+  transform: rotate(-8deg);
+}
+
+.tape:last-child {
+  right: -16px;
+  transform: rotate(6deg);
 }

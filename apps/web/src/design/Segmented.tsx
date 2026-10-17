@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { UIProps } from './types';
 
 import css from './Segmented.module.css';
@@ -20,7 +20,13 @@ export function Segmented<T>({
     options.findIndex((option) => Object.is(option.value, value)),
   );
   return (
-    <div {...rest} className={css.root} role="radiogroup" data-size={size}>
+    <div
+      {...rest}
+      className={css.root}
+      role="radiogroup"
+      data-size={size}
+      style={{ '--n': Math.max(1, options.length), '--i': selected } as CSSProperties}
+    >
       {options.map((option, index) => (
         <button
           key={index}

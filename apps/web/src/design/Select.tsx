@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { UIProps } from './types';
 import { Select as BaseSelect } from '@base-ui/react/select';
+import { Icon } from './Icon';
 import css from './Select.module.css';
 export type SelectProps<T> = Omit<UIProps, 'className' | 'style'> & {
   options: { value: T; label: string; leading?: ReactNode; disabled?: boolean }[];
@@ -24,15 +25,36 @@ export function Select<T>({
       items={options}
     >
       <BaseSelect.Trigger {...rest} className={css.root} data-variant={variant}>
-        <BaseSelect.Value />
+        <BaseSelect.Value>
+          {(current: T) => {
+            const option = options.find((o) => Object.is(o.value, current));
+            return (
+              <>
+                {option?.leading}
+                <span>{option?.label}</span>
+              </>
+            );
+          }}
+        </BaseSelect.Value>
+        <BaseSelect.Icon className={css.chev}>
+          <Icon name="chev" size={14} />
+        </BaseSelect.Icon>
       </BaseSelect.Trigger>
       <BaseSelect.Portal>
-        <BaseSelect.Positioner>
-          <BaseSelect.Popup>
+        <BaseSelect.Positioner alignItemWithTrigger={false} sideOffset={4} align="start">
+          <BaseSelect.Popup className={css.popup}>
             {options.map((option, index) => (
-              <BaseSelect.Item key={index} value={option.value} disabled={option.disabled}>
+              <BaseSelect.Item
+                key={index}
+                className={css.item}
+                value={option.value}
+                disabled={option.disabled}
+              >
                 {option.leading}
-                <BaseSelect.ItemText>{option.label}</BaseSelect.ItemText>
+                <BaseSelect.ItemText className={css.label}>{option.label}</BaseSelect.ItemText>
+                <BaseSelect.ItemIndicator className={css.check}>
+                  <Icon name="check" size={14} />
+                </BaseSelect.ItemIndicator>
               </BaseSelect.Item>
             ))}
           </BaseSelect.Popup>

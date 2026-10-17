@@ -149,7 +149,7 @@ be deleted.
 
 ## Avatars
 
-![Avatars](avatars/sheet.jpg)
+![Avatars](../../apps/web/src/assets/avatars/sheet.jpg)
 
 - Built-in set: the logo meerkat plus 16 variations (background, accessory,
   pose, activity), flat style matching the logo.

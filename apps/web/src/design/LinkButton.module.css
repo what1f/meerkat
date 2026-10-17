@@ -1,3 +1,30 @@
 .root {
-  display: block;
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 0;
+  font-size: var(--t-small);
+  color: var(--ink-2);
+  background: var(--clear);
+  border-style: none;
+  border-radius: var(--r-xs);
+  transition: color var(--d-fast);
+}
+
+.root:hover,
+.root[data-popup-open] {
+  color: var(--ink);
+}
+
+.root:focus-visible {
+  outline-style: none;
+  box-shadow: var(--ring-focus);
+}
+
+.root > svg {
+  transition: transform var(--d-base) var(--ease);
+}
+
+.root[aria-expanded='true'] > svg {
+  transform: rotate(180deg);
 }

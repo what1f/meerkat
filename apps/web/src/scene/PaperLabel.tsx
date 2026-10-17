@@ -6,16 +6,21 @@ export type PaperLabelProps = Omit<UIProps, 'className' | 'style'> & {
   onCommit: (value: string) => void;
   label: string;
 };
+// The team name: a paper label taped across the top of the board.
 export function PaperLabel({ value, onCommit, label, ...rest }: PaperLabelProps) {
   return (
     <div {...rest} className={css.root}>
-      <InlineText
-        value={value}
-        onCommit={onCommit}
-        placeholder={label}
-        aria-label={label}
-        textStyle="heading"
-      />
+      <div className={css.strip}>
+        <span className={css.tape} />
+        <InlineText
+          value={value}
+          onCommit={onCommit}
+          placeholder={label}
+          aria-label={label}
+          textStyle="heading"
+        />
+        <span className={css.tape} />
+      </div>
     </div>
   );
 }

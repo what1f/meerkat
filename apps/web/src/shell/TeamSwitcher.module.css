@@ -1,3 +1,42 @@
+/* The team name reads as the sidebar's title. */
 .root {
-  display: block;
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  width: 100%;
+  height: 36px;
+  padding: 0 8px;
+  font-size: var(--t-body);
+  font-weight: 600;
+  color: var(--ink);
+  text-align: left;
+  background: var(--clear);
+  border-style: none;
+  border-radius: var(--r-md);
+  outline-style: none;
+  transition:
+    background-color var(--d-fast),
+    box-shadow var(--d-fast);
+}
+
+.root:hover,
+.root[data-popup-open] {
+  background: var(--hover);
+}
+
+.root:focus-visible {
+  box-shadow: var(--ring-focus);
+}
+
+.root > svg {
+  flex: none;
+  color: var(--ink-3);
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -1,3 +1,77 @@
 .root {
-  display: block;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 16px;
+  align-items: end;
+}
+
+.ai {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 8px;
+  align-items: center;
+  font-size: var(--t-body);
+  color: var(--screen-ink-2);
+}
+
+.ai > img {
+  width: 18px;
+  height: 18px;
+}
+
+.ai > img[data-brand='pi'] {
+  filter: var(--screen-mark);
+}
+
+.model {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--t-model);
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.where {
+  display: flex;
+  grid-column: 1;
+  gap: 7px;
+  align-items: center;
+  margin-top: 6px;
+  font-size: var(--t-body);
+  color: var(--screen-ink-3);
+}
+
+.where > [role='status'] {
+  width: 6px;
+  height: 6px;
+}
+
+.gauge {
+  display: flex;
+  grid-row: 2 / 4;
+  grid-column: 2;
+  gap: 4px;
+  align-items: center;
+  align-self: center;
+}
+
+.gauge > i {
+  width: 7px;
+  height: 22px;
+  background: var(--gauge-off);
+  border-radius: var(--r-gauge);
+}
+
+.gauge > i[data-on='true'] {
+  background: var(--screen-ink);
+  box-shadow: var(--gauge-glow);
+}
+
+.gauge > b {
+  margin-left: 6px;
+  font-size: var(--t-small);
+  font-weight: 500;
+  color: var(--screen-ink-3);
 }

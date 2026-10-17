@@ -11,9 +11,7 @@ export function TopBar({ title, back, ...rest }: TopBarProps) {
     <header {...rest} className={css.root}>
       {back &&
         ('menu' in back ? (
-          <Menu trigger={<LinkButton onClick={() => {}}>{back.label}</LinkButton>}>
-            {back.menu}
-          </Menu>
+          <Menu trigger={<LinkButton disclosure>{back.label}</LinkButton>}>{back.menu}</Menu>
         ) : (
           <LinkButton onClick={back.onClick}>{back.label}</LinkButton>
         ))}

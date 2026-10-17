@@ -14,8 +14,8 @@ export function Menu({ trigger, align = 'start', children, ...rest }: MenuProps)
     <BaseMenu.Root>
       <BaseMenu.Trigger {...rest} className={css.root} render={trigger} />
       <BaseMenu.Portal>
-        <BaseMenu.Positioner align={align}>
-          <BaseMenu.Popup>{children}</BaseMenu.Popup>
+        <BaseMenu.Positioner align={align} sideOffset={4}>
+          <BaseMenu.Popup className={css.popup}>{children}</BaseMenu.Popup>
         </BaseMenu.Positioner>
       </BaseMenu.Portal>
     </BaseMenu.Root>
@@ -39,17 +39,18 @@ Menu.Item = function Item({
   const content = (
     <>
       {leading}
-      {children}
-      {checked && <Icon name="check" />}
+      <span className={css.label}>{children}</span>
+      {checked && <Icon name="check" size={14} />}
     </>
   );
   return checked === undefined ? (
-    <BaseMenu.Item {...rest} onClick={onSelect} data-danger={danger}>
+    <BaseMenu.Item {...rest} className={css.item} onClick={onSelect} data-danger={danger}>
       {content}
     </BaseMenu.Item>
   ) : (
     <BaseMenu.CheckboxItem
       {...rest}
+      className={css.item}
       checked={checked}
       onClick={onSelect}
       closeOnClick
@@ -60,5 +61,5 @@ Menu.Item = function Item({
   );
 };
 Menu.Separator = function Separator(props: Omit<UIProps, 'className' | 'style'>) {
-  return <BaseMenu.Separator {...props} />;
+  return <BaseMenu.Separator {...props} className={css.separator} />;
 };

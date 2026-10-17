@@ -1,3 +1,98 @@
 .root {
+  position: relative;
   display: flex;
+  height: 100%;
+  overflow: hidden;
+  color: var(--ink);
+  user-select: none;
+  background: var(--canvas);
+}
+
+/* Inside the Mac app the window material shows through the sidebar. */
+.root[data-desktop='true'] {
+  background: var(--clear);
+}
+
+.root > [data-rail] {
+  display: flex;
+  flex: none;
+}
+
+/* Keeps the sidebar toggle beside the traffic lights. */
+[data-desktop-safe-area] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  width: 100%;
+  height: var(--safe-area);
+  -webkit-app-region: drag;
+}
+
+.root > [data-rail] > button {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  z-index: 6;
+  color: var(--ink-3);
+  -webkit-app-region: no-drag;
+  transition:
+    left var(--d-slow) var(--ease-pop),
+    top var(--d-slow) var(--ease-pop);
+}
+
+.root > [data-rail='true'] > button {
+  left: 26px;
+}
+
+.root > [data-rail] > button:hover {
+  color: var(--ink);
+}
+
+.root[data-desktop='true'] > [data-rail] > button {
+  left: 82px;
+}
+
+.root[data-desktop='true'] > [data-rail='true'] > button {
+  top: 44px;
+  left: 26px;
+}
+
+.root > div:last-child {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: var(--edge-left);
+}
+
+.root:has(aside[hidden]) > div:last-child {
+  box-shadow: var(--none);
+}
+
+.root > div:last-child > main {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+  user-select: text;
+}
+
+.root[data-desktop='true'] > div:last-child > header {
+  -webkit-app-region: drag;
+}
+
+/* With the sidebar hidden the title bar slides under the toggle. */
+.root:has(aside[hidden]) > div:last-child > header {
+  padding-left: 56px;
+}
+
+.root[data-desktop='true']:has(aside[hidden]) > div:last-child > header {
+  padding-left: 124px;
+}
+
+.root[data-desktop='true'] > div:last-child > header > * {
+  -webkit-app-region: no-drag;
 }

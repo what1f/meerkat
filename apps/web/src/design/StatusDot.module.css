@@ -1,3 +1,46 @@
 .root {
-  display: block;
+  --c: var(--idle);
+
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  background: var(--c);
+  border-radius: var(--r-full);
+  transition: background-color var(--d-slow) var(--ease);
+}
+
+.root[data-status='ok'] {
+  --c: var(--ok);
+}
+
+.root[data-status='busy'] {
+  --c: var(--busy);
+}
+
+.root[data-status='err'] {
+  --c: var(--err);
+}
+
+.root[data-status='busy']::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  background: var(--c);
+  border-radius: var(--r-full);
+  animation: ping 1.8s var(--ease) infinite;
+}
+
+@keyframes ping {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+
+  80%,
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
 }

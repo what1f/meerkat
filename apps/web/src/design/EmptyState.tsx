@@ -9,7 +9,9 @@ export type EmptyStateProps = Omit<UIProps, 'className' | 'style'> & {
 export function EmptyState({ title, action, ...rest }: EmptyStateProps) {
   return (
     <section {...rest} className={css.root}>
-      <img src={mascot} alt="" />
+      <div className={css.peek}>
+        <img src={mascot} alt="" />
+      </div>
       <h2>{title}</h2>
       {action}
     </section>

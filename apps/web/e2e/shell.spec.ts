@@ -20,7 +20,21 @@ test('B4.1: navigate and receive a new workspace without a page reload', async (
   const document = await page.locator('html').elementHandle();
   await rig({ op: 'create_workspace', workspace: 'browser_team' });
   await frame;
-  await expect(page.getByRole('combobox')).toContainText('browser_team');
+  // The team title opens a menu: the new team is listed, the current one is checked.
+  const switcher = page.getByTestId('team-switcher');
+  const menu = page.getByRole('menu');
+  const current = (await switcher.textContent())!.trim();
+  await switcher.click();
+  await expect(menu.getByRole('menuitemcheckbox', { name: 'browser_team' })).toBeVisible();
+  await expect(menu.getByRole('menuitemcheckbox', { checked: true })).toHaveText(current);
+  await menu.getByRole('menuitemcheckbox', { name: 'browser_team' }).click();
+  await expect(menu).toBeHidden();
+  await expect(switcher).toHaveText('browser_team');
+  await expect(page).toHaveURL(/#\/members$/);
+  await switcher.click();
+  await expect(menu.getByRole('menuitemcheckbox', { checked: true })).toHaveText('browser_team');
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
   expect(await document!.evaluate((node) => node === window.document.documentElement)).toBe(true);
   expect(errors).toEqual([]);
 });

@@ -1,3 +1,115 @@
 .root {
   display: block;
 }
+
+.row {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  height: 50px;
+  padding: 0 16px;
+  font-size: var(--t-row);
+  color: var(--stage-ink-2);
+  text-align: left;
+  cursor: pointer;
+  background: var(--clear);
+  border-style: none;
+  border-radius: var(--r-md);
+  transition:
+    background-color var(--d-fast),
+    color var(--d-fast);
+}
+
+.row:is(:hover, :focus-visible):not([data-static]) {
+  color: var(--stage-ink);
+  background: var(--stage-hover);
+  outline-style: none;
+}
+
+.root[data-selected='true'] .row {
+  color: var(--stage-ink);
+  background: var(--stage-on);
+}
+
+.row[data-static] {
+  cursor: default;
+}
+
+.mark {
+  display: flex;
+  width: 22px;
+  height: 22px;
+}
+
+.mark > * {
+  width: 100%;
+  height: 100%;
+}
+
+.name {
+  flex: 1;
+}
+
+.spin {
+  display: flex;
+  color: var(--stage-ink-2);
+}
+
+.led {
+  width: 8px;
+  height: 8px;
+  background: var(--stage-led);
+  border-radius: var(--r-full);
+  transition:
+    background-color var(--d-base),
+    box-shadow var(--d-base);
+}
+
+.led[data-test='ok'] {
+  background: var(--led-ok);
+  box-shadow: var(--led-ok-glow);
+}
+
+.led[data-test='fail'] {
+  background: var(--led-fail);
+  box-shadow: var(--led-fail-glow);
+}
+
+.get {
+  height: 26px;
+  padding: 0 12px;
+  font-size: var(--t-small);
+  color: var(--stage-ink);
+  background: var(--stage-chip);
+  border-style: none;
+  border-radius: var(--r-pill);
+}
+
+.get:is(:hover, :focus-visible) {
+  background: var(--stage-chip-hover);
+  outline-style: none;
+}
+
+.reply {
+  margin: 4px 16px 10px 50px;
+  font-family: var(--font-mono);
+  font-size: var(--t-body);
+  color: var(--reply-ok);
+  animation: type 0.9s steps(8) both;
+}
+
+.reply[data-test='fail'] {
+  color: var(--reply-fail);
+}
+
+@keyframes type {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  to {
+    clip-path: inset(0);
+  }
+}

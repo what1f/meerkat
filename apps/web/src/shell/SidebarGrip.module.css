@@ -1,6 +1,34 @@
 .root {
-  display: block;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
   width: 8px;
-  min-height: 40px;
+  cursor: col-resize;
   touch-action: none;
+  outline-style: none;
+}
+
+.root::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  content: '';
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--d-fast);
+}
+
+.root:hover::after,
+.root:focus-visible::after {
+  opacity: 0.5;
+  transition-delay: 0.2s;
+}
+
+.root:active::after {
+  opacity: 0.5;
+  transition-delay: 0s;
 }

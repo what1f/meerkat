@@ -17,7 +17,7 @@ export type GroupRowProps = Omit<UIProps, 'className' | 'style'> & {
 };
 Group.Row = function Row({ label, children, align = 'center', ...rest }: GroupRowProps) {
   return (
-    <div {...rest} className={css.root} data-align={align}>
+    <div {...rest} className={css.row} data-align={align}>
       <div>{label}</div>
       <div>{children}</div>
     </div>

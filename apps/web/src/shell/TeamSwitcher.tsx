@@ -1,5 +1,5 @@
 import type { UIProps } from '../design/index';
-import { Button, Select } from '../design';
+import { Icon, Menu } from '../design';
 import css from './TeamSwitcher.module.css';
 export type TeamSwitcherProps = Omit<UIProps, 'className' | 'style'> & {
   teams: { id: string; name: string }[];
@@ -8,6 +8,7 @@ export type TeamSwitcherProps = Omit<UIProps, 'className' | 'style'> & {
   onCreate: () => void;
   createLabel: string;
 };
+// The current team is the sidebar's title; switching and creating live in its menu.
 export function TeamSwitcher({
   teams,
   current,
@@ -16,14 +17,30 @@ export function TeamSwitcher({
   createLabel,
   ...rest
 }: TeamSwitcherProps) {
+  const name = teams.find((team) => team.id === current)?.name;
   return (
-    <div {...rest} className={css.root}>
-      <Select
-        value={current}
-        onChange={onSelect}
-        options={teams.map((team) => ({ value: team.id, label: team.name }))}
-      />
-      <Button onClick={onCreate}>{createLabel}</Button>
-    </div>
+    <Menu
+      trigger={
+        // eslint-disable-next-line no-restricted-syntax -- The team title is a shell-only control with no design counterpart.
+        <button {...rest} className={css.root} type="button">
+          <span className={css.name}>{name}</span>
+          <Icon name="updown" size={14} />
+        </button>
+      }
+    >
+      {teams.map((team) => (
+        <Menu.Item
+          key={team.id}
+          checked={team.id === current}
+          onSelect={() => team.id !== current && onSelect(team.id)}
+        >
+          {team.name}
+        </Menu.Item>
+      ))}
+      <Menu.Separator />
+      <Menu.Item leading={<Icon name="plus" size={14} />} onSelect={onCreate}>
+        {createLabel}
+      </Menu.Item>
+    </Menu>
   );
 }

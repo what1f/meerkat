@@ -1,3 +1,148 @@
 .root {
-  display: block;
+  position: relative;
+  width: 120px;
+  height: 112px;
+  perspective: 400px;
+  transform-origin: 50% 12px;
+}
+
+.root[data-turn='0'] {
+  animation: swing-a 1s var(--ease);
+}
+
+.root[data-turn='1'] {
+  animation: swing-b 1s var(--ease);
+}
+
+.peg {
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  z-index: 3;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  background: var(--peg-face);
+  border-radius: var(--r-full);
+  box-shadow: var(--peg-shadow);
+}
+
+.strings {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 120px;
+  height: 48px;
+  overflow: visible;
+  pointer-events: none;
+  fill: var(--none);
+  stroke: var(--cord);
+  stroke-linecap: round;
+  stroke-width: 1.6;
+}
+
+.sign {
+  position: absolute;
+  top: 44px;
+  left: 10px;
+  width: 100px;
+  height: 56px;
+  padding: 0;
+  background: var(--clear);
+  border-style: none;
+  transform-origin: 50% 0;
+  transform-style: preserve-3d;
+  transition: transform 0.7s var(--ease-pop);
+}
+
+.sign:focus-visible {
+  outline-style: none;
+}
+
+.root[data-on='false'] .sign {
+  transform: rotateY(180deg);
+}
+
+.face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: var(--t-heading);
+  font-weight: 600;
+  color: var(--ink);
+  text-indent: 0.24em;
+  letter-spacing: 0.24em;
+  background: var(--card);
+  border-radius: var(--r-input-lg);
+  box-shadow: var(--card-shadow);
+  backface-visibility: hidden;
+}
+
+.face + .face {
+  color: var(--ink-3);
+  background: var(--card-rear);
+  transform: rotateY(180deg);
+}
+
+.sign:focus-visible > .face {
+  box-shadow: var(--card-shadow-focus);
+}
+
+.face::before,
+.face::after {
+  position: absolute;
+  top: 6px;
+  width: 5px;
+  height: 5px;
+  content: '';
+  background: var(--board);
+  border-radius: var(--r-full);
+  box-shadow: var(--punch-shadow);
+}
+
+.face::before {
+  left: 8px;
+}
+
+.face::after {
+  right: 8px;
+}
+
+@keyframes swing-a {
+  14% {
+    transform: rotate(2.2deg);
+  }
+
+  36% {
+    transform: rotate(-1.5deg);
+  }
+
+  58% {
+    transform: rotate(0.8deg);
+  }
+
+  80% {
+    transform: rotate(-0.3deg);
+  }
+}
+
+@keyframes swing-b {
+  14% {
+    transform: rotate(2.2deg);
+  }
+
+  36% {
+    transform: rotate(-1.5deg);
+  }
+
+  58% {
+    transform: rotate(0.8deg);
+  }
+
+  80% {
+    transform: rotate(-0.3deg);
+  }
 }

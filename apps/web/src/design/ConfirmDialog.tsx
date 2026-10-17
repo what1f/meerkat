@@ -29,6 +29,8 @@ export function ConfirmDialog({
   return (
     <Dialog
       {...rest}
+      data-confirm
+      size="sm"
       open={open}
       onClose={onClose}
       title={title}
@@ -41,7 +43,7 @@ export function ConfirmDialog({
         </div>
       }
     >
-      {leading}
+      {leading && <div className={css.leading}>{leading}</div>}
       {body}
     </Dialog>
   );

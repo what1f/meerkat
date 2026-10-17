@@ -1,7 +1,7 @@
 import type { Ref } from 'react';
 import type { ReactNode } from 'react';
 import type { UIProps } from '../design/index';
-import { Icon, type IconName } from '../design';
+import { Icon, Tooltip, type IconName } from '../design';
 import css from './ConsoleKey.module.css';
 export type ConsoleKeyProps = Omit<UIProps, 'className' | 'style'> & {
   ref?: Ref<HTMLButtonElement>;
@@ -23,7 +23,7 @@ export function ConsoleKey({
   children,
   ...rest
 }: ConsoleKeyProps) {
-  return (
+  const key = (
     <button
       {...rest}
       className={css.root}
@@ -34,8 +34,11 @@ export function ConsoleKey({
       onClick={onClick}
       aria-label={label}
     >
-      {icon && <Icon name={icon} />}
-      {children ?? label}
+      {go && <i className={css.led} />}
+      {icon && <Icon name={icon} size={16} />}
+      {children ?? (icon ? null : label)}
     </button>
   );
+  // Icon keys name themselves on hover.
+  return icon && !children ? <Tooltip label={label}>{key}</Tooltip> : key;
 }

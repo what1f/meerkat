@@ -55,6 +55,7 @@ function WorkspaceShell() {
         <Sidebar
           header={
             <TeamSwitcher
+              data-testid="team-switcher"
               teams={teams}
               current={current}
               onSelect={(id) => {

@@ -1,0 +1,64 @@
+/* Shared by the things that hang on the board by a string: a peg, a string and an eyelet. */
+.hang {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding-top: 50px;
+  transform-origin: 50% 12px;
+}
+
+.peg {
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  z-index: 3;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  background: var(--peg-face);
+  border-radius: var(--r-full);
+  box-shadow: var(--peg-shadow);
+}
+
+.cord {
+  position: absolute;
+  top: 11px;
+  left: 50%;
+  z-index: 1;
+}
+
+.cord::before,
+.cord::after {
+  position: absolute;
+  top: 0;
+  left: -1px;
+  width: 2px;
+  height: 62px;
+  content: '';
+  background: var(--ink-3);
+  border-radius: var(--r-hairline);
+  transform-origin: 50% 0;
+}
+
+.cord::before {
+  transform: rotate(3deg);
+}
+
+.cord::after {
+  transform: rotate(-3deg);
+}
+
+.shadow {
+  filter: var(--tag-shadow);
+}
+
+.eyelet {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  background: var(--eyelet);
+  border-radius: var(--r-full);
+}

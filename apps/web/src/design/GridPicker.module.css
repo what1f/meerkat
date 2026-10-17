@@ -1,9 +1,47 @@
 .root {
   display: grid;
+  gap: 6px;
+  justify-content: start;
 }
 
 .root > [role='row'] {
-  display: grid;
-  grid-template-columns: subgrid;
-  grid-column: 1 / -1;
+  display: contents;
+}
+
+.root [role='gridcell'] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.root [role='gridcell'] > button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  color: var(--ink-2);
+  background: var(--clear);
+  border-style: none;
+  border-radius: var(--r-lg);
+  transition:
+    background-color var(--d-fast),
+    box-shadow var(--d-base),
+    transform var(--d-fast) var(--ease-pop);
+}
+
+.root [aria-selected='true'] > button {
+  background: var(--accent-soft);
+  box-shadow: var(--cell-selected);
+}
+
+.root [role='gridcell'] > button:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.root [role='gridcell'] > button:focus-visible {
+  outline-style: none;
+  box-shadow: var(--ring-focus);
 }

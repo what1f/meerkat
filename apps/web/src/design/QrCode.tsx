@@ -19,7 +19,6 @@ export function QrCode({ value, size, ...rest }: QrCodeProps) {
       role="img"
       aria-label={rest['aria-label']}
     >
-      <rect width="100%" height="100%" fill="white" />
       {Array.from(matrix.data, (dark, index) =>
         dark ? (
           <rect
@@ -28,7 +27,6 @@ export function QrCode({ value, size, ...rest }: QrCodeProps) {
             y={Math.floor(index / matrix.size) + quiet}
             width="1"
             height="1"
-            fill="black"
           />
         ) : null,
       )}

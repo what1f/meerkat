@@ -1,3 +1,21 @@
 .root {
-  display: block;
+  position: relative;
+  padding: 12px 44px 12px 14px;
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  line-height: 20px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  background: var(--field);
+  border-radius: var(--r-input-lg);
+}
+
+.root > code {
+  font-family: inherit;
+}
+
+.root > button {
+  position: absolute;
+  top: 6px;
+  right: 6px;
 }

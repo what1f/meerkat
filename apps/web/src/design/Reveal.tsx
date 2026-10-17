@@ -8,8 +8,8 @@ export type RevealProps = Omit<UIProps, 'className' | 'style'> & {
 };
 export function Reveal({ open, children, ...rest }: RevealProps) {
   return (
-    <div {...rest} className={css.root} hidden={!open}>
-      {children}
+    <div {...rest} className={css.root} data-open={open}>
+      <div inert={!open}>{children}</div>
     </div>
   );
 }

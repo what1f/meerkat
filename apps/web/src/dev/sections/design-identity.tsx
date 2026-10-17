@@ -1,5 +1,6 @@
 import * as D from '../../design';
-const iconNames: D.IconName[] = [
+import { Spec, State } from '../Spec';
+const icons: D.IconName[] = [
   'users',
   'chat',
   'monitor',
@@ -34,23 +35,48 @@ const avatar = new URL('../../assets/avatars/01.jpg', import.meta.url).href;
 export function DesignIdentity() {
   return (
     <>
-      {iconNames.map((name) => (
-        <D.Icon key={name} name={name} />
-      ))}
-      {(['feishu', 'telegram', 'codex', 'claude-code', 'pi'] as const).map((brand) => (
-        <D.BrandMark key={brand} brand={brand} />
-      ))}
-
-      {(['ok', 'busy', 'idle', 'err'] as const).map((status) => (
-        <D.StatusDot key={status} status={status} tip={status} />
-      ))}
-      {([20, 26, 32, 40, 44, 60, 76, 88] as const).map((size) => (
-        <D.Avatar key={size} src={avatar} size={size} status="ok" />
-      ))}
-      <D.Avatar size={40} dimmed />
-      <D.Avatar src={avatar} size={40} creating />
-      <D.Avatar src={avatar} size={40} selected onEdit={() => {}} editLabel="Edit avatar" />
-      <D.Avatar src={avatar} size={40} status="idle" statusTip="Paused" />
+      <Spec name="Icon set">
+        {icons.map((name) => (
+          <State key={name} label={name}>
+            <D.Icon name={name} />
+          </State>
+        ))}
+      </Spec>
+      <Spec name="BrandMark">
+        {(['feishu', 'telegram', 'codex', 'claude-code', 'pi'] as const).map((brand) => (
+          <State key={brand} label={brand}>
+            <D.BrandMark brand={brand} />
+          </State>
+        ))}
+      </Spec>
+      <Spec name="StatusDot">
+        {(['ok', 'busy', 'idle', 'err'] as const).map((status) => (
+          <State key={status} label={status}>
+            <D.StatusDot status={status} tip={status} />
+          </State>
+        ))}
+      </Spec>
+      <Spec name="Avatar sizes">
+        {([20, 26, 32, 40, 44, 60, 76, 88] as const).map((size) => (
+          <State key={size} label={String(size)}>
+            <D.Avatar src={avatar} size={size} status="ok" />
+          </State>
+        ))}
+      </Spec>
+      <Spec name="Avatar states">
+        <State label="empty dimmed">
+          <D.Avatar size={40} dimmed />
+        </State>
+        <State label="creating">
+          <D.Avatar src={avatar} size={40} creating />
+        </State>
+        <State label="selected editable">
+          <D.Avatar src={avatar} size={40} selected onEdit={() => {}} editLabel="Edit" />
+        </State>
+        <State label="idle">
+          <D.Avatar src={avatar} size={40} status="idle" statusTip="Paused" />
+        </State>
+      </Spec>
     </>
   );
 }

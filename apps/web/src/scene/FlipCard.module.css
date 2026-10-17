@@ -1,3 +1,23 @@
 .root {
-  display: block;
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.7s var(--ease-pop);
+}
+
+.root[data-flipped='true'] {
+  transform: perspective(900px) rotateY(180deg);
+}
+
+.root:focus-visible {
+  outline-style: none;
+}
+
+.face {
+  backface-visibility: hidden;
+}
+
+.face + .face {
+  position: absolute;
+  inset: 0;
+  transform: rotateY(180deg);
 }

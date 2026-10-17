@@ -22,8 +22,8 @@ export function Popover({
     <BasePopover.Root open={open} onOpenChange={onOpenChange}>
       <BasePopover.Trigger {...rest} className={css.root} render={trigger} />
       <BasePopover.Portal>
-        <BasePopover.Positioner align={align}>
-          <BasePopover.Popup>{children}</BasePopover.Popup>
+        <BasePopover.Positioner align={align} sideOffset={6}>
+          <BasePopover.Popup className={css.popup}>{children}</BasePopover.Popup>
         </BasePopover.Positioner>
       </BasePopover.Portal>
     </BasePopover.Root>

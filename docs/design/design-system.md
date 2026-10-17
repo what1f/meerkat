@@ -30,13 +30,13 @@ To add:
 
 | Token | Purpose | Replaces |
 |---|---|---|
-| `status_active` | running, online, passed test | `0x22a447`, `0x238636`, `0x16803a`, `success` used as a dot |
-| `status_busy` | starting, syncing | `0xb7791f` |
-| `status_idle` | stopped, offline | `0x9a9a9a` |
-| `status_error` | failed | `0xdc2626`, `error` used as a dot |
-| `status_*_soft` | tinted backgrounds for the above | `0x22a4470d`, `0x16803a11`, `0xdc262611`, banner `0xff00000a` |
+| `ok` | running, online, passed test | `0x22a447`, `0x238636`, `0x16803a`, `success` used as a dot |
+| `busy` | starting, syncing | `0xb7791f` |
+| `idle` | stopped, offline | `0x9a9a9a` |
+| `err` | failed | `0xdc2626`, `error` used as a dot |
+| `*-soft` | tinted backgrounds for the above | `0x22a4470d`, `0x16803a11`, `0xdc262611`, banner `0xff00000a` |
 | `board` | pegboard canvas and hole color, shared by the members page and onboarding | — |
-| `brand_*` | periwinkle `#7683d6` (also your own lanyard), ochre, plum | `0xfccc73`, `0x4e3038`, `0x3e2328` in the peek mascot |
+| `brand-*` | periwinkle `#7683d6` (also your own lanyard), ochre, plum | `0xfccc73`, `0x4e3038`, `0x3e2328` in the peek mascot |
 
 `DesktopSteps` hard-codes its own greens (`0x86c89a`, `0x22a44714`, `0x238636`).
 
@@ -97,10 +97,10 @@ Standardize on small 440, medium 560, large 720.
 
 | Component | Status |
 |---|---|
-| `DesktopButton` (primary, outline, ghost, icon, loading) | Keep. Add a quiet text-link variant for **稍后设置**, **切换账号**, **高级设置**. |
+| `DesktopButton` (primary, outline, ghost, icon, loading) | Keep. Add `LinkButton`, a quiet text link for **稍后设置**, **切换账号**, **高级设置**. |
 | `DesktopInput`, `DesktopTextarea`, `DesktopSelect`, `DesktopCheckbox` | Keep. |
 | `DesktopFormField` | Keep. |
-| `DesktopBanner` | Keep. Move the error tint to `status_error_soft`. |
+| `DesktopBanner` | Keep. Move the error tint to `err-soft`. |
 | `DesktopDialog`, header, footer | Keep. |
 | `DesktopSteps` | Replace with hairline progress dashes. Used by the workspace dialog, the Agent dialog, and the old onboarding wizard, all of which the new flow replaces. |
 | `DesktopChip`, `desktop_choice` | Keep. |
@@ -109,17 +109,18 @@ Standardize on small 440, medium 560, large 720.
 | `DesktopAvatar` | Keep. Add built-in avatar sources. |
 | `desktop_card` | Unused. Remove or adopt for onboarding tiles. |
 | `DesktopAvatarGroup` | Only `apps/ui-preview` uses it. |
-| Peek mascot (`apps/desktop/src/ui/components.rs`) | Move into the crate as `Mascot` with poses: peek from an edge, sit, wave. |
+| Peek mascot (`apps/desktop/src/ui/components.rs`) | Move into the crate as `Mascot`; the only pose is peek from an edge. |
 
 New primitives for onboarding:
 
-- `OnboardingPage`: pegboard canvas (holes fade out on the desk scenes),
-  progress dashes, centered column, fixed footer.
-- `StatusDot`: the only way to render status.
+- `OnboardingFlow`: pegboard canvas (`Board` with holes that fade out on the
+  desk scenes), progress `Dashes`, centered column, fixed footer.
+- `StatusDot`: the only way to render status: `ok`, `busy`, `idle`, `err`.
 - `QrTag`: a QR hung on the pegboard like a tag: waiting, scanned (dimmed with
   the scanner's avatar), expired (refresh on the code). After sign-in it flips
   into your badge.
-- `HarnessRow`: icon, name, radio, test button or result, inline reply.
+- `HarnessRow`: AI mark, name, test light (running, passed, failed), selected
+  row, the reply under it, or an install action when nothing is found.
 - `AvatarPicker`: **上传** followed by the built-in set.
 
 ## Figures
@@ -148,7 +149,7 @@ chair at the same place, so the app can swap them without moving anything;
 | `stand` | Standing, facing the viewer | Picker thumbnail |
 
 The chair is drawn into `work` and `sleep`; the desk and computers are not.
-The figure sits centered in front of a desk from `office/`, without a tail or
+The figure sits centered in front of a desk from `apps/web/src/assets/office/`, without a tail or
 feet showing. Each desk comes with its computers, and its screens are
 transparent holes; the app draws the status behind them. There are two
 setups: a MacBook on a stand next to a display, and a display with a Mac mini.
@@ -158,7 +159,7 @@ main screen shows the status: typing when replying, a red 「!」 when the
 member needs attention, dark when paused. Members of an offline workspace
 sleep in front of dark screens. When the team is off duty (下班), nobody
 replies: every member has gone home, so each desk shows the empty chair from
-`office/` and all screens are off. A workspace without members has no desk.
+`apps/web/src/assets/office/` and all screens are off. A workspace without members has no desk.
 
 ### Pack format
 
@@ -175,8 +176,8 @@ work.png  sleep.png  carry.png  stand.png
 
 `scale` is the pixel density of the images (2 means drawn at twice the
 display size). Import rejects packs with missing frames. The built-in figures
-in `figures/` use the same layout. The desk setups are shared office art in
-`office/`.
+in `apps/web/src/assets/figures/` use the same layout. The desk setups are
+shared office art in `apps/web/src/assets/office/`.
 
 ## Copy
 
@@ -211,6 +212,6 @@ mascot keeps its colors.
    `components.rs`, `controls.rs`.
 2. Fix the copy violations above.
 3. Snap type sizes to the scale; review spacing and radius strays visually.
-4. Add `StatusDot`, the text-link button, `OnboardingPage`, `QrTag`,
+4. Add `StatusDot`, `LinkButton`, `OnboardingFlow`, `QrTag`,
    `HarnessRow`, `AvatarPicker`, and `Mascot`.
 5. Remove `DesktopSteps` and unused helpers with the old wizard.

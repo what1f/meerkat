@@ -1,53 +1,111 @@
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import * as D from '../../design';
+import { Spec, State } from '../Spec';
+const avatar = new URL('../../assets/avatars/01.jpg', import.meta.url).href;
 export function DesignFeedback() {
-  const descriptionId = useId();
-  const [dialog, setDialog] = useState(false);
-  const [smallDialog, setSmallDialog] = useState(false);
-  const [confirm, setConfirm] = useState(false);
+  const [dialog, setDialog] = useState<'md' | 'sm' | 'confirm' | null>(null);
+  const close = () => setDialog(null);
   const toast = D.useToast();
   return (
     <>
-      <span id={descriptionId}>Existing description</span>
-      <D.Tooltip label="Help">
-        <D.Button aria-describedby={descriptionId}>Help</D.Button>
-      </D.Tooltip>
-      <D.Button
-        onClick={() => toast({ message: 'Saved', action: { label: 'Undo', onAction: () => {} } })}
-      >
-        Toast
-      </D.Button>
-      <D.Button onClick={() => toast({ message: 'Notice' })}>Plain toast</D.Button>
-      <D.Button onClick={() => setSmallDialog(true)}>Small dialog</D.Button>
-      <D.Button onClick={() => setDialog(true)}>Dialog</D.Button>
-      <D.Button onClick={() => setConfirm(true)}>Confirm</D.Button>
+      <Spec name="Tooltip">
+        <D.Tooltip label="Help">
+          <D.Button>Hover me</D.Button>
+        </D.Tooltip>
+      </Spec>
+      <Spec name="Toast">
+        <D.Button
+          onClick={() => toast({ message: 'Saved', action: { label: 'Undo', onAction: () => {} } })}
+        >
+          With action
+        </D.Button>
+        <D.Button onClick={() => toast({ message: 'Notice' })}>Plain</D.Button>
+      </Spec>
+      <Spec name="Dialog">
+        <D.Button onClick={() => setDialog('md')}>Dialog</D.Button>
+        <D.Button onClick={() => setDialog('sm')}>Small dialog</D.Button>
+        <D.Button onClick={() => setDialog('confirm')}>Confirm</D.Button>
+      </Spec>
       <D.Dialog
-        open={dialog}
-        onClose={() => setDialog(false)}
+        open={dialog === 'md' || dialog === 'sm'}
+        size={dialog === 'sm' ? 'sm' : undefined}
+        onClose={close}
         title="Dialog"
-        footer={<D.Button onClick={() => setDialog(false)}>Close</D.Button>}
-      >
-        Content
-      </D.Dialog>
-      <D.Dialog
-        open={smallDialog}
-        onClose={() => setSmallDialog(false)}
-        title="Small dialog"
-        size="sm"
-        footer={<D.Button onClick={() => setSmallDialog(false)}>Close</D.Button>}
+        footer={<D.Button onClick={close}>Close</D.Button>}
       >
         Content
       </D.Dialog>
       <D.ConfirmDialog
-        open={confirm}
-        onClose={() => setConfirm(false)}
+        open={dialog === 'confirm'}
+        onClose={close}
         title="Delete?"
-        body="Delete this item?"
+        body="This can't be undone."
         confirmLabel="Delete"
         cancelLabel="Cancel"
-        onConfirm={() => setConfirm(false)}
+        onConfirm={close}
         tone="danger"
       />
+      <Spec name="Callout">
+        <State label="quiet">
+          <D.Callout tone="quiet">Paused</D.Callout>
+        </State>
+        <State label="attention">
+          <D.Callout
+            tone="attention"
+            leading={<D.Icon name="ban" />}
+            action={<D.Button size="sm">Resume</D.Button>}
+          >
+            Needs attention
+          </D.Callout>
+        </State>
+      </Spec>
+      <Spec name="Command" surface="surface">
+        <D.Command text="curl -fsSL lankide.dev/i | sh" copyLabel="Copy" copiedLabel="Copied" />
+      </Spec>
+      <Spec name="Dashes">
+        {[0, 2, 4].map((current) => (
+          <State key={current} label={`step ${current + 1}`}>
+            <D.Dashes total={5} current={current} />
+          </State>
+        ))}
+      </Spec>
+      <Spec name="Skeleton and Spinner">
+        <State label="line">
+          <D.Skeleton shape="line" width={120} />
+        </State>
+        <State label="circle">
+          <D.Skeleton shape="circle" width={40} height={40} />
+        </State>
+        <State label="spinner sm">
+          <D.Spinner />
+        </State>
+        <State label="spinner md">
+          <D.Spinner size="md" />
+        </State>
+      </Spec>
+      <Spec name="EmptyState" surface="surface">
+        <D.EmptyState title="No members yet" action={<D.Button>Add</D.Button>} />
+      </Spec>
+      <Spec name="Message" surface="surface">
+        <State label="them">
+          <D.Message from="them" avatar={avatar}>
+            Hi, I'm here.
+          </D.Message>
+        </State>
+        <State label="me">
+          <D.Message from="me">Hello</D.Message>
+        </State>
+        <State label="typing">
+          <D.Message from="them" avatar={avatar} typing>
+            {null}
+          </D.Message>
+        </State>
+        <State label="done">
+          <D.Message from="them" variant="done" animate={false}>
+            Reply to the team
+          </D.Message>
+        </State>
+      </Spec>
     </>
   );
 }

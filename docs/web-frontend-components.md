@@ -130,7 +130,7 @@ apps/web/
 | 禁止使用 `dangerouslySetInnerHTML` | ESLint `react/no-danger` |
 | `features/` 和 `shell/` 中禁止直接写 `button`、`input`、`textarea`、`select`、`dialog`、`img`、`svg` 元素 | ESLint `no-restricted-syntax`（JSXOpeningElement） |
 | 层之间的 import 方向必须符合上一节的表 | ESLint `import-x/no-restricted-paths` |
-| 单个文件不超过 200 行，JSX 嵌套不超过 6 层 | ESLint `max-lines`、`react/jsx-max-depth` |
+| TS/TSX 单个文件不超过 200 行（`tokens.css` 是唯一的字面值来源，不受此限制），JSX 嵌套不超过 6 层 | ESLint `max-lines`（只检查 TS/TSX）、`react/jsx-max-depth` |
 | `features/` 和 `shell/` 中的 JSX 文本不能是字面量，必须用 `t()` | ESLint `i18next/no-literal-string`（只检查 JSX 文本） |
 | 颜色、圆角、阴影、字号只能写 `var(--…)`；只有 `tokens.css` 可以写字面值 | stylelint `scale-unlimited/declaration-strict-value` |
 | `design/` 和 `scene/` 组件的 props 不接受 `className` 和 `style` | 用 TS 类型强制：props 基于 `Omit<…, 'className' \| 'style'>` |
@@ -144,7 +144,7 @@ apps/web/
 - 定时器、轮询和 WS 只出现在 `lib/` 的 hook 和 `scene/drag/` 中。features 不直接写 `useEffect`
   订阅外部资源；如果必须写，在注释里说明理由。
 - 动效只用 CSS transition、keyframes 和 `@starting-style`。少数 FLIP 场景用 `useFlip` 里的 Web Animations API。
-- **弹层触发器**：`Menu` 和 `Popover` 的 `trigger` 通过 Base UI 的 `render` 接入。Base UI 会把 `ref`、`aria-expanded`、`data-popup-open` 和事件合并到触发元素上，所以可作为触发器的组件必须接受 React 19 的 `ref` prop，并把剩余的 props 透传到根元素（仍然禁止 `className` 和 `style`）。这类组件包括：`Button`、`IconButton`、`LinkButton`、`Avatar`（有 `onEdit` 时）、`ConsoleScreen`、`ConsoleKey`、`RigFigure`、`Sticker`。`WorkRow` 的 `menu` 槽位和 `Clipboard` 的 `actions` 槽位放入的就是这类组件。
+- **弹层触发器**：`Menu` 和 `Popover` 的 `trigger` 通过 Base UI 的 `render` 接入。Base UI 会把 `ref`、`aria-expanded`、`data-popup-open` 和事件合并到触发元素上，所以可作为触发器的组件必须接受 React 19 的 `ref` prop，并把剩余的 props 透传到根元素（仍然禁止 `className` 和 `style`）。用作触发器时不需要传 `onClick`，所以 `IconButton` 和 `LinkButton` 的 `onClick` 是可选的。这类组件包括：`Button`、`IconButton`、`LinkButton`、`Avatar`（有 `onEdit` 时）、`ConsoleScreen`、`ConsoleKey`、`RigFigure`、`Sticker`。`WorkRow` 的 `menu` 槽位和 `Clipboard` 的 `actions` 槽位放入的就是这类组件。
 
 ## design/ 组件
 
@@ -155,8 +155,8 @@ apps/web/
 | `Icon` | `name: IconName; size?: 10 \| 12 \| 14 \| 15 \| 16 \| 18 \| 20 \| 22` | 线条图标，颜色跟随 `currentColor` |
 | `BrandMark` | `brand: 'feishu' \| 'telegram' \| 'codex' \| 'claude-code' \| 'pi'; size?: number` | 品牌图标。单色图标跟随墨色 |
 | `Button` | `variant?: 'default' \| 'primary' \| 'quiet' \| 'danger'; size?: 'sm' \| 'md' \| 'lg'; loading?; leading?: ReactNode; children` 加上原生 button 事件 | 胶囊形。一屏最多一个 primary |
-| `IconButton` | `icon: IconName; label: string; size?: 'sm' \| 'md'; onClick` | `label` 同时用作 tooltip 和 aria-label |
-| `LinkButton` | `children; disclosure?: boolean; open?: boolean; onClick` | 文字链接；带 disclosure 时显示 chevron，展开后旋转 |
+| `IconButton` | `icon: IconName; label: string; size?: 'sm' \| 'md'; onClick?` | `label` 同时用作 tooltip 和 aria-label |
+| `LinkButton` | `children; disclosure?: boolean; open?: boolean; onClick?` | 文字链接；带 disclosure 时显示 chevron，展开后旋转 |
 | `TextInput` | `value; onChange; size?: 'sm' \| 'md' \| 'lg'; align?: 'start' \| 'center'; mono?; invalid?; placeholder` | 填充框，没有描边，聚焦时显示品牌紫光圈。`sm` 用于等宽的小字，例如网络地址、环境变量 |
 | `DocArea` | `value; onChange; placeholder; minRows?` | 文档式多行编辑，高度随内容增长 |
 | `InlineText` | `mode?: 'commit' \| 'live'; value; onCommit?(v); onChange?(v); placeholder; multiline?; textStyle: 'display' \| 'heading' \| 'title' \| 'body' \| 'small'; autoFocus?` | `commit`（默认）：平时就是一段文字，点击后原地编辑，Enter 或失焦时提交，Esc 撤销。用于团队名、工区重命名、清单标题。`live`：一直处于可编辑状态，每次输入都调用 `onChange`，不支持 Esc 撤销（撤销通过返回键的「放弃更改」）。用于成员工卡上的资料 |
@@ -169,7 +169,7 @@ apps/web/
 | `Reveal` | `open; children` | 带高度动画的折叠区域 |
 | `StatusDot` | `status: Status; tip?: string` | 表达状态的唯一方式；busy 状态呼吸闪烁 |
 | `Avatar` | `src?; size: 20 \| 26 \| 32 \| 40 \| 44 \| 60 \| 76 \| 88 \| 'fill'; status?: Status; statusTip?: string; dimmed?; creating?; selected?; onEdit?: () => void; editLabel?` | 状态点挂在右下角，`statusTip` 在悬停状态点时显示（例如暂停原因）。`fill` 表示撑满父元素，只供 scene 内部使用。`dimmed` 表示暂停（变灰）；`onEdit` 存在时悬停显示铅笔 |
-| `Menu` | `trigger: ReactElement; align?: 'start' \| 'end'; children` | 基于 Base UI Menu |
+| `Menu` | `trigger: ReactElement; align?: 'start' \| 'end'; children` | 基于 Base UI Menu。`trigger` 直接传触发按钮本身，不需要占位的 `onClick`，例如 `<LinkButton disclosure>` |
 | `Menu.Item` | `leading?: ReactNode; checked?; danger?; onSelect; children` | 菜单项高 30，选中时显示勾 |
 | `Menu.Separator` | — | |
 | `Popover` | `trigger: ReactElement; align?; open?; onOpenChange?; children` | 基于 Base UI Popover，供网格选择器和多列选择器使用 |
@@ -199,8 +199,8 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 | 组件 | Props | 说明 |
 |---|---|---|
 | `Board` | `layout: 'rails' \| 'free'; holes?: 'on' \| 'fade'; children` | 洞洞板画布。孔网格自动对齐到第一个挂钉；`free` 模式下由子项自行定位 |
-| `Hang` | `lanyard?: 'member' \| 'lead'; motion?: 'enter' \| 'leave' \| 'turn-in'; swingOnHover?; swingKey?: number; children` | 挂钉、挂绳、夹子，以挂钉为支点。`swingKey` 的值每变化一次就晃一下，用于保存、换头像、落位之后。`turn-in` 表示原地翻入，例如二维码吊牌翻成工卡。FLIP 期间的层级由 `useFlip` 通过 data 属性处理，不放进 props |
-| `Badge` | `avatar: { src?; status?: Status; statusTip?; creating?; onEdit?; editLabel? }; name: ReactNode; role?: ReactNode; bio?: ReactNode; foot?: ReactNode; size: 'card' \| 'stage' \| 'intro'; dimmed?; ghost?` | 白色工卡。头像由 Badge 内部渲染，并按工卡比例确定尺寸。`name`、`role`、`bio` 可以传纯文字，也可以传 `InlineText`。`intro` 是引导页的尺寸。`ghost` 是骨架状态的空白卡 |
+| `Hang` | `ref?: Ref<HTMLDivElement>; style?: { left?: number; top?: number }; lanyard?: 'member' \| 'lead'; motion?: 'enter' \| 'leave' \| 'turn-in'; swingOnHover?; swingKey?: number; children` | 挂钉、挂绳、夹子，以挂钉为支点。`swingKey` 的值每变化一次就晃一下，用于保存、换头像、落位之后。`turn-in` 表示原地翻入，例如二维码吊牌翻成工卡。FLIP 期间的层级由 `useFlip` 通过 data 属性处理，不放进 props。`ref` 和 `style` 用来直接接 `useHoleDrag` 和 `useSortable` 返回的 handle，不需要再包一层 div；`style` 只允许挂钉位置 `left`、`top` |
+| `Badge` | `ref?: Ref<HTMLElement>; style?: { left?: number; top?: number }; avatar: { src?; status?: Status; statusTip?; creating?; onEdit?; editLabel? }; name: ReactNode; role?: ReactNode; bio?: ReactNode; foot?: ReactNode; size: 'card' \| 'stage' \| 'intro'; dimmed?; ghost?` | 白色工卡。头像由 Badge 内部渲染，并按工卡比例确定尺寸。`name`、`role`、`bio` 可以传纯文字，也可以传 `InlineText`。`intro` 是引导页的尺寸。`ghost` 是骨架状态的空白卡。`ref` 和 `style` 的用途同 `Hang`，用于不挂在挂绳上直接拖动的工卡 |
 | `BadgeVerso` | `mark: ReactNode; actions: { label; onClick; busy? }[]` | 你自己工卡的背面：品牌标志加撕页按钮。`busy` 时显示转圈的刷新图标 |
 | `FlipCard` | `flipped; front; back; onFlip` | 翻面容器，在原地翻转 |
 | `VacantSlot` | `label; onClick; shape: 'badge' \| 'clipboard'` | 虚线空位，例如添加成员、任务清单停用后的位置 |
@@ -226,7 +226,7 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 | `AddRow` | `label; onClick` | 最后一行的添加入口 |
 | `Reaction` | `id: string; size?: number` | 表情图片 |
 | `Mascot` | `pose: 'peek'` | 狐獴插画 |
-| `PullCord` | `onToggle; label` | 右上角的拉线开关灯 |
+| `PullCord` | `onToggle; label` | 右上角的拉线开关灯。无障碍语义是普通按钮，`label` 是按钮名称 |
 
 拖拽相关的 hook 都在 `scene/drag/`，从 scene 的 index 导出：
 
@@ -242,11 +242,11 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 | 组件 | Props | 说明 |
 |---|---|---|
 | `AppShell` | `sidebar; topBar; children; board?: boolean` | 窗口布局：在外壳内时为红绿灯留出安全区，并设置拖拽区；toast 容器；拉线。侧栏开关按钮也由 AppShell 内部渲染（展开时在红绿灯右侧，图标栏模式时移到栏内），状态读 `useSidebarLayout` |
-| `Sidebar` | `header: ReactNode; nav: ReactNode; footer: ReactNode` | 可以拖动边缘调宽、折叠成图标栏、完全隐藏；状态来自 `useSidebarLayout` |
+| `Sidebar` | `header: ReactNode; nav: ReactNode; footer: ReactNode` | 可以拖动边缘调宽（160–480）、折叠成图标栏（宽 84，token `--rail`）、完全隐藏；图标栏模式下隐藏 `header`；状态来自 `useSidebarLayout` |
 | `SidebarGrip` | — | 拖拽调宽；双击切换图标模式 |
-| `NavItem` | `icon: IconName; label; active; onClick; testId` | 图标模式下悬停显示名字 |
-| `TeamSwitcher` | `teams: { id; name }[]; current; onSelect; onCreate; createLabel` | 侧栏顶部的团队切换 |
-| `TopBar` | `title?: string; back?: { label; onClick } \| { label; menu: ReactNode }` | 传 `menu` 时，点返回会在返回键下方弹出菜单（例如有未保存修改时的「保存 / 放弃更改」） |
+| `NavItem` | `icon: IconName; label; active; onClick; testId` | 侧栏专用的行按钮（原生 button 加自己的样式，不借用 `Button`）。当前页是浅色填充。只有图标模式下才包 `Tooltip`，名字显示在图标右侧 |
+| `TeamSwitcher` | `teams: { id; name }[]; current; onSelect; onCreate; createLabel` | 侧栏顶部的团队按钮，读作侧栏标题。点开是 `Menu`：各团队（当前团队带勾）、分隔线、「新建团队」（`createLabel`）。选中当前团队时不触发 `onSelect` |
+| `TopBar` | `title?: string; back?: { label; onClick } \| { label; menu: ReactNode }` | 传 `menu` 时，点返回会在返回键下方弹出菜单（例如有未保存修改时的「保存 / 放弃更改」），返回键本身就是 `Menu` 的触发器，带下拉 chevron；普通返回在文字前显示左箭头 |
 
 ## features/
 

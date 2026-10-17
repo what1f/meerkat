@@ -1,3 +1,46 @@
 .root {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 72px 0 40px;
+}
+
+.peek {
+  position: relative;
+  width: 132px;
+  height: 96px;
+  overflow: hidden;
+}
+
+.peek > img {
+  position: absolute;
+  top: 96px;
+  left: 16px;
+  width: 100px;
+  max-width: none;
+  animation: peek-up 0.9s var(--ease) 0.2s forwards;
+}
+
+.peek::after {
+  position: absolute;
+  right: 6px;
+  bottom: 0;
+  left: 6px;
+  height: 1px;
+  content: '';
+  background: var(--line-strong);
+}
+
+.root > h2 {
+  margin: 20px 0 16px;
+  font-family: var(--font-display);
+  font-size: var(--t-empty);
+  font-weight: 600;
+}
+
+@keyframes peek-up {
+  to {
+    top: 22px;
+  }
 }

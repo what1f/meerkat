@@ -8,7 +8,8 @@ export type IconButtonProps = Omit<UIProps, 'className' | 'style'> & {
   icon: IconName;
   label: string;
   size?: 'sm' | 'md';
-  onClick: () => void;
+  /** Optional only when the button is a Menu or Popover trigger. */
+  onClick?: () => void;
 };
 export function IconButton({ icon, label, size = 'md', onClick, ...rest }: IconButtonProps) {
   return (

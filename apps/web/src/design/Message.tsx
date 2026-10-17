@@ -1,5 +1,5 @@
 import { Icon } from './Icon';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { UIProps } from './types';
 
 import css from './Message.module.css';
@@ -29,13 +29,25 @@ export function Message({
       data-from={from}
       data-variant={variant}
       data-animate={animate}
-      data-delay={delay}
+      style={delay ? ({ '--delay': `${delay}ms` } as CSSProperties) : undefined}
       aria-busy={typing}
     >
       {avatar && <img src={avatar} alt="" />}
       <div>
-        {variant === 'done' && <Icon name="check" />}
-        {children}
+        {variant === 'done' && (
+          <span className={css.tick}>
+            <Icon name="check" size={10} />
+          </span>
+        )}
+        {typing ? (
+          <span className={css.dots}>
+            <i />
+            <i />
+            <i />
+          </span>
+        ) : (
+          children
+        )}
       </div>
     </div>
   );

@@ -1,3 +1,53 @@
+/* An empty hook: add something here. */
 .root {
-  display: block;
+  --r-vacant: calc(16 * var(--u, 0.9px));
+
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  width: calc(196 * var(--u, 0.9px));
+  height: calc(276 * var(--u, 0.9px));
+  padding: 0;
+  font-size: var(--t-body);
+  color: var(--ink-3);
+  background: var(--clear);
+  border: var(--dashed-strong);
+  border-radius: var(--r-vacant);
+  transition:
+    color var(--d-base),
+    border-color var(--d-base);
+}
+
+.root[data-shape='clipboard'] {
+  width: 352px;
+  height: 452px;
+  border-radius: var(--r-badge-lg);
+}
+
+.plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: var(--field);
+  border-radius: var(--r-full);
+  transition:
+    transform var(--d-slow) var(--ease-pop),
+    background-color var(--d-base);
+}
+
+.root:hover,
+.root:focus-visible {
+  color: var(--ink);
+  border-color: var(--ink-4);
+  outline-style: none;
+}
+
+.root:hover .plus {
+  background: var(--active);
+  transform: rotate(90deg);
 }

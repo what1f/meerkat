@@ -12,6 +12,14 @@ export type BrandMarkProps = Omit<UIProps, 'className' | 'style'> & {
 };
 export function BrandMark({ brand, size = 20, ...rest }: BrandMarkProps) {
   return (
-    <img className={css.root} src={marks[brand]} width={size} height={size} alt={brand} {...rest} />
+    <img
+      className={css.root}
+      data-brand={brand}
+      src={marks[brand]}
+      width={size}
+      height={size}
+      alt={brand}
+      {...rest}
+    />
   );
 }

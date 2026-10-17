@@ -1,3 +1,47 @@
 .root {
-  display: block;
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 52px 10px 10px;
+  overflow: hidden;
+  transition: width var(--d-slow) var(--ease-pop);
+}
+
+.root > header {
+  margin-bottom: 10px;
+}
+
+.root > nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.root > footer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: auto;
+}
+
+/* Icons only: switching teams waits until the sidebar is open again. */
+.root[data-rail='true'] {
+  width: var(--rail);
+  overflow: visible;
+  align-items: center;
+  padding: 52px 12px 10px;
+}
+
+[data-desktop='true'] .root[data-rail='true'] {
+  padding-top: 88px;
+}
+
+.root[data-rail='true'] > header {
+  display: none;
+}
+
+.root[data-rail='true'] > nav {
+  gap: 4px;
 }

@@ -1,3 +1,46 @@
 .root {
-  display: block;
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  height: 52px;
+  padding: 0 52px 0 24px;
+  transition: padding var(--d-slow) var(--ease-pop);
+}
+
+.root > h1 {
+  flex: 1;
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--t-label);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Back reads as part of the title. */
+.root > button:first-child:is(*, :hover) {
+  height: 28px;
+  padding: 0 10px;
+  margin-left: -10px;
+  font-size: var(--t-label);
+  font-weight: 600;
+  color: var(--ink);
+  border-radius: var(--r-sm);
+  transition: background-color var(--d-fast);
+}
+
+.root > button:first-child:hover {
+  background: var(--hover);
+}
+
+/* Back points the way it goes; a menu trigger keeps its own chevron. */
+.root > button:first-child:not([aria-haspopup])::before {
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  content: '';
+  border-bottom: var(--chevron-line);
+  border-left: var(--chevron-line);
+  rotate: 45deg;
 }

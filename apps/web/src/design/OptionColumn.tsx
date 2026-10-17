@@ -36,7 +36,7 @@ OptionColumn.Item = function Item({
   return (
     <button
       {...rest}
-      className={css.root}
+      className={css.item}
       type="button"
       role="option"
       aria-selected={selected}

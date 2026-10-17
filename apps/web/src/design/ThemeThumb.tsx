@@ -17,9 +17,17 @@ export function ThemeThumb({ mode, selected, label, onSelect, ...rest }: ThemeTh
       aria-pressed={selected}
       onClick={onSelect}
     >
-      <span aria-hidden="true">
-        <span />
-        <span />
+      <span className={css.window} aria-hidden="true">
+        {(mode === 'system' ? (['light', 'dark'] as const) : [mode]).map((tone) => (
+          <span key={tone} className={css.mini} data-tone={tone}>
+            <span>
+              <i />
+              <i />
+              <i />
+            </span>
+            <span />
+          </span>
+        ))}
       </span>
       {label}
     </button>

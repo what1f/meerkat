@@ -1,3 +1,126 @@
 .root {
+  position: relative;
   display: block;
+  margin-top: 28px;
+}
+
+.engrave {
+  display: block;
+  margin: 0 0 10px 4px;
+  font-size: var(--t-caption);
+  color: var(--engrave);
+  text-shadow: var(--engrave-shadow);
+  letter-spacing: 0.12em;
+  user-select: none;
+  transition: opacity var(--d-base);
+}
+
+.well {
+  position: relative;
+  display: block;
+  height: 112px;
+  padding: 0 6px;
+  margin: 0 -6px;
+  overflow: hidden;
+}
+
+/* Below the slot line the card is inside the console. */
+.well::after {
+  position: absolute;
+  right: 0;
+  bottom: 8px;
+  left: 0;
+  z-index: 1;
+  height: 18px;
+  pointer-events: none;
+  content: '';
+  background: var(--slot-shade);
+}
+
+.slip {
+  position: relative;
+  display: block;
+  min-height: 150px;
+  padding: 18px 22px 22px;
+  cursor: text;
+  background: var(--paper);
+  border-radius: var(--r-slip);
+  box-shadow: var(--slip-shadow);
+}
+
+.slip::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: '';
+  background: var(--paper-noise);
+  border-radius: var(--r-slip);
+  opacity: var(--paper-grain);
+}
+
+.slip > textarea:is(*, :hover, :focus) {
+  position: relative;
+  min-height: 72px;
+  padding: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-soul);
+  line-height: 1.65;
+  background: var(--clear);
+  border-style: none;
+  box-shadow: var(--none);
+}
+
+.root[data-long='true'] .slip > textarea {
+  font-size: var(--t-title);
+  line-height: 1.85;
+}
+
+.lip {
+  position: absolute;
+  right: -4px;
+  bottom: 0;
+  left: -4px;
+  z-index: 2;
+  height: 8px;
+  pointer-events: none;
+  background: var(--lip-face);
+  border-radius: var(--r-xs);
+  box-shadow: var(--lip-shadow);
+}
+
+/* Pulled out for editing: the card lifts in front of everything. */
+[data-reading='true'] .well {
+  overflow: visible;
+}
+
+[data-reading='true'] .well::after {
+  display: none;
+}
+
+[data-reading='true'] .engrave {
+  opacity: 0.35;
+}
+
+[data-reading='true'] .slip {
+  position: absolute;
+  right: 6px;
+  bottom: 8px;
+  left: 6px;
+  z-index: 20;
+  min-height: 112px;
+  max-height: 440px;
+  overflow: auto;
+  border-radius: var(--r-sm);
+  box-shadow: var(--slip-lifted);
+  animation: pull-out 0.45s var(--ease-pop);
+}
+
+[data-reading='true'] .lip {
+  z-index: 0;
+}
+
+@keyframes pull-out {
+  from {
+    transform: translateY(10px);
+  }
 }

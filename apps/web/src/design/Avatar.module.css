@@ -1,3 +1,154 @@
 .root {
+  --s: 32px;
+
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: var(--s);
+  height: var(--s);
+  padding: 0;
+  vertical-align: middle;
+  background: var(--field);
+  border-style: none;
+  border-radius: var(--r-full);
+  transition:
+    filter var(--d-slow) var(--ease),
+    opacity var(--d-slow) var(--ease),
+    transform var(--d-base) var(--ease-pop),
+    box-shadow var(--d-base);
+}
+
+.root::before {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  content: '';
+  border-radius: var(--r-full);
+  box-shadow: var(--avatar-edge);
+}
+
+.root > img {
   display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--r-full);
+}
+
+.root > [role='status'] {
+  --w: max(2px, calc(var(--s) * 0.035));
+
+  position: absolute;
+  right: calc(var(--s) * 0.04 - var(--w));
+  bottom: calc(var(--s) * 0.04 - var(--w));
+  z-index: 2;
+  width: calc(max(8px, var(--s) * 0.2) + var(--w) * 2);
+  height: calc(max(8px, var(--s) * 0.2) + var(--w) * 2);
+  background-clip: var(--clip-padding);
+  border-color: var(--dot-ring, var(--surface));
+  border-style: solid;
+  border-width: var(--w);
+}
+
+.root[data-size='20'] {
+  --s: 20px;
+}
+
+.root[data-size='26'] {
+  --s: 26px;
+}
+
+.root[data-size='40'] {
+  --s: 40px;
+}
+
+.root[data-size='44'] {
+  --s: 44px;
+}
+
+.root[data-size='60'] {
+  --s: 60px;
+}
+
+.root[data-size='76'] {
+  --s: 76px;
+}
+
+.root[data-size='88'] {
+  --s: 88px;
+}
+
+.root[data-size='fill'] {
+  --s: 100%;
+
+  display: block;
+}
+
+.root[data-size='fill'] > [role='status'] {
+  --w: 3px;
+
+  right: calc(4% - var(--w));
+  bottom: calc(4% - var(--w));
+  width: calc(17% + var(--w) * 2);
+  height: calc(17% + var(--w) * 2);
+}
+
+.root[data-dimmed='true'] {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+
+.root[data-size='fill'][data-dimmed='true'] {
+  filter: grayscale(1) contrast(0.8) brightness(1.08);
+  opacity: 1;
+}
+
+.root[data-selected='true'] {
+  box-shadow: var(--avatar-selected);
+}
+
+.root[aria-busy='true']::after {
+  position: absolute;
+  inset: -5px;
+  content: '';
+  background: var(--creating-arc);
+  border-radius: var(--r-full);
+  mask: var(--ring-mask);
+  animation: spin 1.1s linear infinite;
+}
+
+button.root {
+  cursor: pointer;
+}
+
+button.root:focus-visible {
+  outline-style: none;
+  box-shadow: var(--ring-focus);
+}
+
+/* Editable: a pencil over a dim veil on hover. */
+.edit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-veil);
+  background: var(--veil);
+  border-radius: var(--r-full);
+  opacity: 0;
+  transition: opacity var(--d-fast);
+}
+
+button.root:hover > .edit,
+button.root:focus-visible > .edit {
+  opacity: 1;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

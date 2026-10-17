@@ -1,3 +1,132 @@
 .root {
-  display: block;
+  position: relative;
+  flex: none;
+  width: 500px;
+}
+
+.notice {
+  position: absolute;
+  top: -118px;
+  right: 0;
+  left: 0;
+}
+
+.hook {
+  position: absolute;
+  top: -36px;
+  left: 149px;
+  z-index: 2;
+  width: 10px;
+  height: 46px;
+}
+
+.hook + .hook {
+  right: 149px;
+  left: auto;
+}
+
+.hook > span {
+  top: 0;
+}
+
+.hook::after {
+  position: absolute;
+  top: 6px;
+  left: 3.5px;
+  width: 3px;
+  height: 34px;
+  content: '';
+  background: var(--hook-bar);
+  border-radius: var(--r-hairline);
+  box-shadow: var(--hook-shadow);
+}
+
+/* The figure sits on the console's top edge. */
+.figure {
+  position: absolute;
+  top: -86px;
+  left: 34px;
+  z-index: 3;
+}
+
+.body {
+  position: relative;
+  z-index: 1;
+  padding: 56px 30px 40px;
+  background: var(--rig-face);
+  border-radius: var(--r-rig);
+  box-shadow: var(--rig-shadow);
+}
+
+/* Read-receipt sticker on the corner. */
+.sticker {
+  position: absolute;
+  top: -26px;
+  right: 22px;
+  z-index: 2;
+}
+
+.deck {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 26px;
+}
+
+.tab {
+  position: absolute;
+  bottom: -1px;
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  height: 26px;
+  padding: 0 12px 0 14px;
+  font-size: var(--t-small);
+  color: var(--ink-2);
+  background: var(--key-face);
+  border-style: none;
+  border-radius: var(--r-pill);
+  box-shadow: var(--tab-shadow);
+  translate: -50% 50%;
+  transition: opacity var(--d-base);
+}
+
+.tab:hover,
+.tab:focus-visible {
+  color: var(--ink);
+  outline-style: none;
+}
+
+.tab > svg {
+  transition: rotate var(--d-base) var(--ease);
+}
+
+.tab[aria-expanded='true'] > svg {
+  rotate: 180deg;
+}
+
+.drawer {
+  margin: 0 18px;
+}
+
+.tray {
+  padding: 26px 24px 20px;
+  background: var(--rig-lo);
+  border-radius: var(--r-tray);
+  box-shadow: var(--tray-shadow);
+}
+
+/* Reading the personality card: everything else steps back. */
+.figure,
+.sticker,
+.drawer,
+.body > :not(.deck) {
+  transition: opacity var(--d-base);
+}
+
+.root[data-reading='true'] :is(.figure, .sticker, .tab, .drawer),
+.root[data-reading='true'] .body > :not(.deck, :focus-within) {
+  opacity: 0.35;
 }

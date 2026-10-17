@@ -39,8 +39,16 @@ export type SearchFieldContract = Assert<NoOverrides<Parameters<typeof D.SearchF
 export type OptionColumnContract = Assert<NoOverrides<Parameters<typeof D.OptionColumn>[0]>>;
 export type ThemeThumbContract = Assert<NoOverrides<Parameters<typeof D.ThemeThumb>[0]>>;
 export type BoardContract = Assert<NoOverrides<Parameters<typeof S.Board>[0]>>;
-export type HangContract = Assert<NoOverrides<Parameters<typeof S.Hang>[0]>>;
-export type BadgeContract = Assert<NoOverrides<Parameters<typeof S.Badge>[0]>>;
+// Hang and Badge take a peg position for the drag hooks, never appearance.
+type PegOnly<T> = T extends { style?: infer P }
+  ? Exclude<keyof NonNullable<P>, 'left' | 'top'> extends never
+    ? Extract<keyof T, 'className'> extends never
+      ? true
+      : false
+    : false
+  : false;
+export type HangContract = Assert<PegOnly<Parameters<typeof S.Hang>[0]>>;
+export type BadgeContract = Assert<PegOnly<Parameters<typeof S.Badge>[0]>>;
 export type BadgeVersoContract = Assert<NoOverrides<Parameters<typeof S.BadgeVerso>[0]>>;
 export type FlipCardContract = Assert<NoOverrides<Parameters<typeof S.FlipCard>[0]>>;
 export type VacantSlotContract = Assert<NoOverrides<Parameters<typeof S.VacantSlot>[0]>>;
@@ -86,6 +94,8 @@ export const badBoard = (
     X
   </S.Board>
 );
+// @ts-expect-error Hang only takes a peg position.
+export const badHang = <S.Hang style={{ opacity: 0 }}>X</S.Hang>;
 // @ts-expect-error Unsafe HTML cannot pass through UIProps.
 export const unsafe: UIProps = { dangerouslySetInnerHTML: { __html: 'x' } };
 export const triggerRefs = (
@@ -101,6 +111,10 @@ export const triggerRefs = (
     </S.ConsoleScreen>
     <S.ConsoleKey ref={createRef<HTMLButtonElement>()} label="Key" onClick={() => {}} />
     <S.RigFigure ref={createRef<HTMLButtonElement>()} id="01" onClick={() => {}} />
+    <S.Hang ref={createRef<HTMLDivElement>()} style={{ left: 12, top: 24 }}>
+      Hang
+    </S.Hang>
+    <D.LinkButton disclosure>Trigger</D.LinkButton>
     <S.Sticker
       ref={createRef<HTMLButtonElement>()}
       reaction={null}

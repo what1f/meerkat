@@ -1,3 +1,35 @@
 .root {
   display: block;
+  width: 100%;
+  min-height: 120px;
+  padding: 12px 14px;
+  overflow: hidden;
+  font-size: var(--t-body);
+  line-height: 1.75;
+  color: var(--ink);
+  resize: none;
+  background: var(--field);
+  border-color: var(--clear);
+  border-style: solid;
+  border-width: 1px;
+  border-radius: var(--r-lg);
+  outline-style: none;
+  transition:
+    background-color var(--d-fast),
+    border-color var(--d-fast),
+    box-shadow var(--d-fast);
+}
+
+.root::placeholder {
+  color: var(--ink-4);
+}
+
+.root:hover {
+  background: var(--active);
+}
+
+.root:focus {
+  background: var(--surface);
+  border-color: var(--accent);
+  box-shadow: var(--ring-focus);
 }

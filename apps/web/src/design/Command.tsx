@@ -1,6 +1,6 @@
 import type { UIProps } from './types';
 import { useEffect, useRef, useState } from 'react';
-import { Button } from './Button';
+import { IconButton } from './IconButton';
 import css from './Command.module.css';
 export type CommandProps = Omit<UIProps, 'className' | 'style'> & {
   text: string;
@@ -14,7 +14,10 @@ export function Command({ text, copyLabel, copiedLabel, ...rest }: CommandProps)
   return (
     <div {...rest} className={css.root}>
       <code>{text}</code>
-      <Button
+      <IconButton
+        icon={copied ? 'check' : 'copy'}
+        label={copied ? copiedLabel : copyLabel}
+        size="sm"
         onClick={async () => {
           try {
             await navigator.clipboard.writeText(text);
@@ -25,9 +28,7 @@ export function Command({ text, copyLabel, copiedLabel, ...rest }: CommandProps)
           clearTimeout(timer.current);
           timer.current = setTimeout(() => setCopied(false), 2000);
         }}
-      >
-        <span aria-live="polite">{copied ? copiedLabel : copyLabel}</span>
-      </Button>
+      />
     </div>
   );
 }

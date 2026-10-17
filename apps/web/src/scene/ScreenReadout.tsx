@@ -11,16 +11,28 @@ export type ScreenReadoutProps = Omit<UIProps, 'className' | 'style'> & {
 export function ScreenReadout({ ai, model, place, level, ...rest }: ScreenReadoutProps) {
   return (
     <div {...rest} className={css.root}>
-      <div>
+      <div className={css.ai}>
         {ai.mark}
         {ai.label}
       </div>
-      <div>{model}</div>
-      <div>
+      <div className={css.model}>{model}</div>
+      <div className={css.where}>
         <StatusDot status={place.status} />
         {place.label}
       </div>
-      <meter min={0} max={level.total} value={level.index} aria-label={level.label} />
+      <div
+        className={css.gauge}
+        role="meter"
+        aria-valuemin={0}
+        aria-valuemax={Math.max(0, level.total - 1)}
+        aria-valuenow={level.index}
+        aria-valuetext={level.label}
+      >
+        {Array.from({ length: level.total }, (_, i) => (
+          <i key={i} data-on={i <= level.index} />
+        ))}
+        <b>{level.label}</b>
+      </div>
     </div>
   );
 }

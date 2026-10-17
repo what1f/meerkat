@@ -1,3 +1,9 @@
 .root {
   display: block;
+  flex: none;
+}
+
+/* Monochrome marks follow the ink color. */
+.root[data-brand='pi'] {
+  filter: var(--mono-mark);
 }

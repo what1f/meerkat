@@ -1,3 +1,108 @@
-.root {
-  display: block;
+.tag {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 236px;
+  padding: 46px 22px 22px;
+  background: var(--card);
+  clip-path: polygon(28px 0, calc(100% - 28px) 0, 100% 28px, 100% 100%, 0 100%, 0 28px);
+}
+
+.qr {
+  position: relative;
+  width: 192px;
+  height: 192px;
+  overflow: hidden;
+  background: var(--qr-paper);
+  border-radius: var(--r-lg);
+}
+
+[data-state='loading'] .qr {
+  background: var(--clear);
+}
+
+.qr > svg {
+  width: 100%;
+  height: 100%;
+}
+
+.logo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin: -20px;
+  background: var(--qr-paper);
+  border-radius: var(--r-input-lg);
+  transition: opacity var(--d-base);
+}
+
+:is([data-state='scanned'], [data-state='expired'], [data-state='loading']) .qr > svg {
+  opacity: 0.1;
+  filter: blur(1.5px);
+}
+
+:is([data-state='scanned'], [data-state='expired'], [data-state='loading']) .logo {
+  opacity: 0;
+}
+
+.scanned {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pop-in 0.45s var(--ease-pop);
+}
+
+.ok {
+  position: absolute;
+  top: calc(50% + 14px);
+  left: calc(50% + 14px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--on-accent);
+  background: var(--ok);
+  border-radius: var(--r-full);
+  box-shadow: var(--qr-ok-ring);
+}
+
+.refresh {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  margin: -26px;
+  color: var(--qr-paper);
+  background: var(--qr-ink);
+  border-style: none;
+  border-radius: var(--r-full);
+  transition: transform 0.5s var(--ease-pop);
+  animation: pop-in 0.45s var(--ease-pop);
+}
+
+.qr:hover .refresh,
+.qr .refresh:focus-visible {
+  outline-style: none;
+  transform: rotate(-120deg);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
 }

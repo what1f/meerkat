@@ -1,3 +1,26 @@
 .root {
-  display: block;
+  display: flex;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.root > li {
+  width: 22px;
+  height: 3px;
+  background: var(--ink-4);
+  border-radius: var(--r-hairline);
+  transition:
+    background-color var(--d-slow) var(--ease),
+    width var(--d-slow) var(--ease);
+}
+
+.root > li:has(~ [aria-current]) {
+  background: var(--ink-2);
+}
+
+.root > li[aria-current] {
+  width: 34px;
+  background: var(--ink);
 }

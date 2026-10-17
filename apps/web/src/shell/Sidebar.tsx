@@ -16,7 +16,7 @@ export function Sidebar({ header, nav, footer, ...rest }: SidebarProps) {
       className={css.root}
       hidden={hidden}
       data-rail={rail}
-      style={{ width: rail ? 60 : width }}
+      style={rail ? undefined : { width }}
     >
       <header>{header}</header>
       <nav>{nav}</nav>
