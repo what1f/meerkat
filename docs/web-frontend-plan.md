@@ -352,19 +352,62 @@ IM 式对话界面。选用 React，原因如下：
 
 #### A4：新设计需要的接口
 
-下表中的项目都要做。具体的接口契约，以 Codex 的调研结论为准，由我确认后再派发实现。
+依赖 A1、A2 合并。契约依据 Codex 的调研（报告见 `/tmp/lankide-web/a4-research-report.md`，内容未入库），
+并按「最小可用」做了收窄。成员顺序和团队墙的摆放存在 localStorage，不进 API。
+三个子任务都会改 `crates/protocol` 和 `crates/runtime`。A4a 和 A4b 可以并行；A4c 依赖 A4a 引入的启动参数，排在 A4a 之后。
 
-| 设计需要 | 现状 | 建议 |
-|---|---|---|
-| 每个成员的形象 | 没有 | `Agent` 增加 `figure`（形象 id），内置形象放在前端 assets；导入 zip 延后 |
-| 启动参数 | 没有 | `Agent` 增加 `launch_arguments` |
-| 成员实时在忙 | 只能按 execution id 查询 | `Agent` 增加 `activity`，变化时发 agent 事件 |
-| 按模型区分思考档位 | 只有 Harness 级别 | 模型 catalog 的条目增加 `thinking_levels` |
-| 成员顺序、团队墙摆放 | 没有 | 存在 localStorage，不进 API |
-| 你自己的工卡（名字、头像，同步资料，切换账号） | 没有 | 需要确认 Provider 能否提供 owner 资料 |
-| 团队墙上的任务清单 | Feishu Provider 有 tasks，未暴露给管理 API | 需要确认是走 provider interface 还是新接口 |
-| AI 检测与测试灯 | `MachineCatalogItem` 已有 Harness 检测结果，没有“测试”接口 | 需要确认 |
-| 引导最后一步等待第一条回复 | 没有 | 需要确认 |
+**A4a 成员字段与模型目录**（`crates/protocol`、`crates/storage`、`crates/runtime`、`crates/machine-core`、
+`crates/harness`、`harnesses/*`、`tests/system`）
+
+- **形象**：
+  - `Agent` 和 `CreateAgentRequest` 增加 `figure: String`，`UpdateAgentRequest` 增加 `figure: Option<String>`。创建时为空则使用默认形象。
+  - 内置形象随前端 assets 打包。
+  - 自定义形象包：`import_figure_pack { workspace, bytes }` 返回 `FigurePack { id, name, author, scale, frames: { work, sleep, carry, stand } }`，
+    `list_figure_packs { workspace }` 返回 `FigurePack[]`。每一帧都是现有的 `ResourceRef`，存入现有的 workspace 资源系统。
+  - 包格式见 `docs/design/design-system.md`。拒绝缺帧、路径穿越和超限的包；导入失败不留下任何残余。导入成功后发 workspace 的 catalog 事件。
+- **启动参数**：
+  - `Agent`、`CreateAgentRequest` 增加 `launch_arguments: Vec<String>`，`UpdateAgentRequest` 增加 `Option<Vec<String>>`。
+  - 一路传到 link 和原生的 `HarnessConfig`。adapter 把它们作为独立的 argv 追加，不经过 shell，也不做冲突校验。
+  - 启动参数纳入配置指纹，修改后会话失效。
+- **实时在忙**：
+  - `Agent` 增加 `activity: idle | busy`。busy 表示有处于 assigning、running 或 recovering 状态的执行。
+  - 进入和退出 busy 时都发 `AgentUpdated`，必须在长任务开始时就发出。`ListAgents` 批量计算，不逐个查询。
+- **按模型的思考档位**：沿用现有的 `ModelCatalogItem.supported_thinking_levels`，把链路接通。
+  - Machine 探测后调用 `factory.models`，写入 `HarnessInfo.model_catalog`。
+  - Runtime 实现 `get_model_catalog`。
+  - `thinking_level` 允许为空：模型没有档位时隐藏拉杆。
+
+**A4b Provider 能力**（`crates/provider`、`providers/feishu`、`providers/telegram`、`crates/runtime`、`crates/storage`、
+`crates/protocol`、`tests/system`）
+
+- **管理失效信号**：Provider contract 增加一个窄接口，“这个 workspace 的管理数据变了”，由 Runtime 发出 `WorkspaceUpdated`。owner 和任务清单都使用它。
+- **你自己的工卡**：
+  - 新增 `<provider>.workspace.owner` interface，通过 `InvokeProviderInterface` 调用。`get` 和 `refresh` 返回
+    `{ state: unbound | ready | reauth_required, person_id?, name?, avatar?: ResourceRef }`。头像存入 workspace 资源。
+  - 飞书：先确认首次 console 登录后能否拿到 user_info。拿不到时，资料在第一次成员 App 授权后补齐。
+    切换账号扩展 `console_login`，增加 `switch_start` 和 `switch_poll`。跨租户的切换直接拒绝；失败时保留旧账号。
+  - Telegram：资料取自 `ManagedBotUpdated.user`，头像通过 getUserProfilePhotos 获取。这一版不做切换账号，工卡背面只有「同步资料」。
+- **任务清单（只做飞书）**：
+  - 新增 `feishu.workspace.tasks` interface，提供三个操作：
+    - `list` 返回 `{ enabled, name?, items: [{ id, text, completed, assignee?: { agent_id?, name?, avatar? } }] }`
+    - `create { text }` 新建条目
+    - `set_completed { id, completed }` 修改完成状态
+  - 复用现有的 task client 和 tasklist_guid。启用和停用沿用 `provider_config_json.task_system_enabled`；停用时不删除远程数据。
+  - 外部任务回调通过管理失效信号刷新界面。
+- **第一条回复**：
+  - 新增 `get_agent_first_reply { agent }` 返回 `{ state: waiting | replied }`。
+  - replied 的条件是：成员创建之后，在与当前 owner 的私聊中，成功发出了一条非空回复。
+  - 满足条件的发送提交之后，发 `AgentUpdated`。
+
+**A4c AI 测试**（`crates/protocol`、`crates/runtime`、`crates/machine-core`、`crates/harness`、`harnesses/*`、`tests/system`）
+
+- 新增管理 op `test_harness { machine_id, harness_id, model, thinking_level, cli_path?, environment_variables, launch_arguments }`，
+  返回 `{ state: passed | failed | timed_out, reply?, error_code? }`。
+- 这是一个同步请求，服务端总共最多 30 秒。
+- Machine link 增加定向的测试帧。Machine 用同一个 factory 在临时隔离目录中跑一次短问候：不带业务工具，不创建成员，不发 IM，结束或超时时清理进程组。
+- 结果不持久化，也不发事件。
+
+验收场景写在每个子任务的说明里，全部放在 system rig 中，使用 scripted Harness 和 mock IM。
 
 ### 前端
 
