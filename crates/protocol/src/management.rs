@@ -735,3 +735,37 @@ pub struct ImportFigurePackRequest {
 pub struct ListFigurePacksRequest {
     pub workspace: Option<WorkspaceRef>,
 }
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TestHarnessRequest {
+    pub machine_id: String,
+    pub harness_id: String,
+    pub model: String,
+    pub thinking_level: String,
+    #[cfg_attr(feature = "typescript", ts(optional))]
+    pub cli_path: Option<String>,
+    pub environment_variables: Vec<EnvironmentVariable>,
+    pub launch_arguments: Vec<String>,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HarnessTestState {
+    Passed,
+    Failed,
+    TimedOut,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TestHarnessResponse {
+    pub state: HarnessTestState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "typescript", ts(optional))]
+    pub reply: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "typescript", ts(optional))]
+    pub error_code: Option<String>,
+}

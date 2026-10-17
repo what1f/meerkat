@@ -184,6 +184,11 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
             json::HarnessCatalog,
             get_harness_catalog
         ),
+        "test_harness" => call!(
+            json::TestHarnessRequest,
+            json::TestHarnessResponse,
+            test_harness
+        ),
         "get_model_catalog" => call!(
             json::ModelCatalogRequest,
             json::ModelCatalog,

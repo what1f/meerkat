@@ -3,6 +3,7 @@ mod connection;
 mod control;
 mod events;
 mod failure;
+mod harness_test;
 mod liveness;
 mod proxy;
 mod records;

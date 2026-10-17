@@ -292,6 +292,7 @@ pub enum MachinePayload {
     ResourceTransferResult(ResourceTransferResult),
     InventoryChanged(InventoryChanged),
     DeleteAgentFilesResult(DeleteAgentFilesResult),
+    TestHarnessResult(TestHarnessResult),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Eq)]
@@ -307,6 +308,7 @@ pub enum RuntimePayload {
     ExecutionCommitted(ExecutionCommitted),
     Shutdown(Shutdown),
     DeleteAgentFiles(DeleteAgentFiles),
+    TestHarness(TestHarness),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -349,3 +351,16 @@ pub struct AgentRunContext {
 }
 
 pub use crate::wire::{MachineFrame, RuntimeFrame};
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Eq)]
+pub struct TestHarness {
+    pub request_id: String,
+    pub harness: HarnessConfig,
+    pub budget_millis: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Eq)]
+pub struct TestHarnessResult {
+    pub request_id: String,
+    pub result: crate::management::TestHarnessResponse,
+}

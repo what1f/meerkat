@@ -249,27 +249,7 @@ impl RuntimeApplication {
         let inventory: Vec<lankide_protocol::link::HarnessInfo> =
             serde_json::from_str(&machine.inventory_json)
                 .map_err(|e| RuntimeError::Application(e.to_string()))?;
-        if let Some(model) = inventory
-            .iter()
-            .find(|h| h.harness_id == agent.harness_id)
-            .and_then(|h| h.model_catalog.as_ref())
-            .and_then(|catalog| {
-                catalog
-                    .models
-                    .iter()
-                    .find(|model| model.model_id == agent.model)
-            })
-        {
-            if !agent.thinking.is_empty()
-                && !model.supported_thinking_levels.contains(&agent.thinking)
-            {
-                return Err(RuntimeError::InvalidCore("thinking_level_invalid".into()));
-            }
-        }
-        if !inventory.iter().any(|h| h.harness_id == agent.harness_id) {
-            return Err(RuntimeError::HarnessUnavailableOnMachine);
-        }
-        Ok(())
+        validate_harness_selection(&inventory, &agent.harness_id, &agent.model, &agent.thinking)
     }
 
     pub async fn create_agent(
@@ -1129,4 +1109,35 @@ fn parse_json(value: &str) -> Result<serde_json::Value, RuntimeError> {
 }
 fn nonempty(value: String) -> Option<String> {
     (!value.trim().is_empty()).then_some(value)
+}
+
+pub(crate) fn validate_harness_selection(
+    inventory: &[lankide_protocol::HarnessInfo],
+    harness_id: &str,
+    model_id: &str,
+    thinking_level: &str,
+) -> Result<(), RuntimeError> {
+    if let Some(model) = inventory
+        .iter()
+        .find(|h| h.harness_id == harness_id)
+        .and_then(|h| h.model_catalog.as_ref())
+        .and_then(|catalog| {
+            catalog
+                .models
+                .iter()
+                .find(|model| model.model_id == model_id)
+        })
+    {
+        if !thinking_level.is_empty()
+            && !model
+                .supported_thinking_levels
+                .contains(&thinking_level.to_owned())
+        {
+            return Err(RuntimeError::InvalidCore("thinking_level_invalid".into()));
+        }
+    }
+    if !inventory.iter().any(|h| h.harness_id == harness_id) {
+        return Err(RuntimeError::HarnessUnavailableOnMachine);
+    }
+    Ok(())
 }

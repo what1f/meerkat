@@ -36,3 +36,6 @@ mod scheduler_e2e;
 mod system_e2e;
 #[path = "../web_assets_e2e.rs"]
 mod web_assets_e2e;
+
+#[path = "../harness_test_e2e.rs"]
+mod harness_test_e2e;

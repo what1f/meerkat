@@ -24,6 +24,7 @@ struct State {
     cut_before: Option<&'static str>,
     discard_once: Option<&'static str>,
     frame_delay: std::time::Duration,
+    harness_test_budget: Option<u64>,
 }
 pub struct NetProxy {
     address: SocketAddr,
@@ -114,6 +115,11 @@ impl NetProxy {
     pub fn delay_machine_frames(&self, delay: std::time::Duration) {
         self.state.send_modify(|s| s.frame_delay = delay);
     }
+    /// Inject a short test budget at the network boundary, after Machine readiness.
+    pub fn set_harness_test_budget(&self, budget: std::time::Duration) {
+        self.state
+            .send_modify(|s| s.harness_test_budget = Some(budget.as_millis() as u64));
+    }
     pub fn attempts(&self) -> Vec<Instant> {
         self.attempts.lock().expect("attempts").clone()
     }
@@ -167,6 +173,38 @@ async fn forward(
             }
         }
         if reply {
+            let budget = state.borrow().harness_test_budget;
+            if let Some(budget) = budget {
+                pending.extend_from_slice(&buffer[..length]);
+                while let Some((end, payload)) = client_frame(&pending) {
+                    let mut frame = pending[..end].to_vec();
+                    if let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&payload)
+                        && value["type"] == "test_harness"
+                    {
+                        value["payload"]["budget_millis"] = budget.into();
+                        let payload = serde_json::to_vec(&value).expect("test frame");
+                        // Runtime frames are unmasked. Preserve the original opcode.
+                        frame = vec![pending[0]];
+                        match payload.len() {
+                            n @ 0..=125 => frame.push(n as u8),
+                            n @ 126..=65535 => {
+                                frame.push(126);
+                                frame.extend_from_slice(&(n as u16).to_be_bytes());
+                            }
+                            n => {
+                                frame.push(127);
+                                frame.extend_from_slice(&(n as u64).to_be_bytes());
+                            }
+                        }
+                        frame.extend_from_slice(&payload);
+                    }
+                    if writer.write_all(&frame).await.is_err() {
+                        return;
+                    }
+                    pending.drain(..end);
+                }
+                continue;
+            }
             if writer.write_all(&buffer[..length]).await.is_err() {
                 return;
             }

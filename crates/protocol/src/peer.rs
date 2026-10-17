@@ -196,6 +196,12 @@ pub trait RuntimePeer: Send + Sync + 'static {
         Err(Status::unimplemented("get_harness_catalog"))
     }
 
+    async fn test_harness(
+        &self,
+        _request: TestHarnessRequest,
+    ) -> Result<TestHarnessResponse, Status> {
+        Err(Status::unimplemented("test_harness"))
+    }
     async fn get_model_catalog(
         &self,
         _request: ModelCatalogRequest,

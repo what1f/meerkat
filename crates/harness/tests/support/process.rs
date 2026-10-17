@@ -63,6 +63,7 @@ impl ProcessHarnessFactory {
         &self,
         request: SessionRequest,
         resume: bool,
+        startup_deadline: Option<Instant>,
     ) -> Result<Box<dyn HarnessSession>, HarnessError> {
         self.validate_config(&request.config)?;
         if resume
@@ -103,7 +104,12 @@ impl ProcessHarnessFactory {
             return Err(error);
         }
 
-        let first = match peer.lines.recv_timeout(self.spec.bind_timeout) {
+        let bind_timeout = startup_deadline.map_or(self.spec.bind_timeout, |deadline| {
+            self.spec
+                .bind_timeout
+                .min(deadline.saturating_duration_since(Instant::now()))
+        });
+        let first = match peer.lines.recv_timeout(bind_timeout) {
             Ok(Ok(line)) => line,
             Ok(Err(error)) => {
                 peer.reap(true);
@@ -226,11 +232,19 @@ impl HarnessFactory for ProcessHarnessFactory {
     }
 
     fn start<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
-        Box::pin(async move { self.open_session(request, false) })
+        Box::pin(async move { self.open_session(request, false, None) })
+    }
+
+    fn start_before<'a>(
+        &'a self,
+        request: SessionRequest,
+        deadline: Instant,
+    ) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
+        Box::pin(async move { self.open_session(request, false, Some(deadline)) })
     }
 
     fn resume<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
-        Box::pin(async move { self.open_session(request, true) })
+        Box::pin(async move { self.open_session(request, true, None) })
     }
 }
 
@@ -273,6 +287,7 @@ struct SpawnedPeer {
 
 impl SpawnedPeer {
     fn reap(&mut self, force: bool) {
+        lankide_harness::kill_process_group(self.child.id());
         if force {
             let _ = self.child.kill();
         }
@@ -443,6 +458,7 @@ impl ProcessSessionInner {
         self.stdin.lock().expect("stdin mutex poisoned").take();
         if let Some(mut child) = self.child.lock().expect("child mutex poisoned").take() {
             let pid = child.id();
+            lankide_harness::kill_process_group(child.id());
             let _ = child.kill();
             let _ = child.wait();
             record_pid(self.pid_journal.as_deref(), "reaped", pid);
@@ -478,6 +494,7 @@ impl Drop for ProcessSessionInner {
             && let Some(mut child) = child.take()
         {
             let pid = child.id();
+            lankide_harness::kill_process_group(child.id());
             let _ = child.kill();
             let _ = child.wait();
             record_pid(self.pid_journal.as_deref(), "reaped", pid);

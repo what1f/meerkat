@@ -557,6 +557,16 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
         ))
     }
 
+    pub async fn test_harness(
+        &self,
+        request: Request<TestHarnessRequest>,
+    ) -> Result<Response<TestHarnessResponse>, Status> {
+        require_text(&request.get_ref().machine_id, "machine_id")?;
+        require_text(&request.get_ref().harness_id, "harness_id")?;
+        Ok(Response::new(
+            self.peer.test_harness(request.into_inner()).await?,
+        ))
+    }
     pub async fn get_model_catalog(
         &self,
         request: Request<ModelCatalogRequest>,

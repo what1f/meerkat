@@ -3685,6 +3685,7 @@ name = "lankide-harness"
 version = "0.1.0"
 dependencies = [
  "lankide-core",
+ "rustix 1.1.4",
  "serde",
  "serde_json",
  "tokio",

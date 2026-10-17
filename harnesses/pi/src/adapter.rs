@@ -62,6 +62,7 @@ impl PiHarness {
         &self,
         request: SessionRequest,
         resume: bool,
+        startup_deadline: Option<Instant>,
     ) -> Result<Box<dyn HarnessSession>, HarnessError> {
         self.validate(&request.config)?;
         match (resume, request.native_session_id.as_deref()) {
@@ -179,7 +180,7 @@ impl PiHarness {
             reap(&mut child, paths.pid_journal.as_deref(), true);
             return Err(error);
         }
-        let state = match wait_for_state(&line_receiver) {
+        let state = match wait_for_state(&line_receiver, startup_deadline) {
             Ok(state) => state,
             Err(error) => {
                 let detail = process_exit_detail(&paths.stderr_path, &mut child, &error.message);
@@ -359,11 +360,19 @@ impl HarnessFactory for PiHarness {
     }
 
     fn start<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
-        Box::pin(async move { self.open(request, false) })
+        Box::pin(async move { self.open(request, false, None) })
+    }
+
+    fn start_before<'a>(
+        &'a self,
+        request: SessionRequest,
+        deadline: Instant,
+    ) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
+        Box::pin(async move { self.open(request, false, Some(deadline)) })
     }
 
     fn resume<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
-        Box::pin(async move { self.open(request, true) })
+        Box::pin(async move { self.open(request, true, None) })
     }
 }
 
@@ -566,9 +575,17 @@ fn validate_session_file(
 
 fn wait_for_state(
     receiver: &std_mpsc::Receiver<Result<String, std::io::Error>>,
+    startup_deadline: Option<Instant>,
 ) -> Result<Value, HarnessError> {
     let deadline = Instant::now() + BIND_TIMEOUT;
+    let deadline = startup_deadline.map_or(deadline, |limit| deadline.min(limit));
     loop {
+        if startup_deadline.is_some() && Instant::now() >= deadline {
+            return Err(harness_error(
+                HarnessErrorCode::Timeout,
+                "Pi get_state timeout",
+            ));
+        }
         let line = receiver
             .recv_timeout(deadline.saturating_duration_since(Instant::now()))
             .map_err(|error| match error {
@@ -688,6 +705,7 @@ impl Inner {
         self.stdin.lock().expect("Pi stdin mutex poisoned").take();
         if let Some(mut child) = self.child.lock().expect("Pi child mutex poisoned").take() {
             let pid = child.id();
+            lankide_harness::kill_process_group(child.id());
             if child.try_wait().ok().flatten().is_none() {
                 let _ = child.kill();
             }
@@ -719,6 +737,7 @@ impl Drop for Inner {
             && let Some(mut child) = child.take()
         {
             let pid = child.id();
+            lankide_harness::kill_process_group(child.id());
             let _ = child.kill();
             let _ = child.wait();
             record_pid(self.pid_journal.as_deref(), "reaped", pid);
@@ -1480,6 +1499,7 @@ fn write_line(stdin: &mut ChildStdin, value: &Value) -> Result<(), HarnessError>
 
 fn reap(child: &mut Child, journal: Option<&Path>, force: bool) {
     let pid = child.id();
+    lankide_harness::kill_process_group(child.id());
     if force || child.try_wait().ok().flatten().is_none() {
         let _ = child.kill();
     }

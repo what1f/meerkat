@@ -713,6 +713,7 @@ impl SessionInner {
         self.stdin.lock().expect("stdin lock").take();
         let mut child = self.child.lock().expect("child lock").take();
         if let Some(child) = child.as_mut() {
+            lankide_harness::kill_process_group(child.id());
             if force || child.try_wait().ok().flatten().is_none() {
                 let _ = child.kill();
             }

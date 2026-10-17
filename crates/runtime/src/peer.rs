@@ -649,6 +649,15 @@ impl RuntimePeer for RuntimePeerAdapter {
             .await
             .map_err(status)
     }
+    async fn test_harness(
+        &self,
+        request: lankide_protocol::TestHarnessRequest,
+    ) -> Result<lankide_protocol::TestHarnessResponse, Status> {
+        self.application
+            .machine_broker()
+            .test_harness(request)
+            .await
+    }
     async fn get_model_catalog(
         &self,
         request: lankide_protocol::ModelCatalogRequest,

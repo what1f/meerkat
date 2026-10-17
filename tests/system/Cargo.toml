@@ -172,3 +172,11 @@ prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
 status = "implemented"
+
+[package.metadata.lankide.e2e-additional.system-harness-test]
+command = "cargo test -p lankide-system-e2e --test e2e harness_test_e2e::"
+scenario = "Verify A4c.1-A4c.4 through management HTTP and two real Machines: selected Harness replies with real argv, environment, model and thinking settings; missing CLI fails; hung execution times out within 30 seconds; success and timeout remove process trees and temporary directories without changing members, executions, messages, IM sends or management events. Review: inject a 1200 ms relative budget through the rig network fixture, hang before session bind, and require timed_out within two seconds with CLI, child and temporary directory already removed."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"

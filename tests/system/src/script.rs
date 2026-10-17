@@ -45,6 +45,8 @@ pub enum Script {
     FailMidTurn {
         text: String,
     },
+    Greeting,
+    HangOnStart,
     Hang,
     HangOnce {
         text: String,
@@ -176,6 +178,17 @@ impl HarnessFactory for ScriptedHarness {
             Box::pin(async move { Err(error) })
         } else {
             self.process.start(request)
+        }
+    }
+    fn start_before<'a>(
+        &'a self,
+        request: SessionRequest,
+        deadline: std::time::Instant,
+    ) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
+        if let Some(error) = Self::spawn_failure(&request) {
+            Box::pin(async move { Err(error) })
+        } else {
+            self.process.start_before(request, deadline)
         }
     }
     fn resume<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>> {

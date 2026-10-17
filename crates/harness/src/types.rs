@@ -411,6 +411,31 @@ pub trait HarnessFactory: Send + Sync {
         })
     }
     fn start<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>>;
+    /// Start within a caller's local monotonic deadline. Adapters with a
+    /// synchronous bind wait must bound it too, and reap their owned process
+    /// group before returning a startup timeout.
+    fn start_before<'a>(
+        &'a self,
+        request: SessionRequest,
+        deadline: std::time::Instant,
+    ) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
+        Box::pin(async move {
+            if std::time::Instant::now() >= deadline {
+                return Err(HarnessError::new(
+                    HarnessErrorCode::Timeout,
+                    "Harness startup timed out",
+                ));
+            }
+            tokio::time::timeout_at(
+                tokio::time::Instant::from_std(deadline),
+                self.start(request),
+            )
+            .await
+            .map_err(|_| {
+                HarnessError::new(HarnessErrorCode::Timeout, "Harness startup timed out")
+            })?
+        })
+    }
     fn resume<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>>;
 }
 

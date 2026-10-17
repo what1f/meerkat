@@ -423,6 +423,9 @@ impl SystemRig {
     pub fn management(&self) -> &RuntimeManagementClient {
         &self.client
     }
+    pub fn outbound_count(&self) -> usize {
+        self.im.outbound.lock().expect("outbound").len()
+    }
     pub fn machine_home(&self) -> &std::path::Path {
         self.machine_home.path()
     }
