@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lankide</title>
+<style>
+  /* Values from apps/web/src/design/tokens.css. */
+  :root {
+    --font: -apple-system, blinkmacsystemfont, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', sans-serif;
+    --t-body: 13px;
+    --t-title: 15px;
+    --h-md: 32px;
+    --r-pill: 999px;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --d-fast: 120ms;
+    --d-slow: 320ms;
+    --canvas: #f1f2f6;
+    --surface: #fff;
+    --line-strong: rgb(27 29 38 / 14%);
+    --ink: #1b1d26;
+    --ink-2: rgb(27 29 38 / 62%);
+    --on-ink: #fff;
+    --accent-soft: rgb(98 108 204 / 16%);
+    --ink-hover: color-mix(in srgb, var(--ink) 86%, var(--surface));
+    color-scheme: light dark;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --canvas: #101115;
+      --surface: #17181d;
+      --line-strong: rgb(255 255 255 / 13%);
+      --ink: #e8e9ee;
+      --ink-2: rgb(232 233 238 / 62%);
+      --on-ink: #17181d;
+      --accent-soft: rgb(140 149 236 / 22%);
+    }
+  }
+
+  html, body { height: 100%; margin: 0; }
+
+  body {
+    font: var(--t-body) / 1.5 var(--font);
+    color: var(--ink);
+    background: var(--canvas);
+    -webkit-font-smoothing: antialiased;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-app-region: drag;
+    cursor: default;
+  }
+
+  main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+  }
+
+  /* The meerkat peeks over the edge while Lankide opens. */
+  .peek { position: relative; width: 132px; height: 96px; overflow: hidden; }
+  .peek::after { position: absolute; right: 6px; bottom: 0; left: 6px; height: 1px; content: ''; background: var(--line-strong); }
+  .peek img { position: absolute; top: 96px; left: 16px; width: 100px; animation: peek-up 0.9s var(--ease) 0.2s forwards, look 2.4s ease-in-out 1.1s infinite; }
+  main:has(#error:not([hidden])) .peek img { top: 44px; animation: none; }
+
+  @keyframes peek-up { to { top: 22px; } }
+  @keyframes look { 50% { translate: 0 4px; } }
+
+  section { display: flex; flex-direction: column; align-items: center; margin-top: 16px; }
+  section[hidden] { display: none; }
+
+  progress { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  #loading { margin: 0; color: var(--ink-2); opacity: 0; animation: show var(--d-slow) var(--ease) 0.6s forwards; }
+
+  @keyframes show { to { opacity: 1; } }
+
+  h1 { margin: 0 0 16px; font-size: var(--t-title); font-weight: 600; text-align: center; }
+
+  button {
+    height: var(--h-md);
+    padding: 0 14px;
+    font: inherit;
+    font-weight: 500;
+    color: var(--on-ink);
+    cursor: pointer;
+    background: var(--ink);
+    border: 0;
+    border-radius: var(--r-pill);
+    outline: none;
+    -webkit-app-region: no-drag;
+    transition: background-color var(--d-fast) var(--ease), transform var(--d-fast) var(--ease), box-shadow var(--d-fast);
+  }
+  button:hover { background: var(--ink-hover); }
+  button:active { transform: scale(0.97); }
+  button:focus-visible { box-shadow: 0 0 0 3px var(--accent-soft); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .peek img { top: 22px; animation: none; }
+    #loading { opacity: 1; animation: none; }
+  }
+</style>
+<main>
+  <div class="peek" aria-hidden="true"><img src="meerkat-peek.png" alt=""></div>
+  <section id="loader" role="status" aria-live="polite"><progress></progress><p id="loading"></p></section>
+  <section id="error" hidden role="alert"><h1 id="error-title"></h1><button id="action" type="button"></button></section>
+</main>
+<script>
+  const zh = navigator.language.toLowerCase().startsWith('zh');
+  const messages = zh ? {
+    loading: '正在打开 Lankide…', retry: '重试', settings: '打开系统设置',
+    'background-permission': '请允许 Lankide 在后台运行',
+    'background-installation': '请重新安装 Lankide',
+    'helper-missing': '请重新安装 Lankide',
+    'update-pending': '请退出并重新打开 Lankide',
+    'startup-failed': '无法打开 Lankide'
+  } : {
+    loading: 'Opening Lankide…', retry: 'Retry', settings: 'Open System Settings',
+    'background-permission': 'Allow Lankide to run in the background',
+    'background-installation': 'Reinstall Lankide',
+    'helper-missing': 'Reinstall Lankide',
+    'update-pending': 'Quit and reopen Lankide',
+    'startup-failed': 'Could not open Lankide'
+  };
+  document.documentElement.lang = zh ? 'zh' : 'en';
+  document.getElementById('loading').textContent = messages.loading;
+  function render() {
+    const code = location.hash.slice(1);
+    document.getElementById('loader').hidden = Boolean(code);
+    document.getElementById('error').hidden = !code;
+    document.getElementById('error-title').textContent = messages[code] || messages['startup-failed'];
+    const settings = code === 'background-permission';
+    const action = document.getElementById('action');
+    action.textContent = settings ? messages.settings : messages.retry;
+    action.onclick = () => { location.href = `lankide-boot://${settings ? 'settings' : 'retry'}`; };
+  }
+  addEventListener('hashchange', render);
+  render();
+</script>
+</html>

@@ -24,13 +24,8 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer", "objc2-core-foundation", "objc2-core-graphics"] }
 raw-window-handle = "0.6"
 
-[package.metadata.lankide.e2e]
-command = "cargo test -p lankide-desktop --test e2e desktop_interaction_e2e::"
-scenario = "Exercise the shared form, input, select, menu, dialog, banner and avatar components through the production Desktop composition, including empty validation, live retranslation of retained feedback, localized Provider onboarding presentation, explicit model choice, activation failure and retry, and scoped image loading. Show a paused Agent and resume it through the existing card interaction. Use one theme error token for inline fields and banners, with bright dark-mode text."
-prerequisites = "GPUI test platform; actual-window visual review belongs to the separate Desktop gate"
-classification = "hermetic"
-unattended = "yes"
-status = "implemented"
+[package.metadata.lankide]
+e2e-exemption = "Retained GPUI components await D1 removal; their Desktop UI scenarios were removed when C1 replaced the application shell with Tauri."
 
 [lib]
 test = false

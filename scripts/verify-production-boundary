@@ -24,16 +24,14 @@ MARKERS = re.compile(
 def verify_reaction_assets(errors):
     catalog_path = ROOT / "providers/feishu/assets/reactions.json"
     assets_dir = ROOT / "apps/desktop/assets/reactions"
-    embedded_path = ROOT / "apps/desktop/src/assets.rs"
     if not (ROOT / "providers/feishu/Cargo.toml").exists() and not (
         ROOT / "apps/desktop/Cargo.toml"
     ).exists():
         return
-    for required in (catalog_path, embedded_path):
+    for required in (catalog_path,):
         if not required.is_file():
             errors.append(f"{required.relative_to(ROOT)}: required production asset definition is missing")
             return
-    embedded_source = embedded_path.read_text()
     catalog = json.loads(catalog_path.read_text())
     expected_count = 279
 
@@ -49,15 +47,9 @@ def verify_reaction_assets(errors):
     if len(set(files)) != len(files):
         errors.append(f"{catalog_path.relative_to(ROOT)}: duplicate reaction asset")
 
-    declared = set(
-        re.findall(
-            r'"reactions/[^"]+\.png"\s*=>\s*"\.\./assets/reactions/([^"]+\.png)"',
-            embedded_source,
-        )
-    )
     actual = {path.name for path in assets_dir.glob("*.png")}
     expected = set(files)
-    for label, found in (("embedded declarations", declared), ("asset directory", actual)):
+    for label, found in (("asset directory", actual),):
         missing = sorted(expected - found)
         extra = sorted(found - expected)
         if missing or extra:

@@ -119,16 +119,6 @@ impl DesktopBackend {
         }
     }
 
-    pub fn quit_cleanup(&self) -> impl FnMut(&mut gpui::App) -> std::future::Ready<()> + use<> {
-        let services = self._services.clone();
-        move |_| {
-            services
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .stop_owned();
-            std::future::ready(())
-        }
-    }
     pub fn stop_local_services(&self) {
         self._services
             .lock()
@@ -142,8 +132,16 @@ impl DesktopBackend {
         self.startup_result.take()
     }
 
-    pub fn enter(&self) -> tokio::runtime::EnterGuard<'_> {
-        self._tokio.enter()
+    pub fn navigation_url(&self) -> Result<tauri::Url, ClientError> {
+        let run = env::var_os(RUN_ENV)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.local_home.join("run"));
+        let value = fs::read_to_string(run.join("management.url"))
+            .map_err(|error| ClientError::Unavailable(error.to_string()))?;
+        let url = tauri::Url::parse(value.trim())
+            .map_err(|error| ClientError::Unavailable(error.to_string()))?;
+        tauri::Url::parse(&format!("{}/", url.origin().ascii_serialization()))
+            .map_err(|error| ClientError::Unavailable(error.to_string()))
     }
 }
 
@@ -219,13 +217,24 @@ pub fn run_local_bootstrap_smoke() -> i32 {
             std::thread::sleep(Duration::from_millis(100));
         }
     }
-    let status = if startup_ready && runtime_ready && machine_connected && management {
+    let navigation_url = startup_ready
+        .then(|| backend.navigation_url().ok())
+        .flatten();
+    let status = if startup_ready
+        && runtime_ready
+        && machine_connected
+        && management
+        && navigation_url.is_some()
+    {
         "passed"
     } else {
         "failed"
     };
     let payload = serde_json::json!({
         "status": status,
+        "navigation_url": navigation_url.map(|url| url.to_string()),
+        "navigation_mode": "headless-intended",
+        "error_code": backend.startup_error.as_ref().map(startup_error_code),
         "runtime_ready": runtime_ready,
         "machine_connected": machine_connected,
         "local_machine_id": backend._tokio.block_on(backend.client.get_machine_catalog(None)).ok().and_then(|items| items.into_iter().find(|item| item.is_local).map(|item| item.id)),
@@ -304,4 +313,20 @@ async fn ensure_machine_ready(
 
 fn local_machine_online(machine: &lankide_client::MachineOption) -> bool {
     machine.registered && machine.revoked_at.is_none() && machine.available && machine.is_local
+}
+
+/// Preserve the existing bootstrap failure categories without displaying raw errors.
+pub fn startup_error_code(error: &ClientError) -> &'static str {
+    let message = error.to_string();
+    if message.contains("登录项") {
+        "background-permission"
+    } else if message.contains("重新安装") {
+        "background-installation"
+    } else if message.contains("完成更新") {
+        "update-pending"
+    } else if message.contains("找不到本地服务程序") {
+        "helper-missing"
+    } else {
+        "startup-failed"
+    }
 }

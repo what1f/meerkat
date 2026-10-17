@@ -3,38 +3,34 @@ autotests = false
 name = "lankide-desktop"
 version = "0.1.0"
 edition = "2024"
-description = "Lankide GPUI management client"
+description = "Lankide desktop shell"
 license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build.workspace = true
+
 [dependencies]
-http = "1"
-image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
-desktop-ui = { path = "../../crates/desktop-ui" }
 lankide-client = { path = "../../crates/client" }
-gpui.workspace = true
-gpui_platform.workspace = true
-gpui-component.workspace = true
-gpui-component-assets.workspace = true
-anyhow = "1"
 serde_json.workspace = true
 tokio.workspace = true
-qrcode = { version = "0.14.1", default-features = false }
+tauri.workspace = true
+tauri-plugin-opener.workspace = true
+window-vibrancy.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
+objc2-web-kit = { version = "0.3.2", features = ["WKWebViewConfiguration"] }
 objc2-foundation = "0.3.2"
 objc2-service-management = { version = "0.3.2", default-features = false, features = ["std", "SMAppService", "objc2", "objc2-foundation"] }
 
 [dev-dependencies]
-async-trait.workspace = true
-lankide-system-e2e = { path = "../../tests/system" }
-lankide-machine = { path = "../machine" }
 tempfile.workspace = true
-tokio-stream.workspace = true
-gpui = { workspace = true, features = ["test-support"] }
-gpui_platform = { workspace = true, features = ["test-support"] }
 
 [[bin]]
 test = false
@@ -42,17 +38,17 @@ name = "lankide-desktop"
 path = "src/main.rs"
 
 [package.metadata.lankide.e2e]
-command = "./apps/desktop/visual-e2e.sh"
-scenario = "Review the actual production window across the complete Workspace, Agent, onboarding, resource-image, light and dark scenario set; verify exact source/binary/baseline evidence and owned process cleanup. The bootstrap scenario also proves an unbundled Desktop with a private default home starts transient helpers when no owner runs, and reuses healthy owners without spawning helpers. First launch shows the self-paired local Machine online without a code. Settings and Agent create/edit list registered non-revoked Machines including an offline Machine; new forms default to the local Machine and save explicit placement. Add Machine opens directly on one copyable command after detecting a LAN address, with a manual address fallback, localized in English and Chinese. Bootstrap discovers the local HTTP management listener and uses it without an owner credential. Show the Machines card and localized direct-command pairing flow with address correction; detect a new online Machine and close after its connected state; stop only Desktop-owned transient helpers on quit. Update the Machines list and pairing connected state from management events and reconnect after Runtime restart without changing UI copy. Review hover menus, inline rename and small removal confirmation dialogs in both languages; local Machines offer Rename only."
-prerequisites = "macOS window session; authorized live Provider accounts; four product binaries; completed human or Machine Use review via LANKIDE_VISUAL_REVIEW"
-classification = "visual-semantic"
-unattended = "no; requires actual-window review"
+command = "./apps/desktop/shell-e2e.sh"
+scenario = "Start the shipped headless Desktop entrypoint with real local services, record the intended navigation to the discovered Runtime origin, reuse healthy owners, report failed helpers, and clean up only owned processes. Window appearance and external-link acceptance belong to C2."
+prerequisites = "Four product binaries in the selected binary directory (target/debug by default); macOS"
+classification = "hermetic"
+unattended = "yes"
 status = "implemented"
 
 [package.metadata.lankide.e2e-additional.desktop-machines]
 command = "cargo build --locked --bin lankided --bin lankide-machine && cargo test -p lankide-desktop --test e2e machine_pairing_e2e::"
-scenario = "Use the real system rig through the production Desktop UI: reflect local self-pairing without a code, retain an offline Machine, hide revoked Machines, create on the local default and edit placement to the offline Machine, enable remote access with a detected LAN address excluding tunnel and benchmark addresses, then correct the address, copy the pinned command, pair another Machine by running it, renew expired commands, show the connected state, and close automatically. Reuse the HTTP Runtime owner without a Runtime UDS listener (S17). Exercise real helper ownership through Desktop bootstrap and public app quit: owned children exit and reused children stay running. Refresh visible Settings after Machine online, offline, registration and revocation changes; replace the single localized status row after 30 seconds in the theme-matched pairing flow. Bootstrap reuses owners that already have daemon logs and observes early helper failures through inherited streams. Keep Settings open across Runtime restart and receive later Machine registration, presence and revocation changes through management events. Renew pairing commands at their expiry and await owned helper exit on app quit. Rename inline with Enter and cancel with Esc, omit local removal, remove an offline Machine, refuse removal of assigned Machines, and refresh renamed choices in an already open Agent form. Recover local credential loss before mounting the UI, restart Runtime, and retain the local default and per-row removal protection without a Desktop credential file."
-prerequisites = "GPUI test platform; private daemon homes"
+scenario = "Bootstrap real local helpers in private homes, stop only Desktop-owned helpers while reused owners remain running, and replace outdated helpers when Desktop reopens after an update."
+prerequisites = "Built lankided and lankide-machine binaries; private daemon homes; macOS"
 classification = "hermetic"
 unattended = "yes"
 status = "implemented"
