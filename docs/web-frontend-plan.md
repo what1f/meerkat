@@ -140,6 +140,7 @@ IM 式对话界面。选用 React，原因如下：
 | 服务端状态 | `@tanstack/react-query` 5.104（latest 5.104.3，2026-10-15 发布） |
 | 键盘交互复杂的控件 | `@base-ui/react` 1.9，只用于 Select、Menu、Popover；对话框用原生 `<dialog>` |
 | 二维码 | `qrcode` |
+| 图标 | `lucide-react`，只在 `design/icons.tsx` 中使用 |
 
 不引入以下依赖：
 
@@ -363,6 +364,9 @@ IM 式对话界面。选用 React，原因如下：
 - 依赖、Vite、TS、ESLint 和 stylelint 按「技术栈」和组件文档配置，所有 lint 规则都要启用。
 - 按组件文档建好完整目录树。`design/`、`scene/`、`shell/` 中的每个组件都要写出**最终的 props 类型**，
   再加一个只有语义结构、不带视觉样式的最小实现，从 index 导出。B1 在这个基础上补外观，B3 直接基于这些接口开发。
+- `design/` 控件的交互行为在 B0 中完成：键盘操作、`InlineText` 的提交和撤销、`Combo` 的过滤、toast 计时、
+  `Command` 的复制、`Dialog` 的打开和关闭、Base UI 控件的接入。`scene/drag/` 的 hook 只写出签名和空实现，由 B1 完成。
+- `lib/` 中只建 `i18n/`、`storage.ts`、`theme.ts`，其余模块属于 B2。`lib/api/generated/` 由 A1 生成。
 - `app/`：Provider 组合，以及 hash 路由的空页面。`lib/i18n` 的骨架和 `common.ts`。
 - `dev/DesignPreview` 的框架，每组组件先放一个空的 section。
 - 把素材迁移到 `src/assets/`。`apps/desktop/assets` 中原有的素材暂不删除，留到 D1 处理。
@@ -453,7 +457,7 @@ IM 式对话界面。选用 React，原因如下：
 
 | 波次 | 任务 | 说明 |
 |---|---|---|
-| 1 | A1、A2、B0 | 三者改的文件互不重叠 |
+| 1 | A1、A2、B0 | B0 不碰 Cargo 代码；A1 和 A2 都改 `crates/protocol`，A1 先合并，A2 再 rebase 到它上面 |
 | 2 | A3、A4、B1、B2、B4、C1 | B1 交给设计会话，其余交给 Codex |
 | 3 | B3a、B3b、B3c、B3d | B1 合并后，各页面直接获得新外观，不需要改代码 |
 | 4 | D1，然后 C2、D2 | |

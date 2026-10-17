@@ -26,7 +26,7 @@ lib/       api、事件、query、i18n、主题、存储。可以被 app、featu
 
 | 层 | 可以 import |
 |---|---|
-| `design/` | `design/` 内部、`react`、`@base-ui/react`、`qrcode` |
+| `design/` | `design/` 内部、`react`、`@base-ui/react`、`qrcode`、`lucide-react` |
 | `scene/` | `design/`、`scene/` 内部 |
 | `shell/` | `design/`、`scene/`、`lib/` |
 | `features/<x>/` | `design/`、`scene/`、`lib/`、自己目录内的文件 |
@@ -50,7 +50,7 @@ apps/web/
     design/
       tokens.css           唯一的 token 来源（从 system.html 的 :root 和 [data-theme] 中整理出来）
       global.css           reset、字体、全局排版
-      icons.tsx            lucide 图标：IconName 到 JSX 的映射
+      icons.tsx            IconName 到 lucide-react 组件的映射
       Icon.tsx  BrandMark.tsx
       Button.tsx  IconButton.tsx  LinkButton.tsx
       TextInput.tsx  DocArea.tsx  InlineText.tsx
@@ -120,7 +120,7 @@ apps/web/
 - `apps/desktop/assets` 下的 reactions、icons、mascot、fonts
 - `docs/design` 下的 avatars、figures、office
 
-`system.html` 也改为引用这里的素材。
+`system.html` 改为引用这里的素材这件事，由设计会话负责。
 
 ## 写法约束（lint 强制）
 
