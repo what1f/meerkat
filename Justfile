@@ -62,3 +62,8 @@ web-check:
     pnpm -C apps/web typecheck
     pnpm -C apps/web build
     ./scripts/verify-web-lint
+
+web-e2e:
+    pnpm -C apps/web build
+    cargo build --locked -p lankide-system-e2e --bins
+    pnpm -C apps/web e2e

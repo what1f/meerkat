@@ -43,6 +43,11 @@ impl TelegramWeb {
             }
             let result = match method {
                 "getMe" => {
+                    if !r.path.contains("100:manager") && !r.path.contains("200:agent") {
+                        return Response::json(
+                            json!({"ok":false,"error_code":401,"description":"invalid token"}),
+                        );
+                    }
                     json!({"id":if r.path.contains("100:manager"){100}else{200},"is_bot":true,"first_name":"Alpha","username":if r.path.contains("100:manager"){"manager_bot"}else{"alpha_bot"},"can_manage_bots":true})
                 }
                 "getManagedBotToken" => json!("200:agent"),

@@ -108,11 +108,15 @@ impl Script {
 pub(crate) struct ScriptedHarness {
     process: ProcessHarnessFactory,
     models: Option<Vec<NativeModel>>,
+    controls: PathBuf,
 }
 impl ScriptedHarness {
     pub fn new(journal: PathBuf) -> Self {
         Self {
             models: None,
+            controls: std::env::var_os("LANKIDE_SYSTEM_CONTROL_ROOT")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| journal.parent().unwrap().join("scripted-members")),
             process: ProcessHarnessFactory::new(
                 HarnessInfo::new("pi", "Scripted process").expect("harness id"),
                 ProcessHarnessSpec {
@@ -127,6 +131,39 @@ impl ScriptedHarness {
     pub fn with_models(mut self, models: Vec<NativeModel>) -> Self {
         self.models = Some(models);
         self
+    }
+    fn prepare(&self, mut request: SessionRequest) -> Result<SessionRequest, HarnessError> {
+        // Machine's public working directory is workspace/agents/member. Use that
+        // identity; browser-created members need no editable test configuration.
+        let home = &request.working_directory;
+        let agent = home
+            .file_name()
+            .ok_or_else(|| HarnessError::new(HarnessErrorCode::InvalidConfig, "member home"))?;
+        let workspace = home
+            .ancestors()
+            .nth(2)
+            .and_then(|p| p.file_name())
+            .ok_or_else(|| HarnessError::new(HarnessErrorCode::InvalidConfig, "workspace home"))?;
+        let dir = self.controls.join(workspace).join(agent);
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| HarnessError::new(HarnessErrorCode::InvalidConfig, e.to_string()))?;
+        let env = &mut request.config.environment;
+        for (key, file) in [
+            ("LANKIDE_SYSTEM_INPUTS", "inputs.jsonl"),
+            ("LANKIDE_SYSTEM_CONTROLS", "controls.jsonl"),
+            ("LANKIDE_SYSTEM_STEERS", "steers.jsonl"),
+            ("LANKIDE_SYSTEM_RELEASE", "release"),
+        ] {
+            env.entry(key.into())
+                .or_insert_with(|| dir.join(file).display().to_string());
+        }
+        env.entry("LANKIDE_SYSTEM_SCRIPT".into())
+            .or_insert_with(|| serde_json::to_string(&Script::reply("hi")).unwrap());
+        env.insert(
+            "LANKIDE_SYSTEM_HOLD".into(),
+            dir.join("hold").display().to_string(),
+        );
+        Ok(request)
     }
     fn spawn_failure(request: &SessionRequest) -> Option<HarnessError> {
         let script = request.config.environment.get("LANKIDE_SYSTEM_SCRIPT")?;
@@ -174,6 +211,10 @@ impl HarnessFactory for ScriptedHarness {
         })
     }
     fn start<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
+        let request = match self.prepare(request) {
+            Ok(request) => request,
+            Err(error) => return Box::pin(async move { Err(error) }),
+        };
         if let Some(error) = Self::spawn_failure(&request) {
             Box::pin(async move { Err(error) })
         } else {
@@ -192,6 +233,10 @@ impl HarnessFactory for ScriptedHarness {
         }
     }
     fn resume<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
+        let request = match self.prepare(request) {
+            Ok(request) => request,
+            Err(error) => return Box::pin(async move { Err(error) }),
+        };
         if let Some(error) = Self::spawn_failure(&request) {
             Box::pin(async move { Err(error) })
         } else {

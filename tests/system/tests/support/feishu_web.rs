@@ -8,6 +8,10 @@ use std::sync::{Arc, Mutex};
 pub struct Feishu {
     /// 0 waiting for a scan, 1 scanned, 2 confirmed on the phone.
     pub login_stage: u8,
+    pub qr_expired: bool,
+    pub sends: Vec<Value>,
+    pub message_chats: std::collections::BTreeMap<String, String>,
+    pub chat_types: std::collections::BTreeMap<String, String>,
     qr_codes: usize,
     pub name: String,
     pub user: String,
@@ -110,6 +114,9 @@ impl Transport for FeishuWeb {
             }
             if url == "https://accounts.feishu.cn/accounts/qrlogin/polling" {
                 assert_eq!(header(&request, "x-flow-key"), "flow");
+                if feishu.qr_expired {
+                    return data(json!({"next_step":"qr_login_polling","step_info":{"status":3}}));
+                }
                 return match feishu.login_stage {
                     0 | 1 => data(json!({
                         "next_step": "qr_login_polling",
@@ -261,6 +268,33 @@ impl Transport for FeishuWeb {
                 return data(
                     json!({"user":{"open_id":"ou_lead","union_id":"on_lead","name":"Alice"}}),
                 );
+            }
+            if url.contains("/open-apis/im/v1/messages") && request.method == Method::Post {
+                let original = url
+                    .split("/messages/")
+                    .nth(1)
+                    .and_then(|v| v.split('/').next());
+                let chat = original
+                    .and_then(|id| feishu.message_chats.get(id))
+                    .cloned()
+                    .or_else(|| body["receive_id"].as_str().map(str::to_owned))
+                    .ok_or_else(|| TransportError::Failed("unknown mock message target".into()))?;
+                let content: Value =
+                    serde_json::from_str(body["content"].as_str().unwrap_or("{}")).unwrap();
+                let channel_type = feishu
+                    .chat_types
+                    .get(&chat)
+                    .cloned()
+                    .ok_or_else(|| TransportError::Failed("unknown mock chat type".into()))?;
+                feishu
+                    .sends
+                    .push(json!({"chat":chat,"content":content,"channel_type":channel_type}));
+                return data(
+                    json!({"message_id":format!("web-reply-{}",feishu.sends.len()),"chat_id":chat}),
+                );
+            }
+            if url.ends_with("/open-apis/im/v1/chats/owner_dm") {
+                return data(json!({"name":"Owner","chat_mode":"p2p"}));
             }
             if url.ends_with("/open-apis/im/v1/chats/oc_team") {
                 return data(json!({"name":"Team"}));

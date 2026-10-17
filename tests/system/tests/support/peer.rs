@@ -100,6 +100,11 @@ fn main() {
                 .expect("record input");
                 sequence = 0;
                 event(&mut sequence, json!({"kind":"started"}));
+                if let Ok(hold) = std::env::var("LANKIDE_SYSTEM_HOLD") {
+                    while std::path::Path::new(&hold).exists() {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                }
                 let (text, delay) = match &script {
                     Script::Reply {
                         text,

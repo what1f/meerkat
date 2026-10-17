@@ -330,6 +330,10 @@ impl SystemRig {
         if let Some(binary) = &self.config.machine_process {
             self.child_machine = Some(
                 std::process::Command::new(binary)
+                    .env(
+                        "LANKIDE_SYSTEM_CONTROL_ROOT",
+                        self.runtime_home().join("scripted-members"),
+                    )
                     .arg(self.machine_home.path())
                     .arg(config.runtime_url.as_ref().expect("URL"))
                     .arg(config.link_secret_file.as_ref().expect("secret"))
@@ -764,6 +768,7 @@ impl<'a> Workspace<'a> {
             workspace: self.id.clone(),
             name: name.into(),
             script: Script::reply("hi"),
+            provider_config: None,
         }
     }
     pub async fn group_message(&self, chat: &str, person: &str, text: &str) -> Result<()> {
@@ -1055,8 +1060,14 @@ pub struct AgentBuilder<'a> {
     workspace: String,
     name: String,
     script: Script,
+    provider_config: Option<serde_json::Value>,
 }
 impl<'a> AgentBuilder<'a> {
+    pub fn provider_config(mut self, config: serde_json::Value) -> Self {
+        self.provider_config = Some(config);
+        self
+    }
+
     pub fn machine(mut self, machine_id: &str) -> Self {
         self.machine_id = machine_id.into();
         self
@@ -1121,7 +1132,9 @@ impl<'a> AgentBuilder<'a> {
                         ),
                     ],
                     provider_handle: account.clone(),
-                    provider_agent_config: json!({"account":account}),
+                    provider_agent_config: self
+                        .provider_config
+                        .unwrap_or_else(|| json!({"account":account})),
                     ..Default::default()
                 },
             )
