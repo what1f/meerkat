@@ -54,9 +54,9 @@ apps/web/
       Icon.tsx  BrandMark.tsx
       Button.tsx  IconButton.tsx  LinkButton.tsx
       TextInput.tsx  DocArea.tsx  InlineText.tsx
-      Switch.tsx  Segmented.tsx  Select.tsx  Combo.tsx  ChoiceGroup.tsx
+      Segmented.tsx  Select.tsx  SearchField.tsx  OptionColumn.tsx  ThemeThumb.tsx
       Group.tsx  Reveal.tsx
-      StatusDot.tsx  Avatar.tsx  AvatarStack.tsx
+      StatusDot.tsx  Avatar.tsx
       Menu.tsx  Popover.tsx  GridPicker.tsx  Tooltip.tsx
       Toast.tsx  Dialog.tsx  ConfirmDialog.tsx
       Command.tsx  Dashes.tsx  Skeleton.tsx  Spinner.tsx
@@ -68,6 +68,7 @@ apps/web/
       Tag.tsx  QrTag.tsx  TokenTag.tsx  PaperLabel.tsx  ShiftSign.tsx
       Clipboard.tsx  ChecklistRow.tsx
       Console.tsx  ConsoleScreen.tsx  ScreenReadout.tsx  ConsoleKey.tsx  SoulSlot.tsx  Lever.tsx
+      RigFigure.tsx  Sticker.tsx  HarnessRow.tsx
       Figure.tsx  Seat.tsx  WorkRow.tsx  AddRow.tsx
       Reaction.tsx  Mascot.tsx  PullCord.tsx
       figures.ts           形象帧的尺寸表
@@ -134,6 +135,7 @@ apps/web/
 | 颜色、圆角、阴影、字号只能写 `var(--…)`；只有 `tokens.css` 可以写字面值 | stylelint `scale-unlimited/declaration-strict-value` |
 | `design/` 和 `scene/` 组件的 props 不接受 `className` 和 `style` | 用 TS 类型强制：props 基于 `Omit<…, 'className' \| 'style'>` |
 | 原生属性透传只允许 `data-testid`、`aria-*`、事件回调 | 由各组件的 props 类型声明 |
+| 可以作为弹层触发器的组件，要接受 `ref`，并把其余 props 透传给根 DOM 元素 | 由 props 类型声明（见下文） |
 
 其他约定：
 
@@ -142,6 +144,7 @@ apps/web/
 - 定时器、轮询和 WS 只出现在 `lib/` 的 hook 和 `scene/drag/` 中。features 不直接写 `useEffect`
   订阅外部资源；如果必须写，在注释里说明理由。
 - 动效只用 CSS transition、keyframes 和 `@starting-style`。少数 FLIP 场景用 `useFlip` 里的 Web Animations API。
+- **弹层触发器**：`Menu` 和 `Popover` 的 `trigger` 通过 Base UI 的 `render` 接入。Base UI 会把 `ref`、`aria-expanded`、`data-popup-open` 和事件合并到触发元素上，所以可作为触发器的组件必须接受 React 19 的 `ref` prop，并把剩余的 props 透传到根元素（仍然禁止 `className` 和 `style`）。这类组件包括：`Button`、`IconButton`、`LinkButton`、`Avatar`（有 `onEdit` 时）、`ConsoleScreen`、`ConsoleKey`、`RigFigure`、`Sticker`。`WorkRow` 的 `menu` 槽位和 `Clipboard` 的 `actions` 槽位放入的就是这类组件。
 
 ## design/ 组件
 
@@ -149,32 +152,31 @@ apps/web/
 
 | 组件 | Props | 说明 |
 |---|---|---|
-| `Icon` | `name: IconName; size?: 12 \| 14 \| 16 \| 18 \| 20 \| 22` | 线条图标，颜色跟随 `currentColor` |
+| `Icon` | `name: IconName; size?: 10 \| 12 \| 14 \| 15 \| 16 \| 18 \| 20 \| 22` | 线条图标，颜色跟随 `currentColor` |
 | `BrandMark` | `brand: 'feishu' \| 'telegram' \| 'codex' \| 'claude-code' \| 'pi'; size?: number` | 品牌图标。单色图标跟随墨色 |
 | `Button` | `variant?: 'default' \| 'primary' \| 'quiet' \| 'danger'; size?: 'sm' \| 'md' \| 'lg'; loading?; leading?: ReactNode; children` 加上原生 button 事件 | 胶囊形。一屏最多一个 primary |
 | `IconButton` | `icon: IconName; label: string; size?: 'sm' \| 'md'; onClick` | `label` 同时用作 tooltip 和 aria-label |
 | `LinkButton` | `children; disclosure?: boolean; open?: boolean; onClick` | 文字链接；带 disclosure 时显示 chevron，展开后旋转 |
-| `TextInput` | `value; onChange; size?: 'md' \| 'lg'; align?: 'start' \| 'center'; mono?; invalid?; placeholder` | 无边框，聚焦时显示品牌紫光圈 |
+| `TextInput` | `value; onChange; size?: 'sm' \| 'md' \| 'lg'; align?: 'start' \| 'center'; mono?; invalid?; placeholder` | 填充框，没有描边，聚焦时显示品牌紫光圈。`sm` 用于等宽的小字，例如网络地址、环境变量 |
 | `DocArea` | `value; onChange; placeholder; minRows?` | 文档式多行编辑，高度随内容增长 |
-| `InlineText` | `value; onCommit(v); placeholder; multiline?; textStyle: 'display' \| 'heading' \| 'title' \| 'body' \| 'small'; autoFocus?` | 平时就是一段文字，点击后原地编辑。Enter 或失焦时提交，Esc 撤销 |
-| `Switch` | `checked; onChange; label` | 只用在设置行 |
+| `InlineText` | `mode?: 'commit' \| 'live'; value; onCommit?(v); onChange?(v); placeholder; multiline?; textStyle: 'display' \| 'heading' \| 'title' \| 'body' \| 'small'; autoFocus?` | `commit`（默认）：平时就是一段文字，点击后原地编辑，Enter 或失焦时提交，Esc 撤销。用于团队名、工区重命名、清单标题。`live`：一直处于可编辑状态，每次输入都调用 `onChange`，不支持 Esc 撤销（撤销通过返回键的「放弃更改」）。用于成员工卡上的资料 |
 | `Segmented<T>` | `options: { value: T; label: string; icon?: ReactNode }[]; value; onChange; size?: 'sm' \| 'md'` | 固定的 2 到 4 项 |
 | `Select<T>` | `options: { value: T; label: string; leading?: ReactNode; disabled? }[]; value; onChange; variant?: 'quiet' \| 'boxed'` | 基于 Base UI Select；quiet 平时就是文字 |
-| `Combo` | `value; suggestions: string[]; onCommit(v); mono?; placeholder` | 输入即过滤，Enter 采用当前输入 |
-| `ChoiceGroup<T>` | `options: { value: T; label: string; icon: ReactNode }[]; value; onChange` | 需要靠品牌图标认出来的一次性选择 |
+| `SearchField` | `value; onChange; placeholder; autoFocus?; onEnter?(v)` | 放大镜加输入框。在 `BrainPicker` 中按 Enter 可以直接采用输入的自定义模型 |
+| `OptionColumn` / `OptionColumn.Item` | `OptionColumn: title: string; children`；`Item: selected?; dimmed?; mono?; leading?: ReactNode; onSelect; children` | 多列选择器中的一列。`dimmed` 表示离线 |
+| `ThemeThumb` | `mode: 'light' \| 'dark' \| 'system'; selected; label; onSelect` | 外观缩略图，画的是一个小窗口 |
 | `Group` / `Group.Row` | `Group: children`；`Row: label; children; align?: 'center' \| 'top'` | 唯一的容器。行高 40，行与行之间是细线 |
 | `Reveal` | `open; children` | 带高度动画的折叠区域 |
 | `StatusDot` | `status: Status; tip?: string` | 表达状态的唯一方式；busy 状态呼吸闪烁 |
-| `Avatar` | `src?; size: 20 \| 26 \| 32 \| 40 \| 44 \| 60 \| 76 \| 88; status?: Status; dimmed?; creating?; selected?; onEdit?: () => void; editLabel?` | 状态点挂在右下角。`dimmed` 表示暂停（变灰）；`onEdit` 存在时悬停显示铅笔 |
-| `AvatarStack` | `srcs: string[]; size: 20 \| 26` | 头像叠放 |
+| `Avatar` | `src?; size: 20 \| 26 \| 32 \| 40 \| 44 \| 60 \| 76 \| 88 \| 'fill'; status?: Status; statusTip?: string; dimmed?; creating?; selected?; onEdit?: () => void; editLabel?` | 状态点挂在右下角，`statusTip` 在悬停状态点时显示（例如暂停原因）。`fill` 表示撑满父元素，只供 scene 内部使用。`dimmed` 表示暂停（变灰）；`onEdit` 存在时悬停显示铅笔 |
 | `Menu` | `trigger: ReactElement; align?: 'start' \| 'end'; children` | 基于 Base UI Menu |
 | `Menu.Item` | `leading?: ReactNode; checked?; danger?; onSelect; children` | 菜单项高 30，选中时显示勾 |
 | `Menu.Separator` | — | |
 | `Popover` | `trigger: ReactElement; align?; open?; onOpenChange?; children` | 基于 Base UI Popover，供网格选择器和多列选择器使用 |
-| `GridPicker<T>` | `cells: { value: T; label?: string; content: ReactNode }[]; value?: T; onPick(v); leading?: ReactNode; columns: number` | 头像、表情、形象选择器共用。`leading` 放上传、导入或“不回复”格 |
+| `GridPicker<T>` | `cells: { value: T; label?: string; content: ReactNode }[]; value?: T; onPick(v); leading?: ReactNode; trailing?: ReactNode; columns: number` | 头像、表情、形象选择器共用。`leading` 放上传格和“不回复”格，`trailing` 放形象的导入格 |
 | `Tooltip` | `label; children` | 对应原型里所有 `data-tip` |
 | `Toast` | `ToastProvider`；`useToast()(opts: { leading?: ReactNode; message: string; action?: { label; onAction } })` | 3.6 秒后自动消失；有 action 时用于撤销或打开 |
-| `Dialog` | `open; onClose; title; size?: 'sm' \| 'md'; children; footer: ReactNode` | 基于原生 `<dialog>`，宽度 400 或 560 |
+| `Dialog` | `open; onClose; title; size?: 'sm' \| 'md'; children; footer: ReactNode` | 基于原生 `<dialog>`，宽度 400 或 460。`ConfirmDialog` 的宽度是 320，由它自己处理 |
 | `ConfirmDialog` | `open; onClose; leading?: ReactNode; title; body; confirmLabel; cancelLabel; onConfirm; tone?: 'danger'` | 只用于不可撤销的操作 |
 | `Command` | `text; copyLabel; copiedLabel` | 等宽命令，带一键复制；复制后在原位反馈 |
 | `Dashes` | `total; current` | 引导页顶部的进度细线 |
@@ -182,7 +184,7 @@ apps/web/
 | `Spinner` | `size?: 'sm' \| 'md'` | 只用于行内的“正在进行” |
 | `EmptyState` | `title; action?: ReactNode` | 带探头的狐獴 |
 | `Callout` | `tone: 'quiet' \| 'attention'; leading?: ReactNode; children; action?: ReactNode` | 成员暂停或需要处理时的提示条 |
-| `Message` | `from: 'me' \| 'them'; avatar?: string; typing?; delay?: number; children` | 对话气泡。引导页使用，以后的 IM 也复用 |
+| `Message` | `from: 'me' \| 'them'; variant?: 'bubble' \| 'done'; avatar?: string; typing?; delay?: number; animate?: boolean; children` | 对话气泡，引导页使用，以后的 IM 也复用。`done` 是带绿色勾的完成小卡片。`animate` 默认为 true；为 false 时不播放入场动画，用于重绘时已经出现过的消息 |
 | `QrCode` | `value: string; size: number` | 用 `qrcode` 库生成 SVG |
 
 `IconName` 的取值来自原型 `ICONS` 中的全部键：users chat monitor settings sidebar search updown
@@ -197,14 +199,14 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 | 组件 | Props | 说明 |
 |---|---|---|
 | `Board` | `layout: 'rails' \| 'free'; holes?: 'on' \| 'fade'; children` | 洞洞板画布。孔网格自动对齐到第一个挂钉；`free` 模式下由子项自行定位 |
-| `Hang` | `lanyard?: 'member' \| 'lead'; motion?: 'enter' \| 'leave'; swingOnHover?; children` | 挂钉、挂绳、夹子，以挂钉为支点 |
-| `Badge` | `avatar: ReactNode; name: ReactNode; role?: ReactNode; bio?: ReactNode; foot?: ReactNode; size: 'card' \| 'stage'; dimmed?; ghost?` | 白色工卡。`name`、`role`、`bio` 可以传纯文字，也可以传 `InlineText`；`ghost` 是骨架状态的空白卡 |
-| `BadgeVerso` | `mark: ReactNode; actions: { leading?: ReactNode; label; onClick }[]` | 你自己工卡的背面：品牌标志加撕页按钮 |
+| `Hang` | `lanyard?: 'member' \| 'lead'; motion?: 'enter' \| 'leave' \| 'turn-in'; swingOnHover?; swingKey?: number; children` | 挂钉、挂绳、夹子，以挂钉为支点。`swingKey` 的值每变化一次就晃一下，用于保存、换头像、落位之后。`turn-in` 表示原地翻入，例如二维码吊牌翻成工卡。FLIP 期间的层级由 `useFlip` 通过 data 属性处理，不放进 props |
+| `Badge` | `avatar: { src?; status?: Status; statusTip?; creating?; onEdit?; editLabel? }; name: ReactNode; role?: ReactNode; bio?: ReactNode; foot?: ReactNode; size: 'card' \| 'stage' \| 'intro'; dimmed?; ghost?` | 白色工卡。头像由 Badge 内部渲染，并按工卡比例确定尺寸。`name`、`role`、`bio` 可以传纯文字，也可以传 `InlineText`。`intro` 是引导页的尺寸。`ghost` 是骨架状态的空白卡 |
+| `BadgeVerso` | `mark: ReactNode; actions: { label; onClick; busy? }[]` | 你自己工卡的背面：品牌标志加撕页按钮。`busy` 时显示转圈的刷新图标 |
 | `FlipCard` | `flipped; front; back; onFlip` | 翻面容器，在原地翻转 |
 | `VacantSlot` | `label; onClick; shape: 'badge' \| 'clipboard'` | 虚线空位，例如添加成员、任务清单停用后的位置 |
 | `Tag` | `children; tone?: 'paper'` | 挂在绳上的吊牌（带孔眼），规约、二维码、Token 都用它 |
-| `QrTag` | `state: 'loading' \| 'wait' \| 'scanned' \| 'expired'; value: string; brand: 'feishu' \| 'telegram'; scanner?: string; onRefresh; refreshLabel` | 二维码吊牌：扫码后变暗并显示扫码人；过期时刷新按钮就在码上 |
-| `TokenTag` | `value; onChange; label` | Telegram 的 Token 吊牌，填写线样式的输入 |
+| `QrTag` | `state: 'loading' \| 'wait' \| 'scanned' \| 'expired'; value: string; brand: 'feishu' \| 'telegram'; scannerAvatar?: string; onRefresh; refreshLabel` | 二维码吊牌：扫码后变暗，并显示扫码人的头像；过期时刷新按钮就在码上；`loading` 时显示骨架。登录成功后翻成工卡，由 `Hang motion="turn-in"` 完成 |
+| `TokenTag` | `value; onChange; label; invalid?` | Telegram 的 Token 吊牌，填写线样式的输入。`invalid` 时填写线变红，不加文字 |
 | `PaperLabel` | `value; onCommit; label` | 贴在板子上方的团队名纸条，可以原地编辑 |
 | `ShiftSign` | `on; onToggle; onLabel; offLabel; label` | 上班/下班翻牌 |
 | `Clipboard` | `title: ReactNode; actions: ReactNode; children; footer: ReactNode` | 木质写字板和纸，用于任务清单 |
@@ -212,12 +214,15 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 | `Console` | `figure?: ReactNode; sticker?: ReactNode; notice?: ReactNode; screen: ReactNode; body?: ReactNode; deck: ReactNode; drawer?: { label; content: ReactNode }; reading?` | 暖白色操控台。`reading` 表示性格卡被抽出编辑 |
 | `ConsoleScreen` | `onClick?; variant: 'readout' \| 'list'; children` | 黑色屏幕。`readout` 用于成员；`list` 用于引导页的 AI 列表 |
 | `ScreenReadout` | `ai: { mark: ReactNode; label }; model: string; place: { label; status: Status }; level: { index; total; label }` | 屏幕内容：AI、模型、工区和思考强度刻度 |
-| `ConsoleKey` | `icon?: IconName; label; lit?; go?; disabled?; onClick; children?` | 实体键。`go` 是带 LED 的主键（添加、保存） |
+| `ConsoleKey` | `icon?: IconName; label; lit?; go?; disabled?; onClick; children?` | 实体键。`go` 是带 LED 的主键（添加、保存）。没有贴纸时，deck 上的笑脸键也是 ConsoleKey |
+| `RigFigure` | `id: string; onClick?; label?` | 操控台顶上的形象。可以点击，悬停时上浮，更换时有 pop 动画；不传 `onClick` 时是静态的（引导页） |
+| `Sticker` | `reaction: string \| null; onClick; label` | 操控台上的表情贴纸，更换时有 pop 动画 |
+| `HarnessRow` | `mark: ReactNode; label; test?: 'run' \| 'ok' \| 'fail'; reply?: string; selected?; onSelect?; action?: { label; onClick }` | `ConsoleScreen variant="list"` 中的一行：品牌图标、名字、右侧测试灯。选中后在行下方展开 `reply`。`action` 用于没有安装时的「安装」 |
 | `SoulSlot` | `value; onChange; label; placeholder; onFocusChange(reading)` | 插槽里的性格卡 |
 | `Lever` | `levels: string[]; value: number; onChange` | 竖向档位拉杆，档位数量由模型决定 |
 | `Figure` | `id: string; pose: 'work' \| 'sleep' \| 'carry' \| 'stand'; scale?: number` | 形象帧，尺寸查 `figures.ts` |
-| `Seat` | `setup: 'laptop' \| 'mini'; screen: 'dark' \| 'asleep' \| 'alert' \| 'busy' \| 'ok'; occupant: { figure: string } \| 'empty-chair'; arriving?; label; onClick?; carry?: CarryHandle` | 一张工位：桌子、屏幕、形象或空椅子，睡着时显示 zz |
-| `WorkRow` | `title: ReactNode; status: Status; menu?: ReactNode; dropActive?; children` | 一个工区一排，标题是名字加状态点 |
+| `Seat` | `setup: 'laptop' \| 'mini'; screen: 'dark' \| 'asleep' \| 'alert' \| 'busy' \| 'ok'; occupant: { figure: string } \| 'empty-chair'; arriving?; label; onClick?; carry?: CarryHandle` | 一张工位：桌子、屏幕、形象或空椅子，睡着时显示 zz。形象的姿势由 `screen` 推出（`asleep` 和 `dark` 对应 sleep，其他对应 work），不另设 `pose` 参数 |
+| `WorkRow` | `title: ReactNode; status: Status; menu?: ReactNode; arriving?; children` 加上 `useCarry().rowProps(rowKey)` | 一个工区一排，标题是名字加状态点。`arriving` 表示新工区加入时的高亮。拖拽悬停的样式只认 `rowProps` 设置的 `data-over` |
 | `AddRow` | `label; onClick` | 最后一行的添加入口 |
 | `Reaction` | `id: string; size?: number` | 表情图片 |
 | `Mascot` | `pose: 'peek'` | 狐獴插画 |
@@ -236,12 +241,12 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 
 | 组件 | Props | 说明 |
 |---|---|---|
-| `AppShell` | `sidebar; topBar; children; board?: boolean` | 窗口布局：在外壳内时为红绿灯留出安全区，并设置拖拽区；toast 容器；拉线 |
+| `AppShell` | `sidebar; topBar; children; board?: boolean` | 窗口布局：在外壳内时为红绿灯留出安全区，并设置拖拽区；toast 容器；拉线。侧栏开关按钮也由 AppShell 内部渲染（展开时在红绿灯右侧，图标栏模式时移到栏内），状态读 `useSidebarLayout` |
 | `Sidebar` | `header: ReactNode; nav: ReactNode; footer: ReactNode` | 可以拖动边缘调宽、折叠成图标栏、完全隐藏；状态来自 `useSidebarLayout` |
 | `SidebarGrip` | — | 拖拽调宽；双击切换图标模式 |
 | `NavItem` | `icon: IconName; label; active; onClick; testId` | 图标模式下悬停显示名字 |
-| `TeamSwitcher` | `teams: { id; name; status: Status }[]; current; onSelect; onCreate; createLabel` | 侧栏顶部的团队切换 |
-| `TopBar` | `title?: string; back?: { label; onClick }` | |
+| `TeamSwitcher` | `teams: { id; name }[]; current; onSelect; onCreate; createLabel` | 侧栏顶部的团队切换 |
+| `TopBar` | `title?: string; back?: { label; onClick } \| { label; menu: ReactNode }` | 传 `menu` 时，点返回会在返回键下方弹出菜单（例如有未保存修改时的「保存 / 放弃更改」） |
 
 ## features/
 
@@ -256,7 +261,7 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 | `LeadCard.tsx` | 你自己的工卡：使用 `FlipCard`，背面是 `BadgeVerso`，提供同步资料和切换账号 |
 | `MemberBench.tsx` | 打开成员后的页面：左边是 `Console`，右边挂着大工卡，直接在卡上编辑 |
 | `MemberConsole.tsx` | 组合操控台：形象、表情贴纸、屏幕、性格卡、按键、高级抽屉 |
-| `BrainPicker.tsx` | 屏幕点开后的四列选择器：工区、AI、模型、思考，带搜索 |
+| `BrainPicker.tsx` | 屏幕点开后的四列选择器：工区、AI、模型、思考。由 `Popover`、`SearchField`、`OptionColumn` 和 `Lever` 组合而成 |
 | `AdvancedDrawer.tsx` | 环境变量、启动参数、命令行路径 |
 | `AvatarPicker.tsx`、`ReactionPicker.tsx`、`FigurePicker.tsx` | 都基于 `GridPicker` 加 `Popover` |
 | `DeleteMemberDialog.tsx` | 基于 `ConfirmDialog` |
@@ -299,8 +304,7 @@ testid：`machine-row-{id}`、`machine-menu-{id}`、`add-machine`、`pair-comman
 
 | 文件 | 内容 |
 |---|---|
-| `SettingsPage.tsx` | 一个 `Group`：语言用 `Select`，外观用 `ThemeThumbs` |
-| `ThemeThumbs.tsx` | 三张主题缩略图 |
+| `SettingsPage.tsx` | 一个 `Group`：语言用 `Select`，外观用三张 `ThemeThumb` |
 | `messages.ts` | |
 
 ### onboarding（引导）
@@ -328,12 +332,12 @@ testid：`machine-row-{id}`、`machine-menu-{id}`、`add-machine`、`pair-comman
 | `leadBack` | `BadgeVerso` 和 `FlipCard` |
 | `pageMembers` | `MembersPage`、`VacantSlot`、`useSortable` |
 | `pageMember` | `MemberBench`、`MemberConsole`、`Console`、`ConsoleScreen`、`ScreenReadout`、`ConsoleKey`、`SoulSlot`、`Callout`、`AdvancedDrawer` |
-| `brainMenu`、`leverHTML`、`bindLever` | `BrainPicker`、`Popover`、`Lever` |
+| `brainMenu`、`leverHTML`、`bindLever` | `BrainPicker`、`Popover`、`SearchField`、`OptionColumn`、`Lever` |
 | `reactionMenu`、`avatarMenu`、`figureMenu` | `GridPicker`，以及 `ReactionPicker`、`AvatarPicker`、`FigurePicker` |
-| `comboMenu`、`commitModel` | `Combo` |
+| `comboMenu`、`commitModel` | 已废弃；自定义模型用 `BrainPicker` 中 `SearchField` 的 Enter |
 | `pageTeam`、`checklist`、`taskRow` | `TeamPage`、`PaperLabel`、`Tag`、`RulesTag`、`Clipboard`、`ChecklistRow`、`ShiftSign`、`useHoleDrag` |
 | `pageMachines`、`seat`、`screenOf` | `OfficePage`、`WorkRow`、`Seat`、`Figure`、`MemberSeat`、`useCarry` |
-| `pageSettings` | `SettingsPage`、`Group`、`Select`、`ThemeThumbs` |
+| `pageSettings` | `SettingsPage`、`Group`、`Select`、`ThemeThumb` |
 | `openMenu`、`mi` | `Menu`、`Menu.Item` |
 | `openDialog`、`confirmDelete`、`addMachineDialog` | `Dialog`、`ConfirmDialog`、`DeleteMemberDialog`、`AddMachineDialog`、`Command` |
 | `toast` | `ToastProvider`、`useToast` |
