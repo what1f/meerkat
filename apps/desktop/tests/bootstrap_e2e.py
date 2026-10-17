@@ -21,6 +21,8 @@ def reuse_running_services(binaries, artifact_dir):
     result = {"scenario": "unbundled-default-home-existing-owner", "status": "failed"}
     with tempfile.TemporaryDirectory(prefix="lk-owner-", dir="/tmp") as directory:
         home = Path(directory) / ".lankide"
+        home.mkdir()
+        (home / "runtime.json").write_text(json.dumps({"machine_link_listen": "127.0.0.1:0", "remote_access_port": 0}))
         env = {**os.environ, "HOME": directory}
         env.pop("LANKIDE_HOME", None)
         env.pop("LANKIDE_RUNTIME_RUN", None)
@@ -97,6 +99,8 @@ def run(binary_dir, artifact_dir):
             root = Path(directory)
             default_home = scenario == "unbundled-default-home-ready"
             home = root / (".lankide" if default_home else "home")
+            home.mkdir()
+            (home / "runtime.json").write_text(json.dumps({"machine_link_listen": "127.0.0.1:0", "remote_access_port": 0}))
             bundle = root / "bin"
             bundle.mkdir()
             for name, binary in binaries.items():

@@ -27,24 +27,22 @@ impl HttpManagementTransport {
             limit,
         }
     }
-    fn endpoint(&self) -> Result<(String, String), Status> {
+    fn endpoint(&self) -> Result<String, Status> {
         let url = std::fs::read_to_string(self.run.join(json::URL_FILE))
-            .map_err(|e| Status::unavailable(e.to_string()))?;
-        let token = std::fs::read_to_string(self.run.join(json::OWNER_FILE))
             .map_err(|e| Status::unavailable(e.to_string()))?;
         let parsed =
             reqwest::Url::parse(url.trim()).map_err(|e| Status::internal(e.to_string()))?;
         if parsed.scheme() != "http" || parsed.host_str().is_none() {
             return Err(Status::internal("invalid management listener URL"));
         }
-        Ok((url.trim_end_matches('/').trim().to_owned(), token))
+        Ok(url.trim_end_matches('/').trim().to_owned())
     }
     async fn call<I: serde::Serialize, O: serde::de::DeserializeOwned>(
         &self,
         operation: &str,
         input: &I,
     ) -> Result<O, Status> {
-        let (url, token) = self.endpoint()?;
+        let url = self.endpoint()?;
         let bytes = serde_json::to_vec(input).map_err(|e| Status::internal(e.to_string()))?;
         if bytes.len() > json::json_limit(self.limit) {
             return Err(Status::resource_exhausted("management request too large"));
@@ -52,7 +50,6 @@ impl HttpManagementTransport {
         let mut response = self
             .http
             .post(format!("{url}{}{operation}", json::PREFIX))
-            .bearer_auth(token)
             .header("content-type", "application/json")
             .body(bytes)
             .send()
@@ -320,27 +317,24 @@ impl HttpManagementTransport {
         use tokio_tungstenite::tungstenite::{
             Message, client::IntoClientRequest, protocol::WebSocketConfig,
         };
-        let (url, token) = self.endpoint()?;
-        let mut handshake = format!(
+        let url = self.endpoint()?;
+        let mut endpoint = reqwest::Url::parse(&format!(
             "{}{}",
             url.replacen("http://", "ws://", 1),
             json::EVENTS_PATH
-        )
-        .into_client_request()
+        ))
         .map_err(|e| Status::internal(e.to_string()))?;
-        handshake.headers_mut().insert(
-            "authorization",
-            format!("Bearer {token}")
-                .parse()
-                .map_err(|_| Status::internal("invalid credential"))?,
-        );
-        handshake.headers_mut().insert(
-            "x-lankide-subscription",
-            serde_json::to_string(&request)
-                .map_err(|e| Status::internal(e.to_string()))?
-                .parse()
-                .map_err(|_| Status::invalid_argument("invalid subscription"))?,
-        );
+        {
+            let mut query = endpoint.query_pairs_mut();
+            if let Some(workspace) = request.workspace {
+                query.append_pair("workspace", &workspace.workspace_id);
+            }
+            query.append_pair("after", &request.after_sequence.to_string());
+        }
+        let handshake = endpoint
+            .as_str()
+            .into_client_request()
+            .map_err(|e| Status::internal(e.to_string()))?;
         let config = WebSocketConfig::default()
             .max_message_size(Some(self.limit))
             .max_frame_size(Some(self.limit));

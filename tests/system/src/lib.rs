@@ -210,7 +210,7 @@ impl SystemRig {
         std::fs::write(
             home.path().join("runtime.json"),
             serde_json::to_vec(
-                &json!({"remote_access_port": 0, "pairing_validity_ms":config.pairing_validity.as_millis(), "execution_token_lifetime_ms": config.execution_token_lifetime.as_millis(), "attempt_lease_ms": config.attempt_lease.as_millis(), "machine_link": config.link}),
+                &json!({"machine_link_listen": "127.0.0.1:0", "remote_access_port": 0, "pairing_validity_ms":config.pairing_validity.as_millis(), "execution_token_lifetime_ms": config.execution_token_lifetime.as_millis(), "attempt_lease_ms": config.attempt_lease.as_millis(), "machine_link": config.link}),
             )?,
         )?;
         let im = Arc::new(ImState::default());

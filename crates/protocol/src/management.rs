@@ -600,66 +600,8 @@ impl ErrorBody {
     }
 }
 
-/// Owner secret and listener discovery are local files, never API parameters.
-pub const OWNER_FILE: &str = "management-owner.secret";
+/// Local listener discovery.
 pub const URL_FILE: &str = "management.url";
-
-#[derive(Clone)]
-pub struct OwnerCredential(String);
-impl OwnerCredential {
-    pub fn load_or_create(run: &std::path::Path) -> std::io::Result<Self> {
-        use std::io::Write;
-        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-        std::fs::create_dir_all(run)?;
-        let path = run.join(OWNER_FILE);
-        let secret = format!(
-            "{}{}",
-            uuid::Uuid::new_v4().simple(),
-            uuid::Uuid::new_v4().simple()
-        );
-        if !path.exists() {
-            // Publish only a complete, synced secret. A crash cannot leave an empty owner file.
-            let temporary = run.join(format!(".management-owner-{}.tmp", uuid::Uuid::new_v4()));
-            let publication = (|| {
-                let mut file = std::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .mode(0o600)
-                    .open(&temporary)?;
-                file.write_all(secret.as_bytes())?;
-                file.sync_all()?;
-                match std::fs::hard_link(&temporary, &path) {
-                    Ok(()) => std::fs::File::open(run)?.sync_all(),
-                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
-                    Err(error) => Err(error),
-                }
-            })();
-            let _ = std::fs::remove_file(temporary);
-            publication?;
-        }
-        let metadata = std::fs::symlink_metadata(&path)?;
-        if !metadata.is_file() || metadata.permissions().mode() & 0o777 != 0o600 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                "unsafe owner credential file",
-            ));
-        }
-        let secret = std::fs::read_to_string(path)?;
-        if secret.len() != 64 || !secret.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "invalid owner credential",
-            ));
-        }
-        Ok(Self(secret))
-    }
-    pub fn authorizes(&self, candidate: &str) -> bool {
-        use sha2::{Digest, Sha256};
-        use subtle::ConstantTimeEq;
-        // Fixed-size digests ensure the comparison does not leak a matching prefix.
-        bool::from(Sha256::digest(self.0.as_bytes()).ct_eq(&Sha256::digest(candidate.as_bytes())))
-    }
-}
 
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Serialize, Deserialize)]

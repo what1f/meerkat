@@ -63,8 +63,8 @@ impl NetProxy {
                             let _active = Active(count);
                             let (cr, cw) = client.into_split(); let (sr, sw) = server.into_split();
                             tokio::select! {
-                                _ = forward(cr, sw, rx.clone(), false, generation, fault.clone()) => {},
-                                _ = forward(sr, cw, rx, true, generation, fault) => {},
+                                _ = forward(cr, sw, rx.clone(), false, generation, fault.clone(), upstream) => {},
+                                _ = forward(sr, cw, rx, true, generation, fault, upstream) => {},
                             }
                         });
                     }
@@ -133,6 +133,7 @@ async fn forward(
     reply: bool,
     generation: u64,
     fault: watch::Sender<State>,
+    upstream: SocketAddr,
 ) {
     let mut buffer = [0; 16384];
     let mut pending = Vec::new();
@@ -179,7 +180,12 @@ async fn forward(
                 else {
                     continue;
                 };
-                if writer.write_all(&pending[..end]).await.is_err() {
+                // The network fixture targets the upstream listener's authority.
+                // Only the HTTP Host changes; all WS frame bytes remain intact.
+                let Ok(header) = upstream_host(&pending[..end], &upstream.to_string()) else {
+                    return;
+                };
+                if writer.write_all(&header).await.is_err() {
                     return;
                 }
                 pending.drain(..end);
@@ -249,4 +255,24 @@ fn client_frame(bytes: &[u8]) -> Option<(usize, Vec<u8>)> {
         .map(|(i, b)| b ^ mask[i % 4])
         .collect();
     Some((end, payload))
+}
+
+/// Local network fixtures must address the actual Runtime port after forwarding.
+pub fn upstream_host(header: &[u8], authority: &str) -> Result<Vec<u8>> {
+    let header = std::str::from_utf8(header)?;
+    let mut rewritten = String::new();
+    for line in header.split("\r\n") {
+        if line
+            .split_once(':')
+            .is_some_and(|(name, _)| name.eq_ignore_ascii_case("host"))
+        {
+            rewritten.push_str(&format!("Host: {authority}"));
+        } else {
+            rewritten.push_str(line);
+        }
+        rewritten.push_str("\r\n");
+    }
+    // split retains the final empty component after the terminating CRLF.
+    rewritten.truncate(rewritten.len() - 2);
+    Ok(rewritten.into_bytes())
 }

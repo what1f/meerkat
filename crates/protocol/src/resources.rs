@@ -34,7 +34,6 @@ where
         false,
         None,
         None,
-        None,
         shutdown,
     )
     .await
@@ -54,7 +53,7 @@ where
     F: Future<Output = ()> + Send,
 {
     serve_inner(
-        listener, secret, peer, config, settings, true, None, None, None, shutdown,
+        listener, secret, peer, config, settings, true, None, None, shutdown,
     )
     .await
 }
@@ -63,7 +62,6 @@ where
 pub async fn serve_with_management<P, F>(
     listener: TcpListener,
     secret: String,
-    owner: crate::management::OwnerCredential,
     peer: P,
     config: TransportConfig,
     settings: crate::link::LinkSettings,
@@ -74,16 +72,7 @@ where
     F: Future<Output = ()> + Send,
 {
     serve_inner(
-        listener,
-        secret,
-        peer,
-        config,
-        settings,
-        true,
-        Some(owner),
-        None,
-        None,
-        shutdown,
+        listener, secret, peer, config, settings, true, None, None, shutdown,
     )
     .await
 }
@@ -94,7 +83,6 @@ pub async fn serve_configured<P, F>(
     secret: String,
     peer: P,
     settings: crate::link::LinkSettings,
-    owner: Option<crate::management::OwnerCredential>,
     remote: Option<std::sync::Arc<dyn crate::management::RemoteAccessControl>>,
     tls: Option<tokio_rustls::TlsAcceptor>,
     shutdown: F,
@@ -110,7 +98,6 @@ where
         TransportConfig::default(),
         settings,
         true,
-        owner,
         remote,
         tls,
         shutdown,
@@ -127,7 +114,6 @@ async fn serve_inner<P, F>(
     config: TransportConfig,
     settings: crate::link::LinkSettings,
     override_heartbeat: bool,
-    owner: Option<crate::management::OwnerCredential>,
     remote: Option<std::sync::Arc<dyn crate::management::RemoteAccessControl>>,
     tls: Option<tokio_rustls::TlsAcceptor>,
     shutdown: F,
@@ -136,6 +122,7 @@ where
     P: RuntimePeer + MachinePeer + Clone,
     F: Future<Output = ()> + Send,
 {
+    let local_port = listener.local_addr()?.port();
     let mut tasks = tokio::task::JoinSet::new();
     tokio::pin!(shutdown);
     loop {
@@ -144,7 +131,6 @@ where
             result = tasks.join_next(), if !tasks.is_empty() => { let _ = result; }
             accepted = listener.accept() => {
                 let (socket, _) = accepted?;
-                let owner = owner.clone();
                 let peer = peer.clone();
                 let secret = secret.clone();
                 let settings = settings.clone();
@@ -162,24 +148,22 @@ where
                     let ws_peer = peer.clone();
                     let service = service_fn(move |mut request: Request<Incoming>| {
                         let remote = remote.clone();
-                        let owner = owner.clone();
                         let peer = peer.clone();
                         let secret = secret.clone();
                         let upgrades = upgrades.clone();
                         async move {
-                            let response = if machine_only && request.uri().path() != "/" && request.uri().path() != "/machines/pair" {
+                            let response = if !machine_only && let Some(response) = local_access(&request, local_port) {
+                                response
+                            } else if machine_only && request.uri().path() != "/" && request.uri().path() != "/machines/pair" {
                                 empty(StatusCode::NOT_FOUND)
                             } else if request.uri().path().starts_with(crate::management::PREFIX) {
-                                let credential = request.headers().get("authorization").and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
-                                if !owner.as_ref().is_some_and(|owner| owner.authorizes(credential)) {
-                                    crate::management_http::error(crate::Status::unauthenticated("owner credential required"))
-                                } else if matches!(request.uri().path(), "/api/v1/get_remote_access" | "/api/v1/set_remote_access" | "/api/v1/enable_remote_access") {
+                                if matches!(request.uri().path(), "/api/v1/get_remote_access" | "/api/v1/set_remote_access" | "/api/v1/enable_remote_access") {
                                     remote_access(request, remote, config.max_message_bytes).await
                                 } else if request.uri().path() == crate::management::EVENTS_PATH {
-                                    let subscription = request.headers().get("x-lankide-subscription").and_then(|v| v.to_str().ok()).and_then(|v| serde_json::from_str::<crate::management::ManagementSubscription>(v).ok());
+                                    let subscription = event_subscription(request.uri().query());
                                     match subscription {
-                                        None => crate::management_http::error(crate::Status::invalid_argument("invalid event subscription")),
-                                        Some(subscription) => {
+                                        Err(()) => crate::management_http::error(crate::Status::invalid_argument("invalid event subscription")),
+                                        Ok(subscription) => {
                                             let service = crate::ValidatedRuntimeService::new(peer, config);
                                             match service.subscribe_management_events(crate::Request::new(subscription)).await {
                                                 Err(status) => crate::management_http::error(status),
@@ -247,6 +231,83 @@ where
     tasks.abort_all();
     while tasks.join_next().await.is_some() {}
     Ok(())
+}
+
+// Apply before routing, including Machine links, resources, and unknown paths.
+fn local_access(request: &Request<Incoming>, port: u16) -> Option<Response<Body>> {
+    let hosts = [format!("127.0.0.1:{port}"), format!("localhost:{port}")];
+    let host_ok = request.headers().get_all("host").iter().count() == 1
+        && request
+            .headers()
+            .get("host")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|host| hosts.iter().any(|allowed| allowed == host));
+    let origins = request.headers().get_all("origin");
+    let origin_ok = origins.iter().count() <= 1
+        && origins.iter().all(|origin| {
+            origin
+                .to_str()
+                .ok()
+                .is_some_and(|origin| hosts.iter().any(|host| origin == format!("http://{host}")))
+        });
+    if !host_ok || !origin_ok {
+        return Some(crate::management_http::error(
+            crate::Status::permission_denied("request forbidden"),
+        ));
+    }
+    if request.method() == hyper::Method::POST {
+        let values = request.headers().get_all("content-type");
+        let json = values.iter().count() == 1
+            && values.iter().all(|value| {
+                value.to_str().ok().is_some_and(|value| {
+                    let mut parts = value.split(';');
+                    parts
+                        .next()
+                        .is_some_and(|v| v.trim().eq_ignore_ascii_case("application/json"))
+                        && parts
+                            .next()
+                            .is_none_or(|v| v.trim().eq_ignore_ascii_case("charset=utf-8"))
+                        && parts.next().is_none()
+                })
+            });
+        if !json {
+            return Some(crate::management_http::response(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                &crate::management::ErrorBody::from(crate::Status::invalid_argument(
+                    "JSON required",
+                )),
+            ));
+        }
+    }
+    None
+}
+
+fn event_subscription(
+    query: Option<&str>,
+) -> Result<crate::management::ManagementSubscription, ()> {
+    let mut subscription = crate::management::ManagementSubscription {
+        request_id: uuid::Uuid::new_v4().to_string(),
+        ..Default::default()
+    };
+    let mut workspace_seen = false;
+    let mut after_seen = false;
+    for (key, value) in url::form_urlencoded::parse(query.unwrap_or_default().as_bytes()) {
+        match key.as_ref() {
+            "workspace" if !workspace_seen => {
+                workspace_seen = true;
+                subscription.workspace = Some(crate::management::WorkspaceRef {
+                    workspace_id: value.into_owned(),
+                });
+            }
+            "after" if !after_seen => {
+                after_seen = true;
+                subscription.after_sequence = value.parse().map_err(|_| ())?;
+            }
+            "workspace" | "after" => return Err(()),
+            _ => {}
+        }
+    }
+    Ok(subscription)
 }
 
 fn empty(status: StatusCode) -> Response<Body> {

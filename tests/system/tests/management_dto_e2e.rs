@@ -9,7 +9,6 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 struct Http {
     client: reqwest::Client,
     url: String,
-    owner: String,
 }
 impl Http {
     fn for_rig(rig: &SystemRig) -> Result<Self> {
@@ -20,14 +19,12 @@ impl Http {
                 .timeout(Duration::from_secs(5))
                 .build()?,
             url: std::fs::read_to_string(run.join(management::URL_FILE))?,
-            owner: std::fs::read_to_string(run.join(management::OWNER_FILE))?,
         })
     }
     async fn post(&self, op: &str, body: Value) -> Result<Value> {
         Ok(self
             .client
             .post(format!("{}/api/v1/{op}", self.url))
-            .bearer_auth(&self.owner)
             .json(&body)
             .send()
             .await?
@@ -67,9 +64,7 @@ async fn a1_1_string_states_round_trip_and_agent_still_replies() -> Result<()> {
         let active = &workspaces["workspaces"][0];
         assert_eq!(active["desired_state"], "running");
         assert_eq!(active["observed_state"], "running");
-        let mut handshake = format!("{}/api/v1/events", http.url.replacen("http://", "ws://", 1)).into_client_request()?;
-        handshake.headers_mut().insert("authorization", format!("Bearer {}", http.owner).parse()?);
-        handshake.headers_mut().insert("x-lankide-subscription", json!({"request_id":"events", "workspace":workspace, "after_sequence":0}).to_string().parse()?);
+        let handshake = format!("{}/api/v1/events?workspace=team&after=0", http.url.replacen("http://", "ws://", 1)).into_client_request()?;
         let (mut events, _) = tokio_tungstenite::connect_async(handshake).await?;
         let paused = http.post("set_workspace_state", json!({"request_id":"pause", "workspace":workspace, "desired_state":"paused"})).await?;
         let frame = tokio::time::timeout(Duration::from_secs(5), events.next()).await?.ok_or("events ended")??;
@@ -84,7 +79,7 @@ async fn a1_1_string_states_round_trip_and_agent_still_replies() -> Result<()> {
         // Numeric and unknown enum inputs are rejected before changing state.
         for state in [json!(2), json!("invalid")] {
             let response = http.client.post(format!("{}/api/v1/set_workspace_state", http.url))
-                .bearer_auth(&http.owner).json(&json!({"request_id":"invalid", "workspace":workspace, "desired_state":state})).send().await?;
+                .json(&json!({"request_id":"invalid", "workspace":workspace, "desired_state":state})).send().await?;
             assert_eq!(response.status(), 400);
         }
         team.mention(&agent, "group", "alice", "hello").await?;

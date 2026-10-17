@@ -3784,6 +3784,7 @@ dependencies = [
  "tokio-stream",
  "tokio-tungstenite",
  "ts-rs",
+ "url",
  "uuid",
 ]
 
@@ -3883,6 +3884,7 @@ dependencies = [
  "lankide-cli",
  "lankide-client",
  "lankide-core",
+ "lankide-daemon-runtime",
  "lankide-harness",
  "lankide-machine",
  "lankide-machine-core",
@@ -3891,6 +3893,7 @@ dependencies = [
  "lankide-runtime",
  "lankide-storage",
  "lankided",
+ "log",
  "reqwest",
  "rusqlite",
  "serde",

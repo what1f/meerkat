@@ -696,8 +696,6 @@ impl Fixture {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .map_err(|e| e.to_string())?;
-        let owner =
-            wire::management::OwnerCredential::load_or_create(&run).map_err(|e| e.to_string())?;
         std::fs::write(
             run.join(wire::management::URL_FILE),
             format!(
@@ -711,7 +709,6 @@ impl Fixture {
             wire::resources::serve_with_management(
                 listener,
                 "pairing-only".into(),
-                owner,
                 server_peer,
                 wire::TransportConfig::default(),
                 Default::default(),

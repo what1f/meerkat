@@ -577,6 +577,11 @@ fn owned_helpers_stop_on_app_quit_while_reused_helpers_stay_running() {
         }
         let home = directory.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(
+            home.join("runtime.json"),
+            r#"{"machine_link_listen":"127.0.0.1:0","remote_access_port":0}"#,
+        )
+        .unwrap();
         let output = std::process::Command::new(executable)
             .args(["--exact", NAME.split_once("::").unwrap().1, "--nocapture"])
             .env(CHILD, "1")
@@ -676,6 +681,11 @@ fn reopening_after_an_update_replaces_outdated_helpers() {
         }
         let home = directory.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(
+            home.join("runtime.json"),
+            r#"{"machine_link_listen":"127.0.0.1:0","remote_access_port":0}"#,
+        )
+        .unwrap();
         let output = std::process::Command::new(executable)
             .args(["--exact", NAME.split_once("::").unwrap().1, "--nocapture"])
             .env(CHILD, "1")

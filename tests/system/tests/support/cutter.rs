@@ -44,7 +44,7 @@ impl Cutter {
                         let address = address.clone(); let records = records.clone(); let cut = cut.clone();
                         tasks.spawn(async move {
                             let result: Result<()> = async {
-                                let mut server = TcpStream::connect(address).await?;
+                                let mut server = TcpStream::connect(&address).await?;
                                 loop {
                                     let header = match headers(&mut client).await {
                                         Ok(header) => header,
@@ -52,7 +52,7 @@ impl Cutter {
                                         Err(error) => return Err(error),
                                     };
                                     let text = String::from_utf8(header.clone())?;
-                                    server.write_all(&header).await?;
+                                    server.write_all(&lankide_system_e2e::net_proxy::upstream_host(&header, &address)?).await?;
                                     if !text.starts_with("GET /resources/") {
                                         tokio::io::copy_bidirectional(&mut client, &mut server).await?;
                                         break;

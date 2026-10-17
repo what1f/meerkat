@@ -20,6 +20,14 @@ def group_members(group):
     return [int(pid) for pid, pgid in (row.split() for row in rows.splitlines()) if int(pgid) == group]
 
 
+def prepare_bootstrap_home(home):
+    home.mkdir(parents=True, mode=0o700)
+    (home / "runtime.json").write_text(json.dumps({
+        "machine_link_listen": "127.0.0.1:0",
+        "remote_access_port": 0,
+    }))
+
+
 def main():
     target = Path(os.environ.get("CARGO_TARGET_DIR", str(ROOT / "target")))
     binaries = Path(os.environ.get("LANKIDE_RELEASE_BIN_DIR", str(target / "release"))).resolve()
@@ -56,6 +64,7 @@ def main():
                 raise ValueError("extracted package differs from its signed receipt")
             subprocess.run(["codesign", "--verify", "--deep", "--strict", str(extracted)], check=True)
             home = root / "home"
+            prepare_bootstrap_home(home)
             bootstrap_result = artifacts / "bootstrap.json"
             env = {**os.environ, "LANKIDE_HOME": str(home)}
             # An explicit socket tells Desktop to connect to an existing

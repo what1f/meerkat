@@ -808,6 +808,11 @@ pub(super) struct DaemonChild {
 
 impl DaemonChild {
     pub(super) fn spawn(paths: &RuntimePaths) -> Result<Self, AppError> {
+        std::fs::create_dir_all(&paths.home)?;
+        std::fs::write(
+            paths.home.join("runtime.json"),
+            r#"{"machine_link_listen":"127.0.0.1:0","remote_access_port":0}"#,
+        )?;
         let id = unique_run_id();
         let stdout_log = paths.home.join(format!("{id}.stdout.log"));
         let stderr_log = paths.home.join(format!("{id}.stderr.log"));

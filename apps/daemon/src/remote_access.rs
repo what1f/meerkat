@@ -204,7 +204,6 @@ impl RemoteMachines {
                 peer,
                 settings,
                 None,
-                None,
                 Some(tls),
                 async {
                     let _ = stopped.await;
