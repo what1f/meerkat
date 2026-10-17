@@ -23,6 +23,7 @@ const MAX_HOPS: usize = 10;
 /// A sign-in QR code stays valid for a few minutes; a fresh one replaces it
 /// before the user can scan an expired code.
 pub(crate) const LOGIN_QR_LIFETIME_MS: u64 = 150_000;
+pub(crate) const LOGIN_POLL_INTERVAL_SECONDS: u32 = 2;
 /// Never visited: Lankide reads the authorization code from the redirect.
 pub(crate) const OAUTH_REDIRECT_URI: &str = "http://127.0.0.1/lankide/feishu-oauth";
 /// User scopes Agent Apps request so the team lead's own Tasklist can be

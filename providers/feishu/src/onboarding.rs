@@ -216,7 +216,7 @@ async fn console_onboarding(
                 json!({
                     "phase": "console_login",
                     "qr_code": qr_code,
-                    "interval_seconds": 2,
+                    "interval_seconds": console::LOGIN_POLL_INTERVAL_SECONDS,
                 }),
             )));
         }

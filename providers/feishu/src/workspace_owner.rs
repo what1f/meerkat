@@ -227,9 +227,11 @@ pub(crate) async fn switch_account(
     .await?;
     match login {
         console::Login::Required => Ok(json!({"state":"required"})),
-        console::Login::Waiting { qr_code, scanned } => {
-            Ok(json!({"state":if scanned{"scanned"}else{"waiting"},"qr_code":qr_code}))
-        }
+        console::Login::Waiting { qr_code, scanned } => Ok(json!({
+            "state": if scanned { "scanned" } else { "waiting" },
+            "qr_code": qr_code,
+            "poll_interval_seconds": console::LOGIN_POLL_INTERVAL_SECONDS,
+        })),
         console::Login::Ready(session) => {
             let state = context.storage().workspace_state().await?;
             let field = |key: &'static str| {

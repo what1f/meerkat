@@ -5,6 +5,9 @@ export const keys = {
   machines: ['machines'],
   catalogs: ['catalogs'],
   onboarding: ['onboarding'],
+  figures: ['catalogs', 'figures'],
+  owners: ['workspaces', 'owners'],
+  tasks: ['workspaces', 'tasks'],
 } as const;
 const all = Object.values(keys);
 export const eventKeys = {

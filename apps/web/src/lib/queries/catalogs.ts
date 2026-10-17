@@ -50,3 +50,35 @@ export function useInvokeProviderInterface() {
     },
   });
 }
+
+export function useFigurePacks(input: DTO.ListFigurePacksRequest, enabled = true) {
+  return useQuery({
+    queryKey: [...keys.figures, input],
+    queryFn: ({ signal }) => call('list_figure_packs', input, signal),
+    enabled,
+  });
+}
+export function useImportFigurePack() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { workspace: DTO.WorkspaceRef | null; file: File }) => {
+      const bytes = new Uint8Array(await input.file.arrayBuffer());
+      const chunks: string[] = [];
+      for (let offset = 0; offset < bytes.length; offset += 8192) {
+        chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 8192)));
+      }
+      return call('import_figure_pack', {
+        workspace: input.workspace,
+        bytes: btoa(chunks.join('')),
+      });
+    },
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: keys.figures });
+    },
+  });
+}
+export function useTestHarness() {
+  return useMutation({
+    mutationFn: (input: DTO.TestHarnessRequest) => call('test_harness', input),
+  });
+}

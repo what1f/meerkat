@@ -10,6 +10,10 @@ export class ApiError extends Error {
   }
 }
 interface Operations {
+  list_figure_packs: { input: DTO.ListFigurePacksRequest; output: DTO.FigurePack[] };
+  import_figure_pack: { input: DTO.ImportFigurePackRequest; output: DTO.FigurePack };
+  get_agent_first_reply: { input: DTO.GetAgentRequest; output: DTO.AgentFirstReply };
+  test_harness: { input: DTO.TestHarnessRequest; output: DTO.TestHarnessResponse };
   list_workspaces: { input: DTO.ListWorkspacesRequest; output: DTO.ListWorkspacesResponse };
   get_workspace: { input: DTO.GetWorkspaceRequest; output: DTO.Workspace };
   get_workspace_image: { input: DTO.WorkspaceImageRequest; output: DTO.WorkspaceImageResponse };

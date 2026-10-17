@@ -30,6 +30,13 @@ export function useExecutionDetails(input: DTO.GetExecutionDetailsRequest, enabl
     enabled,
   });
 }
+export function useAgentFirstReply(input: DTO.GetAgentRequest, enabled = true) {
+  return useQuery({
+    queryKey: [...keys.agents, 'get_agent_first_reply', { ...input, request_id: undefined }],
+    queryFn: ({ signal }) => call('get_agent_first_reply', input, signal),
+    enabled,
+  });
+}
 export function useCancelAttempt() {
   const client = useQueryClient();
   return useMutation({
@@ -104,5 +111,6 @@ export function agentStatus(
     return { status: 'busy', screen: 'busy' };
   if (workspace?.observed_state !== 'running' || machine.observed_state !== 'running')
     return { status: 'idle', screen: 'dark' };
+  if (agent.activity === 'busy') return { status: 'busy', screen: 'busy' };
   return { status: 'ok', screen: 'ok' };
 }

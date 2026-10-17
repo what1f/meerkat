@@ -399,7 +399,8 @@ impl Provider for FeishuProvider {
                         "required": ["state"],
                         "properties": {
                             "state": {"enum": ["ready", "required", "waiting", "scanned"]},
-                            "qr_code": {"type": "string"}
+                            "qr_code": {"type": "string"},
+                            "poll_interval_seconds": {"type": "integer", "minimum": 1}
                         }
                     }))?,
                     handler: Arc::new(ConsoleLoginHandler {

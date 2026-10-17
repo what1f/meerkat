@@ -114,7 +114,10 @@ async fn a4b_feishu_owner_switch_and_task_list() -> Result<()> {
         web.0.lock().unwrap().name="Alice Updated".into();
         assert_eq!(http.invoke(owner,"refresh",json!({})).await?["name"],"Alice Updated");event(&mut events,"workspace_updated").await?;
         web.0.lock().unwrap().expired=true;let expired=http.invoke(owner,"refresh",json!({})).await?;assert_eq!(expired["state"],"reauth_required");assert_eq!(expired["name"],"Alice Updated");web.0.lock().unwrap().expired=false;
-        http.invoke(login,"switch_start",json!({})).await?;http.invoke(login,"switch_cancel",json!({})).await?;assert_eq!(http.invoke(owner,"get",json!({})).await?["person_id"],first["person_id"]);
+        let waiting=http.invoke(login,"switch_start",json!({})).await?;
+        assert_eq!(waiting["state"],"waiting");
+        assert!(waiting["poll_interval_seconds"].as_u64().is_some_and(|seconds| seconds > 0));
+        http.invoke(login,"switch_cancel",json!({})).await?;assert_eq!(http.invoke(owner,"get",json!({})).await?["person_id"],first["person_id"]);
         http.invoke(login,"switch_start",json!({})).await?;{let mut state=web.0.lock().unwrap();state.user="other".into();state.tenant="tenant-b".into();}
         assert!(http.invoke(login,"switch_poll",json!({})).await.is_err());assert_eq!(http.invoke(owner,"get",json!({})).await?["person_id"],first["person_id"]);
         web.0.lock().unwrap().tenant="tenant-a".into();http.invoke(login,"switch_start",json!({})).await?;http.invoke(login,"switch_poll",json!({})).await?;
