@@ -154,8 +154,19 @@ fn start_services(
     run: &Path,
     manage_services: bool,
 ) -> Result<(), ClientError> {
-    // Reuse a healthy owner before preparing or launching any local service.
-    let client = match runtime.block_on(RuntimeManagementClient::connect_local(&run)) {
+    // Reuse a healthy owner before preparing or launching any local service,
+    // unless it runs an older build than this app.
+    let mut reused = runtime.block_on(RuntimeManagementClient::connect_local(&run));
+    if reused.is_ok()
+        && manage_services
+        && services
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .stop_outdated(home)?
+    {
+        reused = Err(ClientError::Unavailable("outdated Runtime stopped".into()));
+    }
+    let client = match reused {
         Ok(client) => client,
         Err(_) if manage_services => {
             {

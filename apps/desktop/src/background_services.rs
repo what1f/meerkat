@@ -93,6 +93,32 @@ impl BackgroundServices {
         replace_outdated_local_services(home)
     }
 
+    /// Stops helpers still running an older build than this app bundles, so
+    /// a healthy but outdated Runtime is never reused after an update.
+    pub(crate) fn stop_outdated(&mut self, home: &Path) -> Result<bool, ClientError> {
+        #[cfg(unix)]
+        {
+            let mut stopped = false;
+            for (lock, executable) in [
+                ("run/machine.lock", "lankide-machine"),
+                ("run/runtime.lock", "lankided"),
+            ] {
+                if let Some(instance) =
+                    local_service(&home.join(lock), &helper_executable(executable)?, true)?
+                {
+                    stop_local_service(instance)?;
+                    stopped = true;
+                }
+            }
+            Ok(stopped)
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = home;
+            Ok(false)
+        }
+    }
+
     pub(crate) fn ensure_runtime(&mut self, home: &Path) -> Result<(), ClientError> {
         if self.stopping {
             return Ok(());

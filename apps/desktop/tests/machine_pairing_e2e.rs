@@ -532,6 +532,10 @@ fn desktop_reconnects_when_the_runtime_comes_back() {
     runtime.block_on(rig.into_inner().close()).unwrap();
 }
 
+/// Helper lifecycle scenarios each start a full set of local services; one at
+/// a time keeps the timing of the other Desktop scenarios intact.
+static HELPER_LIFECYCLE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Run the public Desktop bootstrap and app-quit lifecycle with real helpers.
 /// A subprocess provides private environment variables without mutating this test process.
 #[test]
@@ -542,6 +546,9 @@ fn owned_helpers_stop_on_app_quit_while_reused_helpers_stay_running() {
         "::owned_helpers_stop_on_app_quit_while_reused_helpers_stay_running"
     );
     if std::env::var_os(CHILD).is_none() {
+        let _serial = HELPER_LIFECYCLE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let directory = tempfile::Builder::new()
             .prefix("lkq-")
             .tempdir_in("/tmp")
@@ -626,4 +633,126 @@ fn owned_helpers_stop_on_app_quit_while_reused_helpers_stay_running() {
         assert!(!owner.local_home.join("run/machine.lock").exists());
     });
     gpui::run_test(1, &[], 0, &mut |dispatcher, _| scenario(dispatcher), None);
+}
+
+/// Reopening Desktop after an update replaces helpers still running the old
+/// build instead of reusing them.
+#[test]
+fn reopening_after_an_update_replaces_outdated_helpers() {
+    const CHILD: &str = "LANKIDE_UPDATE_E2E_CHILD";
+    const NAME: &str = concat!(
+        module_path!(),
+        "::reopening_after_an_update_replaces_outdated_helpers"
+    );
+    if std::env::var_os(CHILD).is_none() {
+        let _serial = HELPER_LIFECYCLE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let directory = tempfile::Builder::new()
+            .prefix("lku-")
+            .tempdir_in("/tmp")
+            .unwrap();
+        let current = std::env::current_exe().unwrap();
+        let binaries = current.parent().unwrap().parent().unwrap();
+        let executable = directory.path().join("update-e2e");
+        std::fs::hard_link(&current, &executable).unwrap();
+        for name in ["lankided", "lankide-machine"] {
+            std::fs::hard_link(binaries.join(name), directory.path().join(name)).unwrap();
+        }
+        let home = directory.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let output = std::process::Command::new(executable)
+            .args(["--exact", NAME.split_once("::").unwrap().1, "--nocapture"])
+            .env(CHILD, "1")
+            .env("LANKIDE_HOME", &home)
+            .env("HOME", &home)
+            .env_remove("LANKIDE_RUNTIME_RUN")
+            .env("SHELL", "/bin/sh")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    let runtime_pid = |home: &std::path::Path| {
+        std::fs::read_to_string(home.join("run/runtime.lock"))
+            .unwrap()
+            .split_whitespace()
+            .find_map(|part| part.strip_prefix("pid=").map(str::to_owned))
+            .unwrap()
+    };
+    // Helpers run on their own, as launchd keeps them, not as Desktop children.
+    let directory = std::env::current_exe().unwrap();
+    let directory = directory.parent().unwrap();
+    let home = std::path::PathBuf::from(std::env::var_os("LANKIDE_HOME").unwrap());
+    for name in ["lankided", "lankide-machine"] {
+        let status = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg("\"$0\" --home \"$1\" >/dev/null 2>&1 &")
+            .arg(directory.join(name))
+            .arg(&home)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !home.join("run/runtime.lock").exists()
+        || !home.join("run/management.url").exists()
+        || !home.join("run/machine.lock").exists()
+    {
+        assert!(Instant::now() < deadline, "the Runtime did not start");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let outdated = runtime_pid(&home);
+    struct StopDetached(String);
+    impl Drop for StopDetached {
+        fn drop(&mut self) {
+            let _ = std::process::Command::new("kill").arg(&self.0).status();
+        }
+    }
+    let _old_runtime = StopDetached(outdated.clone());
+    let _old_machine = StopDetached(
+        std::fs::read_to_string(home.join("run/machine.lock"))
+            .unwrap_or_default()
+            .split_whitespace()
+            .find_map(|part| part.strip_prefix("pid=").map(str::to_owned))
+            .unwrap_or_default(),
+    );
+
+    // An update replaces the bundled helpers while the old Runtime keeps running.
+    std::thread::sleep(Duration::from_millis(20));
+    for name in ["lankided", "lankide-machine"] {
+        let staged = directory.join(format!(".{name}.update"));
+        std::fs::write(&staged, std::fs::read(directory.join(name)).unwrap()).unwrap();
+        std::fs::set_permissions(
+            &staged,
+            std::fs::metadata(directory.join(name))
+                .unwrap()
+                .permissions(),
+        )
+        .unwrap();
+        std::fs::rename(&staged, directory.join(name)).unwrap();
+    }
+
+    let reopened = backend::DesktopBackend::bootstrap();
+    assert!(
+        reopened.startup_error.is_none(),
+        "{:?}",
+        reopened.startup_error
+    );
+    let _entered = reopened.enter();
+    assert_ne!(runtime_pid(&reopened.local_home), outdated);
+    assert!(
+        !std::process::Command::new("kill")
+            .args(["-0", &outdated])
+            .status()
+            .unwrap()
+            .success(),
+        "the outdated Runtime kept running"
+    );
+    reopened.stop_local_services();
 }
