@@ -1,4 +1,5 @@
 import { PullCord } from '../scene';
+import { isDesktopShell } from '../lib/desktopShell';
 import { setTheme } from '../lib/theme';
 import { IconButton } from '../design';
 import { useT } from '../lib/i18n';
@@ -16,10 +17,11 @@ export type AppShellProps = Omit<UIProps, 'className' | 'style'> & {
 export function AppShell({ sidebar, topBar, children, board, ...rest }: AppShellProps) {
   const t = useT();
   const { hidden, rail, setHidden } = useSidebarLayout();
-  const desktop = /LankideDesktop\/[^ ]+/.test(navigator.userAgent);
+  const desktop = isDesktopShell();
   return (
     <div {...rest} className={css.root} data-board={board} data-desktop={desktop}>
       <div data-rail={rail}>
+        {desktop && <div aria-hidden="true" data-desktop-safe-area />}
         <IconButton
           icon="sidebar"
           label={t('common.toggleSidebar')}
