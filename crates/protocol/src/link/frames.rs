@@ -170,6 +170,7 @@ pub struct ExecutionRef {
 pub struct HarnessConfig {
     pub harness_id: String,
     pub executable_path: String,
+    pub launch_arguments: Vec<String>,
     pub model: String,
     pub thinking_level: String,
     pub environment_variables: Vec<EnvironmentVariable>,

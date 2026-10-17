@@ -244,8 +244,15 @@ async fn make_hello(inner: &Inner) -> MachineHello {
                             .collect()
                     })
                     .unwrap_or_default(),
-                model_catalog: None,
-                model_catalog_error: String::new(),
+                model_catalog: inner
+                    .model_catalogs
+                    .get(*id)
+                    .and_then(|value| value.0.clone()),
+                model_catalog_error: inner
+                    .model_catalogs
+                    .get(*id)
+                    .map(|value| value.1.clone())
+                    .unwrap_or_default(),
                 harness_id: (*id).to_owned(),
                 display_name: factory
                     .map(|factory| factory.info().display_name.clone())

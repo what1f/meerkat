@@ -353,7 +353,19 @@ impl RuntimePeer for RuntimePeerAdapter {
             .workspace_record(&workspace_id)
             .await
             .map_err(|error| status(error.into()))?;
-        let referenced = workspace.cover_resource_id == Some(resource_id);
+        let figure_reference = storage
+            .list_figure_packs(&workspace_id)
+            .await
+            .map_err(|error| status(error.into()))?
+            .iter()
+            .any(|pack| {
+                pack["frames"].as_object().is_some_and(|frames| {
+                    frames
+                        .values()
+                        .any(|frame| frame["resource_id"].as_i64() == Some(resource_id.get()))
+                })
+            });
+        let referenced = workspace.cover_resource_id == Some(resource_id) || figure_reference;
         if !referenced {
             return Err(Status::permission_denied(
                 "This image is not part of the workspace profile",
@@ -425,6 +437,24 @@ impl RuntimePeer for RuntimePeerAdapter {
         })
     }
 
+    async fn import_figure_pack(
+        &self,
+        request: lankide_protocol::ImportFigurePackRequest,
+    ) -> Result<lankide_protocol::FigurePack, Status> {
+        self.application
+            .import_figure_pack(request)
+            .await
+            .map_err(status)
+    }
+    async fn list_figure_packs(
+        &self,
+        request: lankide_protocol::ListFigurePacksRequest,
+    ) -> Result<Vec<lankide_protocol::FigurePack>, Status> {
+        self.application
+            .list_figure_packs(request)
+            .await
+            .map_err(status)
+    }
     async fn list_workspaces(
         &self,
         request: ListWorkspacesRequest,
@@ -609,6 +639,37 @@ impl RuntimePeer for RuntimePeerAdapter {
             .machine_catalog(request)
             .await
             .map_err(status)
+    }
+    async fn get_model_catalog(
+        &self,
+        request: lankide_protocol::ModelCatalogRequest,
+    ) -> Result<lankide_protocol::ModelCatalog, Status> {
+        let catalog = self
+            .application
+            .machine_catalog(CatalogRequest::default())
+            .await
+            .map_err(status)?;
+        let machine = catalog
+            .machines
+            .into_iter()
+            .find(|machine| machine.machine_id == request.machine_id)
+            .ok_or_else(|| Status::not_found("Machine not found"))?;
+        if machine.observed_state != lankide_protocol::ObservedState::Running
+            || machine.revoked_at.is_some()
+        {
+            return Err(Status::unavailable("Machine is offline"));
+        }
+        let harness = machine
+            .harnesses
+            .into_iter()
+            .find(|harness| harness.harness_id == request.harness_id)
+            .ok_or_else(|| Status::not_found("Harness not found"))?;
+        if !harness.model_catalog_error.is_empty() {
+            return Err(Status::unavailable("Models could not be loaded"));
+        }
+        harness
+            .model_catalog
+            .ok_or_else(|| Status::unavailable("Models are not ready"))
     }
     async fn get_harness_catalog(&self, request: CatalogRequest) -> Result<HarnessCatalog, Status> {
         self.application.harness_catalog(request).map_err(status)

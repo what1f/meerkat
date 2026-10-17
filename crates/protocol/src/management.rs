@@ -27,6 +27,9 @@ pub struct AdvanceProviderOnboardingRequest {
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Agent {
+    pub figure: String,
+    pub launch_arguments: Vec<String>,
+    pub activity: AgentActivity,
     pub agent: Option<AgentRef>,
     pub name: String,
     pub role: String,
@@ -142,6 +145,10 @@ pub struct MachineCatalogItem {
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CreateAgentRequest {
+    #[serde(default)]
+    pub figure: String,
+    #[serde(default)]
+    pub launch_arguments: Vec<String>,
     pub request_id: String,
     pub agent: Option<AgentRef>,
     pub name: String,
@@ -489,6 +496,8 @@ pub struct SetWorkspaceStateRequest {
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UpdateAgentRequest {
+    pub figure: Option<String>,
+    pub launch_arguments: Option<Vec<String>>,
     pub request_id: String,
     pub agent: Option<AgentRef>,
     pub name: Option<String>,
@@ -670,4 +679,44 @@ pub trait RemoteAccessControl: Send + Sync {
     async fn get(&self) -> Result<RemoteAccess, crate::Status>;
     async fn enable(&self) -> Result<RemoteAccess, crate::Status>;
     async fn set(&self, address: Option<String>) -> Result<RemoteAccess, crate::Status>;
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentActivity {
+    #[default]
+    Idle,
+    Busy,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct FigureFrames {
+    pub work: ResourceRef,
+    pub sleep: ResourceRef,
+    pub carry: ResourceRef,
+    pub stand: ResourceRef,
+}
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct FigurePack {
+    pub id: String,
+    pub name: String,
+    pub author: String,
+    pub scale: f64,
+    pub frames: FigureFrames,
+}
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ImportFigurePackRequest {
+    pub workspace: Option<WorkspaceRef>,
+    #[serde(with = "base64_bytes")]
+    #[cfg_attr(feature = "typescript", ts(type = "string"))]
+    pub bytes: Vec<u8>,
+}
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ListFigurePacksRequest {
+    pub workspace: Option<WorkspaceRef>,
 }

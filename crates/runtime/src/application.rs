@@ -156,6 +156,10 @@ impl RuntimeApplication {
                 shutdown_timeout,
             }),
         };
+        application
+            .runtime()?
+            .database()
+            .observe_activity(Arc::downgrade(&application.inner));
         application.load_persisted_workspaces().await?;
         application.inner.state.store(APP_READY, Ordering::Release);
         Ok(application)
@@ -777,6 +781,7 @@ pub(crate) fn agent_runtime_config(
                 "thinking": agent.thinking,
                 "cli": agent.cli_path,
                 "environment": agent.env,
+                "launch_arguments": agent.launch_arguments,
             })
             .to_string()
             .as_bytes(),
@@ -813,6 +818,7 @@ pub(crate) fn agent_runtime_config(
         harness: HarnessConfig {
             harness_id: agent.harness_id,
             executable_path: agent.cli_path.unwrap_or_default(),
+            launch_arguments: agent.launch_arguments,
             model: agent.model,
             thinking_level: agent.thinking,
             environment_variables: agent

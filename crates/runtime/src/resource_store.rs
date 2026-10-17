@@ -14,6 +14,12 @@ pub trait ResourceStore: Send + Sync {
         upload: ResourceUpload,
     ) -> ResourceFuture<'a, ResourceRef>;
 
+    fn remove<'a>(
+        &'a self,
+        workspace_id: &'a WorkspaceId,
+        resource_id: ResourceId,
+    ) -> ResourceFuture<'a, ()>;
+
     fn read<'a>(
         &'a self,
         workspace_id: &'a WorkspaceId,
@@ -68,7 +74,10 @@ impl ResourceStore for LocalResourceStore {
                 .parent()
                 .ok_or_else(|| RuntimeError::Application("invalid resource path".into()))?;
             std::fs::create_dir_all(parent).map_err(resource_io_error)?;
-            std::fs::write(&path, &upload.bytes).map_err(resource_io_error)?;
+            if let Err(error) = std::fs::write(&path, &upload.bytes) {
+                let _ = std::fs::remove_file(&path);
+                return Err(resource_io_error(error));
+            }
             let sha256 = Sha256::digest(&upload.bytes)
                 .iter()
                 .map(|byte| format!("{byte:02x}"))
@@ -97,6 +106,23 @@ impl ResourceStore for LocalResourceStore {
                 size_bytes: upload.bytes.len() as u64,
                 sha256,
             })
+        })
+    }
+
+    fn remove<'a>(
+        &'a self,
+        workspace_id: &'a WorkspaceId,
+        resource_id: ResourceId,
+    ) -> ResourceFuture<'a, ()> {
+        Box::pin(async move {
+            let file = std::fs::remove_file(self.path(workspace_id, resource_id));
+            let metadata = self
+                .storage
+                .remove_resource_metadata(workspace_id, resource_id)
+                .await;
+            file.map_err(resource_io_error)?;
+            metadata?;
+            Ok(())
         })
     }
 

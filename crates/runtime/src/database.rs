@@ -25,6 +25,8 @@ impl std::ops::Deref for ReleaseSignal {
 
 struct Signals {
     released: Notify,
+    application: std::sync::Mutex<Weak<crate::application::ApplicationInner>>,
+    activity_write: std::sync::Mutex<()>,
     changed: Arc<Notify>,
 }
 
@@ -46,9 +48,14 @@ impl Database {
             storage,
             signals: ReleaseSignal(Arc::new(Signals {
                 released: Notify::new(),
+                application: std::sync::Mutex::new(Weak::new()),
+                activity_write: std::sync::Mutex::new(()),
                 changed: Arc::new(Notify::new()),
             })),
         }
+    }
+    pub(crate) fn observe_activity(&self, application: Weak<crate::application::ApplicationInner>) {
+        *self.signals.application.lock().expect("activity observer") = application;
     }
     pub(crate) fn as_ref(&self) -> &Storage {
         &self.storage
@@ -68,11 +75,45 @@ impl Database {
     async fn call<T: Send + 'static>(
         &self,
         write: bool,
+        activity: bool,
         operation: impl FnOnce(&Storage) -> lankide_storage::Result<T> + Send + 'static,
     ) -> lankide_storage::Result<T> {
         let database = self.clone();
         tokio::task::spawn_blocking(move || {
+            // Serialize state transitions through their commit and invalidation event.
+            let _guard = activity.then(|| {
+                database
+                    .signals
+                    .activity_write
+                    .lock()
+                    .expect("activity transition")
+            });
+            let before = if activity {
+                database.storage.busy_agents(None)?
+            } else {
+                Default::default()
+            };
             let result = operation(&database.storage);
+            if activity {
+                let after = database.storage.busy_agents(None)?;
+                if let Some(inner) = database
+                    .signals
+                    .application
+                    .lock()
+                    .expect("activity observer")
+                    .upgrade()
+                {
+                    let application = crate::RuntimeApplication { inner };
+                    for (workspace, agent) in before.symmetric_difference(&after) {
+                        application.emit_management(
+                            lankide_protocol::ManagementEventKind::AgentUpdated,
+                            workspace,
+                            Some(agent),
+                            now_millis(),
+                        );
+                    }
+                }
+            }
             if write {
                 database.wake();
             }
@@ -127,13 +168,23 @@ macro_rules! database_methods {
         impl Database {
             $(pub(crate) async fn $name(&self, $($arg: $ty),*) -> lankide_storage::Result<$result> {
                 $($prepare)*
-                self.call($write, move |storage| storage.$name($($input),*)).await
+                let activity = matches!(stringify!($name),
+                    "mark_execution_running" | "mark_execution_recovering" | "offer_execution_attempt" |
+                    "accept_execution_attempt" | "commit_execution" | "cancel_execution" |
+                    "fail_execution" | "fail_execution_retry_after" | "record_execution_event" |
+                    "expire_execution_attempt_leases" | "recover_startup" | "reconcile_machine_heartbeat" |
+                    "reject_execution_attempt_with_failure" | "retry_execution_conflict" | "delete_agent");
+                self.call($write, activity, move |storage| storage.$name($($input),*)).await
             })*
         }
     };
 }
 
 database_methods! {
+    true insert_figure_pack(workspace: &WorkspaceId, id: &str, metadata: Value) -> () [let workspace=workspace.clone(); let id=id.to_owned();] (&workspace,&id,metadata);
+    false list_figure_packs(workspace: &WorkspaceId) -> Vec<Value> [let workspace=workspace.clone();] (&workspace);
+    true remove_resource_metadata(workspace: &WorkspaceId, id: ResourceId) -> () [let workspace=workspace.clone();] (&workspace,id);
+    false busy_agents(workspace: Option<&WorkspaceId>) -> std::collections::BTreeSet<(WorkspaceId,AgentId)> [let workspace=workspace.cloned();] (workspace.as_ref());
     false next_agent_work_at(
         workspace: &WorkspaceId,
         agent: &AgentId,

@@ -557,6 +557,7 @@ fn native_config(
         harness_id: config.harness_id.clone(),
         model: ModelRef::new(config.model.clone(), config.model.clone()),
         thinking_level: config.thinking_level.clone(),
+        launch_arguments: config.launch_arguments.clone(),
         cli_path: if config.executable_path.trim().is_empty() {
             defaults.cli_path.clone()
         } else {

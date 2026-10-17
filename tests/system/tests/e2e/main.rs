@@ -12,6 +12,8 @@ mod machine_link_e2e;
 mod management_dto_e2e;
 #[path = "../management_http_e2e.rs"]
 mod management_http_e2e;
+#[path = "../member_fields_e2e.rs"]
+mod member_fields_e2e;
 #[path = "../network_delivery_e2e.rs"]
 mod network_delivery_e2e;
 #[path = "../pairing_e2e.rs"]

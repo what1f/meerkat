@@ -168,8 +168,10 @@ impl RuntimeApplication {
         let workspace = workspace_id(request.workspace)?;
         let runtime = self.runtime()?;
         let mut agents = Vec::new();
+        let busy = runtime.database().busy_agents(Some(&workspace)).await?;
         for record in runtime.database().list_agent_records(&workspace).await? {
-            agents.push(agent_dto(record, runtime.database()).await?);
+            let activity = busy.contains(&(record.workspace_id.clone(), record.agent_id.clone()));
+            agents.push(agent_dto_with_activity(record, runtime.database(), activity).await?);
         }
         Ok(ListAgentsResponse {
             request_id: request.request_id,
@@ -212,6 +214,8 @@ impl RuntimeApplication {
     }
 
     async fn validate_placement(&self, agent: &AgentRecord) -> Result<(), RuntimeError> {
+        self.validate_figure(&agent.workspace_id, &agent.figure)
+            .await?;
         let machine = self
             .runtime()?
             .database()
@@ -226,6 +230,23 @@ impl RuntimeApplication {
         let inventory: Vec<lankide_protocol::link::HarnessInfo> =
             serde_json::from_str(&machine.inventory_json)
                 .map_err(|e| RuntimeError::Application(e.to_string()))?;
+        if let Some(model) = inventory
+            .iter()
+            .find(|h| h.harness_id == agent.harness_id)
+            .and_then(|h| h.model_catalog.as_ref())
+            .and_then(|catalog| {
+                catalog
+                    .models
+                    .iter()
+                    .find(|model| model.model_id == agent.model)
+            })
+        {
+            if !agent.thinking.is_empty()
+                && !model.supported_thinking_levels.contains(&agent.thinking)
+            {
+                return Err(RuntimeError::InvalidCore("thinking_level_invalid".into()));
+            }
+        }
         if !inventory.iter().any(|h| h.harness_id == agent.harness_id) {
             return Err(RuntimeError::HarnessUnavailableOnMachine);
         }
@@ -250,6 +271,12 @@ impl RuntimeApplication {
             role: request.role,
             bio: request.bio,
             avatar: None,
+            figure: if request.figure.is_empty() {
+                "default".into()
+            } else {
+                request.figure
+            },
+            launch_arguments: request.launch_arguments,
             soul: request.soul,
             machine_id: request.machine_id,
             placement_generation: 1,
@@ -309,6 +336,12 @@ impl RuntimeApplication {
             .agent_record(&workspace_id, &agent_id)
             .await?;
         let mut record = old_record.clone();
+        if let Some(value) = request.figure {
+            record.figure = value;
+        }
+        if let Some(value) = request.launch_arguments {
+            record.launch_arguments = value;
+        }
         if let Some(value) = request.name {
             record.name = value;
         }
@@ -382,6 +415,7 @@ impl RuntimeApplication {
             || old_record.machine_id != record.machine_id
             || old_record.thinking != record.thinking
             || old_record.cli_path != record.cli_path
+            || old_record.launch_arguments != record.launch_arguments
             || old_record.env != record.env
             || old_record.session_config != record.session_config;
         let result = AgentLifecycle::new(self)
@@ -882,11 +916,30 @@ async fn resource_ref(
 }
 
 async fn agent_dto(record: AgentRecord, storage: Database) -> Result<ProtocolAgent, RuntimeError> {
+    let busy = storage
+        .busy_agents(Some(&record.workspace_id))
+        .await?
+        .contains(&(record.workspace_id.clone(), record.agent_id.clone()));
+    agent_dto_with_activity(record, storage, busy).await
+}
+
+async fn agent_dto_with_activity(
+    record: AgentRecord,
+    storage: Database,
+    busy: bool,
+) -> Result<ProtocolAgent, RuntimeError> {
     let pause_reason = storage
         .agent_pause_reason(&record.workspace_id, &record.agent_id)
         .await?;
     Ok(ProtocolAgent {
         pause_reason,
+        figure: record.figure,
+        launch_arguments: record.launch_arguments,
+        activity: if busy {
+            lankide_protocol::AgentActivity::Busy
+        } else {
+            lankide_protocol::AgentActivity::Idle
+        },
         agent: Some(AgentRef {
             workspace_id: record.workspace_id.to_string(),
             agent_id: record.agent_id.to_string(),
@@ -1031,7 +1084,7 @@ fn onboarding_status(status: ProviderOnboardingStatus) -> OnboardingStatus {
     }
 }
 
-fn workspace_id(value: Option<WorkspaceRef>) -> Result<WorkspaceId, RuntimeError> {
+pub(crate) fn workspace_id(value: Option<WorkspaceRef>) -> Result<WorkspaceId, RuntimeError> {
     WorkspaceId::new(
         value
             .ok_or_else(|| RuntimeError::Application("workspace ref required".into()))?

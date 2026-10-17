@@ -60,6 +60,16 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
         }};
     }
     match operation.as_str() {
+        "list_figure_packs" => call!(
+            json::ListFigurePacksRequest,
+            Vec<json::FigurePack>,
+            list_figure_packs
+        ),
+        "import_figure_pack" => call!(
+            json::ImportFigurePackRequest,
+            json::FigurePack,
+            import_figure_pack
+        ),
         "list_workspaces" => call!(
             json::ListWorkspacesRequest,
             json::ListWorkspacesResponse,

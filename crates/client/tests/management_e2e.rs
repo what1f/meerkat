@@ -67,6 +67,9 @@ fn workspace(
 }
 fn agent(input: wire::CreateAgentRequest) -> wire::Agent {
     wire::Agent {
+        activity: Default::default(),
+        figure: Default::default(),
+        launch_arguments: Default::default(),
         pause_reason: None,
         agent: input.agent,
         name: input.name,

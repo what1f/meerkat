@@ -17,6 +17,7 @@ impl NativeCatalogProcess {
         config.validate_executable()?;
         let mut child = Command::new(&config.cli_path)
             .args(arguments)
+            .args(&config.launch_arguments)
             .envs(&config.environment)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

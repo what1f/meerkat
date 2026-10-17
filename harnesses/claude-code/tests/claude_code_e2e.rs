@@ -106,6 +106,7 @@ async fn run_scenario(
 ) -> Result<serde_json::Value, String> {
     let nonce = format!("lankide-claude-{run_id}");
     let config = HarnessConfig {
+        launch_arguments: Default::default(),
         harness_id: HARNESS_ID.to_owned(),
         model: ModelRef::new(DEFAULT_MODEL, "DeepSeek V4 Flash"),
         thinking_level: "low".to_owned(),
@@ -398,6 +399,7 @@ fn unique(prefix: &str) -> String {
 #[ignore = "requires installed native CLI; reads model directory without a model turn"]
 async fn native_model_catalog() {
     let config = HarnessConfig {
+        launch_arguments: Default::default(),
         harness_id: "claude_code".into(),
         cli_path: "claude".into(),
         model: ModelRef::new("", ""),

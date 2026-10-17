@@ -99,6 +99,7 @@ pub struct HarnessConfig {
     pub model: ModelRef,
     pub thinking_level: String,
     pub cli_path: PathBuf,
+    pub launch_arguments: Vec<String>,
     pub environment: BTreeMap<String, String>,
     pub config_fingerprint: String,
 }
@@ -121,9 +122,6 @@ impl HarnessConfig {
         self.validate_executable()?;
         if self.model.model_id.trim().is_empty() {
             return Err(HarnessError::invalid_config("model_id is empty"));
-        }
-        if self.thinking_level.trim().is_empty() {
-            return Err(HarnessError::invalid_config("thinking_level is empty"));
         }
         if self.config_fingerprint.trim().is_empty() {
             return Err(HarnessError::invalid_config("config_fingerprint is empty"));

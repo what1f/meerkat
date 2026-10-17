@@ -356,6 +356,10 @@ impl Storage {
             ));
         }
         transaction.execute(
+            "DELETE FROM figure_packs WHERE workspace_id=?1",
+            [id.as_str()],
+        )?;
+        transaction.execute(
             "DELETE FROM resource_metadata WHERE workspace_id=?1",
             [id.as_str()],
         )?;

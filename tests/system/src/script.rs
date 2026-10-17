@@ -102,10 +102,12 @@ impl Script {
 
 pub(crate) struct ScriptedHarness {
     process: ProcessHarnessFactory,
+    models: Option<Vec<NativeModel>>,
 }
 impl ScriptedHarness {
     pub fn new(journal: PathBuf) -> Self {
         Self {
+            models: None,
             process: ProcessHarnessFactory::new(
                 HarnessInfo::new("pi", "Scripted process").expect("harness id"),
                 ProcessHarnessSpec {
@@ -116,6 +118,10 @@ impl ScriptedHarness {
                 },
             ),
         }
+    }
+    pub fn with_models(mut self, models: Vec<NativeModel>) -> Self {
+        self.models = Some(models);
+        self
     }
     fn spawn_failure(request: &SessionRequest) -> Option<HarnessError> {
         let script = request.config.environment.get("LANKIDE_SYSTEM_SCRIPT")?;
@@ -134,6 +140,33 @@ impl HarnessFactory for ScriptedHarness {
     }
     fn probe<'a>(&'a self, config: &'a HarnessConfig) -> HarnessFuture<'a, ProbeResult> {
         self.process.probe(config)
+    }
+    fn models<'a>(&'a self, _config: &'a HarnessConfig) -> HarnessFuture<'a, Vec<NativeModel>> {
+        Box::pin(async move {
+            if let Some(models) = &self.models {
+                return Ok(models.clone());
+            }
+            Ok(vec![
+                NativeModel {
+                    id: "scripted".into(),
+                    name: "Scripted".into(),
+                    description: String::new(),
+                    thinking_levels: vec!["low".into(), "high".into()],
+                },
+                NativeModel {
+                    id: "short".into(),
+                    name: "Short".into(),
+                    description: String::new(),
+                    thinking_levels: vec!["medium".into()],
+                },
+                NativeModel {
+                    id: "plain".into(),
+                    name: "Plain".into(),
+                    description: String::new(),
+                    thinking_levels: vec![],
+                },
+            ])
+        })
     }
     fn start<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
         if let Some(error) = Self::spawn_failure(&request) {

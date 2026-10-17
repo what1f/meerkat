@@ -271,6 +271,7 @@ impl CodexSession {
         let mut command = Command::new(&request.config.cli_path);
         command
             .args(["app-server", "--listen", "stdio://"])
+            .args(&request.config.launch_arguments)
             .envs(&request.config.environment)
             .env_remove("LANKIDE_RUNTIME_RUN")
             .env("CODEX_HOME", &codex_home)
@@ -461,7 +462,7 @@ impl HarnessSession for CodexSession {
                     json!({
                         "threadId": thread_id,
                         "input": [{"type": "text", "text": request.input, "text_elements": []}],
-                        "effort": self.inner.thinking_level
+                        "effort": (!self.inner.thinking_level.is_empty()).then_some(&self.inner.thinking_level)
                     }),
                 )
                 .await;

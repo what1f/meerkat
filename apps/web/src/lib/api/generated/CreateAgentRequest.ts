@@ -3,4 +3,4 @@ import type { AgentAttention } from "./AgentAttention";
 import type { AgentRef } from "./AgentRef";
 import type { EnvironmentVariable } from "./EnvironmentVariable";
 
-export type CreateAgentRequest = { request_id: string, agent: AgentRef | null, name: string, role: string, bio: string, harness_id: string, model: string, thinking_level: string, auto_reaction: string, soul: string, cli_path: string, environment_variables: Array<EnvironmentVariable>, machine_id: string, attention: AgentAttention | null, provider_agent_config_json: string, provider_agent_secrets_json: string, };
+export type CreateAgentRequest = { figure: string, launch_arguments: Array<string>, request_id: string, agent: AgentRef | null, name: string, role: string, bio: string, harness_id: string, model: string, thinking_level: string, auto_reaction: string, soul: string, cli_path: string, environment_variables: Array<EnvironmentVariable>, machine_id: string, attention: AgentAttention | null, provider_agent_config_json: string, provider_agent_secrets_json: string, };

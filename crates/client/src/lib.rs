@@ -1138,6 +1138,8 @@ impl ManagementClient for RuntimeManagementClient {
             self.client
                 .clone()
                 .create_agent(wire::CreateAgentRequest {
+                    figure: Default::default(),
+                    launch_arguments: Default::default(),
                     request_id: self.request_id(),
                     agent: Some(aref(w, &d.id)),
                     name: d.name,
@@ -1192,6 +1194,8 @@ impl ManagementClient for RuntimeManagementClient {
             self.client
                 .clone()
                 .update_agent(wire::UpdateAgentRequest {
+                    figure: Default::default(),
+                    launch_arguments: Default::default(),
                     request_id: self.request_id(),
                     agent: Some(aref(&a.workspace_id, &a.id)),
                     name: Some(a.name),

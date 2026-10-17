@@ -21,7 +21,7 @@ tempfile.workspace = true
 
 [package.metadata.lankide.e2e]
 command = "LANKIDE_E2E_LIVE=1 cargo test -p lankide-harness-claude-code --test e2e claude_code_e2e:: -- --ignored --nocapture"
-scenario = "Run the configured Claude Code-compatible CLI through native shell execution, session start and resume, stream-json steer, HTTP MCP Tool Result, cancel, close, and process cleanup."
+scenario = "Run the configured Claude Code-compatible CLI through native shell execution, session start and resume, stream-json steer, HTTP MCP Tool Result, cancel, close, and process cleanup. A4a appends independent launch arguments and omits the effort option when no level is selected; cross-module acceptance is in system-member-fields."
 prerequisites = "LANKIDE_CLAUDE_CODE_PATH; configured test model; harness-live prerequisite probe"
 classification = "live"
 unattended = "yes after live opt-in and preflight"

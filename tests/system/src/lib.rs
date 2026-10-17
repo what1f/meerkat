@@ -100,6 +100,7 @@ impl MachineThread {
         executable: PathBuf,
         journal: PathBuf,
         capabilities: Vec<String>,
+        models: Option<Vec<lankide_harness::NativeModel>>,
     ) -> Self {
         let (stop, stopped) = oneshot::channel();
         let thread = std::thread::spawn(move || {
@@ -107,9 +108,20 @@ impl MachineThread {
             // tasks and their sessions stop together, without an OS-wide signal.
             let runtime = tokio::runtime::Runtime::new()?;
             let result = runtime.block_on(async move {
-                let registration = RegisteredHarness::new(ScriptedHarness::new(journal), HarnessConfig {
-                    harness_id: "pi".into(), model: ModelRef::new("scripted", "scripted"), thinking_level: "low".into(),
-                    cli_path: executable, environment: BTreeMap::from([("LANKIDE_SYSTEM_CAPABILITIES".into(), serde_json::to_string(&capabilities)?)]), config_fingerprint: "system-rig".into(),
+                let factory = ScriptedHarness::new(journal);
+                let factory = if let Some(models) = models {
+                    factory.with_models(models)
+                } else {
+                    factory
+                };
+                let registration = RegisteredHarness::new(factory, HarnessConfig {
+                    launch_arguments: Vec::new(),
+                    harness_id: "pi".into(),
+                    model: ModelRef::new("scripted", "scripted"),
+                    thinking_level: "low".into(),
+                    cli_path: executable,
+                    environment: BTreeMap::from([("LANKIDE_SYSTEM_CAPABILITIES".into(), serde_json::to_string(&capabilities)?)]),
+                    config_fingerprint: "system-rig".into(),
                 });
                 tokio::select! {
                     result = lankide_machine::run_with_harnesses(config, vec![registration]) => result.map_err(Into::into),
@@ -325,6 +337,7 @@ impl SystemRig {
             self.config.harness_executable.clone(),
             self.machine_home.path().join("harness-pids.tsv"),
             self.config.harness_capabilities.clone(),
+            None,
         ));
         Ok(())
     }
@@ -409,6 +422,12 @@ impl SystemRig {
         self.home.path()
     }
     pub async fn add_machine(&self) -> Result<PairedMachine> {
+        self.add_machine_with_models(None).await
+    }
+    pub async fn add_machine_with_models(
+        &self,
+        models: Option<Vec<lankide_harness::NativeModel>>,
+    ) -> Result<PairedMachine> {
         let home = tempfile::tempdir()?;
         let code = self.client.create_pairing_code().await?;
         let (url, _) = self.local_pairing_endpoint()?;
@@ -426,6 +445,7 @@ impl SystemRig {
             self.config.harness_executable.clone(),
             home.path().join("harness-pids.tsv"),
             self.config.harness_capabilities.clone(),
+            models,
         );
         timeout(self.config.timeout, async {
             loop {
@@ -1362,6 +1382,7 @@ pub async fn run_scripted_machine(
     let registration = RegisteredHarness::new(
         ScriptedHarness::new(home.join("harness-pids.tsv")),
         HarnessConfig {
+            launch_arguments: Default::default(),
             harness_id: "pi".into(),
             model: ModelRef::new("scripted", "scripted"),
             thinking_level: "low".into(),

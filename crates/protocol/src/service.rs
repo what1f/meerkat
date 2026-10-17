@@ -179,6 +179,24 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
         ))
     }
 
+    pub async fn import_figure_pack(
+        &self,
+        request: Request<ImportFigurePackRequest>,
+    ) -> Result<Response<FigurePack>, Status> {
+        validate_workspace_ref(request.get_ref().workspace.as_ref())?;
+        Ok(Response::new(
+            self.peer.import_figure_pack(request.into_inner()).await?,
+        ))
+    }
+    pub async fn list_figure_packs(
+        &self,
+        request: Request<ListFigurePacksRequest>,
+    ) -> Result<Response<Vec<FigurePack>>, Status> {
+        validate_workspace_ref(request.get_ref().workspace.as_ref())?;
+        Ok(Response::new(
+            self.peer.list_figure_packs(request.into_inner()).await?,
+        ))
+    }
     pub async fn get_workspace(
         &self,
         request: Request<GetWorkspaceRequest>,

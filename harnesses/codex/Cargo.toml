@@ -20,7 +20,7 @@ tempfile.workspace = true
 
 [package.metadata.lankide.e2e]
 command = "LANKIDE_E2E_LIVE=1 cargo test -p lankide-harness-codex --test e2e codex_e2e:: -- --ignored --nocapture"
-scenario = "Start, resume, steer, cancel, and collect output from a Codex native session."
+scenario = "Start, resume, steer, cancel, and collect output from a Codex native session. A4a appends independent launch arguments and sends no effort value when no thinking level is selected; cross-module acceptance is in system-member-fields."
 prerequisites = "Codex CLI; gpt-5.6-luna with low reasoning; harness-live prerequisite probe"
 classification = "live"
 unattended = "yes after live opt-in and preflight"

@@ -1787,6 +1787,8 @@ fn agent_record(
     now: i64,
 ) -> AgentRecord {
     AgentRecord {
+        figure: Default::default(),
+        launch_arguments: Default::default(),
         workspace_id: workspace_id.clone(),
         agent_id: agent_id.clone(),
         name: "Same visible name".to_owned(),

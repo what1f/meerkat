@@ -417,6 +417,7 @@ async fn machine_e2e() {
             .register_harness(RegisteredHarness::new(
                 factory,
                 NativeHarnessConfig {
+                    launch_arguments: Default::default(),
                     harness_id: id.into(),
                     model: ModelRef::new("fixture", "fixture"),
                     thinking_level: "low".into(),
@@ -436,6 +437,7 @@ async fn machine_e2e() {
                 closed: rejecting_closed.clone(),
             },
             NativeHarnessConfig {
+                launch_arguments: Default::default(),
                 harness_id: "claude_code".into(),
                 model: ModelRef::new("fixture", "fixture"),
                 thinking_level: "low".into(),
@@ -468,7 +470,7 @@ async fn machine_e2e() {
             ["pi", "codex", "claude_code"]
         );
         assert!(hello.harnesses.iter().all(|harness| {
-            harness.model_catalog.is_none() && harness.model_catalog_error.is_empty()
+            harness.model_catalog.is_none() && !harness.model_catalog_error.is_empty()
         }));
 
         peer.send(runtime_assign_with_harness(
@@ -1201,6 +1203,7 @@ fn runtime_assign(
                 bio: String::new(),
             }),
             harness: Some(HarnessConfig {
+                launch_arguments: Default::default(),
                 harness_id: "pi".into(),
                 executable_path: String::new(),
                 model: "fixture".into(),

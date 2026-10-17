@@ -2148,6 +2148,8 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     )?;
     let created_agent = client
         .create_agent(CreateAgentRequest {
+            figure: Default::default(),
+            launch_arguments: Default::default(),
             request_id: "create-agent-1".into(),
             agent: Some(AgentRef {
                 workspace_id: "application_b".into(),
@@ -2188,6 +2190,8 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     )?;
     let updated_agent = client
         .update_agent(UpdateAgentRequest {
+            figure: Default::default(),
+            launch_arguments: Default::default(),
             request_id: "update-agent-1".into(),
             agent: created_agent.agent.clone(),
             name: Some("Agent B Updated".into()),
@@ -2413,6 +2417,8 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     )?;
     client
         .update_agent(UpdateAgentRequest {
+            figure: Default::default(),
+            launch_arguments: Default::default(),
             request_id: "change-config-during-execution".into(),
             agent: Some(AgentRef {
                 workspace_id: workspace_id.to_string(),
@@ -3170,6 +3176,8 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
 
     let deleted_agent = client
         .create_agent(CreateAgentRequest {
+            figure: Default::default(),
+            launch_arguments: Default::default(),
             request_id: "create-agent-for-delete".into(),
             agent: Some(AgentRef {
                 workspace_id: "application_b".into(),
@@ -3300,6 +3308,8 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
 
     let recreated_agent = client
         .create_agent(CreateAgentRequest {
+            figure: Default::default(),
+            launch_arguments: Default::default(),
             request_id: "recreate-agent-rpc".into(),
             agent: Some(AgentRef {
                 workspace_id: "application_b".into(),
@@ -3490,6 +3500,7 @@ fn agent_config(
         },
         machine_id: "fixture-machine".into(),
         harness: HarnessConfig {
+            launch_arguments: Default::default(),
             harness_id: "scripted".into(),
             executable_path: "/fixture".into(),
             model: "fixture".into(),

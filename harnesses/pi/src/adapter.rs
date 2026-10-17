@@ -49,7 +49,7 @@ impl PiHarness {
         }
         if !matches!(
             config.thinking_level.as_str(),
-            "off" | "minimal" | "low" | "medium" | "high" | "xhigh"
+            "" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh"
         ) {
             return Err(HarnessError::invalid_config(
                 "unsupported Pi thinking level",
@@ -101,6 +101,9 @@ impl PiHarness {
         write_extension(&paths.extension_path, &request.tools, &names)?;
 
         let mut command = Command::new(&request.config.cli_path);
+        if !request.config.thinking_level.is_empty() {
+            command.args(["--thinking", request.config.thinking_level.as_str()]);
+        }
         let stderr = OpenOptions::new()
             .create(true)
             .append(true)
@@ -112,8 +115,6 @@ impl PiHarness {
                 "rpc",
                 "--model",
                 request.config.model.model_id.as_str(),
-                "--thinking",
-                request.config.thinking_level.as_str(),
                 "--no-extensions",
                 "--extension",
             ])
@@ -146,6 +147,7 @@ impl PiHarness {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
         }
+        command.args(&request.config.launch_arguments);
         let mut child = command.spawn().map_err(|error| {
             let mut failure = harness_error(
                 HarnessErrorCode::SpawnFailed,

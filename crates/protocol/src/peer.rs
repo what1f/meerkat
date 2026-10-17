@@ -22,6 +22,18 @@ pub trait RuntimePeer: Send + Sync + 'static {
         request: ResourceRequest,
     ) -> Result<ResourceChunkStream, Status>;
 
+    async fn import_figure_pack(
+        &self,
+        _request: ImportFigurePackRequest,
+    ) -> Result<FigurePack, Status> {
+        Err(Status::unimplemented("import_figure_pack"))
+    }
+    async fn list_figure_packs(
+        &self,
+        _request: ListFigurePacksRequest,
+    ) -> Result<Vec<FigurePack>, Status> {
+        Err(Status::unimplemented("list_figure_packs"))
+    }
     async fn list_workspaces(
         &self,
         _request: ListWorkspacesRequest,

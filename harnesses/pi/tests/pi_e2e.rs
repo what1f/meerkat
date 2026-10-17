@@ -97,6 +97,7 @@ async fn pi_e2e() -> Result<(), String> {
         artifact_dir.display().to_string(),
     );
     let config = HarnessConfig {
+        launch_arguments: Default::default(),
         harness_id: "pi".to_owned(),
         model: ModelRef::new(DEFAULT_MODEL, "DeepSeek V4 Flash"),
         thinking_level: "low".to_owned(),
@@ -279,6 +280,7 @@ async fn verify_scripted_fault_boundary(root: &Path) -> Result<(), String> {
         .start(SessionRequest {
             permission_policy: Default::default(),
             config: HarnessConfig {
+                launch_arguments: Default::default(),
                 harness_id: "pi".to_owned(),
                 model: ModelRef::new(DEFAULT_MODEL, "DeepSeek V4 Flash"),
                 thinking_level: "low".to_owned(),
@@ -343,6 +345,7 @@ async fn verify_abort_without_response(root: &Path, pid_journal: &Path) -> Resul
             .start(SessionRequest {
                 permission_policy: Default::default(),
                 config: HarnessConfig {
+                    launch_arguments: Default::default(),
                     harness_id: "pi".to_owned(),
                     model: ModelRef::new(DEFAULT_MODEL, "DeepSeek V4 Flash"),
                     thinking_level: "low".to_owned(),
@@ -570,6 +573,7 @@ fn verify_pid_cleanup(journal: &Path) -> Result<(), String> {
 #[ignore = "requires installed native CLI; reads model directory without a model turn"]
 async fn native_model_catalog() {
     let config = HarnessConfig {
+        launch_arguments: Default::default(),
         harness_id: "pi".into(),
         cli_path: "pi".into(),
         model: ModelRef::new("", ""),
@@ -634,6 +638,7 @@ async fn s7_3_real_pi_uses_a_skill_authored_in_its_agent_home() -> Result<(), St
         .start(SessionRequest {
             permission_policy: Default::default(),
             config: HarnessConfig {
+                launch_arguments: Default::default(),
                 harness_id: "pi".into(),
                 model: ModelRef::new(DEFAULT_MODEL, "DeepSeek V4 Flash"),
                 thinking_level: "low".into(),

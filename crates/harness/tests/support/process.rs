@@ -292,6 +292,7 @@ fn spawn_peer(
     let mut command = Command::new(&config.cli_path);
     command
         .args(&spec.arguments)
+        .args(&config.launch_arguments)
         .envs(&config.environment)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
