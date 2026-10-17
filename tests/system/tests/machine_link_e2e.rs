@@ -78,7 +78,7 @@ async fn s9_1_newer_machine_gets_a_typed_rejection_visible_in_management() -> Re
         .expect("rejected Machine in catalog");
     assert_eq!(
         rejected.observed_state,
-        lankide_protocol::ObservedState::Error as i32
+        lankide_protocol::ObservedState::Error
     );
     assert_eq!(rejected.status_message, "protocol_version_unsupported");
     // A supported reconnect clears the rejection without changing storage.
@@ -110,7 +110,7 @@ async fn s9_1_newer_machine_gets_a_typed_rejection_visible_in_management() -> Re
             .find(|machine| machine.machine_id == credentials.machine_id)
             .unwrap()
             .observed_state,
-        lankide_protocol::ObservedState::Stopped as i32
+        lankide_protocol::ObservedState::Stopped
     );
     // Availability requires the first active-attempt report, as on the real peer.
     compatible
@@ -138,7 +138,7 @@ async fn s9_1_newer_machine_gets_a_typed_rejection_visible_in_management() -> Re
                 .iter()
                 .find(|machine| machine.machine_id == credentials.machine_id)
                 .unwrap();
-            if machine.observed_state == lankide_protocol::ObservedState::Running as i32 {
+            if machine.observed_state == lankide_protocol::ObservedState::Running {
                 assert!(machine.status_message.is_empty());
                 return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
             }

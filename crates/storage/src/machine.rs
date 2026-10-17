@@ -25,14 +25,32 @@ impl Storage {
     }
 
     /// Consumes a code and registers its device atomically.
+    /// Local re-pairing rotates credentials while preserving the sole local identity.
     pub fn pair_machine(
         &self,
         machine: &MachineRecord,
         code_hash: Option<&str>,
         validity_ms: i64,
-    ) -> Result<()> {
+    ) -> Result<String> {
         let mut connection = self.conn()?;
         let transaction = connection.transaction()?;
+        if machine.is_local {
+            let existing: Option<String> = transaction
+                .query_row(
+                    "SELECT machine_id FROM machines WHERE is_local=1",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(machine_id) = existing {
+                transaction.execute(
+                    "UPDATE machines SET credential_hash=?2 WHERE machine_id=?1",
+                    params![machine_id, machine.credential_hash],
+                )?;
+                transaction.commit()?;
+                return Ok(machine_id);
+            }
+        }
         if let Some(hash) = code_hash {
             let changed = transaction.execute("UPDATE pairing_codes SET used_at=?2 WHERE code_hash=?1 AND used_at IS NULL AND issued_at<=?2 AND issued_at>?2-?3", params![hash, machine.paired_at, validity_ms])?;
             if changed != 1 {
@@ -41,7 +59,7 @@ impl Storage {
         }
         transaction.execute("INSERT INTO machines(machine_id,display_name,credential_hash,paired_at,os,version,inventory_json,is_local) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", params![machine.machine_id,machine.display_name,machine.credential_hash,machine.paired_at,machine.os,machine.version,machine.inventory_json,machine.is_local])?;
         transaction.commit()?;
-        Ok(())
+        Ok(machine.machine_id.clone())
     }
 
     pub fn registered_machines(&self) -> Result<Vec<MachineRecord>> {

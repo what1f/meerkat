@@ -708,7 +708,7 @@ impl RuntimeApplication {
         let _ = self.inner.events.send(lankide_protocol::ManagementEvent {
             sequence,
             occurred_at: now_millis(),
-            kind: lankide_protocol::ManagementEventKind::MachineCatalogChanged as i32,
+            kind: lankide_protocol::ManagementEventKind::MachineCatalogChanged,
             workspace: None,
             agent: None,
         });
@@ -725,7 +725,7 @@ impl RuntimeApplication {
         let _ = self.inner.events.send(lankide_protocol::ManagementEvent {
             sequence,
             occurred_at,
-            kind: kind as i32,
+            kind,
             workspace: Some(WorkspaceRef {
                 workspace_id: workspace.to_string(),
             }),

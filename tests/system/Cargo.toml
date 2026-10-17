@@ -135,3 +135,11 @@ path = "tests/e2e/main.rs"
 
 [lib]
 test = false
+
+[package.metadata.lankide.e2e-additional.system-management-dto]
+command = "cargo test -p lankide-system-e2e --test e2e management_dto_e2e::"
+scenario = "Verify A1.1-A1.2 through raw HTTP: string enum states round-trip through Agent attention and Workspace pause/resume with a real reply; local credential loss and automatic re-pairing reuse the sole local identity, rotate credentials, preserve its name and assigned Agent replies, and retain local/remote identity after Runtime restart."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"

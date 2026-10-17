@@ -2167,7 +2167,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             attention: Some(AgentAttention {
                 channels: vec![ChannelAttention {
                     channel_id: "chat".into(),
-                    mode: AttentionMode::Always as i32,
+                    mode: AttentionMode::Always,
                     interval_minutes: 0,
                 }],
             }),
@@ -2181,7 +2181,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         created_agent.attention.is_some_and(|value| {
             value.channels.len() == 4
                 && value.channels.iter().any(|channel| {
-                    channel.channel_id == "chat" && channel.mode == AttentionMode::Always as i32
+                    channel.channel_id == "chat" && channel.mode == AttentionMode::Always
                 })
         }),
         "agent attention roundtrip",
@@ -2297,7 +2297,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .map_err(err)?
         .into_inner();
     ensure(
-        onboarding.status == lankide_protocol::OnboardingStatus::Ready as i32
+        onboarding.status == lankide_protocol::OnboardingStatus::Ready
             && onboarding.verification_uri.is_empty()
             && onboarding.poll_interval_seconds == 0,
         "agent onboarding",

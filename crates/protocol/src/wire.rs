@@ -128,6 +128,8 @@ pub struct ContentResult {
     pub resources: Vec<ResourceRef>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
 #[repr(i32)]
 pub enum HarnessAvailability {
     Unspecified = 0,
@@ -244,6 +246,8 @@ impl TryFrom<i32> for ExecutionEventKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
 #[repr(i32)]
 pub enum DesiredState {
     Unspecified = 0,
@@ -268,6 +272,8 @@ impl TryFrom<i32> for DesiredState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
 #[repr(i32)]
 pub enum ObservedState {
     Unspecified = 0,
@@ -298,6 +304,8 @@ impl TryFrom<i32> for ObservedState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
 #[repr(i32)]
 pub enum AttentionMode {
     Unspecified = 0,
@@ -326,6 +334,8 @@ impl TryFrom<i32> for AttentionMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
 #[repr(i32)]
 pub enum OnboardingStatus {
     Unspecified = 0,
@@ -354,6 +364,8 @@ impl TryFrom<i32> for OnboardingStatus {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
 #[repr(i32)]
 pub enum ManagementEventKind {
     Unspecified = 0,

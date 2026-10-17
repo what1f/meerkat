@@ -440,7 +440,7 @@ database_methods! {
         machine: &MachineRecord,
         code_hash: Option<&str>,
         validity_ms: i64,
-    ) -> () [
+    ) -> String [
         let machine = machine.to_owned();
         let code_hash = code_hash.map(ToOwned::to_owned);
     ] (&machine, code_hash.as_deref(), validity_ms);

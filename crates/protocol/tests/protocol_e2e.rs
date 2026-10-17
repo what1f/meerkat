@@ -311,7 +311,7 @@ impl RuntimePeer for TestPeer {
             agent: request.agent,
             provider_id: "feishu".into(),
             step: "create_app".into(),
-            status: OnboardingStatus::ActionRequired as i32,
+            status: OnboardingStatus::ActionRequired,
             payload_json: if request.action == "invalid" {
                 "invalid".into()
             } else {

@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 # These executables/libraries are never shipped or linked by product code.
-TEST_ONLY = {"lankide-testkit", "desktop-ui-preview", "lankide-system-e2e"}
+TEST_ONLY = {"lankide-testkit", "desktop-ui-preview", "lankide-system-e2e", "lankide-web-types"}
 MARKERS = re.compile(
     r"\b(?:Mock|Fake|Fixture)[A-Z]\w*|\b(?:scripted_harness|run_scripted|QueueEventSource|AtomicFailure|InjectedFailure|ProcessHarnessFactory|ProcessHarnessSpec)\b"
     r"|--(?:scripted-harness|scripted-composition|visual-e2e|e2e)\b"
@@ -80,7 +80,7 @@ def main():
     count = 0
     fixture_assets = ROOT / "apps/desktop/tests/assets"
     known_test_images = {hashlib.sha256(path.read_bytes()).hexdigest() for path in fixture_assets.glob("*") if path.is_file()}
-    for group in ("apps", "crates", "providers", "harnesses"):
+    for group in ("apps", "crates", "providers", "harnesses", "tools"):
         for manifest in sorted((ROOT / group).glob("*/Cargo.toml")):
             package = tomllib.loads(manifest.read_text())
             name = package["package"]["name"]

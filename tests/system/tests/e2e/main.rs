@@ -8,6 +8,8 @@ mod concurrent_workspaces_e2e;
 mod execution_liveness_e2e;
 #[path = "../machine_link_e2e.rs"]
 mod machine_link_e2e;
+#[path = "../management_dto_e2e.rs"]
+mod management_dto_e2e;
 #[path = "../management_http_e2e.rs"]
 mod management_http_e2e;
 #[path = "../network_delivery_e2e.rs"]

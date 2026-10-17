@@ -212,11 +212,7 @@ pub fn run_local_bootstrap_smoke() -> i32 {
             let catalog = backend
                 ._tokio
                 .block_on(backend.client.get_machine_catalog(None));
-            if catalog.is_ok_and(|items| {
-                items
-                    .iter()
-                    .any(|item| local_machine_online(&lankide_home(), item))
-            }) {
+            if catalog.is_ok_and(|items| items.iter().any(|item| local_machine_online(item))) {
                 machine_connected = true;
                 break;
             }
@@ -232,7 +228,7 @@ pub fn run_local_bootstrap_smoke() -> i32 {
         "status": status,
         "runtime_ready": runtime_ready,
         "machine_connected": machine_connected,
-        "local_machine_id": crate::ui::local_machine_id(&lankide_home()),
+        "local_machine_id": backend._tokio.block_on(backend.client.get_machine_catalog(None)).ok().and_then(|items| items.into_iter().find(|item| item.is_local).map(|item| item.id)),
         "management": management,
     });
     let write_result = result_path
@@ -280,7 +276,7 @@ async fn ensure_machine_ready(
         .get_machine_catalog(None)
         .await?
         .iter()
-        .any(|item| local_machine_online(home, item))
+        .any(|item| local_machine_online(item))
     {
         return Ok(());
     }
@@ -290,7 +286,7 @@ async fn ensure_machine_ready(
             .get_machine_catalog(None)
             .await?
             .iter()
-            .any(|item| local_machine_online(home, item))
+            .any(|item| local_machine_online(item))
         {
             return Ok(());
         }
@@ -306,10 +302,6 @@ async fn ensure_machine_ready(
     ))
 }
 
-fn local_machine_online(home: &Path, machine: &lankide_client::MachineOption) -> bool {
-    let id = crate::ui::local_machine_id(home);
-    machine.registered
-        && machine.revoked_at.is_none()
-        && machine.available
-        && id.as_deref() == Some(machine.id.as_str())
+fn local_machine_online(machine: &lankide_client::MachineOption) -> bool {
+    machine.registered && machine.revoked_at.is_none() && machine.available && machine.is_local
 }

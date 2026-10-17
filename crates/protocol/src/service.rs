@@ -276,8 +276,8 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
         let input = request.get_ref();
         validate_request_id(&input.request_id)?;
         validate_workspace_ref(input.workspace.as_ref())?;
-        match DesiredState::try_from(input.desired_state) {
-            Ok(DesiredState::Running | DesiredState::Paused) => {}
+        match input.desired_state {
+            DesiredState::Running | DesiredState::Paused => {}
             _ => return Err(Status::invalid_argument("invalid_desired_state")),
         }
         Ok(Response::new(
@@ -582,8 +582,7 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
                     if event.sequence <= last_sequence {
                         return Err(Status::out_of_range("management_sequence_regression"));
                     }
-                    let kind = ManagementEventKind::try_from(event.kind)
-                        .map_err(|_| Status::invalid_argument("unknown_management_event_kind"))?;
+                    let kind = event.kind;
                     if kind != ManagementEventKind::MachineCatalogChanged {
                         validate_workspace_ref(event.workspace.as_ref())?;
                     }

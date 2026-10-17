@@ -148,9 +148,7 @@ impl RuntimeApplication {
         &self,
         request: SetWorkspaceStateRequest,
     ) -> Result<ProtocolWorkspace, RuntimeError> {
-        let desired = match DesiredState::try_from(request.desired_state)
-            .unwrap_or(DesiredState::Unspecified)
-        {
+        let desired = match request.desired_state {
             DesiredState::Running => WorkspaceDesiredState::Running,
             DesiredState::Paused => WorkspaceDesiredState::Paused,
             DesiredState::Unspecified => {
@@ -607,6 +605,7 @@ impl RuntimeApplication {
                     serde_json::from_str(&record.inventory_json)
                         .map_err(|e| RuntimeError::Application(e.to_string()))?;
                 Ok(MachineCatalogItem {
+                    is_local: record.is_local,
                     machine_id: record.machine_id,
                     display_name: record.display_name,
                     observed_state: if record.revoked_at.is_some() {
@@ -615,8 +614,12 @@ impl RuntimeApplication {
                         ObservedState::Running
                     } else {
                         ObservedState::Stopped
-                    } as i32,
-                    harnesses: inventory,
+                    },
+                    harnesses: inventory
+                        .into_iter()
+                        .map(lankide_protocol::management::HarnessInfo::try_from)
+                        .collect::<Result<_, _>>()
+                        .map_err(|e| RuntimeError::Application(e.to_string()))?,
                     status_message: String::new(),
                     registered: true,
                     revoked_at: record.revoked_at,
@@ -633,7 +636,7 @@ impl RuntimeApplication {
                 .find(|value| value.machine_id == machine_id)
             {
                 if machine.revoked_at.is_none() {
-                    machine.observed_state = ObservedState::Error as i32;
+                    machine.observed_state = ObservedState::Error;
                     machine.status_message = reason.to_string();
                 }
                 continue;
@@ -641,7 +644,7 @@ impl RuntimeApplication {
             machines.push(MachineCatalogItem {
                 display_name: machine_id.clone(),
                 machine_id,
-                observed_state: ObservedState::Error as i32,
+                observed_state: ObservedState::Error,
                 harnesses: Vec::new(),
                 status_message: reason.to_string(),
                 ..Default::default()
@@ -660,7 +663,8 @@ impl RuntimeApplication {
                 harness_id: harness.harness_id,
                 display_name: harness.display_name,
                 description: harness.reason,
-                availability: harness.availability,
+                availability: lankide_protocol::HarnessAvailability::try_from(harness.availability)
+                    .unwrap_or(lankide_protocol::HarnessAvailability::Unspecified),
                 supported_thinking_levels: Vec::new(),
             })
             .collect();
@@ -707,18 +711,18 @@ async fn workspace_dto(
         provider_id: record.provider_id.to_string(),
         provider_config_json: record.provider_config.to_string(),
         desired_state: if record.active {
-            DesiredState::Running as i32
+            DesiredState::Running
         } else {
-            DesiredState::Paused as i32
+            DesiredState::Paused
         },
         observed_state: if record.setup_status == WorkspaceSetupStatus::Error {
-            ObservedState::Error as i32
+            ObservedState::Error
         } else if record.setup_status == WorkspaceSetupStatus::Pending {
-            ObservedState::Starting as i32
+            ObservedState::Starting
         } else if record.active {
-            ObservedState::Running as i32
+            ObservedState::Running
         } else {
-            ObservedState::Paused as i32
+            ObservedState::Paused
         },
         status_message: if record.setup_status == WorkspaceSetupStatus::Error {
             "Setup needs attention.".into()
@@ -742,7 +746,7 @@ fn agent_onboarding_dto(
         }),
         provider_id: workspace.provider_id.to_string(),
         step: state.step,
-        status: onboarding_status(state.status) as i32,
+        status: onboarding_status(state.status),
         payload_json: state.opaque_payload.to_string(),
         verification_uri: state.verification_uri.unwrap_or_default(),
         poll_interval_seconds: state.poll_interval_seconds.unwrap_or_default(),
@@ -789,7 +793,7 @@ fn attention_record(
             .ok_or_else(|| {
                 RuntimeError::Application("This attention setting is unavailable.".into())
             })?;
-        let mode = AttentionMode::try_from(value.mode).unwrap_or(AttentionMode::Unspecified);
+        let mode = value.mode;
         let record = match mode {
             AttentionMode::Mention | AttentionMode::Always | AttentionMode::Mute
                 if value.interval_minutes != 0 =>
@@ -920,7 +924,7 @@ async fn agent_dto(record: AgentRecord, storage: Database) -> Result<ProtocolAge
                     };
                     ChannelAttention {
                         channel_id: channel_id.to_string(),
-                        mode: mode as i32,
+                        mode,
                         interval_minutes,
                     }
                 })
@@ -1009,7 +1013,7 @@ fn onboarding_dto(
         }),
         provider_id: workspace.provider_id.to_string(),
         step: state.step,
-        status: onboarding_status(state.status) as i32,
+        status: onboarding_status(state.status),
         payload_json: state.opaque_payload.to_string(),
         verification_uri: state.verification_uri.unwrap_or_default(),
         poll_interval_seconds: state.poll_interval_seconds.unwrap_or_default(),

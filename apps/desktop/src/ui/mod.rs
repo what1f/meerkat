@@ -35,11 +35,10 @@ const BOOT_LOADER_MIN_VISIBLE: Duration = Duration::from_millis(600);
 
 mod agent_actions;
 mod components;
-mod machines;
-pub(crate) use machines::local_machine_id;
 mod dialogs;
 mod errors;
 mod feishu_sign_in;
+mod machines;
 pub(super) mod onboarding;
 mod pages;
 mod reaction_picker;
@@ -323,7 +322,7 @@ impl LankideApp {
     pub fn new_with_startup(
         client: Arc<dyn ManagementClient>,
         startup_result: tokio::sync::oneshot::Receiver<Result<(), ClientError>>,
-        local_home: std::path::PathBuf,
+        _local_home: std::path::PathBuf,
         initial_dark: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -336,7 +335,6 @@ impl LankideApp {
                 this.startup_pending = false;
                 match result {
                     Ok(Ok(())) => {
-                        this.read_local_machine(&local_home);
                         this.reload_workspaces(cx);
                     }
                     Ok(Err(error)) => {

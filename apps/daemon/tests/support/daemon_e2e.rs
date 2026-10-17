@@ -344,7 +344,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
             workspace: Some(WorkspaceRef {
                 workspace_id: paused_workspace.to_string(),
             }),
-            desired_state: DesiredState::Running as i32,
+            desired_state: DesiredState::Running,
         })
         .await
         .map_err(AppError::Status)?;
@@ -354,7 +354,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
             workspace: Some(WorkspaceRef {
                 workspace_id: active_workspace.to_string(),
             }),
-            desired_state: DesiredState::Paused as i32,
+            desired_state: DesiredState::Paused,
         })
         .await
         .map_err(AppError::Status)?;
@@ -364,7 +364,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
             workspace: Some(WorkspaceRef {
                 workspace_id: active_workspace.to_string(),
             }),
-            desired_state: DesiredState::Running as i32,
+            desired_state: DesiredState::Running,
         })
         .await
         .map_err(AppError::Status)?;

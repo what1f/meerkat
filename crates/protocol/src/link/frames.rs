@@ -8,6 +8,7 @@ pub struct ActiveAttempt {
     pub harness_process_state: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct AgentRef {
     pub workspace_id: String,
@@ -47,6 +48,7 @@ pub struct AssignmentResult {
     pub failure: Option<AttemptFailure>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct AttemptFailure {
     pub code: String,
@@ -130,6 +132,7 @@ pub struct DeliveryResult {
     pub error_message: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct EnvironmentVariable {
     pub name: String,
@@ -189,11 +192,13 @@ pub struct InventoryChanged {
     pub harnesses: Vec<HarnessInfo>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct ModelCatalog {
     pub models: Vec<ModelCatalogItem>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct ModelCatalogItem {
     pub model_id: String,
@@ -203,6 +208,7 @@ pub struct ModelCatalogItem {
     pub supported_thinking_levels: Vec<String>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct ResourceRef {
     pub resource_id: i64,
@@ -267,6 +273,7 @@ pub struct ToolResult {
     pub error: Option<ToolError>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct WorkspaceRef {
     pub workspace_id: String,

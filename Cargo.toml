@@ -13,6 +13,7 @@ members = [
     "crates/desktop-ui",
     "crates/testkit",
     "tests/system",
+    "tools/web-types",
     "providers/feishu",
     "providers/telegram",
     "harnesses/pi",

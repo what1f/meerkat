@@ -68,7 +68,7 @@ fn fill(cx: &mut VisualTestContext, clock: &std::cell::Cell<Instant>, selector: 
 fn local_online_offline_selection_and_pairing_dialog() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let _entered = runtime.enter();
-    let rig = runtime
+    let mut rig = runtime
         .block_on(SystemRig::start(RigConfig {
             local_discovery: true,
             pairing_validity: Duration::from_secs(1),
@@ -81,13 +81,28 @@ fn local_online_offline_selection_and_pairing_dialog() {
         .id
         .clone();
     assert!(runtime.block_on(client.get_machine_catalog(None)).unwrap()[0].available);
-    // The rig uses separate homes. Copy the real local identity into the
-    // Desktop home to reproduce the shared-home product composition.
-    std::fs::copy(
-        rig.machine_home().join("machine-credentials.json"),
-        rig.runtime_home().join("machine-credentials.json"),
-    )
-    .unwrap();
+    // The UI must use the Runtime catalog after local credential loss and re-pairing.
+    std::fs::remove_file(rig.machine_home().join("machine-credentials.json")).unwrap();
+    runtime.block_on(rig.restart_machine()).unwrap();
+    runtime
+        .block_on(tokio::time::timeout(Duration::from_secs(5), async {
+            while lankide_machine::read_credentials(rig.machine_home())
+                .unwrap()
+                .is_none()
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }))
+        .unwrap();
+    runtime.block_on(rig.restart_runtime()).unwrap();
+    let catalog = runtime.block_on(client.get_machine_catalog(None)).unwrap();
+    assert_eq!(catalog.iter().filter(|machine| machine.is_local).count(), 1);
+    assert!(
+        catalog
+            .iter()
+            .any(|machine| machine.id == local && machine.is_local && machine.available)
+    );
+    assert!(!rig.runtime_home().join("machine-credentials.json").exists());
     let remote_home = tempfile::tempdir_in("/tmp").unwrap();
     let code = runtime.block_on(client.create_pairing_code()).unwrap();
     let (url, _) = rig.local_pairing_endpoint().unwrap();

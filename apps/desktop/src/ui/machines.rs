@@ -1,6 +1,5 @@
 use super::*;
 use gpui_component::text::{TextView, TextViewStyle};
-use std::path::Path;
 
 /// A device glyph with a presence badge in its corner. Offline Machines dim
 /// the glyph and gray the badge. The badge ring matches the surface behind it.
@@ -38,12 +37,6 @@ fn machine_glyph(theme: DesktopTheme, available: bool, size: f32, surface: Hsla)
                 }),
         )
         .child(badge)
-}
-
-pub(crate) fn local_machine_id(home: &Path) -> Option<String> {
-    let value: Value =
-        serde_json::from_slice(&std::fs::read(home.join("machine-credentials.json")).ok()?).ok()?;
-    value.get("machine_id")?.as_str().map(str::to_owned)
 }
 
 #[derive(Clone)]
@@ -163,6 +156,10 @@ impl LankideApp {
             .detach();
         }
         self.machine_choices_changed = true;
+        self.local_machine_id = catalog
+            .iter()
+            .find(|machine| machine.is_local)
+            .map(|machine| machine.id.clone());
         self.machines = catalog
             .into_iter()
             .filter(|machine| machine.registered && machine.revoked_at.is_none())
@@ -225,16 +222,17 @@ impl LankideApp {
         }));
     }
 
-    pub(super) fn read_local_machine(&mut self, home: &Path) {
-        self.local_machine_id = local_machine_id(home);
-    }
-
     pub(super) fn update_machine_choices(
         &mut self,
         preferred: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.local_machine_id = self
+            .machines
+            .iter()
+            .find(|machine| machine.is_local)
+            .map(|machine| machine.id.clone());
         let selected = preferred;
         let selected = selected
             .filter(|id| self.machines.iter().any(|c| &c.id == id))
@@ -342,6 +340,10 @@ impl LankideApp {
                         this.pairing_address_input
                             .update(cx, |input, cx| input.set_value(address, window, cx));
                         this.pairing_known = catalog.iter().map(|c| c.id.clone()).collect();
+                        this.local_machine_id = catalog
+                            .iter()
+                            .find(|machine| machine.is_local)
+                            .map(|machine| machine.id.clone());
                         this.machines = catalog
                             .into_iter()
                             .filter(|c| c.registered && c.revoked_at.is_none())
@@ -579,7 +581,6 @@ impl LankideApp {
 
     pub(super) fn machine_settings(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme();
-        let local = self.local_machine_id.as_deref();
         div()
             .child(
                 div()
@@ -610,7 +611,7 @@ impl LankideApp {
                         let remove_id = id.clone();
                         let app = cx.entity();
                         let language = self.language;
-                        let removable = local != Some(id.as_str());
+                        let removable = !machine.is_local;
                         let editing = self.machine_renaming.as_deref() == Some(id.as_str());
                         let state = if machine.available {
                             "online"
@@ -675,7 +676,7 @@ impl LankideApp {
                                         )
                                     }),
                             )
-                            .when(local == Some(machine.id.as_str()), |row| {
+                            .when(machine.is_local, |row| {
                                 row.child(
                                     div()
                                         .text_size(px(12.))

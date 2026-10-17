@@ -10,7 +10,11 @@ dev:
     cargo build --locked --bin lankided --bin lankide-machine --bin lankide
     cargo run --locked -p lankide-desktop
 
+web-types:
+    cargo run --locked -p lankide-web-types -- apps/web/src/lib/api/generated
+
 check:
+    ./scripts/verify-web-types
     ./scripts/verify-open-source
     ./scripts/verify-production-boundary
     cargo fmt --all --check

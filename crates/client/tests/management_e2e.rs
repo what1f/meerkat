@@ -58,8 +58,8 @@ fn workspace(
         rules,
         provider_id,
         provider_config_json: config,
-        desired_state: wire::DesiredState::Paused as i32,
-        observed_state: wire::ObservedState::Paused as i32,
+        desired_state: wire::DesiredState::Paused,
+        observed_state: wire::ObservedState::Paused,
         status_message: String::new(),
         created_at: 1,
         updated_at: 1,
@@ -259,10 +259,10 @@ impl wire::RuntimePeer for Peer {
             .get_mut(&id)
             .ok_or_else(|| Status::not_found("workspace_not_found"))?;
         v.desired_state = r.desired_state;
-        v.observed_state = if r.desired_state == wire::DesiredState::Paused as i32 {
-            wire::ObservedState::Paused as i32
+        v.observed_state = if r.desired_state == wire::DesiredState::Paused {
+            wire::ObservedState::Paused
         } else {
-            wire::ObservedState::Running as i32
+            wire::ObservedState::Running
         };
         Ok(v.clone())
     }
@@ -431,7 +431,7 @@ impl wire::RuntimePeer for Peer {
             workspace: Some(w),
             provider_id,
             step: "credentials".into(),
-            status: wire::OnboardingStatus::ActionRequired as i32,
+            status: wire::OnboardingStatus::ActionRequired,
             verification_uri: "https://example.invalid/verify".into(),
             poll_interval_seconds: 5,
             payload_json: "{}".into(),
@@ -457,7 +457,7 @@ impl wire::RuntimePeer for Peer {
             workspace: Some(w),
             provider_id,
             step: r.action,
-            status: wire::OnboardingStatus::Ready as i32,
+            status: wire::OnboardingStatus::Ready,
             verification_uri: String::new(),
             poll_interval_seconds: 0,
             payload_json: r.field_values_json,
@@ -483,7 +483,7 @@ impl wire::RuntimePeer for Peer {
             agent: Some(agent),
             provider_id,
             step: "create_bot".into(),
-            status: wire::OnboardingStatus::ActionRequired as i32,
+            status: wire::OnboardingStatus::ActionRequired,
             verification_uri: "https://example.invalid/verify".into(),
             poll_interval_seconds: 5,
             payload_json: "{}".into(),
@@ -509,7 +509,7 @@ impl wire::RuntimePeer for Peer {
             agent: Some(agent),
             provider_id,
             step: request.action,
-            status: wire::OnboardingStatus::Ready as i32,
+            status: wire::OnboardingStatus::Ready,
             verification_uri: String::new(),
             poll_interval_seconds: 0,
             payload_json: request.field_values_json,
@@ -549,7 +549,7 @@ impl wire::RuntimePeer for Peer {
             machines: vec![wire::MachineCatalogItem {
                 machine_id: "fixture-machine".into(),
                 display_name: "Local Machine".into(),
-                observed_state: wire::ObservedState::Running as i32,
+                observed_state: wire::ObservedState::Running,
                 harnesses: vec![],
                 status_message: String::new(),
                 registered: true,
@@ -568,7 +568,7 @@ impl wire::RuntimePeer for Peer {
                     harness_id: id.into(),
                     display_name: id.into(),
                     description: String::new(),
-                    availability: wire::HarnessAvailability::Available as i32,
+                    availability: wire::HarnessAvailability::Available,
                     supported_thinking_levels: vec!["low".into(), "medium".into(), "high".into()],
                 })
                 .collect(),
@@ -651,7 +651,7 @@ impl wire::RuntimePeer for Peer {
         let event = |sequence| wire::ManagementEvent {
             sequence,
             occurred_at: 1,
-            kind: wire::ManagementEventKind::CatalogChanged as i32,
+            kind: wire::ManagementEventKind::CatalogChanged,
             workspace: Some(id.clone()),
             agent: None,
         };
@@ -1060,8 +1060,8 @@ async fn runtime_scenario() -> Result<(), String> {
     {
         let mut data = fixture.peer.data.lock().await;
         let workspace = data.workspaces.get_mut("runtime_feishu").unwrap();
-        workspace.desired_state = wire::DesiredState::Running as i32;
-        workspace.observed_state = wire::ObservedState::Error as i32;
+        workspace.desired_state = wire::DesiredState::Running;
+        workspace.observed_state = wire::ObservedState::Error;
         workspace.status_message = "Connection needs attention".into();
         workspace.cover = Some(wire::ResourceRef {
             resource_id: 9,

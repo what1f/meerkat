@@ -649,7 +649,7 @@ impl RuntimePeer for RuntimePeerAdapter {
                     };
                     if event.sequence <= after
                         || (event.kind
-                            != lankide_protocol::ManagementEventKind::MachineCatalogChanged as i32
+                            != lankide_protocol::ManagementEventKind::MachineCatalogChanged
                             && workspace.as_ref().is_some_and(|workspace| {
                                 event
                                     .workspace

@@ -1199,7 +1199,7 @@ impl Agent<'_> {
                 attention: Some(lankide_protocol::AgentAttention {
                     channels: vec![lankide_protocol::ChannelAttention {
                         channel_id: "group_chat".into(),
-                        mode: mode as i32,
+                        mode,
                         interval_minutes: 0,
                     }],
                 }),
