@@ -25,14 +25,12 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
     peer: P,
     config: TransportConfig,
 ) -> Response<Full<Bytes>> {
-    if request.method() != hyper::Method::POST {
-        return error(crate::Status::invalid_argument("POST required"));
-    }
     let operation = request
         .uri()
         .path()
         .trim_start_matches(json::PREFIX)
         .to_owned();
+    let method = request.method().clone();
     let bytes = match http_body_util::Limited::new(
         request.into_body(),
         json::json_limit(config.max_message_bytes),
@@ -50,6 +48,9 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
     let service = ValidatedRuntimeService::new(peer, config);
     macro_rules! call {
         ($request:ty, $response:ty, $method:ident) => {{
+            if method != hyper::Method::POST {
+                return error(crate::Status::invalid_argument("POST required"));
+            }
             match serde_json::from_slice::<$request>(&bytes) {
                 Ok(value) => match service.$method(crate::Request::new(value)).await {
                     Ok(value) => response(StatusCode::OK, &value.into_inner()),

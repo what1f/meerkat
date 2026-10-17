@@ -10,6 +10,9 @@ dev:
     cargo build --locked --bin lankided --bin lankide-machine --bin lankide
     cargo run --locked -p lankide-desktop
 
+web-dev:
+    pnpm -C apps/web dev
+
 web-types:
     cargo run --locked -p lankide-web-types -- apps/web/src/lib/api/generated
 

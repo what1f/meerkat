@@ -241,6 +241,7 @@ where
         settings.machine_link,
         Some(remote.clone()),
         None,
+        Some(std::sync::Arc::new(lankide_web_assets::serve)),
         async {
             let _ = link_stopped.await;
         },

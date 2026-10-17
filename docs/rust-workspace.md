@@ -20,6 +20,7 @@ crates/daemon-runtime       shared daemon filesystem and instance ownership
 crates/client               management client contract and test support
 crates/desktop-ui           reusable GPUI shell and presentation primitives
 crates/testkit              shared business-scenario fixtures
+crates/web-assets           Runtime static frontend assets (disk in debug, embedded in release)
 
 providers/feishu            Feishu composition adapter
 providers/telegram          Telegram composition adapter
@@ -49,7 +50,8 @@ desktop-ui     -> GPUI
 providers/*  -> core, provider
 harnesses/*  -> core, harness
 
-apps/daemon  -> runtime + daemon-runtime + concrete providers
+apps/daemon  -> runtime + daemon-runtime + concrete providers + web-assets
+web-assets   -> HTTP response types (no protocol or runtime dependency)
 apps/machine -> machine + daemon-runtime + concrete harnesses
 apps/desktop         -> client + desktop-ui + GPUI
 apps/lankide-cli     -> protocol

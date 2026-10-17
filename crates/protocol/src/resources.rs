@@ -12,6 +12,9 @@ use tokio_stream::StreamExt;
 
 type Body = Full<Bytes>;
 
+/// Application-owned HTTP fallback; the protocol does not depend on UI assets.
+pub type Fallback = std::sync::Arc<dyn Fn(&str) -> Response<Full<Bytes>> + Send + Sync>;
+
 /// Resource requests use the attempt's token, never the Machine link secret.
 /// Agent resource calls use the same business authorization boundary.
 pub async fn serve<P, F>(
@@ -34,6 +37,7 @@ where
         false,
         None,
         None,
+        None,
         shutdown,
     )
     .await
@@ -53,7 +57,7 @@ where
     F: Future<Output = ()> + Send,
 {
     serve_inner(
-        listener, secret, peer, config, settings, true, None, None, shutdown,
+        listener, secret, peer, config, settings, true, None, None, None, shutdown,
     )
     .await
 }
@@ -72,7 +76,7 @@ where
     F: Future<Output = ()> + Send,
 {
     serve_inner(
-        listener, secret, peer, config, settings, true, None, None, shutdown,
+        listener, secret, peer, config, settings, true, None, None, None, shutdown,
     )
     .await
 }
@@ -85,6 +89,7 @@ pub async fn serve_configured<P, F>(
     settings: crate::link::LinkSettings,
     remote: Option<std::sync::Arc<dyn crate::management::RemoteAccessControl>>,
     tls: Option<tokio_rustls::TlsAcceptor>,
+    fallback: Option<Fallback>,
     shutdown: F,
 ) -> Result<(), crate::link::LinkError>
 where
@@ -100,6 +105,7 @@ where
         true,
         remote,
         tls,
+        fallback,
         shutdown,
     )
     .await
@@ -116,6 +122,7 @@ async fn serve_inner<P, F>(
     override_heartbeat: bool,
     remote: Option<std::sync::Arc<dyn crate::management::RemoteAccessControl>>,
     tls: Option<tokio_rustls::TlsAcceptor>,
+    fallback: Option<Fallback>,
     shutdown: F,
 ) -> Result<(), crate::link::LinkError>
 where
@@ -136,6 +143,7 @@ where
                 let settings = settings.clone();
                 let remote = remote.clone();
                 let tls = tls.clone();
+                let fallback = fallback.clone();
                 tasks.spawn(async move {
                     let machine_only = tls.is_some();
                     let socket: Box<dyn Socket> = if let Some(tls) = tls {
@@ -147,6 +155,7 @@ where
                     let (upgrades, mut upgraded) = tokio::sync::mpsc::channel(1);
                     let ws_peer = peer.clone();
                     let service = service_fn(move |mut request: Request<Incoming>| {
+                        let fallback = fallback.clone();
                         let remote = remote.clone();
                         let peer = peer.clone();
                         let secret = secret.clone();
@@ -186,7 +195,7 @@ where
                                 download(request, peer).await
                             } else if request.uri().path() == "/machines/pair" {
                                 pair(request, peer, &secret, config.max_message_bytes).await
-                            } else if request.uri().path() == "/" {
+                            } else if request.uri().path() == "/" && (machine_only || request.headers().get("upgrade").is_some()) {
                                 let credential = request.headers().get("authorization").and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer ")).unwrap_or("");
                                 if let Err(reason) = peer.authorize_link(credential, &secret).await {
                                     empty(match reason {
@@ -206,6 +215,12 @@ where
                                         Err(_) => empty(StatusCode::BAD_REQUEST),
                                     }
                                 }
+                            } else if !machine_only && matches!(*request.method(), hyper::Method::GET | hyper::Method::HEAD) && let Some(fallback) = fallback {
+                                let mut response = fallback(request.uri().path());
+                                if request.method() == hyper::Method::HEAD {
+                                    *response.body_mut() = Full::new(Bytes::new());
+                                }
+                                response
                             } else { empty(StatusCode::NOT_FOUND) };
                             Ok::<_, Infallible>(response)
                         }

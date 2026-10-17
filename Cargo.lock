@@ -3942,6 +3942,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lankide-web-assets"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "http-body-util",
+ "hyper",
+ "mime_guess",
+ "rust-embed",
+]
+
+[[package]]
 name = "lankide-web-types"
 version = "0.1.0"
 dependencies = [
@@ -3964,6 +3975,7 @@ dependencies = [
  "lankide-runtime",
  "lankide-storage",
  "lankide-testkit",
+ "lankide-web-assets",
  "log",
  "nix",
  "rcgen",

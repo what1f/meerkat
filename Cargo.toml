@@ -12,6 +12,7 @@ members = [
     "crates/client",
     "crates/desktop-ui",
     "crates/testkit",
+    "crates/web-assets",
     "tests/system",
     "tools/web-types",
     "providers/feishu",

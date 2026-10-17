@@ -32,3 +32,5 @@ mod retry_policy_e2e;
 mod scheduler_e2e;
 #[path = "../system_e2e.rs"]
 mod system_e2e;
+#[path = "../web_assets_e2e.rs"]
+mod web_assets_e2e;

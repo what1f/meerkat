@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# A3.2: build the real release crate in an isolated source tree without dist.
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+TEMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TEMP_DIR"' EXIT
+mkdir -p "$TEMP_DIR/crates"
+cp -R crates/web-assets "$TEMP_DIR/crates/web-assets"
+cp Cargo.lock "$TEMP_DIR/Cargo.lock"
+python3 - "$TEMP_DIR/Cargo.toml" <<'PY'
+import json
+from pathlib import Path
+import sys
+import tomllib
+
+package = tomllib.loads(Path('Cargo.toml').read_text())['workspace']['package']
+fields = ('version', 'edition', 'license', 'rust-version', 'publish')
+Path(sys.argv[1]).write_text(
+    '[workspace]\nresolver = "2"\nmembers = ["crates/web-assets"]\n\n[workspace.package]\n'
+    + ''.join(f'{key} = {json.dumps(package[key])}\n' for key in fields)
+)
+PY
+if CARGO_TARGET_DIR="$TEMP_DIR/target" cargo build --release --offline --manifest-path "$TEMP_DIR/Cargo.toml" -p lankide-web-assets >"$TEMP_DIR/build.log" 2>&1; then
+    cat "$TEMP_DIR/build.log"
+    printf 'FAIL: release accepted a missing frontend\n' >&2
+    exit 1
+fi
+cat "$TEMP_DIR/build.log"
+grep -F 'Web frontend is missing. Run `pnpm -C apps/web build` before the release build.' "$TEMP_DIR/build.log"
+printf 'PASS: missing release frontend rejected with build instructions\n'
