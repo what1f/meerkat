@@ -348,6 +348,15 @@ async fn poll_permissions(
                 && let Some(grant) =
                     lead_grant(&context, transport.clone(), &app_id, &app_secret, &domain).await
             {
+                crate::workspace_owner::save_grant(
+                    &context,
+                    transport.as_ref(),
+                    &grant,
+                    &app_id,
+                    domain.base_url(),
+                    &app_secret,
+                )
+                .await?;
                 if task_system_enabled(&context.workspace_config)
                     && let Ok(client) = FeishuClient::new(
                         transport,

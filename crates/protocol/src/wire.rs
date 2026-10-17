@@ -10,11 +10,12 @@ pub use crate::link::{
 };
 pub use crate::management::{
     AdvanceAgentOnboardingRequest, AdvanceProviderOnboardingRequest, Agent, AgentActivity,
-    AgentAttention, AgentAvatarFile, AgentAvatarUpload, AgentOnboardingState, CancelAttemptRequest,
-    CancelAttemptResponse, CatalogRequest, ChannelAttention, CreateAgentRequest,
-    CreateWorkspaceRequest, DeleteAgentRequest, DeleteAgentResponse, EnvironmentVariableSet,
-    ExecutionAttemptDetails, ExecutionDetails, FigureFrames, FigurePack, GetAgentAvatarRequest,
-    GetAgentAvatarResponse, GetAgentOnboardingRequest, GetAgentRequest, GetExecutionDetailsRequest,
+    AgentAttention, AgentAvatarFile, AgentAvatarUpload, AgentFirstReply, AgentFirstReplyState,
+    AgentOnboardingState, CancelAttemptRequest, CancelAttemptResponse, CatalogRequest,
+    ChannelAttention, CreateAgentRequest, CreateWorkspaceRequest, DeleteAgentRequest,
+    DeleteAgentResponse, EnvironmentVariableSet, ExecutionAttemptDetails, ExecutionDetails,
+    FigureFrames, FigurePack, GetAgentAvatarRequest, GetAgentAvatarResponse,
+    GetAgentOnboardingRequest, GetAgentRequest, GetExecutionDetailsRequest,
     GetProviderOnboardingRequest, GetWorkspaceRequest, HarnessCatalog, HarnessCatalogItem,
     ImportFigurePackRequest, InvokeProviderInterfaceRequest, InvokeProviderInterfaceResponse,
     ListAgentsRequest, ListAgentsResponse, ListFigurePacksRequest, ListProviderInterfacesRequest,

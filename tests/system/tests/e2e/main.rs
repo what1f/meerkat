@@ -20,6 +20,8 @@ mod network_delivery_e2e;
 mod pairing_e2e;
 #[path = "../placement_e2e.rs"]
 mod placement_e2e;
+#[path = "../provider_management_e2e.rs"]
+mod provider_management_e2e;
 #[path = "../reconnect_recovery_e2e.rs"]
 mod reconnect_recovery_e2e;
 #[path = "../reliability_e2e.rs"]

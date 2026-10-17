@@ -16,7 +16,7 @@ tokio.workspace = true
 
 [package.metadata.lankide.e2e]
 command = "cargo test -p lankide-provider --test e2e provider_e2e::"
-scenario = "Carry the receiving Agent on normalized direct-message and reaction events; run an external conformance Provider through lifecycle, dynamic interfaces/capabilities, send/recall/reaction, backpressure, timeout, and shutdown. Carry every native message part and explicit custom-event mentions through the public Provider contract."
+scenario = "Carry the receiving Agent on normalized direct-message and reaction events; run an external conformance Provider through lifecycle, dynamic interfaces/capabilities, send/recall/reaction, backpressure, timeout, and shutdown. Carry every native message part and explicit custom-event mentions through the public Provider contract. Additional Provider owner, task invalidation and first-reply behavior is covered by system-provider-management."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

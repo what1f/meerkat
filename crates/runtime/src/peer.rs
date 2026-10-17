@@ -513,6 +513,15 @@ impl RuntimePeer for RuntimePeerAdapter {
             .await
             .map_err(status)
     }
+    async fn get_agent_first_reply(
+        &self,
+        request: GetAgentRequest,
+    ) -> Result<lankide_protocol::AgentFirstReply, Status> {
+        self.application
+            .get_agent_first_reply(request)
+            .await
+            .map_err(status)
+    }
     async fn get_agent(&self, request: GetAgentRequest) -> Result<Agent, Status> {
         self.application.get_agent(request).await.map_err(status)
     }

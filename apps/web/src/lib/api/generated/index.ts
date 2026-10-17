@@ -5,6 +5,8 @@ export type { AgentActivity } from './AgentActivity';
 export type { AgentAttention } from './AgentAttention';
 export type { AgentAvatarFile } from './AgentAvatarFile';
 export type { AgentAvatarUpload } from './AgentAvatarUpload';
+export type { AgentFirstReply } from './AgentFirstReply';
+export type { AgentFirstReplyState } from './AgentFirstReplyState';
 export type { AgentOnboardingState } from './AgentOnboardingState';
 export type { AgentRef } from './AgentRef';
 export type { AttemptFailure } from './AttemptFailure';

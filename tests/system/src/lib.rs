@@ -205,9 +205,16 @@ pub struct SystemRig {
     client: RuntimeManagementClient,
     im: Arc<ImState>,
     sequence: AtomicU64,
+    provider_factories: ProviderFactoryRegistry,
 }
 impl SystemRig {
     pub async fn start(config: RigConfig) -> Result<Self> {
+        Self::start_with_providers(config, ProviderFactoryRegistry::default()).await
+    }
+    pub async fn start_with_providers(
+        config: RigConfig,
+        provider_factories: ProviderFactoryRegistry,
+    ) -> Result<Self> {
         let home = tempfile::Builder::new()
             .prefix("system-")
             .tempdir_in("/tmp")?;
@@ -226,7 +233,7 @@ impl SystemRig {
             )?,
         )?;
         let im = Arc::new(ImState::default());
-        let factories = factories(im.clone())?;
+        let factories = factories(im.clone(), provider_factories.clone())?;
         let (shutdown, stopped) = oneshot::channel();
         let daemon_paths = paths.clone();
         let (runtime, runtime_kill) = spawn_runtime(daemon_paths, factories, stopped);
@@ -244,6 +251,7 @@ impl SystemRig {
             config,
             im,
             sequence: AtomicU64::new(0),
+            provider_factories,
         };
         timeout(rig.config.timeout, async {
             loop {
@@ -533,7 +541,7 @@ impl SystemRig {
     }
 
     pub async fn start_runtime(&mut self) -> Result<()> {
-        let factories = factories(self.im.clone())?;
+        let factories = self.provider_factories.clone();
         let paths = self.paths.clone();
         let (shutdown, stopped) = oneshot::channel();
         self.shutdown = Some(shutdown);
@@ -577,7 +585,7 @@ impl SystemRig {
         self.shutdown.take();
         let (shutdown, stopped) = oneshot::channel();
         let (runtime, kill) =
-            spawn_runtime(self.paths.clone(), factories(self.im.clone())?, stopped);
+            spawn_runtime(self.paths.clone(), self.provider_factories.clone(), stopped);
         self.runtime = Some(runtime);
         self.runtime_kill = Some(kill);
         self.shutdown = Some(shutdown);
@@ -1344,8 +1352,10 @@ impl Agent<'_> {
     }
 }
 
-fn factories(im: Arc<ImState>) -> Result<ProviderFactoryRegistry> {
-    let factories = ProviderFactoryRegistry::default();
+fn factories(
+    im: Arc<ImState>,
+    factories: ProviderFactoryRegistry,
+) -> Result<ProviderFactoryRegistry> {
     let state = im.clone();
     factories.register_host_factory(
         ScriptedProvider {

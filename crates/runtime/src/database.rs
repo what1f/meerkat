@@ -24,6 +24,7 @@ impl std::ops::Deref for ReleaseSignal {
 }
 
 struct Signals {
+    management: std::sync::Mutex<Vec<(WorkspaceId, Option<AgentId>)>>,
     released: Notify,
     application: std::sync::Mutex<Weak<crate::application::ApplicationInner>>,
     activity_write: std::sync::Mutex<()>,
@@ -47,6 +48,7 @@ impl Database {
         Self {
             storage,
             signals: ReleaseSignal(Arc::new(Signals {
+                management: std::sync::Mutex::new(Vec::new()),
                 released: Notify::new(),
                 application: std::sync::Mutex::new(Weak::new()),
                 activity_write: std::sync::Mutex::new(()),
@@ -68,6 +70,17 @@ impl Database {
     }
     pub(crate) fn changes(&self) -> Arc<Notify> {
         self.signals.changed.clone()
+    }
+    pub(crate) fn management_changed(&self, workspace: WorkspaceId, agent: Option<AgentId>) {
+        self.signals
+            .management
+            .lock()
+            .expect("management changes")
+            .push((workspace, agent));
+        self.wake();
+    }
+    pub(crate) fn take_management_changes(&self) -> Vec<(WorkspaceId, Option<AgentId>)> {
+        std::mem::take(&mut *self.signals.management.lock().expect("management changes"))
     }
     pub(crate) fn wake(&self) {
         self.signals.changed.notify_one();
@@ -185,6 +198,9 @@ database_methods! {
     false list_figure_packs(workspace: &WorkspaceId) -> Vec<Value> [let workspace=workspace.clone();] (&workspace);
     true remove_resource_metadata(workspace: &WorkspaceId, id: ResourceId) -> () [let workspace=workspace.clone();] (&workspace,id);
     false busy_agents(workspace: Option<&WorkspaceId>) -> std::collections::BTreeSet<(WorkspaceId,AgentId)> [let workspace=workspace.cloned();] (workspace.as_ref());
+    false agent_has_first_reply(workspace: &WorkspaceId, agent: &AgentId) -> bool [let workspace=workspace.clone(); let agent=agent.clone();] (&workspace,&agent);
+    false first_reply_sender(message_id: i64) -> Option<(WorkspaceId, AgentId)> [] (message_id);
+
     false next_agent_work_at(
         workspace: &WorkspaceId,
         agent: &AgentId,
@@ -367,17 +383,6 @@ database_methods! {
     true bind_sent_chat(message_id: i64, native_chat: &str) -> () [let native_chat=native_chat.to_owned();] (message_id,&native_chat);
     true prepare_direct_chat(workspace: &WorkspaceId, agent: &AgentId, channel: &ChannelId, channel_name: &str, person: &PersonId, now: i64) -> String [let workspace=workspace.clone(); let agent=agent.clone(); let channel=channel.clone(); let channel_name=channel_name.to_owned(); let person=person.clone();] (&workspace,&agent,&channel,&channel_name,&person,now);
     true record_outbound_resources(message_id: i64, resources: Vec<ResourceView>) -> () [] (message_id,resources);
-    true finish_message_send(
-        message_id: i64, outcome: SendOutcome, provider_message_ids: Vec<String>,
-        resources: Vec<ResourceView>, now: i64,
-    ) -> FinishSendResult [] (message_id, outcome, provider_message_ids, resources, now);
-    true finish_send(
-        request_key: &str,
-        outcome: SendOutcome,
-        now: i64,
-    ) -> FinishSendResult [
-        let request_key = request_key.to_owned();
-    ] (&request_key, outcome, now);
     true finish_tool_invocation(
         r: &ToolInvocationRequest,
         v: Value,
@@ -789,4 +794,47 @@ database_methods! {
         let workspace_id = workspace_id.to_owned();
     ] (&workspace_id);
     false workspace_record(id: &WorkspaceId) -> WorkspaceRecord [let id = id.to_owned();] (&id);
+}
+
+impl Database {
+    async fn notify_first_reply(&self, result: &FinishSendResult) -> lankide_storage::Result<()> {
+        if result.changed
+            && result.attempt.state == "sent"
+            && let Some((workspace, agent)) =
+                self.first_reply_sender(result.attempt.message_id).await?
+            && self.agent_has_first_reply(&workspace, &agent).await?
+        {
+            self.management_changed(workspace, Some(agent));
+        }
+        Ok(())
+    }
+    pub(crate) async fn finish_send(
+        &self,
+        request_key: &str,
+        outcome: SendOutcome,
+        now: i64,
+    ) -> lankide_storage::Result<FinishSendResult> {
+        let key = request_key.to_owned();
+        let result = self
+            .call(true, false, move |s| s.finish_send(&key, outcome, now))
+            .await?;
+        self.notify_first_reply(&result).await?;
+        Ok(result)
+    }
+    pub(crate) async fn finish_message_send(
+        &self,
+        message_id: i64,
+        outcome: SendOutcome,
+        provider_message_ids: Vec<String>,
+        resources: Vec<ResourceView>,
+        now: i64,
+    ) -> lankide_storage::Result<FinishSendResult> {
+        let result = self
+            .call(true, false, move |s| {
+                s.finish_message_send(message_id, outcome, provider_message_ids, resources, now)
+            })
+            .await?;
+        self.notify_first_reply(&result).await?;
+        Ok(result)
+    }
 }

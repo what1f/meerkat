@@ -24,6 +24,9 @@ pub enum Script {
     ReplyBeforeTerminal {
         text: String,
     },
+    DeferredPrivateReply {
+        text: String,
+    },
     LinkReply {
         text: String,
     },

@@ -314,6 +314,18 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
         ))
     }
 
+    pub async fn get_agent_first_reply(
+        &self,
+        request: Request<GetAgentRequest>,
+    ) -> Result<Response<AgentFirstReply>, Status> {
+        validate_request_id(&request.get_ref().request_id)?;
+        validate_agent_ref(request.get_ref().agent.as_ref())?;
+        Ok(Response::new(
+            self.peer
+                .get_agent_first_reply(request.into_inner())
+                .await?,
+        ))
+    }
     pub async fn get_agent(
         &self,
         request: Request<GetAgentRequest>,

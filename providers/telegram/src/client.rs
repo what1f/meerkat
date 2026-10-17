@@ -127,6 +127,7 @@ impl ManagedBotRegistration {
 pub struct ManagedBotCredential {
     pub account_id: String,
     pub creator_user_id: String,
+    pub creator: crate::dto::User,
     pub username: String,
     pub display_name: String,
     token: String,
@@ -384,6 +385,30 @@ impl<T: Transport> Client<T> {
         )
         .await
     }
+    pub async fn user_profile_photo(
+        &self,
+        user_id: i64,
+    ) -> Result<Option<DownloadedFile>, ClientError> {
+        let photos: Value = self
+            .call(
+                "getUserProfilePhotos",
+                Some(&json!({"user_id":user_id,"limit":1})),
+                "Telegram getUserProfilePhotos",
+            )
+            .await?;
+        let file = photos
+            .get("photos")
+            .and_then(Value::as_array)
+            .and_then(|p| p.first())
+            .and_then(Value::as_array)
+            .and_then(|p| p.last())
+            .and_then(|p| p.get("file_id"))
+            .and_then(Value::as_str);
+        match file {
+            Some(id) => Ok(Some(self.download_file(id).await?)),
+            None => Ok(None),
+        }
+    }
     pub async fn get_chat(&self, chat_id: i64) -> Result<Chat, ClientError> {
         self.call(
             "getChat",
@@ -485,6 +510,7 @@ impl<T: Transport> Client<T> {
         Ok(ManagedBotCredential {
             account_id: bot.id.to_string(),
             creator_user_id: managed.user.id.to_string(),
+            creator: managed.user.clone(),
             username: bot.username.trim().to_owned(),
             display_name: bot.display_name(),
             token,

@@ -543,6 +543,18 @@ impl RuntimeApplication {
             let changed = changes.notified();
             tokio::pin!(changed);
             changed.as_mut().enable();
+            for (workspace, agent) in runtime.database().take_management_changes() {
+                self.emit_management(
+                    if agent.is_some() {
+                        lankide_protocol::ManagementEventKind::AgentUpdated
+                    } else {
+                        lankide_protocol::ManagementEventKind::WorkspaceUpdated
+                    },
+                    &workspace,
+                    agent.as_ref(),
+                    now_millis(),
+                );
+            }
             let next_due = match self.schedule_ready_work(&runtime).await {
                 Ok(due) => due,
                 Err(error) => {
@@ -928,6 +940,14 @@ impl lankide_provider::SecretWriter for WorkspaceServices {
     }
 }
 impl ProviderStorage for WorkspaceServices {
+    fn management_changed(&self) -> SdkFuture<'_, ()> {
+        Box::pin(async move {
+            self.storage
+                .management_changed(self.workspace_id.clone(), None);
+            Ok(())
+        })
+    }
+
     fn get<'a>(&'a self, key: &'a str) -> SdkFuture<'a, Option<Vec<u8>>> {
         Box::pin(async move {
             self.storage

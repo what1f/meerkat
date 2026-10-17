@@ -26,8 +26,13 @@ pub(crate) const LOGIN_QR_LIFETIME_MS: u64 = 150_000;
 /// Never visited: Lankide reads the authorization code from the redirect.
 pub(crate) const OAUTH_REDIRECT_URI: &str = "http://127.0.0.1/lankide/feishu-oauth";
 /// User scopes Agent Apps request so the team lead's own Tasklist can be
-/// created and shared as the team lead.
-pub(crate) const USER_TASKLIST_SCOPES: [&str; 2] = ["task:tasklist:read", "task:tasklist:write"];
+/// created, shared, and updated as the team lead.
+pub(crate) const USER_TASKLIST_SCOPES: [&str; 4] = [
+    "task:tasklist:read",
+    "task:tasklist:write",
+    "task:task:read",
+    "task:task:write",
+];
 const APP_ICON: &[u8] = include_bytes!("../assets/app-icon.png");
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -221,7 +226,7 @@ fn accounts_request(method: Method, path: &str) -> Request {
         .header("X-Request-ID", uuid::Uuid::new_v4().to_string())
 }
 
-fn passport_data(response: &Response, operation: &str) -> Result<Value, ClientError> {
+pub(crate) fn passport_data(response: &Response, operation: &str) -> Result<Value, ClientError> {
     crate::http::validate_success(response, operation)?;
     let value: Value = response.json()?;
     let code = value.get("code").and_then(Value::as_i64).unwrap_or(-1);
@@ -367,6 +372,7 @@ impl CreatedApp {
 /// Team lead identity returned by the user's authorization.
 pub(crate) struct UserGrant {
     access_token: String,
+    pub(crate) info: Value,
     pub(crate) open_id: String,
     pub(crate) union_id: String,
     pub(crate) user_id: String,
@@ -788,6 +794,7 @@ impl DeveloperConsole {
         let response = self.transport.execute(request).await?;
         let info = passport_data(&response, "user_info")?;
         Ok(UserGrant {
+            info: info.clone(),
             open_id: text_field(&info, "open_id", "user_info")?,
             union_id: info
                 .get("union_id")
@@ -963,4 +970,91 @@ pub(crate) async fn login(
         qr_code: pending.qr_code,
         scanned,
     })
+}
+
+/// A candidate session never replaces the current binding while QR login is pending.
+const SWITCH_CANDIDATE: &str = "feishu_console_switch_candidate";
+const SWITCH_PENDING: &str = "feishu_console_switch_pending";
+
+pub(crate) async fn switch_is_current(
+    reader: &dyn SecretReader,
+    candidate: &str,
+) -> Result<bool, ProviderError> {
+    Ok(!candidate.is_empty()
+        && read_secret::<String>(reader, SWITCH_CANDIDATE)
+            .await?
+            .as_deref()
+            == Some(candidate))
+}
+pub(crate) async fn finish_switch(writer: &dyn SecretWriter) -> Result<(), ProviderError> {
+    write_secret(writer, SWITCH_CANDIDATE, &String::new()).await?;
+    write_secret(writer, SWITCH_PENDING, &PendingLogin::default()).await
+}
+
+pub(crate) async fn switch_login(
+    transport: Arc<dyn Transport>,
+    reader: &dyn SecretReader,
+    writer: &dyn SecretWriter,
+    action: &str,
+    lock: &tokio::sync::Mutex<()>,
+) -> Result<(String, Login), ProviderError> {
+    let guard = lock.lock().await;
+    if action == "switch_cancel" {
+        finish_switch(writer).await?;
+        return Ok((String::new(), Login::Required));
+    }
+    if action == "switch_start" {
+        let candidate = uuid::Uuid::new_v4().to_string();
+        write_secret(writer, SWITCH_CANDIDATE, &candidate).await?;
+        write_secret(writer, SWITCH_PENDING, &PendingLogin::default()).await?;
+        drop(guard);
+        let pending = start_login(transport.as_ref())
+            .await
+            .map_err(|e| console_error("feishu_console_login", &e))?;
+        let _guard = lock.lock().await;
+        if !switch_is_current(reader, &candidate).await? {
+            return Ok((candidate, Login::Required));
+        }
+        write_secret(writer, SWITCH_PENDING, &pending).await?;
+        return Ok((
+            candidate,
+            Login::Waiting {
+                qr_code: pending.qr_code,
+                scanned: false,
+            },
+        ));
+    }
+    let candidate = read_secret::<String>(reader, SWITCH_CANDIDATE)
+        .await?
+        .unwrap_or_default();
+    let pending = read_secret::<PendingLogin>(reader, SWITCH_PENDING)
+        .await?
+        .filter(|p| !p.expired());
+    let Some(mut pending) = pending.filter(|_| !candidate.is_empty()) else {
+        return Ok((candidate, Login::Required));
+    };
+    drop(guard);
+    let result = poll_login(transport.as_ref(), &mut pending)
+        .await
+        .map_err(|e| console_error("feishu_console_login", &e))?;
+    let _guard = lock.lock().await;
+    if !switch_is_current(reader, &candidate).await? {
+        return Ok((candidate, Login::Required));
+    }
+    let login = match result {
+        // Keep the candidate valid until OAuth and profile preparation finish.
+        LoginPoll::Complete(session) => Login::Ready(session),
+        LoginPoll::Expired => {
+            finish_switch(writer).await?;
+            Login::Required
+        }
+        LoginPoll::Waiting | LoginPoll::Scanned => {
+            write_secret(writer, SWITCH_PENDING, &pending).await?;
+            Login::Waiting {
+                qr_code: pending.qr_code,
+                scanned: matches!(result, LoginPoll::Scanned),
+            }
+        }
+    };
+    Ok((candidate, login))
 }

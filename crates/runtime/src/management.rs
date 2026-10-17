@@ -179,6 +179,25 @@ impl RuntimeApplication {
         })
     }
 
+    pub async fn get_agent_first_reply(
+        &self,
+        request: GetAgentRequest,
+    ) -> Result<lankide_protocol::AgentFirstReply, RuntimeError> {
+        let (workspace, agent) = agent_id(request.agent)?;
+        let runtime = self.runtime()?;
+        runtime.database().agent_record(&workspace, &agent).await?;
+        Ok(lankide_protocol::AgentFirstReply {
+            state: if runtime
+                .database()
+                .agent_has_first_reply(&workspace, &agent)
+                .await?
+            {
+                lankide_protocol::AgentFirstReplyState::Replied
+            } else {
+                lankide_protocol::AgentFirstReplyState::Waiting
+            },
+        })
+    }
     pub async fn get_agent(&self, request: GetAgentRequest) -> Result<ProtocolAgent, RuntimeError> {
         let (workspace, agent) = agent_id(request.agent)?;
         let runtime = self.runtime()?;

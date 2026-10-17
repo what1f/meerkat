@@ -4,6 +4,21 @@ pub use crate::wire::{
     OnboardingStatus,
 };
 use serde::{Deserialize, Serialize};
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentFirstReplyState {
+    #[default]
+    Waiting,
+    Replied,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentFirstReply {
+    pub state: AgentFirstReplyState,
+}
+
 pub const PREFIX: &str = "/api/v1/";
 pub const EVENTS_PATH: &str = "/api/v1/events";
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]

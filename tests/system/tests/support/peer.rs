@@ -256,6 +256,48 @@ fn main() {
                         }
                         (text, 0)
                     }
+                    Script::DeferredPrivateReply { text } => {
+                        let path =
+                            format!("{}.read", std::env::var("LANKIDE_SYSTEM_INPUTS").unwrap());
+                        if !std::path::Path::new(&path).exists() {
+                            assert!(input.contains("chat_id=300"));
+                            std::fs::write(&path, input).unwrap();
+                            event(
+                                &mut sequence,
+                                json!({"kind":"completed","final_output":"OK"}),
+                            );
+                            continue;
+                        }
+                        let history = runtime
+                            .block_on(lankide_cli::execute_from_environment(vec![
+                                "invoke".into(),
+                                "chat_messages".into(),
+                                "--arguments-json".into(),
+                                json!({"channel_id":"private_chat","chat_id":"300"}).to_string(),
+                            ]))
+                            .expect("read the earlier private conversation");
+                        assert!(history.to_string().contains("hello"));
+                        let sent = runtime
+                            .block_on(lankide_cli::execute_from_environment(vec![
+                                "send".into(),
+                                "--channel".into(),
+                                "private_chat".into(),
+                                "--chat".into(),
+                                "300".into(),
+                                "--content".into(),
+                                text.clone(),
+                                "--force".into(),
+                                "--idempotency-key".into(),
+                                "deferred-private".into(),
+                            ]))
+                            .expect("send in the earlier private conversation");
+                        assert_eq!(sent["accepted"], true);
+                        event(
+                            &mut sequence,
+                            json!({"kind":"completed","final_output":"OK"}),
+                        );
+                        continue;
+                    }
                     Script::Capability { arguments, text } => {
                         runtime
                             .block_on(lankide_cli::execute_from_environment(arguments.clone()))

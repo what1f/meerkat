@@ -35,6 +35,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         FigurePack,
         ImportFigurePackRequest,
         ListFigurePacksRequest,
+        AgentFirstReply,
+        AgentFirstReplyState,
         AgentAttention,
         AgentAvatarFile,
         AgentAvatarUpload,

@@ -113,6 +113,7 @@ impl InboundResourceCache {
 pub const CONSOLE_LOGIN_INTERFACE: &str = "feishu.workspace.console_login";
 
 struct ConsoleLoginHandler {
+    switch_lock: AsyncMutex<()>,
     context: InitContext,
     transport: SharedTransport,
 }
@@ -124,6 +125,15 @@ impl InvocationHandler for ConsoleLoginHandler {
                 .get("action")
                 .and_then(Value::as_str)
                 .unwrap_or("status");
+            if action.starts_with("switch_") {
+                return crate::workspace_owner::switch_account(
+                    &self.context,
+                    self.transport.clone(),
+                    action,
+                    &self.switch_lock,
+                )
+                .await;
+            }
             let login = crate::console::login(
                 self.transport.clone(),
                 self.context.secret_reader(),
@@ -382,7 +392,7 @@ impl Provider for FeishuProvider {
                     id: CONSOLE_LOGIN_INTERFACE.into(),
                     input_schema: JsonSchema::new(serde_json::json!({
                         "type": "object",
-                        "properties": {"action": {"enum": ["status", "start", "poll"]}}
+                        "properties": {"action": {"enum": ["status", "start", "poll", "switch_start", "switch_poll", "switch_cancel"]}}
                     }))?,
                     output_schema: JsonSchema::new(serde_json::json!({
                         "type": "object",
@@ -393,11 +403,39 @@ impl Provider for FeishuProvider {
                         }
                     }))?,
                     handler: Arc::new(ConsoleLoginHandler {
+                        switch_lock: AsyncMutex::new(()),
                         context: context.clone(),
                         transport: self.transport.clone(),
                     }),
                 })
                 .await?;
+            for (id, handler) in [
+                (
+                    "feishu.workspace.owner",
+                    Arc::new(crate::workspace_owner::OwnerHandler {
+                        context: context.clone(),
+                        transport: self.transport.clone(),
+                    }) as Arc<dyn InvocationHandler>,
+                ),
+                (
+                    "feishu.workspace.tasks",
+                    Arc::new(crate::workspace_tasks::TasksHandler {
+                        context: context.clone(),
+                        transport: self.transport.clone(),
+                    }) as Arc<dyn InvocationHandler>,
+                ),
+            ] {
+                context
+                    .register_interface(InterfaceDefinition {
+                        id: id.into(),
+                        input_schema: JsonSchema::new(
+                            serde_json::json!({"type":"object","required":["action"]}),
+                        )?,
+                        output_schema: JsonSchema::new(serde_json::json!({"type":"object"}))?,
+                        handler,
+                    })
+                    .await?;
+            }
             let workspace_key = context.workspace_id().to_string();
             if let Ok(mut contexts) = self.contexts.lock() {
                 contexts.insert(workspace_key, context);
@@ -1427,6 +1465,13 @@ async fn normalized_event_to_provider(
             provider_data: serde_json::to_value(&update).map_err(crate::events::SinkError::from)?,
         })),
         NormalizedEvent::Task(task) => {
+            if crate::agent_tasks::task_system_enabled(context.workspace_config()) {
+                context
+                    .storage()
+                    .management_changed()
+                    .await
+                    .map_err(crate::events::SinkError::from)?;
+            }
             let Some((sender, custom)) =
                 crate::agent_tasks::task_event(context, client.clone(), auth, &task)
                     .await

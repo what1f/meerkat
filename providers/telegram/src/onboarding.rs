@@ -240,12 +240,11 @@ pub(crate) async fn agent_onboarding_with_transport(
     let manager_username_for_poll = manager_username;
     let username_for_poll = username.clone();
     let display_name = context.name.clone();
+    let poll_transport = transport.clone();
     let poll = (async move {
-        let client = TelegramClient::new(
-            transport.clone(),
-            Credentials::new(manager_account_id, token),
-        )?
-        .with_domain(endpoint);
+        let client =
+            TelegramClient::new(poll_transport, Credentials::new(manager_account_id, token))?
+                .with_domain(endpoint);
         let registration = if let Some(manager_username) = manager_username_for_poll {
             client.managed_bot_registration_for_manager(
                 &manager_username,
@@ -291,6 +290,48 @@ pub(crate) async fn agent_onboarding_with_transport(
     .map_err(|_| external("telegram_registration_poll"))?;
 
     if let Some(credential) = poll.0 {
+        let state = context.storage().workspace_state().await?;
+        if state
+            .get("owner_user_id")
+            .and_then(Value::as_i64)
+            .is_none_or(|id| id == credential.creator.id)
+        {
+            let mut state = state;
+            let person = context
+                .storage()
+                .get_or_create_person(&credential.creator_user_id)
+                .await?;
+            let mut owner = json!({"state":"ready","person_id":person.person_id,"name":credential.creator.display_name()});
+            let token = context
+                .workspace_secrets()
+                .read("manager_bot_token")
+                .await?;
+            let manager = TelegramClient::new(
+                transport.clone(),
+                Credentials::new("manager", token.expose_secret()),
+            )
+            .map_err(|_| external("telegram_owner"))?
+            .with_domain(crate::adapter::api_endpoint(&context.workspace_config)?);
+            if let Some(photo) = manager
+                .user_profile_photo(credential.creator.id)
+                .await
+                .map_err(|_| external("telegram_owner_photo"))?
+            {
+                owner["avatar"] = resource_json(
+                    context
+                        .save_resource(lankide_provider::ResourceUpload {
+                            file_name: "owner.jpg".into(),
+                            media_type: photo.content_type,
+                            bytes: photo.data,
+                        })
+                        .await?,
+                );
+            }
+            state["owner"] = owner;
+            state["owner_user_id"] = json!(credential.creator.id);
+            context.storage().put_workspace_state(state).await?;
+            context.storage().management_changed().await?;
+        }
         context
             .write_agent_secret("bot_token", SecretValue::new(credential.token()))
             .await?;
@@ -329,4 +370,8 @@ pub(crate) async fn agent_onboarding_with_transport(
         save(&context, &value).await?;
         Ok(value)
     }
+}
+
+fn resource_json(r: lankide_core::ResourceRef) -> Value {
+    json!({"resource_id":r.resource_id,"file_name":r.file_name,"media_type":r.media_type,"size_bytes":r.size_bytes,"sha256":r.sha256})
 }

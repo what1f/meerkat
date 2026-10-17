@@ -25,6 +25,11 @@ impl SecretWriter for DeniedSecretWriter {
     }
 }
 pub trait ProviderStorage: Send + Sync {
+    /// Invalidate the current workspace's management data after a Provider write.
+    fn management_changed(&self) -> ProviderFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
+
     fn get<'a>(&'a self, key: &'a str) -> ProviderFuture<'a, Option<Vec<u8>>>;
     fn put<'a>(&'a self, key: &'a str, value: Vec<u8>) -> ProviderFuture<'a, ()>;
     fn workspace_state<'a>(&'a self) -> ProviderFuture<'a, Value> {
@@ -532,6 +537,7 @@ pub struct AgentOnboardingContext {
     secret_reader: Arc<dyn SecretReader>,
     secret_writer: Arc<dyn SecretWriter>,
     storage: Arc<dyn ProviderStorage>,
+    resource_saver: Arc<dyn ResourceSaver>,
 }
 impl AgentOnboardingContext {
     pub fn new(
@@ -551,7 +557,14 @@ impl AgentOnboardingContext {
             secret_reader: services.secret_reader,
             secret_writer: services.secret_writer,
             storage: services.storage,
+            resource_saver: services.resource_saver,
         }
+    }
+    pub async fn save_resource(
+        &self,
+        upload: ResourceUpload,
+    ) -> Result<ResourceRef, ProviderError> {
+        self.resource_saver.save(upload).await
     }
     pub fn workspace_secrets(&self) -> &dyn SecretReader {
         self.secret_reader.as_ref()

@@ -98,6 +98,12 @@ pub trait RuntimePeer: Send + Sync + 'static {
         Err(Status::unimplemented("get_execution_details"))
     }
 
+    async fn get_agent_first_reply(
+        &self,
+        _request: GetAgentRequest,
+    ) -> Result<AgentFirstReply, Status> {
+        Err(Status::unimplemented("get_agent_first_reply"))
+    }
     async fn get_agent(&self, _request: GetAgentRequest) -> Result<Agent, Status> {
         Err(Status::unimplemented("get_agent"))
     }

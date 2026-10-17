@@ -3908,6 +3908,8 @@ dependencies = [
  "lankide-machine-core",
  "lankide-protocol",
  "lankide-provider",
+ "lankide-provider-feishu",
+ "lankide-provider-telegram",
  "lankide-runtime",
  "lankide-storage",
  "lankided",

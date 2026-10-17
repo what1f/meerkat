@@ -428,6 +428,15 @@ async fn a_lasting_im_outage_skips_the_event_and_delivers_later_messages() {
         .into_parts();
     assert!(matches!(event.kind, ProviderEventKind::Message(ref m) if m.content == "after"));
     receipt.accept();
+    // Acceptance queues the acknowledgement; wait for the mock IM to receive it
+    // before shutdown closes the event source.
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while server.acknowledgements() != 3 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("accepted events were not acknowledged");
     host.shutdown().await.unwrap();
     assert_eq!(server.acknowledgements(), 3);
 }

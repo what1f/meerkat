@@ -107,6 +107,11 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
             json::ListAgentsResponse,
             list_agents
         ),
+        "get_agent_first_reply" => call!(
+            json::GetAgentRequest,
+            json::AgentFirstReply,
+            get_agent_first_reply
+        ),
         "get_agent" => call!(json::GetAgentRequest, json::Agent, get_agent),
         "cancel_attempt" => call!(
             json::CancelAttemptRequest,

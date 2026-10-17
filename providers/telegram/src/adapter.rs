@@ -407,6 +407,17 @@ impl Provider for TelegramProvider {
                     }),
                 })
                 .await?;
+            context
+                .register_interface(InterfaceDefinition {
+                    id: "telegram.workspace.owner".into(),
+                    input_schema: JsonSchema::new(json!({"type":"object","required":["action"]}))?,
+                    output_schema: JsonSchema::new(json!({"type":"object","required":["state"]}))?,
+                    handler: Arc::new(crate::workspace_owner::OwnerHandler {
+                        context: context.clone(),
+                        transport: self.transport.clone(),
+                    }),
+                })
+                .await?;
             let workspace_key = context.workspace_id().to_string();
             if let Ok(mut contexts) = self.contexts.lock() {
                 contexts.insert(workspace_key.clone(), context.clone());

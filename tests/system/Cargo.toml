@@ -8,6 +8,8 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+lankide-provider-feishu = { path = "../../providers/feishu" }
+lankide-provider-telegram = { path = "../../providers/telegram" }
 log.workspace = true
 base64 = "0.23.1"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
@@ -158,6 +160,14 @@ bench = false
 [package.metadata.lankide.e2e-additional.system-member-fields]
 command = "cargo test -p lankide-system-e2e --test e2e member_fields_e2e::"
 scenario = "Verify A4a.1-A4a.4 through real Runtime and Machine daemons with scripted Harness and mock IM: import and persist four figure frames, reject missing frames and traversal without residue, preserve independent argv across session replacement, observe busy events before releasing a held run and idle after completion, and query Machine-scoped model catalogs with distinct thinking levels and empty-level execution."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"
+
+[package.metadata.lankide.e2e-additional.system-provider-management]
+command = "cargo test -p lankide-system-e2e --test e2e provider_management_e2e::"
+scenario = "Verify A4b through real Runtime management HTTP, concrete Feishu and Telegram Providers, mock IM/network and scripted Harness: owner get/refresh with workspace avatars, expired authorization retains cached profile, same-tenant switch succeeds while cross-tenant and cancelled switches preserve the old owner, task list create/complete/reopen and external invalidation preserve the list across disable/enable, and only a successful owner private reply satisfies first-reply state across Runtime restart. Reject in-flight cancelled account switches without restoring pending data or replacing credentials, keep workspace authorization usable after deleting its granting member, recognize a private owner reply from a later execution, initialize the list on first enable, and invalidate every task event while the task system is enabled, including unrelated, moved, deleted and inaccessible tasks; disabled task events and ordinary IM messages do not invalidate, after consuming local mutation events."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
