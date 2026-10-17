@@ -1,0 +1,9 @@
+.root {
+  display: grid;
+}
+
+.root > [role='row'] {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+}

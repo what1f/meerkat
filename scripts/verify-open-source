@@ -51,9 +51,10 @@ def repository_entries():
     # Prune build/VCS trees before traversal, while still inspecting symlinks
     # (including directory symlinks) without following them.
     for directory, directories, files in os.walk(ROOT, followlinks=False):
-        directories[:] = [name for name in directories if name not in {".git", "target"}]
+        directories[:] = [name for name in directories if name not in {".git", "target"}
+                          and Path(directory) / name not in {ROOT / "apps/web/node_modules", ROOT / "apps/web/dist"}]
         for name in directories + files:
-            if name in {".git", "target"}:
+            if name in {".git", "target"} or Path(directory) / name in {ROOT / "apps/web/node_modules", ROOT / "apps/web/dist"}:
                 continue
             yield Path(directory) / name
 

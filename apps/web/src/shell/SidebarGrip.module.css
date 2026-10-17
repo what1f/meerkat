@@ -1,0 +1,6 @@
+.root {
+  display: block;
+  width: 8px;
+  min-height: 40px;
+  touch-action: none;
+}

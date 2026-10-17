@@ -1,0 +1,4 @@
+/* expect: scale-unlimited/declaration-strict-value */
+.bad {
+  font-size: 14px;
+}

@@ -1,0 +1,20 @@
+/* Typography */
+:root {
+  /* B1 supplies typography tokens. */
+}
+
+/* Size */
+
+/* Radius */
+
+/* Motion */
+
+/* Color: light */
+[data-theme='light'] {
+  /* B1 supplies light colors. */
+}
+
+/* Color: dark */
+[data-theme='dark'] {
+  /* B1 supplies dark colors. */
+}

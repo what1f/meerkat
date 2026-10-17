@@ -1,0 +1,48 @@
+import type { ReactNode } from 'react';
+import type { UIProps } from './types';
+import { Dialog } from './Dialog';
+import { Button } from './Button';
+import css from './ConfirmDialog.module.css';
+export type ConfirmDialogProps = Omit<UIProps, 'className' | 'style'> & {
+  open: boolean;
+  onClose: () => void;
+  leading?: ReactNode;
+  title: string;
+  body: ReactNode;
+  confirmLabel: string;
+  cancelLabel: string;
+  onConfirm: () => void;
+  tone?: 'danger';
+};
+export function ConfirmDialog({
+  open,
+  onClose,
+  leading,
+  title,
+  body,
+  confirmLabel,
+  cancelLabel,
+  onConfirm,
+  tone,
+  ...rest
+}: ConfirmDialogProps) {
+  return (
+    <Dialog
+      {...rest}
+      open={open}
+      onClose={onClose}
+      title={title}
+      footer={
+        <div className={css.root}>
+          <Button onClick={onClose}>{cancelLabel}</Button>
+          <Button variant={tone === 'danger' ? 'danger' : 'primary'} onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        </div>
+      }
+    >
+      {leading}
+      {body}
+    </Dialog>
+  );
+}

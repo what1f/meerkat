@@ -14,6 +14,7 @@ web-types:
     cargo run --locked -p lankide-web-types -- apps/web/src/lib/api/generated
 
 check:
+    just web-check
     ./scripts/verify-web-types
     ./scripts/verify-open-source
     ./scripts/verify-production-boundary
@@ -49,3 +50,12 @@ full-release:
 
 release: full-release
     @echo "Release verification and distributable package are ready."
+
+web-check:
+    pnpm -C apps/web install --frozen-lockfile
+    pnpm -C apps/web format:check
+    pnpm -C apps/web lint
+    pnpm -C apps/web stylelint
+    pnpm -C apps/web typecheck
+    pnpm -C apps/web build
+    ./scripts/verify-web-lint
