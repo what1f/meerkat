@@ -484,7 +484,8 @@ IM 式对话界面。选用 React，原因如下：
 
 依赖 A2，导航到真实 UI 需要 A3。范围：`apps/desktop`、`Cargo.toml`、`scripts/package-macos`、`scripts/verify-package`。
 
-按「Tauri 外壳」一节实现。GPUI 主程序直接替换，不保留两套。
+按「Tauri 外壳」一节实现。GPUI 主程序直接替换，不保留两套。C1 在第 2 波完成开发，但要等 B3 完成后，与 D1 一起合并。
+`boot.html` 由 C1 先实现功能结构，视觉由设计会话补充。
 
 验收：
 
