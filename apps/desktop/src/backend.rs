@@ -290,7 +290,11 @@ async fn ensure_machine_ready(
         return Ok(());
     }
     services.ensure_machine(home)?;
-    for _ in 0..60 {
+    // A replaced Machine discovers its Harnesses before connecting. Model
+    // discovery alone allows five seconds per Harness, plus shell/version
+    // probes, so the old six-second window rejected healthy cold starts.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    while tokio::time::Instant::now() < deadline {
         if client
             .get_machine_catalog(None)
             .await?

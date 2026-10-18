@@ -39,7 +39,7 @@ path = "src/main.rs"
 
 [package.metadata.lankide.e2e]
 command = "./apps/desktop/shell-e2e.sh"
-scenario = "Start the shipped headless Tauri Desktop entrypoint with real local services, record the intended navigation to the discovered Runtime origin, reuse healthy owners, report failed helpers, and clean up only owned processes. Window appearance and external-link acceptance belong to C2."
+scenario = "Start the shipped headless Tauri Desktop entrypoint with real local services, record the intended navigation to the discovered Runtime origin, reuse healthy owners, replace old helpers through a cold Harness probe on the first launch, report failed helpers, and clean up only owned processes. Window appearance and external-link acceptance belong to C2."
 prerequisites = "Four product binaries in the selected binary directory (target/debug by default); macOS"
 classification = "hermetic"
 unattended = "yes"

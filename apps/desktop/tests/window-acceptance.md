@@ -43,3 +43,19 @@ Tauri shell scenarios (C2):
 - `open-in-browser`: open the current Runtime URL from the menu.
 - `external-link-navigation`: open an external link in the system browser and verify
   that the shell keeps its Runtime page.
+
+For the update cold-start regression, run from the repository root:
+
+```bash
+python3 apps/desktop/tests/update_e2e.py --binary-dir target/debug \
+  --artifact-dir target/e2e-artifacts/desktop-update-window --window
+```
+
+This starts real old helpers in a private home, replaces their executables, and
+opens the real Tauri window with a 20-second cold Harness probe. Select only the
+unique app path in `session.json` with Machine Use. Record that the loader remains
+visible after six seconds and then reaches the discovered management URL without
+Retry. Quit that test app normally. Save original screenshots and accessibility
+states beside `session.json`; `cleanup.json` records process cleanup only and does
+not certify the UI. The normal bootstrap E2E also covers this update with an
+eight-second probe, without making a window-acceptance claim.

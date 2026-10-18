@@ -12,6 +12,8 @@ import tempfile
 import time
 from urllib.parse import urlsplit
 
+from update_e2e import replace_running_services
+
 
 def assert_navigation(payload, discovered_url):
     assert discovered_url, "Runtime did not publish a discovery URL"
@@ -112,7 +114,8 @@ def run(binary_dir, artifact_dir):
     for binary in binaries.values():
         assert binary.is_file() and os.access(binary, os.X_OK), f"build required: {binary}"
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    scenarios = [reuse_running_services(binaries, artifact_dir)]
+    scenarios = [reuse_running_services(binaries, artifact_dir),
+                 replace_running_services(binaries, artifact_dir)]
     for scenario, failed_helper in (
         ("ready", None),
         ("unbundled-default-home-ready", None),
@@ -201,7 +204,7 @@ def run(binary_dir, artifact_dir):
                     if logs.exists():
                         shutil.copytree(logs, artifact_dir / f"{scenario}-services", dirs_exist_ok=True)
                     (artifact_dir / "result.json").write_text(json.dumps({
-                        "status": "passed" if len(scenarios) == 6 and all(item["status"] == "passed" for item in scenarios) else "failed",
+                        "status": "passed" if len(scenarios) == 7 and all(item["status"] == "passed" for item in scenarios) else "failed",
                         "classification": "real-process-startup-with-external-faults",
                         "binaries": {name: {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()} for name, path in binaries.items()},
                         "scenarios": scenarios,
