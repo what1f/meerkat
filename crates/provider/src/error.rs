@@ -13,6 +13,7 @@ pub enum ProviderError {
     },
     SecretAccessDenied,
     AuthorizationRequired,
+    OwnerAppUnavailable,
     EventSinkClosed,
     DuplicateRegistration {
         id: String,
@@ -43,6 +44,7 @@ impl ProviderError {
             Self::NotFound { .. } => "not_found",
             Self::SecretAccessDenied => "secret_access_denied",
             Self::AuthorizationRequired => "authorization_required",
+            Self::OwnerAppUnavailable => "owner_app_unavailable",
             Self::EventSinkClosed => "event_sink_closed",
             Self::DuplicateRegistration { .. } => "duplicate_registration",
             Self::UnknownRegistration { .. } => "unknown_registration",

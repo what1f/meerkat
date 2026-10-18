@@ -26,7 +26,7 @@ pub use crate::management::{
     RenameMachineRequest, RevokeMachineRequest, SetRemoteAccessRequest, SetWorkspaceStateRequest,
     TestHarnessRequest, TestHarnessResponse, UpdateAgentRequest, UpdateWorkspaceRequest,
     UploadWorkspaceImageRequest, UploadWorkspaceImageResponse, Workspace, WorkspaceImageRequest,
-    WorkspaceImageResponse,
+    WorkspaceImageResponse, WorkspaceOwner, WorkspaceOwnerState,
 };
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]

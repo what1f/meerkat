@@ -19,6 +19,30 @@ pub struct AgentFirstReply {
     pub state: AgentFirstReplyState,
 }
 
+/// Existing `<provider>.workspace.owner` interface output. Feishu uses
+/// ready/needs_sign_in; unbound/reauth_required remain Telegram states.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceOwnerState {
+    Ready,
+    NeedsSignIn,
+    Unbound,
+    ReauthRequired,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkspaceOwner {
+    pub state: WorkspaceOwnerState,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub person_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub avatar: Option<ResourceRef>,
+}
+
 pub const PREFIX: &str = "/api/v1/";
 pub const EVENTS_PATH: &str = "/api/v1/events";
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]

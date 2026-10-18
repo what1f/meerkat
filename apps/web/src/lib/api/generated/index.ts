@@ -83,4 +83,6 @@ export type { UploadWorkspaceImageResponse } from './UploadWorkspaceImageRespons
 export type { Workspace } from './Workspace';
 export type { WorkspaceImageRequest } from './WorkspaceImageRequest';
 export type { WorkspaceImageResponse } from './WorkspaceImageResponse';
+export type { WorkspaceOwner } from './WorkspaceOwner';
+export type { WorkspaceOwnerState } from './WorkspaceOwnerState';
 export type { WorkspaceRef } from './WorkspaceRef';

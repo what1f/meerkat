@@ -53,6 +53,14 @@ pub trait ProviderStorage: Send + Sync {
             self.put("__workspace_state", bytes).await
         })
     }
+    /// Read this Workspace's existing Agent Provider configuration, without secrets.
+    fn agent_config<'a>(&'a self, _: &'a AgentId) -> ProviderFuture<'a, Value> {
+        Box::pin(async {
+            Err(ProviderError::Unsupported {
+                operation: "read_agent_provider_config",
+            })
+        })
+    }
     fn agent_state<'a>(&'a self, agent_id: &'a AgentId) -> ProviderFuture<'a, Value> {
         Box::pin(async move {
             let key = format!("__agent_state/{}", agent_id.as_str());

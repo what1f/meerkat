@@ -922,6 +922,14 @@ fn team_lead_id(team_members: &[ProviderTeamMember]) -> Result<String, ProviderE
         })
 }
 
+fn owner_task_error(operation: &'static str, error: ClientError) -> ProviderError {
+    if crate::workspace_owner::requires_sign_in(&error) {
+        ProviderError::AuthorizationRequired
+    } else {
+        task_error(operation, error.is_retryable())
+    }
+}
+
 /// Joins `app_id` to the Team Tasklist as the team lead, creating the list
 /// under the lead's own identity when the workspace has none yet.
 pub(crate) async fn join_team_tasklist_as_lead(
@@ -938,7 +946,7 @@ pub(crate) async fn join_team_tasklist_as_lead(
             Ok(tasklist) => Some(tasklist),
             Err(ClientError::Api { code: 1470404, .. }) => None,
             Err(error) => {
-                return Err(task_error("feishu_tasklist_access", error.is_retryable()));
+                return Err(owner_task_error("feishu_tasklist_access", error));
             }
         },
         None => None,
@@ -950,7 +958,7 @@ pub(crate) async fn join_team_tasklist_as_lead(
                 lead_client
                     .add_tasklist_members(&tasklist.guid, &missing, "open_id", Auth::User)
                     .await
-                    .map_err(|error| task_error("feishu_tasklist_members", error.is_retryable()))?;
+                    .map_err(|error| owner_task_error("feishu_tasklist_members", error))?;
             }
             tasklist
         }
@@ -960,7 +968,7 @@ pub(crate) async fn join_team_tasklist_as_lead(
             lead_client
                 .create_tasklist(&name, &agent, "open_id", Auth::User)
                 .await
-                .map_err(|error| task_error("feishu_tasklist_create", error.is_retryable()))?
+                .map_err(|error| owner_task_error("feishu_tasklist_create", error))?
         }
     };
     if tasklist.guid.trim().is_empty() {

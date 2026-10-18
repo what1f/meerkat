@@ -46,6 +46,20 @@ impl Http {
         )?)
     }
 }
+async fn invoke_error(http: &Http, id: &str, action: &str) -> Result<Value> {
+    let response = http
+        .client
+        .post(format!("{}/api/v1/invoke_provider_interface", http.url))
+        .json(
+            &json!({"request_id":"failure", "workspace":{"workspace_id":"team"},
+            "interface_id":id,"input_json":json!({"action":action}).to_string()}),
+        )
+        .send()
+        .await?;
+    assert!(!response.status().is_success());
+    Ok(response.json().await?)
+}
+
 async fn event(
     ws: &mut tokio_tungstenite::WebSocketStream<
         tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
@@ -102,9 +116,9 @@ async fn a4b_feishu_owner_switch_and_task_list() -> Result<()> {
         let http=Http::new(&rig)?;
         http.post("create_workspace",json!({"request_id":"create","workspace_id":"team","name":"Team","rules":"","provider_id":"feishu","provider_config_json":"{\"domain\":\"feishu\",\"task_system_enabled\":true}","provider_secrets_json":"{}"})).await?;
         let owner="feishu.workspace.owner";let login="feishu.workspace.console_login";
-        assert_eq!(http.invoke(owner,"get",json!({})).await?["state"],"unbound");
+        assert_eq!(http.invoke(owner,"get",json!({})).await?["state"],"needs_sign_in");
         http.invoke(login,"start",json!({})).await?;http.invoke(login,"poll",json!({})).await?;
-        assert_eq!(http.invoke(owner,"get",json!({})).await?["state"],"unbound");
+        assert_eq!(http.invoke(owner,"get",json!({})).await?["state"],"needs_sign_in");
         let machines=http.post("get_machine_catalog",json!({"request_id":"m","workspace":null})).await?;
         let request=lankide_protocol::CreateAgentRequest{request_id:"agent".into(),agent:Some(lankide_protocol::AgentRef{workspace_id:"team".into(),agent_id:"alpha".into()}),name:"Alpha".into(),machine_id:machines["machines"][0]["machine_id"].as_str().unwrap().into(),harness_id:"pi".into(),model:"scripted".into(),thinking_level:"low".into(),cli_path:harness.to_string_lossy().into(),provider_agent_config_json:json!({"mode":"new","domain":"feishu"}).to_string(),provider_agent_secrets_json:"{}".into(),..Default::default()};
         http.post("create_agent",serde_json::to_value(request)?).await?;
@@ -113,7 +127,7 @@ async fn a4b_feishu_owner_switch_and_task_list() -> Result<()> {
         let (mut events,_)=tokio_tungstenite::connect_async(format!("{}/api/v1/events?workspace=team",http.url.replacen("http://","ws://",1))).await?;
         web.0.lock().unwrap().name="Alice Updated".into();
         assert_eq!(http.invoke(owner,"refresh",json!({})).await?["name"],"Alice Updated");event(&mut events,"workspace_updated").await?;
-        web.0.lock().unwrap().expired=true;let expired=http.invoke(owner,"refresh",json!({})).await?;assert_eq!(expired["state"],"reauth_required");assert_eq!(expired["name"],"Alice Updated");web.0.lock().unwrap().expired=false;
+        web.0.lock().unwrap().expired=true;let expired=http.invoke(owner,"refresh",json!({})).await?;assert_eq!(expired["state"],"needs_sign_in");assert_eq!(expired["name"],"Alice Updated");web.0.lock().unwrap().expired=false;
         let waiting=http.invoke(login,"switch_start",json!({})).await?;
         assert_eq!(waiting["state"],"waiting");
         assert!(waiting["poll_interval_seconds"].as_u64().is_some_and(|seconds| seconds > 0));
@@ -319,7 +333,7 @@ async fn tasks_without_owner_authorization_fail_promptly_log_once_and_recover() 
         assert!(!response.status().is_success());
         let body: Value = response.json().await?;
         assert_eq!(body, json!({"code":"failed_precondition","message":"Connect your account to continue.","detail":"authorization_required"}));
-        assert_eq!(http.invoke("feishu.workspace.owner", "get", json!({})).await?["state"], "unbound");
+        assert_eq!(http.invoke("feishu.workspace.owner", "get", json!({})).await?["state"], "needs_sign_in");
         {
             let state = web.0.lock().unwrap();
             assert!(state.tasklist.is_none());
@@ -559,6 +573,10 @@ async fn a4b_review_task_callbacks_follow_enabled_state() -> Result<()> {
 }
 
 async fn feishu_review_member(http: &Http, id: &str) -> Result<()> {
+    feishu_member_flow(http, id, &["start", "start"]).await
+}
+
+async fn feishu_member_flow(http: &Http, id: &str, actions: &[&str]) -> Result<()> {
     let harness = RigConfig::default().harness_executable;
     let machines = http
         .post(
@@ -587,8 +605,277 @@ async fn feishu_review_member(http: &Http, id: &str) -> Result<()> {
     };
     http.post("create_agent", serde_json::to_value(request)?)
         .await?;
-    for action in ["start", "start"] {
-        http.post("advance_agent_onboarding",json!({"request_id":action,"agent":{"workspace_id":"team","agent_id":id},"action":action,"field_values_json":"{}"})).await?;
+    let mut payload = "{}".to_owned();
+    for action in actions {
+        let progress = http.post("advance_agent_onboarding",json!({"request_id":action,"agent":{"workspace_id":"team","agent_id":id},"action":action,"field_values_json":payload})).await
+            .map_err(|error| format!("member onboarding {action}: {error}"))?;
+        payload = progress["payload_json"]
+            .as_str()
+            .ok_or("onboarding payload")?
+            .to_owned();
     }
     Ok(())
+}
+
+#[tokio::test]
+async fn owner_sign_in_reuses_existing_member_app_without_manual_migration() -> Result<()> {
+    let (rig, web, http) = feishu_unbound_rig(true).await?;
+    let scenario = async {
+        let owner = "feishu.workspace.owner";
+        let login = "feishu.workspace.console_login";
+        let tasks = "feishu.workspace.tasks";
+        let missing = http.invoke(owner, "get", json!({})).await?;
+        let typed: lankide_protocol::WorkspaceOwner = serde_json::from_value(missing)?;
+        assert_eq!(
+            typed.state,
+            lankide_protocol::WorkspaceOwnerState::NeedsSignIn
+        );
+        assert_eq!(
+            invoke_error(&http, login, "switch_start").await?["detail"],
+            "owner_app_unavailable"
+        );
+        http.invoke(login, "start", json!({})).await?;
+        http.invoke(login, "poll", json!({})).await?;
+        // A real registration onboarding binds an App and its creator but obtains no
+        // UserGrant. This reaches the missing-owner state solely through business APIs.
+        web.0.lock().unwrap().reject_app_create = true;
+        feishu_member_flow(&http, "alpha", &["start", "poll", "start"]).await?;
+        web.0.lock().unwrap().reject_app_create = false;
+        assert_eq!(
+            http.invoke(owner, "get", json!({})).await?["state"],
+            "needs_sign_in"
+        );
+        assert_eq!(
+            invoke_error(&http, tasks, "list").await?["detail"],
+            "authorization_required"
+        );
+        assert_eq!(web.0.lock().unwrap().owner_task_calls, 0);
+        let before = http
+            .post(
+                "list_agents",
+                json!({"request_id":"members","workspace":{"workspace_id":"team"}}),
+            )
+            .await?;
+        {
+            let mut mock = web.0.lock().unwrap();
+            mock.login_stage = 0;
+        }
+        let waiting = http.invoke(login, "switch_start", json!({})).await?;
+        assert_eq!(waiting["state"], "waiting");
+        assert!(waiting["qr_code"].as_str().is_some_and(|s| !s.is_empty()));
+        assert!(
+            waiting["poll_interval_seconds"]
+                .as_u64()
+                .is_some_and(|s| s > 0)
+        );
+        assert_eq!(
+            http.invoke(login, "switch_poll", json!({})).await?["state"],
+            "waiting"
+        );
+        web.0.lock().unwrap().login_stage = 1;
+        assert_eq!(
+            http.invoke(login, "switch_poll", json!({})).await?["state"],
+            "scanned"
+        );
+        {
+            let mut mock = web.0.lock().unwrap();
+            mock.login_stage = 2;
+            mock.user = "other".into();
+        }
+        assert_eq!(
+            invoke_error(&http, login, "switch_poll").await?["code"],
+            "invalid_argument"
+        );
+        assert_eq!(
+            http.invoke(owner, "get", json!({})).await?["state"],
+            "needs_sign_in"
+        );
+        http.invoke(login, "switch_cancel", json!({})).await?;
+        web.0.lock().unwrap().user = "lead".into();
+        http.invoke(login, "switch_start", json!({})).await?;
+        assert_eq!(
+            http.invoke(login, "switch_poll", json!({})).await?["state"],
+            "ready"
+        );
+        let ready = http.invoke(owner, "get", json!({})).await?;
+        assert_eq!(ready["state"], "ready");
+        assert_eq!(ready["name"], "Alice");
+        assert_eq!(
+            http.invoke(tasks, "list", json!({})).await?["enabled"],
+            true
+        );
+        let after = http
+            .post(
+                "list_agents",
+                json!({"request_id":"members","workspace":{"workspace_id":"team"}}),
+            )
+            .await?;
+        assert_eq!(
+            before["agents"], after["agents"],
+            "sign-in must not add or replace members"
+        );
+        // A stored owner may also lose its workspace App secret. Recover it from
+        // the same recorded member instead of asking the user to repair data.
+        http.post(
+            "update_workspace",
+            json!({"request_id":"lost-app-secret","workspace":{"workspace_id":"team"},
+            "provider_secrets_json":json!({"feishu_owner_app_secret":""}).to_string()}),
+        )
+        .await?;
+        assert_eq!(
+            http.invoke(owner, "get", json!({})).await?["state"],
+            "needs_sign_in"
+        );
+        http.invoke(login, "switch_start", json!({})).await?;
+        http.invoke(login, "switch_poll", json!({})).await?;
+        assert_eq!(
+            http.invoke(owner, "get", json!({})).await?["state"],
+            "ready"
+        );
+        assert_eq!(
+            http.invoke(tasks, "list", json!({})).await?["enabled"],
+            true
+        );
+        // Recovered authorization is workspace-owned, independent of the granting member.
+        http.post(
+            "delete_agent",
+            json!({"request_id":"delete","agent":{"workspace_id":"team","agent_id":"alpha"}}),
+        )
+        .await?;
+        assert_eq!(
+            http.invoke(tasks, "list", json!({})).await?["enabled"],
+            true
+        );
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    }
+    .await;
+    let cleanup = rig.close().await;
+    scenario?;
+    cleanup
+}
+
+#[tokio::test]
+async fn owner_task_token_expiry_and_revocation_require_sign_in_but_other_errors_do_not()
+-> Result<()> {
+    let (mut rig, web, mut http) = feishu_review_rig(true).await?;
+    let scenario = async {
+        let owner = "feishu.workspace.owner";
+        let login = "feishu.workspace.console_login";
+        let tasks = "feishu.workspace.tasks";
+        let (mut events, _) = tokio_tungstenite::connect_async(format!(
+            "{}/api/v1/events?workspace=team",
+            http.url.replacen("http://", "ws://", 1)
+        ))
+        .await?;
+        // Includes errors from the tasklist join, subscription, and paged task reads.
+        for (code, suffix) in [
+            (99991677, "/team_tasklist"),
+            (99991668, "/task_subscription"),
+            (99991679, "/team_tasklist/tasks"),
+            (99991663, "/team_tasklist"),
+        ] {
+            let original = http.invoke(owner, "get", json!({})).await?;
+            {
+                let mut mock = web.0.lock().unwrap();
+                mock.task_error = Some(code);
+                mock.task_error_suffix = Some(suffix.into());
+            }
+            assert_eq!(
+                invoke_error(&http, tasks, "list").await?["detail"],
+                "authorization_required"
+            );
+            event(&mut events, "workspace_updated").await?;
+            let expired = http.invoke(owner, "get", json!({})).await?;
+            assert_eq!(expired["state"], "needs_sign_in");
+            assert_eq!(expired["person_id"], original["person_id"]);
+            assert_eq!(expired["name"], original["name"]);
+            assert_eq!(expired["avatar"], original["avatar"]);
+            let calls = web.0.lock().unwrap().owner_task_calls;
+            assert_eq!(
+                invoke_error(&http, tasks, "list").await?["detail"],
+                "authorization_required"
+            );
+            assert_eq!(
+                web.0.lock().unwrap().owner_task_calls,
+                calls,
+                "known invalid grant must fail locally"
+            );
+            {
+                let mut mock = web.0.lock().unwrap();
+                mock.task_error = None;
+                mock.task_error_suffix = None;
+            }
+            http.invoke(login, "switch_start", json!({})).await?;
+            assert_eq!(
+                http.invoke(login, "switch_poll", json!({})).await?["state"],
+                "ready"
+            );
+            assert_eq!(
+                http.invoke(owner, "get", json!({})).await?["state"],
+                "ready"
+            );
+            assert_eq!(
+                http.invoke(tasks, "list", json!({})).await?["enabled"],
+                true
+            );
+        }
+        for code in [99991400, 99991672, 99991676, 1470403] {
+            web.0.lock().unwrap().task_error = Some(code);
+            let error = invoke_error(&http, tasks, "list").await?;
+            assert_ne!(error["detail"], "authorization_required");
+            assert_eq!(
+                http.invoke(owner, "get", json!({})).await?["state"],
+                "ready"
+            );
+        }
+        web.0.lock().unwrap().task_error = None;
+        for status in [401, 403] {
+            web.0.lock().unwrap().task_http_status = Some(status);
+            assert_eq!(
+                invoke_error(&http, tasks, "list").await?["detail"],
+                "authorization_required"
+            );
+            assert_eq!(
+                http.invoke(owner, "get", json!({})).await?["state"],
+                "needs_sign_in"
+            );
+            web.0.lock().unwrap().task_http_status = None;
+            http.invoke(login, "switch_start", json!({})).await?;
+            http.invoke(login, "switch_poll", json!({})).await?;
+        }
+        web.0.lock().unwrap().task_http_status = Some(503);
+        assert_ne!(
+            invoke_error(&http, tasks, "list").await?["detail"],
+            "authorization_required"
+        );
+        assert_eq!(
+            http.invoke(owner, "get", json!({})).await?["state"],
+            "ready"
+        );
+        web.0.lock().unwrap().task_http_status = None;
+        web.0.lock().unwrap().task_error = Some(99991677);
+        assert_eq!(
+            invoke_error(&http, tasks, "list").await?["detail"],
+            "authorization_required"
+        );
+        drop(events);
+        rig.restart_runtime().await?;
+        http = Http::new(&rig)?;
+        assert_eq!(
+            http.invoke(owner, "get", json!({})).await?["state"],
+            "needs_sign_in"
+        );
+        web.0.lock().unwrap().task_error = None;
+        http.invoke(login, "switch_start", json!({})).await?;
+        http.invoke(login, "switch_poll", json!({})).await?;
+        assert_eq!(
+            http.invoke(tasks, "list", json!({})).await?["enabled"],
+            true
+        );
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    }
+    .await;
+    let cleanup = rig.close().await;
+    scenario?;
+    cleanup
 }

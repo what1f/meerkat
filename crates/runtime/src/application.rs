@@ -978,6 +978,18 @@ impl ProviderStorage for WorkspaceServices {
                 .map_err(provider_storage_error)
         })
     }
+    fn agent_config<'a>(&'a self, agent_id: &'a AgentId) -> SdkFuture<'a, serde_json::Value> {
+        Box::pin(async move {
+            self.storage
+                .agent_record(&self.workspace_id, agent_id)
+                .await
+                .map(|agent| agent.provider_agent_config)
+                .map_err(|_| ProviderError::External {
+                    operation: "provider_storage",
+                    retryable: true,
+                })
+        })
+    }
     fn agent_state<'a>(&'a self, agent_id: &'a AgentId) -> SdkFuture<'a, serde_json::Value> {
         Box::pin(async move {
             self.storage

@@ -17,13 +17,17 @@ pub struct Feishu {
     pub user: String,
     pub tenant: String,
     pub expired: bool,
+    pub task_error: Option<i64>,
+    pub task_error_suffix: Option<String>,
+    pub task_http_status: Option<u16>,
+    pub owner_task_calls: usize,
     pub tasks: Vec<Value>,
     pub task_subscriptions: usize,
     pub acknowledgements: usize,
     pub denied_tasks: Vec<String>,
     pub tokens: std::collections::BTreeMap<String, String>,
     pub events: std::collections::VecDeque<lankide_provider_feishu::events::RawEvent>,
-    reject_app_create: bool,
+    pub reject_app_create: bool,
     /// The owner has no profile picture.
     pub no_owner_avatar: bool,
     apps: Vec<String>,
@@ -237,6 +241,13 @@ impl Transport for FeishuWeb {
                 return data(info);
             }
             if url.ends_with("/oauth/v1/app/registration") {
+                if request.body.starts_with(b"action=poll") {
+                    return reply(
+                        json!({"client_id":"cli_registered", "client_secret":"registered-secret",
+                        "user_info":{"open_id":"ou_lead"}}),
+                        &[],
+                    );
+                }
                 return reply(
                     json!({
                         "device_code": "device",
@@ -323,6 +334,26 @@ impl Transport for FeishuWeb {
                     headers: vec![("content-type".into(), "image/jpeg".into())],
                     body: b"avatar".to_vec(),
                 });
+            }
+            if url.contains("/open-apis/task/")
+                && header(&request, "authorization").starts_with("Bearer token-")
+            {
+                feishu.owner_task_calls += 1;
+                if let Some(code) = feishu.task_error
+                    && feishu
+                        .task_error_suffix
+                        .as_ref()
+                        .is_none_or(|suffix| url.ends_with(suffix))
+                {
+                    return reply(json!({"code":code,"msg":"mock task failure"}), &[]);
+                }
+                if let Some(status) = feishu.task_http_status {
+                    return Ok(Response {
+                        status,
+                        headers: vec![],
+                        body: vec![],
+                    });
+                }
             }
             if url.ends_with("/task/v2/task_v2/task_subscription") {
                 assert_eq!(request.method, Method::Post);

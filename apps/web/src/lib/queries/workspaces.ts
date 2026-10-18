@@ -65,12 +65,7 @@ export function useSetWorkspaceState(scope?: string) {
 
 type WorkspaceOwnerInput = { action: 'get' | 'refresh' };
 export type WorkspaceOwnerRequest = DTO.GetWorkspaceRequest & { provider: 'feishu' | 'telegram' };
-export type WorkspaceOwner = {
-  state: 'unbound' | 'ready' | 'reauth_required';
-  person_id?: string;
-  name?: string;
-  avatar?: DTO.ResourceRef;
-};
+export type WorkspaceOwner = DTO.WorkspaceOwner;
 export function useWorkspaceOwner(input: WorkspaceOwnerRequest, enabled = true) {
   return useQuery({
     queryKey: [...keys.owners, { ...input, request_id: undefined }],

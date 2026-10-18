@@ -905,6 +905,10 @@ pub(crate) fn status(error: RuntimeError) -> Status {
             Status::failed_precondition("Connect your account to continue.")
                 .with_detail(Some("authorization_required".into()))
         }
+        RuntimeError::ProviderCall(lankide_provider::ProviderError::OwnerAppUnavailable) => {
+            Status::failed_precondition("An account connection is unavailable.")
+                .with_detail(Some("owner_app_unavailable".into()))
+        }
         RuntimeError::ProviderCall(lankide_provider::ProviderError::NotFound { .. })
         | RuntimeError::ProviderCall(lankide_provider::ProviderError::UnknownRegistration {
             ..
