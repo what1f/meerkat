@@ -319,3 +319,48 @@ test('dragging a piece leaves the wall texture and the board size alone', async 
   }
   await page.mouse.up();
 });
+
+test('with the task list off the rules hang in the middle of the board', async ({
+  page,
+  baseURL,
+}) => {
+  const workspace = 'bare_team';
+  await signInFeishu(baseURL!, workspace);
+  await bindOwner(baseURL!, workspace);
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await openTeam(page, workspace);
+  const boxes = async () => {
+    const board = (await page.locator('[data-layout="free"]').boundingBox())!;
+    const rules = (await page.getByTestId('team-rules').boundingBox())!;
+    const list = (await page.getByTestId('tasklist').boundingBox())!;
+    const shift = (await page.getByTestId('team-shift').boundingBox())!;
+    return { board, rules, list, shift };
+  };
+  const apart = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+    a.x >= b.x + b.width || b.x >= a.x + a.width || a.y >= b.y + b.height || b.y >= a.y + a.height;
+  await expect(page.getByTestId('tasklist')).toBeVisible();
+  await expect
+    .poll(async () => {
+      const { board, rules } = await boxes();
+      return Math.abs(rules.x + rules.width / 2 - (board.x + board.width / 2));
+    })
+    .toBeLessThan(3);
+  const bare = await boxes();
+  expect(apart(bare.rules, bare.list)).toBe(true);
+  expect(apart(bare.rules, bare.shift)).toBe(true);
+  expect(apart(bare.list, bare.shift)).toBe(true);
+
+  await page.getByTestId('tasklist').click();
+  await expect(page.getByTestId('tasklist').getByRole('textbox')).toBeVisible();
+  await expect
+    .poll(async () => {
+      const { board, rules } = await boxes();
+      return board.x + board.width / 2 - (rules.x + rules.width / 2);
+    })
+    .toBeGreaterThan(100);
+  const listed = await boxes();
+  expect(apart(listed.rules, listed.list)).toBe(true);
+  expect(apart(listed.rules, listed.shift)).toBe(true);
+  expect(apart(listed.list, listed.shift)).toBe(true);
+  expect(listed.list.x).toBeGreaterThan(listed.rules.x);
+});

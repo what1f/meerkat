@@ -10,6 +10,13 @@ export const layouts: { span: number; spots: Record<Spot, HolePosition> }[] = [
   { span: 30, spots: { rules: { x: 7, y: 1 }, tasks: { x: 22, y: 1 }, shift: { x: 7, y: 21 } } },
   { span: 24, spots: { rules: { x: 7, y: 1 }, tasks: { x: 7, y: 21 }, shift: { x: 17, y: 1 } } },
 ];
+// With the task list off its slot is only an outline, so the rules take the middle of the board
+// and the shift sign and the slot hang beside them.
+export const bareLayouts: typeof layouts = [
+  { span: 48, spots: { rules: { x: 24, y: 1 }, tasks: { x: 8, y: 1 }, shift: { x: 38, y: 1 } } },
+  { span: 36, spots: { rules: { x: 18, y: 1 }, tasks: { x: 18, y: 21 }, shift: { x: 30, y: 1 } } },
+  { span: 24, spots: { rules: { x: 12, y: 1 }, tasks: { x: 12, y: 21 }, shift: { x: 22, y: 1 } } },
+];
 // Holes between a spot's peg and its edge: whatever the saved position, it stays on the board.
 export const reach: Record<Spot, number> = { rules: 7, tasks: 7, shift: 2 };
 // What a spot takes up on the wall, the whole hung piece: its string, peg and paper. Until
@@ -32,7 +39,7 @@ const overlaps = (a: ReturnType<typeof rectOf>, b: ReturnType<typeof rectOf>) =>
   b.top < a.top + a.size.h;
 export const plain = {
   span: 36,
-  spots: { rules: { x: 7, y: 1 }, tasks: { x: 7, y: 1 }, shift: { x: 17, y: 1 } },
+  spots: { rules: { x: 18, y: 1 }, tasks: { x: 18, y: 21 }, shift: { x: 30, y: 1 } },
 };
 const isHole = (v: unknown): v is HolePosition =>
   !!v &&

@@ -116,6 +116,16 @@ export function Tasklist({ workspace, handle }: { workspace: Workspace; handle?:
   );
 }
 
+// Whether the task list hangs as a list rather than an empty slot: what Feishu said, else the setting.
+export function useTasksOn(workspace: Workspace, feishu: boolean) {
+  const tasks = useWorkspaceTasks(
+    { request_id: 'workspace_tasks', workspace: workspace.workspace },
+    feishu,
+  );
+  if (tasks.isError || (!tasks.data && tasks.errorUpdateCount > 0)) return true;
+  return tasks.data ? tasks.data.enabled : configured(workspace);
+}
+
 function configured(workspace: Workspace) {
   try {
     const config: unknown = JSON.parse(workspace.provider_config_json || '{}');

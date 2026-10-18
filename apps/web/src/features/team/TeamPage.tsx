@@ -5,9 +5,18 @@ import { useT } from '../../lib/i18n';
 import { readStorage, writeStorage } from '../../lib/storage';
 import { useUpdateWorkspace, useWorkspace } from '../../lib/queries/workspaces';
 import type { Workspace } from '../../lib/api/generated';
-import { isWall, layouts, plain, type Size, type Spot, type Wall, hang } from './wallLayout';
+import {
+  bareLayouts,
+  isWall,
+  layouts,
+  plain,
+  type Size,
+  type Spot,
+  type Wall,
+  hang,
+} from './wallLayout';
 import { RulesTag } from './RulesTag';
-import { Tasklist } from './Tasklist';
+import { Tasklist, useTasksOn } from './Tasklist';
 import { ShiftToggle } from './ShiftToggle';
 import './messages';
 
@@ -51,9 +60,11 @@ function TeamWall({ workspace }: { workspace: Workspace }) {
     return () => observer.disconnect();
   }, []);
   const feishu = workspace.provider_id === 'feishu';
+  const tasksOn = useTasksOn(workspace, feishu);
+  const tiers = tasksOn ? layouts : bareLayouts;
   const layout = !feishu
     ? plain
-    : (layouts.find((l) => l.span <= (cols ?? 0)) ?? layouts[layouts.length - 1]!);
+    : (tiers.find((l) => l.span <= (cols ?? 0)) ?? tiers[tiers.length - 1]!);
   const spots: Spot[] = feishu ? ['rules', 'tasks', 'shift'] : ['rules', 'shift'];
   // The size of each hung piece follows its content.
   const [sizes, setSizes] = useState<Partial<Record<Spot, Size>>>({});
