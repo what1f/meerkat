@@ -452,14 +452,16 @@ Acceptance scenarios:
 
 ### Task 14: local Machine auto-pairing in the Desktop
 
-Crates: `apps/desktop`, `crates/desktop-ui`, `lankide-client`.
+Crates: `apps/web`, `apps/desktop`, `lankide-client`.
 
 Contract: on first launch the Desktop pairs its own Machine without showing a
 code. The Agent form lists registered Machines with online state. Remote
 pairing shows one pinned command to copy.
 
-Acceptance: the `desktop` visual-semantic scenario set gains first launch,
-Machine list with one offline Machine, and the address and command pairing dialog.
+Acceptance: Web business E2Es (`just web-e2e`) cover the Machine list with an
+offline Machine and the address and command pairing flow. D2 covers page visual
+acceptance. C2 covers the Desktop shell window; local auto-pairing and helper
+lifecycle remain covered by the Desktop bootstrap scenarios.
 
 ## Phase 4: Agent capability path
 
@@ -494,20 +496,21 @@ Crates: `lankide-runtime`, `apps/daemon`, `lankide-client`,
 
 Contract:
 
-- Management operations as JSON over HTTP; one WS for events. Authenticated
-  with the local owner credential.
+- Management operations as JSON over loopback HTTP; one WS for events.
+  Validate Host, Origin and JSON content type without an owner credential.
 - `lankide-client` keeps its trait; the gRPC adapter is replaced by an HTTP
   adapter. The Desktop changes only its connection setup.
 
 Acceptance: every `client` and `runtime-daemon` management scenario passes over
-HTTP, plus a request without the owner credential is rejected.
+HTTP; local requests without credentials pass and cross-origin requests fail.
 
 ### Task 17: remove gRPC
 
 Crates: all users of `tonic` and `prost`.
 
 Acceptance: `cargo tree` shows no `tonic` or `prost`; `just check`,
-`just test`, and the desktop visual scenarios pass.
+`just test`, and Web business E2Es pass. D2 covers page visual acceptance;
+C2 covers the Desktop shell window.
 
 ## Order and review
 
@@ -517,8 +520,10 @@ listed scenarios, read the report, and run `just check` and `just test`.
 
 ## Open items
 
-- Desktop visual acceptance for Tasks 14–17 needs an actual-window review with
-  authorized live Provider accounts (`./apps/desktop/visual-e2e.sh`).
+- Page behavior for Tasks 14–17 is verified through Web business E2Es
+  (`just web-e2e`); page visual acceptance belongs to D2.
+- The Tauri shell window is reviewed in C2 through
+  `./apps/desktop/window-e2e.sh`; this entry point covers shell scenarios only.
 - Remote Machine access now uses a separate TLS listener with persisted identity
   and certificate pinning; management and local discovery remain on loopback.
 - HTTP resource downloads read the whole resource into memory before serving

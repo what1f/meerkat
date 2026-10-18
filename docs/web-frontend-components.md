@@ -119,7 +119,7 @@ apps/web/
 
 素材统一放进 `apps/web/src/assets/`，作为唯一来源，包括：
 
-- `apps/desktop/assets` 下的 reactions、icons、mascot、fonts
+- Web 使用的 reactions、brand、mascot、fonts（旧桌面副本已删除）
 - `docs/design` 下的 avatars、figures、office
 
 `system.html` 改为引用这里的素材这件事，由设计会话负责。

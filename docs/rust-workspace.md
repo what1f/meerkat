@@ -18,7 +18,6 @@ crates/runtime              scheduling, persistence, Provider lifecycle
 crates/machine-core             Agent home and Harness execution boundary
 crates/daemon-runtime       shared daemon filesystem and instance ownership
 crates/client               management client contract and test support
-crates/desktop-ui           reusable GPUI shell and presentation primitives
 crates/testkit              shared business-scenario fixtures
 crates/web-assets           Runtime static frontend assets (disk in debug, embedded in release)
 
@@ -30,7 +29,7 @@ harnesses/claude-code       Claude Code composition adapter
 
 apps/daemon         Runtime composition root
 apps/machine        Machine composition root
-apps/desktop                GPUI composition root
+apps/desktop                Tauri window and local-service composition root
 apps/lankide-cli            Agent-run-scoped capability CLI
 ```
 
@@ -45,7 +44,6 @@ runtime   -> core, protocol, provider, storage
 machine  -> core, protocol, harness
 daemon-runtime -> core
 client         -> protocol
-desktop-ui     -> GPUI
 
 providers/*  -> core, provider
 harnesses/*  -> core, harness
@@ -53,12 +51,12 @@ harnesses/*  -> core, harness
 apps/daemon  -> runtime + daemon-runtime + concrete providers + web-assets
 web-assets   -> HTTP response types (no protocol or runtime dependency)
 apps/machine -> machine + daemon-runtime + concrete harnesses
-apps/desktop         -> client + desktop-ui + GPUI
+apps/desktop -> client + Tauri + native background services
 apps/lankide-cli     -> protocol
 ```
 
 `core` never depends on a concrete Provider, Harness, database, transport, or
-GPUI crate. Concrete Providers and Harnesses are assembled only in application
+UI framework. Concrete Providers and Harnesses are assembled only in application
 composition roots. A package may have additional strictly narrower dependencies
 only when its public contract needs them; it must not reverse the arrows above.
 
@@ -108,7 +106,7 @@ LANKIDE_E2E_LIVE=1 ./scripts/verify-all --gate full-release
 ```
 
 `just check` verifies open-source and production boundaries, formatting, the
-workspace build, module contracts, and the Desktop UI boundary. `just test`
+workspace build, module contracts, and frontend lint. `just test`
 (`verify-all --gate hermetic`) runs all workspace integration scenarios once with the Machine and Harness
 `test-support` features. Each crate has one `tests/e2e/main.rs` integration
 target, with scenario modules running on parallel test threads. The gate builds
@@ -162,7 +160,7 @@ include:
 5. A report of external prerequisites and whether the test is unattended.
 6. No `#[cfg(test)]` source module and no placeholder assertion.
 
-The GPUI application is the one exception to the CLI-only rule: its visual and
+The Tauri shell is the one exception to the CLI-only rule: its visual and
 interaction acceptance may use a live macOS window. Its data contract still
 comes from `lankide-client`, so the test support and Runtime client can be
 verified independently.

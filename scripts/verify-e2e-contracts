@@ -142,7 +142,7 @@ def main() -> int:
             continue
         metadata = (package.get("metadata") or {}).get("lankide", {})
         exemption = metadata.get("e2e-exemption")
-        if name in {"desktop-ui", "desktop-ui-preview", "lankide-web-types"} and isinstance(exemption, str) and exemption.strip():
+        if name == "lankide-web-types" and isinstance(exemption, str) and exemption.strip():
             continue
         if name not in unlisted:
             fail(f"workspace package lacks an E2E contract: {name}")

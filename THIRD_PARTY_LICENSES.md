@@ -6,9 +6,9 @@ only to identify compatible tools.
 
 ## Feishu and Telegram assets
 
-The Feishu and Telegram logos under `apps/desktop/assets/icons/` identify their
+The Feishu and Telegram logos under `apps/web/src/assets/brand/` identify their
 respective integrations. The Feishu reaction artwork under
-`apps/desktop/assets/reactions/` is retained for accurate message rendering.
+`apps/web/src/assets/reactions/` is retained for accurate message rendering.
 
 These names, logos, and reaction assets remain the property of their respective
 owners. They are not covered by Lankide's MIT license. Redistributors are
@@ -18,8 +18,8 @@ responsible for following the applicable brand and platform terms.
 
 Files:
 
-- `apps/desktop/assets/fonts/JetBrainsMono-Regular.ttf`
-- `apps/desktop/assets/fonts/JetBrainsMono-Bold.ttf`
+- `apps/web/src/assets/fonts/JetBrainsMono-Regular.ttf`
+- `apps/web/src/assets/fonts/JetBrainsMono-Bold.ttf`
 
 Source: https://github.com/JetBrains/JetBrainsMono
 
@@ -122,7 +122,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 ## Lobe Icons
 
-The model and Harness icons under `apps/desktop/assets/icons/lobehub/` come from
+The model and Harness icons under `apps/web/src/assets/brand/` come from
 Lobe Icons.
 
 Source: https://github.com/lobehub/lobe-icons
@@ -155,7 +155,7 @@ SOFTWARE.
 
 ## Lucide
 
-The interface icons under `apps/desktop/assets/icons/lucide/` come from Lucide.
+The interface icons imported through `lucide-react` come from Lucide.
 
 Source: https://github.com/lucide-icons/lucide
 
@@ -206,17 +206,3 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
-
-## Zed GPUI
-
-Lankide uses the GPUI framework and Apache-2.0 support crates from the Zed
-repository at commit `6e2fae619c45ffc90e5bcf5cfbfcef8bb693fbe1`.
-
-Source: https://github.com/zed-industries/zed
-
-License: Apache License 2.0 for GPUI and the components used by Lankide. The
-complete license text is available at `licenses/Apache-2.0.txt`.
-
-Zed's GPL-licensed tracing crates are not included. Lankide patches the disabled
-instrumentation surface with the local MIT-licensed no-op crate at
-`crates/ztracing-shim/`.

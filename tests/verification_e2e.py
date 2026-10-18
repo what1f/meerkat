@@ -25,6 +25,11 @@ def run():
         shutil.copy2(ROOT / "scripts/verify-all", scripts / "verify-all")
         shutil.copy2(ROOT / "scripts/run-hermetic-tests", scripts / "run-hermetic-tests")
         (root / "tests").mkdir()
+        # B4 added a browser step to the public hermetic gate. Give this
+        # isolated verification workspace a real recipe and verify dispatch.
+        (root / "Justfile").write_text(
+            "web-e2e:\n    @touch web-e2e-ran\n"
+        )
         (root / "tests/e2e-modules.tsv").write_text(
             "# module_id\tpackage\tkind\tclassification\tcommand\tscenario\tprerequisites\tunattended\tstatus\n"
             "pending\tproduct\tcrate\thermetic\tfalse\tUnfinished business scenario\tNone\tyes\tpending\n"
@@ -61,6 +66,7 @@ def run():
         executable(root / "failing", "#!/bin/sh\nexit 0\n")
         result = subprocess.run([str(scripts / "verify-all"), "--gate", "hermetic"], env=env, capture_output=True, text=True)
         assert result.returncode == 0, result.stdout + result.stderr
+        assert (root / "web-e2e-ran").is_file(), "hermetic gate skipped browser scenarios"
         executable(root / "cargo", "#!/bin/sh\ncase \"$*\" in *--message-format=json*) exit 43;; esac\nexit 0\n")
         result = subprocess.run([str(scripts / "verify-all"), "--gate", "hermetic"], env=env, capture_output=True, text=True)
         assert result.returncode == 43, result.stdout + result.stderr
@@ -153,7 +159,7 @@ def run():
         visual_tests.mkdir(parents=True, exist_ok=True)
         visual_gate = visual_tests / "window_acceptance.py"
         shutil.copy2(ROOT / "apps/desktop/tests/window_acceptance.py", visual_gate)
-        shutil.copy2(ROOT / "apps/desktop/visual-e2e.sh", visual_tests.parent / "visual-e2e.sh")
+        shutil.copy2(ROOT / "apps/desktop/window-e2e.sh", visual_tests.parent / "window-e2e.sh")
         shutil.copy2(ROOT / "scripts/verify-module", scripts / "verify-module")
         # A passing headless contract must never satisfy the actual-window gate.
         (root / "tests/e2e-modules.tsv").write_text(

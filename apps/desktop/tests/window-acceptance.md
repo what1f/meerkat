@@ -1,12 +1,12 @@
 # Actual Desktop acceptance
 
-`../visual-e2e.sh` validates a recorded human or Machine Use review. It does not
+`../window-e2e.sh` validates a recorded human or Machine Use review. It does not
 automate UI interaction or infer visual correctness from OCR. No hidden Desktop
 flags, injected view state, Mock client, or test-only product composition is allowed.
 
 1. Build the four product executables. Set `LANKIDE_VISUAL_BINARY` and, for release
    acceptance, `LANKIDE_RELEASE_BIN_DIR` and `LANKIDE_RELEASE_REQUIRED=1`.
-2. Run `apps/desktop/visual-e2e.sh --prepare <new-artifact-directory>`. This creates
+2. Run `apps/desktop/window-e2e.sh --prepare <new-artifact-directory>`. This creates
    a **pending** template bound to the exact source and binary SHA-256.
 3. Launch those binaries in a private home. Record Desktop, Runtime and Machine
    PIDs and `ps -p <pid> -o lstart=` values in `owned_processes`. Use only authorized
@@ -17,10 +17,10 @@ flags, injected view state, Mock client, or test-only product composition is all
    Review layout, spacing, controls and clipping in the running product. Record
    specific observations, including failures; do not pass a scenario just because
    it opens.
-5. For `real-profile-images`, compare the actual Provider avatar/cover with the
-   rendered resource, then verify that missing data stays empty. For onboarding,
-   verify the visible next action and recovery. For model selection, check the
-   native directory and explicit custom configuration. Review light and dark modes.
+5. Check the title bar, traffic lights, vibrancy, drag region, startup loader,
+   localized startup errors and recovery, Open in Browser menu, and external links.
+   Review English and Chinese in light and dark modes. Web page business and visual
+   acceptance use the browser gates.
 6. Quit normally. Verify all owned processes and endpoints disappeared. Only then
    record `cleanup=passed`. Do not kill unrelated user services. If forced cleanup
    was needed, the quit scenario failed; retain that result before repairing it.
@@ -33,18 +33,13 @@ live owned process fails the gate. This checks evidence integrity; the reviewer 
 responsible for the truth of visual observations. A local debug review cannot be
 reused for a different release binary.
 
-Task 14 scenarios:
+Tauri shell scenarios (C2):
 
-- `first-launch-local-machine`: launch the product Desktop in a fresh private
-  home. In Settings, the local Machine appears online without a pairing dialog.
-- `machine-list-offline`: pair a second Machine through the product daemon,
-  connect it, then stop it. In Settings and the Agent create/edit selector, both
-  Machines remain visible with the second offline. Revoked Machines are absent.
-  Create an Agent on the chosen Machine and save an edited placement; verify it
-  through management. A new form defaults to the local Machine.
-- `pairing-code-dialog`: Add Machine first shows one address input and Enable.
-  After enabling remote access, it shows one selectable command and Copy command.
-  Run the copied command with a second private Machine home; verify the connected
-  name, automatic close, and updated list. Check command renewal after expiry.
-  Review Settings, address, command, and connected states in English and Chinese,
-  in both themes, including wrapping, contrast, spacing, and button alignment.
+- `window-chrome`: check traffic lights, title bar, initial size and minimum size.
+- `window-vibrancy`: check the native background in light and dark modes.
+- `window-drag-region`: drag the window from the reserved sidebar area.
+- `startup-loader`: observe the boot page until navigation to the Runtime UI.
+- `startup-error-recovery`: check localized failure states and retry/settings actions.
+- `open-in-browser`: open the current Runtime URL from the menu.
+- `external-link-navigation`: open an external link in the system browser and verify
+  that the shell keeps its Runtime page.

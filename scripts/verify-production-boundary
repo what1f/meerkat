@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 # These executables/libraries are never shipped or linked by product code.
-TEST_ONLY = {"lankide-testkit", "desktop-ui-preview", "lankide-system-e2e", "lankide-web-types"}
+TEST_ONLY = {"lankide-testkit", "lankide-system-e2e", "lankide-web-types"}
 MARKERS = re.compile(
     r"\b(?:Mock|Fake|Fixture)[A-Z]\w*|\b(?:scripted_harness|run_scripted|QueueEventSource|AtomicFailure|InjectedFailure|ProcessHarnessFactory|ProcessHarnessSpec)\b"
     r"|--(?:scripted-harness|scripted-composition|visual-e2e|e2e)\b"
@@ -23,9 +23,9 @@ MARKERS = re.compile(
 
 def verify_reaction_assets(errors):
     catalog_path = ROOT / "providers/feishu/assets/reactions.json"
-    assets_dir = ROOT / "apps/desktop/assets/reactions"
+    assets_dir = ROOT / "apps/web/src/assets/reactions"
     if not (ROOT / "providers/feishu/Cargo.toml").exists() and not (
-        ROOT / "apps/desktop/Cargo.toml"
+        ROOT / "apps/web/package.json"
     ).exists():
         return
     for required in (catalog_path,):
@@ -60,10 +60,10 @@ def verify_reaction_assets(errors):
     for filename in sorted(expected & actual):
         data = (assets_dir / filename).read_bytes()
         if len(data) < 26 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
-            errors.append(f"apps/desktop/assets/reactions/{filename}: invalid PNG")
+            errors.append(f"apps/web/src/assets/reactions/{filename}: invalid PNG")
         elif data[25] not in (4, 6):
             errors.append(
-                f"apps/desktop/assets/reactions/{filename}: PNG has no alpha channel"
+                f"apps/web/src/assets/reactions/{filename}: PNG has no alpha channel"
             )
 
 

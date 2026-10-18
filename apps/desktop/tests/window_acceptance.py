@@ -15,12 +15,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[3]
 SCENARIOS = (
-    "first-launch-local-machine", "machine-list-offline", "pairing-code-dialog",
-    "empty-state", "agent-list", "agent-list-hover", "feishu-create-agent",
-    "telegram-create-agent", "edit-agent", "edit-agent-reaction", "edit-agent-advanced",
-    "workspace-settings", "create-workspace", "create-workspace-provider", "agent-onboarding",
-    "settings", "dark-agent-list", "dark-create-workspace", "dark-edit-agent",
-    "dark-workspace-settings", "dark-settings", "real-profile-images",
+    "window-chrome", "window-vibrancy", "window-drag-region",
+    "startup-loader", "startup-error-recovery", "open-in-browser",
+    "external-link-navigation",
 )
 BINARY_NAMES = ("lankide-desktop", "lankided", "lankide-machine", "lankide")
 

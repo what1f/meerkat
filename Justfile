@@ -24,7 +24,6 @@ check:
     cargo fmt --all --check
     cargo check --workspace --all-targets --locked
     ./scripts/verify-e2e-contracts
-    ./scripts/verify-desktop-ui-boundary
 
 test:
     ./scripts/verify-all --gate hermetic

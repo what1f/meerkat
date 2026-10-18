@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the repository can be published without private data or GPL tracing crates."""
+"""Verify the repository can be published without private data or copyleft dependencies."""
 
 import json
 import os
@@ -43,7 +43,6 @@ PRIVATE_PATTERNS = (
     re.compile(r"\b(?:oc|ou)_[0-9a-f]{20,}\b"),
     re.compile(r"\bteam-[0-9a-f]{32,}\b"),
 )
-MISSING_LICENSE_ALLOWLIST = {"gpui_shared_string", "gpui_util"}
 COPYLEFT_LICENSES = ("GPL", "AGPL", "SSPL")
 
 
@@ -107,15 +106,8 @@ def main() -> int:
         license_id = package.get("license")
         if license_id and requires_copyleft(license_id):
             errors.append(f"copyleft dependency remains: {package['name']} ({license_id})")
-        if not license_id and package["name"] not in MISSING_LICENSE_ALLOWLIST:
+        if not license_id:
             errors.append(f"dependency has no license metadata: {package['name']}")
-
-    ztracing = [package for package in packages if package["name"] == "ztracing"]
-    if len(ztracing) != 1 or ztracing[0].get("source") is not None:
-        errors.append("ztracing must resolve only to the local compatibility shim")
-    for name in ("zlog", "ztracing_macro"):
-        if any(package["name"] == name for package in packages):
-            errors.append(f"GPL tracing package remains in the dependency graph: {name}")
 
     workspace_members = set(metadata["workspace_members"])
     for package in packages:

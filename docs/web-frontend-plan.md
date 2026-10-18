@@ -1,32 +1,29 @@
 # Web 前端与 Tauri 外壳方案
 
-状态：草案。
+状态：Web 前端与 Tauri 外壳已落地，D1 清理完成；视觉验收由 C2、D2 独立执行。
 
-本方案移除 GPUI，管理界面改为一套 Web 前端，由 Runtime 通过 HTTP 提供。
+本方案移除旧原生桌面框架，管理界面改为一套 Web 前端，由 Runtime 通过 HTTP 提供。
 Desktop 改为 Tauri 外壳，只负责托管后台服务和打开窗口。业务数据全部走
 HTTP JSON + WS，不经过 Tauri IPC。同一套前端也可以直接在本机浏览器中打开。
 
-## 现状
+## 迁移前背景
 
-迁移的基础已经具备：
+以下描述迁移开始前的实现和限制，仅用于说明方案的起因；这些问题已由后续任务处理。
 
-- Desktop 目前通过 `lankide-client` 用 HTTP 与 WS 访问 Runtime：业务操作是
-  `POST /api/v1/<op>`，事件走 `GET /api/v1/events`。中间没有进程间通信。
-- 管理 DTO 都是 serde JSON，二进制数据用 base64，不依赖本地路径。
-- 唯一的 HTTP 服务是 `crates/protocol/src/resources.rs` 中手写的 hyper router。
-  管理、Machine link 和资源下载共用这个 listener，并且只允许绑定 loopback。
+- 旧 Desktop 通过 `lankide-client` 用 HTTP 与 WS 访问 Runtime：业务操作是
+  `POST /api/v1/<op>`，事件走 `GET /api/v1/events`。
+- 管理 DTO 已使用 serde JSON，二进制数据用 base64，不依赖本地路径。
+- 管理、Machine link 和资源下载共用手写的 hyper router，并且只允许绑定 loopback。
 
-浏览器接入前，还需要解决下面几点：
+浏览器接入前存在以下限制：
 
-| 问题 | 位置 |
-|---|---|
-| 事件 WS 用 `Authorization` 和 `x-lankide-subscription` 请求头传参，浏览器的 `WebSocket` 无法设置请求头 | `resources.rs:178` |
-| 管理 listener 默认绑定 `127.0.0.1:0`，端口每次都变，浏览器没有固定地址可用 | `apps/daemon/src/lib.rs:178` |
-| 没有静态文件服务，没有 Host 和 Origin 校验 | `resources.rs` |
-| 枚举在 JSON 中是 i32，前端只能硬编码数字 | `wire.rs`、`ManagementEvent.kind: i32` 等 |
-| Desktop 通过读取 `machine-credentials.json` 判断本机 Machine，目录接口里没有 `is_local` | `apps/desktop/src/ui/machines.rs:43` |
-| Harness 列表和思考强度在 UI 中硬编码，没有使用 catalog | `ui/mod.rs:426`、`ui/agent_actions.rs:151` |
-| 工作区和 Agent 靠轮询刷新，只有 Machine 订阅了事件 | `ui/machines.rs:92` |
+- 事件 WS 用 `Authorization` 和 `x-lankide-subscription` 请求头传参，浏览器的 `WebSocket` 无法设置请求头。
+- 管理 listener 默认绑定 `127.0.0.1:0`，端口每次都变，浏览器没有固定地址可用。
+- 没有静态文件服务，没有 Host 和 Origin 校验。
+- 枚举在 JSON 中是 i32，前端只能硬编码数字。
+- Desktop 通过读取 `machine-credentials.json` 判断本机 Machine，目录接口里没有 `is_local`。
+- Harness 列表和思考强度在 UI 中硬编码，没有使用 catalog。
+- 工作区和 Agent 靠轮询刷新，只有 Machine 订阅了事件。
 
 只有 Desktop 外壳需要本机能力，包括：用 SMAppService 或 launchctl 托管 `lankided`
 和 `lankide-machine`、替换旧版本、窗口材质和标题栏。其余能力都有 Web 原生实现：
@@ -79,7 +76,7 @@ Runtime 只在本机提供管理服务，这一版不做登录和 Session。
   而 Runtime 不响应 CORS，预检会失败。
 
 满足这三条之后，owner Bearer 就不再承担额外的防护：同一个 OS 用户的任何进程，包括 Agent
-自己，本来就能读到 `run/management-owner.secret`。因此这一版**移除 owner 凭据**，
+自己，本来就能读取同一用户的本地凭据。因此这一版**移除 owner 凭据**，
 loopback 访问统一按上面三条规则处理。改动涉及 `apps/daemon`、`crates/protocol` 中的
 `management.rs` 和 `resources.rs`、`crates/client/src/http.rs`，以及对应的 E2E。
 代价是同一台 Mac 上的其他 OS 用户也能访问管理接口。
@@ -144,7 +141,7 @@ IM 式对话界面。选用 React，原因如下：
 
 不引入以下依赖：
 
-- 路由库：页面切换用一个 page 状态加 `location.hash`，与现在 GPUI 的 `Page` 枚举一一对应。
+- 路由库：页面切换用一个 page 状态加 `location.hash`，以页面状态维护导航。
 - 全局状态库：服务端数据放在 TanStack Query；界面状态放在组件内部，必要时用 Context。
 - 动效库：用 CSS transition 加 `@starting-style`。
 
@@ -160,7 +157,7 @@ IM 式对话界面。选用 React，原因如下：
 - 代码放在 `apps/web/`，用 pnpm 管理，Cargo workspace 保持不变。
 - i18n：类型化的中英文字典，每个 feature 一个 `messages.ts`，由 `tsc` 检查键名。
   语言和主题存在 `localStorage`，主题默认跟随 `prefers-color-scheme`。
-- 边界检查：ESLint 和 stylelint 替代 `verify-desktop-ui-boundary`，由 `just check` 执行。
+- 边界检查：ESLint 和 stylelint 承担界面边界检查，由 `just check` 执行。
 - 测试选择器：统一用 kebab-case 的 `data-testid`，清单见组件文档。
 - 静态资源：reaction、图标、头像、figures、字体统一放在 `apps/web/src/assets/`，由 Vite 打包，
   再内嵌进 Runtime。
@@ -188,7 +185,7 @@ IM 式对话界面。选用 React，原因如下：
 - 使用 Tauri v2，作为普通 cargo bin 构建（`tauri-build` + `custom-protocol`），不引入
   tauri-cli 的打包功能。`scripts/package-macos`、签名、DMG、provenance 和 `verify-package`
   继续使用，只替换主程序二进制。
-- `background_services.rs` 和 `backend.rs` 不依赖 GPUI，保留在 `apps/desktop` 中。
+- `background_services.rs` 和 `backend.rs` 不依赖界面框架，保留在 `apps/desktop` 中。
   `--local-bootstrap-smoke` 保留。
 - 启动流程：
   1. 窗口加载内嵌的 `boot.html`，显示 meerkat loader。
@@ -210,7 +207,7 @@ IM 式对话界面。选用 React，原因如下：
 
 - **Web 业务 E2E**：Playwright（headless Chromium）连接 `tests/system` 拉起的真实
   `lankided` 和 `lankide-machine`，Harness 和 IM 使用现有 test-support。
-  它替代 `desktop_interaction_e2e`，以及 `machine_pairing_e2e` 中涉及 UI 的部分。
+  它替代旧桌面交互 E2E，以及 `machine_pairing_e2e` 中涉及 UI 的部分。
   场景沿用现有合同：
   - 创建工作区，完成 onboarding
   - 创建和编辑 Agent，暂停和恢复 Agent
@@ -227,23 +224,18 @@ IM 式对话界面。选用 React，原因如下：
 - **视觉验收**：标准按 strict visual acceptance。
   - 浏览器：交给 haiku sub agent，用 ego-lite 完成。
   - Tauri 窗口：通过 Herdr 交给 Codex 做 Computer Use。
-- `tests/e2e-modules.tsv`：`desktop-ui` 一行换成 `web`，`desktop` 一行改为外壳验收。
+- `tests/e2e-modules.tsv`：页面合同使用 `web`，`desktop` 一行改为外壳验收。
 
-## 移除清单
+## 移除清单（D1 已执行）
 
-- workspace 成员：`crates/desktop-ui`、`apps/ui-preview`、`crates/ztracing-shim`，
-  以及空目录 `crates/ui`。
-- 根 `Cargo.toml`：`gpui*` 依赖，以及 `[patch."https://github.com/zed-industries/zed"]`。
-- `apps/desktop`：`src/ui/`、`src/assets.rs`，以及 `image`、`qrcode`、`objc2*` 依赖。
-- owner 凭据：`OwnerCredential`、`management-owner.secret` 及相关检查。
-- 脚本：
-  - `verify-desktop-ui-boundary` 改为前端 lint。
-  - `verify-open-source` 删除 ztracing 检查和 `gpui_*` 许可证白名单。
-  - `verify-production-boundary` 的 reaction 资源检查改为指向 `apps/web`。
-- 文档：
-  - `docs/rust-workspace.md`：依赖图改为 `apps/desktop -> Tauri`，新增 `web-assets`。
-  - `docs/packaging.md`。
-  - `docs/remote-machine.md`：管理入口和 owner 凭据的描述。
+- 删除旧桌面组件、预览程序、追踪 shim 和旧 UI 素材；不保留兼容层。
+- 删除旧框架 workspace 依赖和 Zed patch，更新 Cargo.lock。
+- Desktop 保留 Tauri、后台服务、启动页、App 图标和 DMG 素材。
+  Objective-C 依赖仍用于 WKWebView 配置、系统语言和后台项目注册。
+- 管理面不使用 owner 凭据，只使用 loopback、Host、Origin 和 JSON 校验。
+- `just check` 通过 `just web-check` 执行前端 lint；移除旧桌面边界脚本。
+- 开源检查不再包含旧框架许可证例外；reaction 检查指向 `apps/web/src/assets/reactions`。
+- 文档和 E2E 合同使用 Web 页面与 Tauri 外壳边界；窗口证据入口为 `apps/desktop/window-e2e.sh`。
 
 ## 任务
 
@@ -484,7 +476,7 @@ IM 式对话界面。选用 React，原因如下：
 
 依赖 A2，导航到真实 UI 需要 A3。范围：`apps/desktop`、`Cargo.toml`、`scripts/package-macos`、`scripts/verify-package`。
 
-按「Tauri 外壳」一节实现。GPUI 主程序直接替换，不保留两套。C1 在第 2 波完成开发，但要等 B3 完成后，与 D1 一起合并。
+按「Tauri 外壳」一节实现。旧桌面主程序直接替换，不保留两套。C1 在第 2 波完成开发，但要等 B3 完成后，与 D1 一起合并。
 `boot.html` 由 C1 先实现功能结构，视觉由设计会话补充。
 
 验收：
@@ -498,10 +490,10 @@ IM 式对话界面。选用 React，原因如下：
 依赖 C1、B3。通过 Herdr 交给 Codex 做 Computer Use：红绿灯的位置、vibrancy、拖拽区域、
 启动 loader、错误页、“在浏览器中打开”菜单。
 
-#### D1：移除 GPUI
+#### D1：移除旧原生桌面框架
 
 依赖 B3、C1。按「移除清单」执行。`tests/e2e-modules.tsv`、`verify-*` 脚本和文档同步更新。
-验收标准：`just check`、`just test`、`just verify-package` 全部通过，仓库中不再出现 `gpui`。
+验收标准：`just check`、`just test`、`just verify-package` 全部通过，移除全部旧框架依赖（设计归档文档按任务要求保留）。
 
 #### D2：浏览器视觉验收
 
@@ -517,4 +509,4 @@ IM 式对话界面。选用 React，原因如下：
 | 3 | B3a、B3b、B3c、B3d | B1 合并后，各页面直接获得新外观，不需要改代码 |
 | 4 | D1，然后 C2、D2 | |
 
-D1 合并之前，GPUI 版本一直可以运行。功能对等后一次切换，不设共存期。
+D1 完成后，只保留 Web 前端和 Tauri 外壳，不设共存期。

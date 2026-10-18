@@ -3,7 +3,7 @@
 [简体中文](README.zh-CN.md)
 
 Lankide is a local multi-agent collaboration app for macOS. It brings Agent
-harnesses, messaging providers, durable workspace state, and a native GPUI
+harnesses, messaging providers, durable workspace state, and a Tauri
 desktop client into one product.
 
 The current integrations are:

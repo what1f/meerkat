@@ -27,16 +27,13 @@ cloud. Machine links use WebSocket; management and resources use HTTP.
   for Agents in diskless cloud sandboxes or for files shared across Machines,
   and would be added as another Machine-side file provider.
 - Multiple Runtime instances behind a load balancer.
-- A Lankide web UI. The management API is designed so one can be added later:
-  it uses only JSON over HTTP and WS, never depends on local file paths, and
-  its access control can grow from local origin checks to a login
-  session. The Runtime would serve the web UI from the same origin. The API
-  stays internal to Lankide clients and is not a public interface.
+- LAN browser management. The Web UI is served by the Runtime on loopback;
+  remote Machines use their separate pinned TLS entry point.
 
 ## Topology
 
 ```text
-Desktop ──HTTP JSON + WS events──▶ Runtime ◀──WS (outbound from Machine)── Machine
+Tauri / Browser ──HTTP JSON + WS events──▶ Runtime ◀──WS (outbound from Machine)── Machine
                                      │                                          │
                                   storage                       local proxy socket
                                   resources                                     │
@@ -55,7 +52,7 @@ Machine links and resources still require their own credentials.
 
 | Entry point | Caller | Transport | Access control |
 |---|---|---|---|
-| Management | Desktop | HTTP JSON requests, one WS for events | Local Host, Origin, and JSON checks |
+| Management | Tauri / local browser / client | HTTP JSON requests, one WS for events | Local Host, Origin, and JSON checks |
 | Machine | machine-daemon | One long-lived WS per Machine | Device credential from pairing |
 | Resources | Machine | HTTP upload and download | Execution token |
 
@@ -142,7 +139,7 @@ socket and cancels pending calls. The Machine link keeps chunk offsets and
 correlation IDs for large JSON capability payloads.
 
 The Runtime has no UDS listener. Its instance lock owns the home, its discovery
-files identify the HTTP listener, and health/readiness checks use authenticated
+files identify the HTTP listener, and health/readiness checks use local origin-checked
 HTTP management calls. Desktop clients keep the same reuse-first startup flow.
 
 The execution token is bound to execution, attempt, Machine, and the Agent's
