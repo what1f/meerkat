@@ -4,7 +4,8 @@
 }
 
 .popup {
-  overflow: hidden;
+  max-height: var(--available-height);
+  overflow: auto;
   outline-style: none;
   background: var(--elevated);
   border: var(--hairline);

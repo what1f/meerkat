@@ -27,6 +27,8 @@ export type OptionColumnItemProps = Omit<UIProps, 'className' | 'style'> & {
   dimmed?: boolean;
   mono?: boolean;
   leading?: ReactNode;
+  /** Tells apart options that share a label, such as where a model comes from. */
+  hint?: string;
   onSelect: () => void;
   children: ReactNode;
 };
@@ -35,6 +37,7 @@ OptionColumn.Item = function Item({
   dimmed,
   mono,
   leading,
+  hint,
   onSelect,
   children,
   ...rest
@@ -74,6 +77,7 @@ OptionColumn.Item = function Item({
     >
       {leading}
       {children}
+      {hint && <span data-hint>{hint}</span>}
     </button>
   );
 };

@@ -4,10 +4,10 @@ import telegram from '../assets/brand/telegram.svg';
 import codex from '../assets/brand/lobehub/codex.svg';
 import claudeCode from '../assets/brand/lobehub/claude-code.svg';
 import pi from '../assets/brand/lobehub/pi.svg';
-const marks = { feishu, telegram, codex, 'claude-code': claudeCode, pi };
+const marks = { feishu, telegram, codex, claude_code: claudeCode, pi };
 import css from './BrandMark.module.css';
 export type BrandMarkProps = Omit<UIProps, 'className' | 'style'> & {
-  brand: 'feishu' | 'telegram' | 'codex' | 'claude-code' | 'pi';
+  brand: 'feishu' | 'telegram' | 'codex' | 'claude_code' | 'pi';
   size?: number;
 };
 export function BrandMark({ brand, size = 20, ...rest }: BrandMarkProps) {

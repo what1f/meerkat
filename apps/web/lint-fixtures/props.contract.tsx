@@ -60,6 +60,7 @@ export type PaperLabelContract = Assert<PegOnly<Parameters<typeof S.PaperLabel>[
 export type ShiftSignContract = Assert<PegOnly<Parameters<typeof S.ShiftSign>[0]>>;
 export type ClipboardContract = Assert<PegOnly<Parameters<typeof S.Clipboard>[0]>>;
 export type ChecklistRowContract = Assert<NoOverrides<Parameters<typeof S.ChecklistRow>[0]>>;
+export type BenchContract = Assert<NoOverrides<Parameters<typeof S.Bench>[0]>>;
 export type ConsoleContract = Assert<NoOverrides<Parameters<typeof S.Console>[0]>>;
 export type ConsoleScreenContract = Assert<NoOverrides<Parameters<typeof S.ConsoleScreen>[0]>>;
 export type ScreenReadoutContract = Assert<NoOverrides<Parameters<typeof S.ScreenReadout>[0]>>;

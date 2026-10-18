@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { BrandMark, InlineText, Menu, useToast } from '../../design';
-import { Badge, Board, Hang, QrTag } from '../../scene';
+import { Badge, Bench, Board, Hang, QrTag } from '../../scene';
 import { useT } from '../../lib/i18n';
 import { agentStatus, useDeleteAgent, useResumeAgent } from '../../lib/queries/agents';
 import { useWorkspace } from '../../lib/queries/workspaces';
@@ -83,7 +83,7 @@ export function MemberBench({
   if (m.notFound || m.failed || m.loading) return frame({ back: home }, <MemberUnread m={m} />);
   const body = (
     <Board layout="open">
-      <div className={css.bench}>
+      <Bench>
         <MemberConsole
           m={m}
           workspace={workspace}
@@ -189,7 +189,7 @@ export function MemberBench({
             )
           }
         />
-      </div>
+      </Bench>
     </Board>
   );
   return frame({ back }, body, 'open');

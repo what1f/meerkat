@@ -207,7 +207,33 @@ impl HarnessFactory for ScriptedHarness {
                     description: String::new(),
                     thinking_levels: vec![],
                 },
-            ])
+                // The same name from two sources, and enough models to fill a picker column.
+                NativeModel {
+                    id: "north/twin".into(),
+                    name: "Twin".into(),
+                    description: String::new(),
+                    thinking_levels: vec![
+                        "low".into(),
+                        "medium".into(),
+                        "high".into(),
+                        "max".into(),
+                    ],
+                },
+                NativeModel {
+                    id: "south/twin".into(),
+                    name: "Twin".into(),
+                    description: String::new(),
+                    thinking_levels: vec!["low".into()],
+                },
+            ]
+            .into_iter()
+            .chain((0..8).map(|n| NativeModel {
+                id: format!("filler-{n}"),
+                name: format!("Filler {n}"),
+                description: String::new(),
+                thinking_levels: vec![],
+            }))
+            .collect())
         })
     }
     fn start<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>> {

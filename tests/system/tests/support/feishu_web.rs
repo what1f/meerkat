@@ -24,6 +24,8 @@ pub struct Feishu {
     pub tokens: std::collections::BTreeMap<String, String>,
     pub events: std::collections::VecDeque<lankide_provider_feishu::events::RawEvent>,
     reject_app_create: bool,
+    /// The owner has no profile picture.
+    pub no_owner_avatar: bool,
     apps: Vec<String>,
     console_calls: Vec<String>,
     pub tasklist: Option<Value>,
@@ -228,9 +230,11 @@ impl Transport for FeishuWeb {
                             .unwrap(),
                     )
                     .unwrap();
-                return data(
-                    json!({"open_id":format!("ou_{}",user),"union_id":format!("on_{}",user),"user_id":user,"name":feishu.name,"tenant_key":feishu.tenant,"avatar_url":"https://avatar/owner.jpg"}),
-                );
+                let mut info = json!({"open_id":format!("ou_{}",user),"union_id":format!("on_{}",user),"user_id":user,"name":feishu.name,"tenant_key":feishu.tenant});
+                if !feishu.no_owner_avatar {
+                    info["avatar_url"] = json!("https://avatar/owner.jpg");
+                }
+                return data(info);
             }
             if url.ends_with("/oauth/v1/app/registration") {
                 return reply(

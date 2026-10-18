@@ -130,17 +130,21 @@ impl Im {
         rig: &SystemRig,
         workspace: &str,
         provider: ImProvider,
+        owner_avatar: bool,
     ) -> Result<()> {
         let (id, config, secrets) = match provider {
             ImProvider::SystemIm => {
                 rig.workspace(workspace).await?;
                 return Ok(());
             }
-            ImProvider::Feishu => (
-                "feishu",
-                json!({"domain":"feishu","task_system_enabled":false}),
-                json!({}),
-            ),
+            ImProvider::Feishu => {
+                self.feishu(workspace).0.lock().unwrap().no_owner_avatar = !owner_avatar;
+                (
+                    "feishu",
+                    json!({"domain":"feishu","task_system_enabled":false}),
+                    json!({}),
+                )
+            }
             ImProvider::Telegram => (
                 "telegram",
                 json!({"poll_timeout_seconds":1}),

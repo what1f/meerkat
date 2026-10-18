@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { expect } from '@playwright/test';
+import { expect, type Browser, type Page } from '@playwright/test';
 import { test, rig } from './rig';
 
 // Only the User-Agent changes. The UI still talks to the real Runtime.
@@ -102,7 +102,8 @@ for (const locale of ['en-US', 'zh-CN']) {
           locale === 'zh-CN' ? '正在打开 Lankide…' : 'Opening Lankide…',
         );
         await expect(page.locator('#loading')).toHaveCSS('opacity', '1');
-        await expect(page.locator('.peek img')).toHaveCSS('top', '22px');
+        await expect(page.locator('.peek .meerkat')).toBeAttached();
+        await expect(page.locator('.peek .eye')).toHaveCount(2);
         expect(
           await page
             .locator('.peek img')
@@ -118,6 +119,53 @@ for (const locale of ['en-US', 'zh-CN']) {
     });
   }
 }
+
+const bootPeek = async (browser: Browser, reducedMotion: 'reduce' | 'no-preference') => {
+  const context = await browser.newContext({ reducedMotion });
+  const page = await context.newPage();
+  // Network boundary: serve the shipped boot assets, without changing their contents.
+  await page.route('http://boot.test/**', async (route) => {
+    const name = new URL(route.request().url()).pathname.slice(1);
+    await route.fulfill({
+      body: await readFile(new URL(`../../desktop/boot/${name}`, import.meta.url)),
+      contentType: name.endsWith('.png') ? 'image/png' : 'text/html',
+    });
+  });
+  await page.goto('http://boot.test/boot.html');
+  return { context, page };
+};
+const peekState = (page: Page) =>
+  page.evaluate(() => ({
+    top: document.querySelector<HTMLElement>('.meerkat')!.style.top,
+    eyes: [...document.querySelectorAll<HTMLElement>('.eye')].map(
+      (eye) => `${eye.style.left}/${eye.style.top}/${eye.style.height}`,
+    ),
+  }));
+
+test('Boot meerkat climbs out of its burrow and its eyes move', async ({ browser }) => {
+  const { context, page } = await bootPeek(browser, 'no-preference');
+  try {
+    await expect(page.locator('.peek .eye')).toHaveCount(2);
+    const start = await peekState(page);
+    await expect.poll(async () => (await peekState(page)).top).not.toBe(start.top);
+    await expect.poll(async () => (await peekState(page)).eyes.join()).not.toBe(start.eyes.join());
+  } finally {
+    await context.close();
+  }
+});
+
+test('Boot meerkat only peeks, without moving, when motion is reduced', async ({ browser }) => {
+  const { context, page } = await bootPeek(browser, 'reduce');
+  try {
+    await expect(page.locator('.peek .eye')).toHaveCount(2);
+    const still = await peekState(page);
+    expect(still.top).toBe('94px');
+    await page.waitForTimeout(1200);
+    expect(await peekState(page)).toEqual(still);
+  } finally {
+    await context.close();
+  }
+});
 
 for (const viewport of [
   { width: 1240, height: 820 },

@@ -11,6 +11,7 @@ export * from './PaperLabel';
 export * from './ShiftSign';
 export * from './Clipboard';
 export * from './ChecklistRow';
+export * from './Bench';
 export * from './Console';
 export * from './ConsoleScreen';
 export * from './ScreenReadout';

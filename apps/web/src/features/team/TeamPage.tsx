@@ -1,42 +1,15 @@
-import { Fragment, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useState, type ReactNode, type RefCallback } from 'react';
 import { useToast } from '../../design';
-import {
-  Board,
-  PaperLabel,
-  holePitch,
-  useHoleDrag,
-  type HoleHandle,
-  type HolePosition,
-} from '../../scene';
+import { Board, PaperLabel, holePitch, useHoleDrag, type HoleHandle } from '../../scene';
 import { useT } from '../../lib/i18n';
 import { readStorage, writeStorage } from '../../lib/storage';
 import { useUpdateWorkspace, useWorkspace } from '../../lib/queries/workspaces';
 import type { Workspace } from '../../lib/api/generated';
+import { isWall, layouts, plain, type Size, type Spot, type Wall, hang } from './wallLayout';
 import { RulesTag } from './RulesTag';
 import { Tasklist } from './Tasklist';
 import { ShiftToggle } from './ShiftToggle';
 import './messages';
-
-type Spot = 'rules' | 'tasks' | 'shift';
-type Wall = Partial<Record<Spot, HolePosition>>;
-const cell = holePitch;
-// Spots as holes from the top left of the arrangement, and its width in holes. A board too
-// narrow for one row hangs the shift sign under the rules.
-const layouts: { span: number; spots: Record<Spot, HolePosition> }[] = [
-  { span: 36, spots: { rules: { x: 7, y: 1 }, tasks: { x: 24, y: 1 }, shift: { x: 34, y: 1 } } },
-  { span: 30, spots: { rules: { x: 7, y: 1 }, tasks: { x: 22, y: 1 }, shift: { x: 7, y: 21 } } },
-];
-const plain = {
-  span: 36,
-  spots: { rules: { x: 7, y: 1 }, tasks: { x: 7, y: 1 }, shift: { x: 17, y: 1 } },
-};
-const isHole = (v: unknown): v is HolePosition =>
-  !!v &&
-  typeof v === 'object' &&
-  Number.isInteger((v as HolePosition).x) &&
-  Number.isInteger((v as HolePosition).y);
-const isWall = (v: unknown): v is Wall =>
-  !!v && typeof v === 'object' && Object.values(v).every(isHole);
 
 export type TeamPageProps = {
   workspaceId: string;
@@ -67,27 +40,53 @@ function TeamWall({ workspace }: { workspace: Workspace }) {
   const [saved, setSaved] = useState(() => readStorage<Wall>(storageKey, {}, isWall));
   // Default spots are centred on the board, so they wait for its width.
   const [cols, setCols] = useState<number | null>(null);
+  // The board's width in holes follows the window.
+  const measure = useCallback((el: HTMLDivElement | null) => {
+    const board = el?.parentElement;
+    if (!board) return;
+    const update = () => setCols(Math.floor(board.clientWidth / holePitch));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(board);
+    return () => observer.disconnect();
+  }, []);
   const feishu = workspace.provider_id === 'feishu';
   const layout = !feishu
     ? plain
     : (layouts.find((l) => l.span <= (cols ?? 0)) ?? layouts[layouts.length - 1]!);
   const spots: Spot[] = feishu ? ['rules', 'tasks', 'shift'] : ['rules', 'shift'];
-  const left = Math.max(0, Math.floor(((cols ?? 0) - layout.span) / 2));
-  const items =
-    cols === null
-      ? []
-      : spots.map((key) => ({
-          key,
-          kind: key,
-          pos: saved[key] ?? { x: left + layout.spots[key].x, y: layout.spots[key].y },
-        }));
+  // The size of each hung piece follows its content.
+  const [sizes, setSizes] = useState<Partial<Record<Spot, Size>>>({});
+  const items = cols === null ? [] : hang(spots, saved, layout, cols, sizes);
   const handles = useHoleDrag(items, (key, pos) => {
-    const next = Object.fromEntries(
-      items.map((item) => [item.key, item.key === key ? pos : item.pos]),
-    );
+    const next = { ...saved, [key]: pos };
     setSaved(next);
     writeStorage(storageKey, next);
   });
+  // Measure each piece's outer element, the one the drag moves.
+  const measured = (key: Spot): HoleHandle | undefined => {
+    const handle = handles[key];
+    if (!handle) return undefined;
+    const ref: RefCallback<HTMLElement> = (el) => {
+      const release = handle.ref(el);
+      if (!el) return release;
+      el.dataset.spot = key;
+      const read = () =>
+        setSizes((all) =>
+          all[key]?.w === el.offsetWidth && all[key].h === el.offsetHeight
+            ? all
+            : { ...all, [key]: { w: el.offsetWidth, h: el.offsetHeight } },
+        );
+      read();
+      const observer = new ResizeObserver(read);
+      observer.observe(el);
+      return () => {
+        observer.disconnect();
+        if (typeof release === 'function') release();
+      };
+    };
+    return { ...handle, ref };
+  };
   const content: Record<Spot, (handle: HoleHandle | undefined) => ReactNode> = {
     rules: (handle) => <RulesTag workspace={workspace} handle={handle} />,
     tasks: (handle) => <Tasklist workspace={workspace} handle={handle} />,
@@ -120,15 +119,9 @@ function TeamWall({ workspace }: { workspace: Workspace }) {
       }
     >
       {/* Default spots are centred on the board, so they wait for its width. */}
-      <div
-        aria-hidden="true"
-        ref={(el) => {
-          if (el?.parentElement && cols === null)
-            setCols(Math.floor(el.parentElement.clientWidth / cell));
-        }}
-      />
+      <div aria-hidden="true" ref={measure} />
       {items.map(({ key }) => (
-        <Fragment key={key}>{content[key](handles[key])}</Fragment>
+        <Fragment key={key}>{content[key](measured(key))}</Fragment>
       ))}
     </Board>
   );

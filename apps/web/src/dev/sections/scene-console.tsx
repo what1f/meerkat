@@ -98,7 +98,7 @@ export function SceneConsole() {
           {(
             [
               ['codex', 'Codex', 'ok', 'Ready'],
-              ['claude-code', 'Claude Code', 'fail', 'Signed out'],
+              ['claude_code', 'Claude Code', 'fail', 'Signed out'],
               ['pi', 'Pi', 'run', ''],
             ] as const
           ).map(([brand, label, test, reply]) => (

@@ -40,10 +40,13 @@
 /* Peg pitch is a multiple of the hole grid so every badge hangs on a hole. */
 .root[data-layout='rails'] .items {
   display: grid;
-  grid-template-columns: repeat(4, 192px);
+  grid-template-columns: repeat(auto-fill, 192px);
   grid-auto-rows: 312px;
   gap: var(--hole-pitch);
-  width: fit-content;
+  justify-content: center;
+
+  /* Four across at most; a narrower board wraps to the columns that fit. */
+  width: min(100%, 840px);
   padding: 0 0 36px;
   margin: 0 auto;
 }

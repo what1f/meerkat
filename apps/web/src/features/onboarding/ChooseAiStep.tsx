@@ -4,7 +4,7 @@ import { useT } from '../../lib/i18n';
 import type { Flow } from './useOnboarding';
 import css from './steps.module.css';
 
-const marks = ['codex', 'claude-code', 'pi'];
+const marks = ['codex', 'claude_code', 'pi'];
 
 // The console screen lists the AI found on this Mac; picking one tests it.
 export function ChooseAiStep({ flow }: { flow: Flow }) {

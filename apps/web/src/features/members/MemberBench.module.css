@@ -1,15 +1,5 @@
 /* Values with no spacing token stay in pixels. */
 
-/* The console on the left, the badge hanging beside it. */
-.bench {
-  display: grid;
-  grid-template-columns: 500px auto;
-  column-gap: 72px;
-  width: fit-content;
-  padding: 150px 40px 80px;
-  margin: 0 auto;
-}
-
 .stage {
   display: grid;
   grid-auto-flow: column;
@@ -24,12 +14,13 @@
 .brain {
   display: grid;
   row-gap: 10px;
+  width: min(660px, 100vw - 24px);
   padding: 10px;
 }
 
 .columns {
   display: grid;
-  grid-template-columns: 160px 150px 220px 96px;
+  grid-template-columns: 1fr 1fr 1.25fr 112px;
   column-gap: 6px;
 }
 

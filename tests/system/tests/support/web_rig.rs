@@ -22,6 +22,12 @@ enum Command {
         workspace: String,
         #[serde(default)]
         provider: web_im::ImProvider,
+        #[serde(default = "yes")]
+        owner_avatar: bool,
+    },
+    SetDuty {
+        workspace: String,
+        on: bool,
     },
     FeishuScan {
         workspace: String,
@@ -61,6 +67,10 @@ enum Command {
     Settle,
 }
 
+fn yes() -> bool {
+    true
+}
+
 async fn control(
     rig: &SystemRig,
     machines: &mut web_machines::Machines,
@@ -80,8 +90,22 @@ async fn control(
         Command::CreateWorkspace {
             workspace,
             provider,
+            owner_avatar,
         } => {
-            im.create_workspace(rig, &workspace, provider).await?;
+            im.create_workspace(rig, &workspace, provider, owner_avatar)
+                .await?;
+        }
+        Command::SetDuty { workspace, on } => {
+            rig.management()
+                .set_workspace_state(
+                    &workspace,
+                    if on {
+                        lankide_client::WorkspaceStatus::Active
+                    } else {
+                        lankide_client::WorkspaceStatus::Paused
+                    },
+                )
+                .await?;
         }
         Command::CreateAgent { workspace, agent } => {
             let machine = lankide_machine::read_credentials(rig.machine_home())?

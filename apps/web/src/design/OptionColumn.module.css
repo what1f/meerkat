@@ -1,5 +1,6 @@
 .root {
   min-width: 0;
+  max-height: 236px;
   padding: 10px 6px;
   overflow: auto;
 }
@@ -55,6 +56,12 @@
 .item[data-mono='true'] {
   font-family: var(--font-mono);
   font-size: var(--t-small);
+}
+
+.item > [data-hint] {
+  margin-left: auto;
+  font-size: var(--t-caption);
+  color: var(--ink-3);
 }
 
 .item > img,

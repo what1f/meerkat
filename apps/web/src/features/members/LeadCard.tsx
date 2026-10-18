@@ -23,6 +23,7 @@ export function LeadCard({
   const request = { request_id: 'lead', workspace: { workspace_id: workspace } };
   const owner = useWorkspaceOwner({ ...request, provider });
   const refresh = useRefreshWorkspaceOwner();
+  const builtin = avatarUrl(defaultAvatar(workspace));
   const [flipped, setFlipped] = useState(false);
   const [switching, setSwitching] = useState(false);
   const account = useFeishuAccountSwitch(request, switching);
@@ -81,10 +82,13 @@ export function LeadCard({
           <Badge
             size="card"
             avatar={{
+              // Without a picture of its own, the owner wears the same built-in one as on a failed load.
               src: owner.data?.avatar
                 ? resourceUrl(owner.data.avatar.resource_id, workspace)
-                : undefined,
-              fallback: avatarUrl(defaultAvatar(workspace)),
+                : owner.isPending
+                  ? undefined
+                  : builtin,
+              fallback: builtin,
             }}
             name={owner.data?.name ?? t('members.you')}
             ghost={owner.isPending}

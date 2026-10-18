@@ -50,6 +50,22 @@ export function BrainPicker({
   );
   const online = (state: string) => state === 'running';
   const place: Status = status ?? (machine && online(machine.observed_state) ? 'ok' : 'idle');
+  // The selected place shows what the screen shows; the others show their own state.
+  const dot = (x: { machine_id: string; observed_state: string }): Status =>
+    x.machine_id === draft.machine_id
+      ? place
+      : x.observed_state === 'running'
+        ? 'ok'
+        : x.observed_state === 'error'
+          ? 'err'
+          : x.observed_state === 'starting'
+            ? 'busy'
+            : 'idle';
+  // The same name from different sources is told apart by the source; unique names stay bare.
+  const named = (x: { model_id: string; display_name: string }) => x.display_name || x.model_id;
+  const sourceOf = (id: string) => (id.includes('/') ? id.slice(0, id.indexOf('/')) : id);
+  const twins = (x: { model_id: string; display_name: string }) =>
+    m.models.filter((y) => named(y) === named(x)).length > 1;
   const pickModel = (id: string, supported: string[]) =>
     m.set({
       model: id,
@@ -104,7 +120,7 @@ export function BrainPicker({
                 key={x.machine_id}
                 selected={x.machine_id === draft.machine_id}
                 dimmed={!online(x.observed_state)}
-                leading={<StatusDot status={online(x.observed_state) ? 'ok' : 'idle'} />}
+                leading={<StatusDot status={dot(x)} />}
                 onSelect={() => m.set({ machine_id: x.machine_id })}
               >
                 {x.display_name}
@@ -136,9 +152,10 @@ export function BrainPicker({
                 mono
                 selected={x.model_id === draft.model}
                 dimmed={!x.available}
+                hint={twins(x) ? sourceOf(x.model_id) : undefined}
                 onSelect={() => pickModel(x.model_id, x.supported_thinking_levels)}
               >
-                {x.display_name || x.model_id}
+                {named(x)}
               </OptionColumn.Item>
             ))}
           </OptionColumn>

@@ -5,7 +5,13 @@ import { createInterface } from 'node:readline';
 type Member = { workspace: string; agent: string };
 // This is deliberately limited to the mock IM / scripted Harness scenarios.
 export type Command =
-  | { op: 'create_workspace'; workspace: string; provider?: 'system_im' | 'feishu' | 'telegram' }
+  | {
+      op: 'create_workspace';
+      workspace: string;
+      provider?: 'system_im' | 'feishu' | 'telegram';
+      owner_avatar?: boolean;
+    }
+  | { op: 'set_duty'; workspace: string; on: boolean }
   | ({ op: 'create_agent' | 'hold_next_run' | 'release_run' | 'wait_running' } & Member)
   | ({ op: 'mention'; chat: string; person: string; text: string } & Member)
   | { op: 'pair_machine'; command: string }
