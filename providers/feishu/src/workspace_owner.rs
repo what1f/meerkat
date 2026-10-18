@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 pub(crate) struct OwnerHandler {
+    pub authorization_lock: Arc<tokio::sync::Mutex<()>>,
     pub context: InitContext,
     pub transport: Arc<dyn Transport>,
 }
@@ -123,6 +124,12 @@ async fn save_authorization(
 ) -> Result<(), ProviderError> {
     writer
         .write(
+            "feishu_owner_refresh_token",
+            SecretValue::new(grant.refresh_token()),
+        )
+        .await?;
+    writer
+        .write(
             "feishu_owner_access_token",
             SecretValue::new(grant.access_token()),
         )
@@ -198,6 +205,61 @@ pub(crate) async fn needs_sign_in(storage: &dyn ProviderStorage) -> Result<Value
     Ok(owner)
 }
 
+/// Called while holding the workspace authorization lock. The rotated refresh
+/// token is persisted before exposing the new access token to another call.
+pub(crate) async fn refresh_authorization(
+    context: &InitContext,
+    transport: &dyn Transport,
+) -> Result<(), ProviderError> {
+    let state = context.storage().workspace_state().await?;
+    let refresh = match context
+        .secret_reader()
+        .read("feishu_owner_refresh_token")
+        .await
+    {
+        Ok(value) if !value.expose_secret().trim().is_empty() => value,
+        Ok(_) | Err(ProviderError::SecretAccessDenied) => {
+            needs_sign_in(context.storage()).await?;
+            return Err(ProviderError::AuthorizationRequired);
+        }
+        Err(error) => return Err(error),
+    };
+    let secret = context
+        .secret_reader()
+        .read("feishu_owner_app_secret")
+        .await?;
+    let app = nonempty(&state["owner_app_id"]).ok_or(ProviderError::AuthorizationRequired)?;
+    let base = nonempty(&state["owner_api_base"]).ok_or(ProviderError::AuthorizationRequired)?;
+    match console::refresh_user_token(
+        transport,
+        base,
+        app,
+        secret.expose_secret(),
+        refresh.expose_secret(),
+    )
+    .await
+    {
+        Ok((access, refresh)) => {
+            context
+                .secret_writer()
+                .write("feishu_owner_refresh_token", SecretValue::new(refresh))
+                .await?;
+            context
+                .secret_writer()
+                .write("feishu_owner_access_token", SecretValue::new(access))
+                .await
+        }
+        Err(crate::ClientError::Api {
+            code: 20026 | 20037 | 20064 | 20073 | 99991669,
+            ..
+        }) => {
+            needs_sign_in(context.storage()).await?;
+            Err(ProviderError::AuthorizationRequired)
+        }
+        Err(error) => Err(external(error)),
+    }
+}
+
 fn nonempty(value: &Value) -> Option<&str> {
     value.as_str().filter(|s| !s.trim().is_empty())
 }
@@ -205,6 +267,7 @@ fn nonempty(value: &Value) -> Option<&str> {
 impl InvocationHandler for OwnerHandler {
     fn invoke<'a>(&'a self, input: Value) -> ProviderFuture<'a, Value> {
         Box::pin(async move {
+            let _guard = self.authorization_lock.lock().await;
             let state = self.context.storage().workspace_state().await?;
             if !authorization_ready(&self.context, &state).await? {
                 return match input.get("action").and_then(Value::as_str) {
@@ -216,7 +279,7 @@ impl InvocationHandler for OwnerHandler {
             match input.get("action").and_then(Value::as_str) {
                 Some("get") => Ok(owner),
                 Some("refresh") => {
-                    let token = self
+                    let mut token = self
                         .context
                         .secret_reader()
                         .read("feishu_owner_access_token")
@@ -226,7 +289,27 @@ impl InvocationHandler for OwnerHandler {
                             field: "owner_api_base",
                         },
                     )?;
-                    match user_info(self.transport.as_ref(), base, token.expose_secret()).await {
+                    let mut info =
+                        user_info(self.transport.as_ref(), base, token.expose_secret()).await;
+                    if info.as_ref().is_err_and(requires_sign_in) {
+                        match refresh_authorization(&self.context, self.transport.as_ref()).await {
+                            Ok(()) => {
+                                token = self
+                                    .context
+                                    .secret_reader()
+                                    .read("feishu_owner_access_token")
+                                    .await?;
+                                info =
+                                    user_info(self.transport.as_ref(), base, token.expose_secret())
+                                        .await;
+                            }
+                            Err(ProviderError::AuthorizationRequired) => {
+                                return needs_sign_in(self.context.storage()).await;
+                            }
+                            Err(error) => return Err(error),
+                        }
+                    }
+                    match info {
                         Ok(info) => {
                             let id = ["union_id", "user_id", "open_id"]
                                 .into_iter()
@@ -260,9 +343,6 @@ impl InvocationHandler for OwnerHandler {
                             self.context.storage().management_changed().await?;
                             Ok(owner)
                         }
-                        Err(error) if requires_sign_in(&error) => {
-                            needs_sign_in(self.context.storage()).await
-                        }
                         Err(error) => Err(external(error)),
                     }
                 }
@@ -287,6 +367,7 @@ pub(crate) async fn switch_account(
     transport: Arc<dyn Transport>,
     action: &str,
     lock: &tokio::sync::Mutex<()>,
+    authorization_lock: &tokio::sync::Mutex<()>,
 ) -> Result<Value, ProviderError> {
     if action == "switch_start" {
         owner_app(context, &context.storage().workspace_state().await?).await?;
@@ -346,6 +427,7 @@ pub(crate) async fn switch_account(
                 &grant.info,
             )
             .await?;
+            let _authorization_guard = authorization_lock.lock().await;
             let _guard = lock.lock().await;
             if !console::switch_is_current(context.secret_reader(), &candidate).await? {
                 return Ok(json!({"state":"required"}));

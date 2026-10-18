@@ -164,11 +164,21 @@ impl Transport for FeishuWeb {
                     "scope" if call.starts_with("scope/all") => data(json!({
                         "scopes": STANDARD_BOT_TENANT_SCOPES
                             .iter()
-                            .chain(["task:tasklist:read", "task:tasklist:write"].iter())
+                            .chain(["task:tasklist:read", "task:tasklist:write", "offline_access"].iter())
                             .enumerate()
                             .map(|(id, name)| json!({"id": id.to_string(), "name": name}))
                             .collect::<Vec<_>>(),
                     })),
+                    "scope" if call.starts_with("scope/update") => {
+                        assert!(
+                            body["userScopeIDs"]
+                                .as_array()
+                                .unwrap()
+                                .contains(&json!("28")),
+                            "published App must enable offline_access"
+                        );
+                        data(json!({}))
+                    }
                     "app_version" => data(json!({"versionId": "v1"})),
                     "publish" => data(json!({"isOk": true})),
                     "robot" | "event" | "scope" | "safe_setting" | "base_info" => data(json!({})),
@@ -177,7 +187,8 @@ impl Transport for FeishuWeb {
             }
             if url.starts_with("https://accounts.feishu.cn/open-apis/authen/v1/authorize") {
                 assert!(cookie.contains("session=lead"));
-                let page = r#"<script>window.serverInjectRes = {"data":{"current_user":{"user_id":"lead","all_scope_key_list":["task:tasklist:read","task:tasklist:write"]}},"X-Auth-Flow-Key":"consent"};
+                assert!(url.contains("offline_access"));
+                let page = r#"<script>window.serverInjectRes = {"data":{"current_user":{"user_id":"lead","all_scope_key_list":["offline_access","task:tasklist:read","task:tasklist:write"]}},"X-Auth-Flow-Key":"consent"};
 </script>"#;
                 return Ok(Response {
                     status: 200,
@@ -198,7 +209,7 @@ impl Transport for FeishuWeb {
             if url.ends_with("/open-apis/authen/v2/oauth/token") {
                 assert_eq!(body["code"], "granted");
                 return reply(
-                    json!({"code": 0, "access_token": "lead-token", "expires_in": 7200}),
+                    json!({"code": 0, "access_token": "lead-token", "refresh_token":"lead-refresh", "expires_in": 7200}),
                     &[],
                 );
             }

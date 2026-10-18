@@ -51,7 +51,7 @@ struct Addons<'a> {
 #[derive(Serialize)]
 struct Scopes<'a> {
     tenant: &'a [&'a str],
-    user: [String; 0],
+    user: &'a [&'a str],
 }
 
 #[derive(Serialize)]
@@ -74,7 +74,7 @@ pub fn authorization_url(domain: &Domain, app_id: &str) -> Result<String, String
     let raw = serde_json::to_vec(&Addons {
         scopes: Scopes {
             tenant: &STANDARD_BOT_TENANT_SCOPES,
-            user: [],
+            user: &crate::console::USER_TASKLIST_SCOPES,
         },
         events: Events {
             items: EventItems {

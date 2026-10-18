@@ -28,7 +28,8 @@ pub(crate) const LOGIN_POLL_INTERVAL_SECONDS: u32 = 2;
 pub(crate) const OAUTH_REDIRECT_URI: &str = "http://127.0.0.1/lankide/feishu-oauth";
 /// User scopes Agent Apps request so the team lead's own Tasklist can be
 /// created, shared, and updated as the team lead.
-pub(crate) const USER_TASKLIST_SCOPES: [&str; 4] = [
+pub(crate) const USER_TASKLIST_SCOPES: [&str; 5] = [
+    "offline_access",
     "task:tasklist:read",
     "task:tasklist:write",
     "task:task:read",
@@ -373,6 +374,7 @@ impl CreatedApp {
 /// Team lead identity returned by the user's authorization.
 pub(crate) struct UserGrant {
     access_token: String,
+    refresh_token: String,
     pub(crate) info: Value,
     pub(crate) open_id: String,
     pub(crate) union_id: String,
@@ -391,6 +393,9 @@ impl fmt::Debug for UserGrant {
 impl UserGrant {
     pub(crate) fn access_token(&self) -> &str {
         &self.access_token
+    }
+    pub(crate) fn refresh_token(&self) -> &str {
+        &self.refresh_token
     }
 }
 
@@ -772,21 +777,9 @@ impl DeveloperConsole {
             "code": code,
             "redirect_uri": OAUTH_REDIRECT_URI,
         }))?;
-        let response = self.transport.execute(request).await?;
-        crate::http::validate_success(&response, "user_token")?;
-        let token: Value = response.json()?;
-        if token.get("code").and_then(Value::as_i64).unwrap_or(0) != 0 {
-            return Err(ClientError::Api {
-                code: token.get("code").and_then(Value::as_i64).unwrap_or(-1),
-                message: token
-                    .get("error_description")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_owned(),
-                operation: "user_token".into(),
-            });
-        }
+        let token = exchange_token(self.transport.as_ref(), request).await?;
         let access_token = text_field(&token, "access_token", "user_token")?;
+        let refresh_token = text_field(&token, "refresh_token", "user_token")?;
         let request = Request::new(
             Method::Get,
             format!("{base_url}/open-apis/authen/v1/user_info"),
@@ -808,8 +801,50 @@ impl DeveloperConsole {
                 .unwrap_or_default()
                 .to_owned(),
             access_token,
+            refresh_token,
         })
     }
+}
+
+/// OAuth errors include a useful JSON body even when the HTTP status is 400.
+async fn exchange_token(transport: &dyn Transport, request: Request) -> Result<Value, ClientError> {
+    let response = transport.execute(request).await?;
+    if let Ok(token) = response.json::<Value>() {
+        let code = token.get("code").and_then(Value::as_i64).unwrap_or(0);
+        if code != 0 {
+            return Err(ClientError::Api {
+                code,
+                message: token
+                    .get("error_description")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .into(),
+                operation: "user_token".into(),
+            });
+        }
+    }
+    crate::http::validate_success(&response, "user_token")?;
+    response.json()
+}
+
+pub(crate) async fn refresh_user_token(
+    transport: &dyn Transport,
+    base: &str,
+    app: &str,
+    secret: &str,
+    refresh: &str,
+) -> Result<(String, String), ClientError> {
+    let request = Request::new(
+        Method::Post,
+        format!("{base}/open-apis/authen/v2/oauth/token"),
+    )
+    .json(&json!({"grant_type":"refresh_token", "client_id":app,
+            "client_secret":secret, "refresh_token":refresh}))?;
+    let token = exchange_token(transport, request).await?;
+    Ok((
+        text_field(&token, "access_token", "user_token")?,
+        text_field(&token, "refresh_token", "user_token")?,
+    ))
 }
 
 fn text_field(value: &Value, field: &str, operation: &str) -> Result<String, ClientError> {

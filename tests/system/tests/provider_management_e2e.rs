@@ -755,8 +755,7 @@ async fn owner_sign_in_reuses_existing_member_app_without_manual_migration() -> 
 }
 
 #[tokio::test]
-async fn owner_task_token_expiry_and_revocation_require_sign_in_but_other_errors_do_not()
--> Result<()> {
+async fn owner_refresh_token_revocation_requires_sign_in_but_other_errors_do_not() -> Result<()> {
     let (mut rig, web, mut http) = feishu_review_rig(true).await?;
     let scenario = async {
         let owner = "feishu.workspace.owner";
@@ -768,16 +767,17 @@ async fn owner_task_token_expiry_and_revocation_require_sign_in_but_other_errors
         ))
         .await?;
         // Includes errors from the tasklist join, subscription, and paged task reads.
-        for (code, suffix) in [
-            (99991677, "/team_tasklist"),
-            (99991668, "/task_subscription"),
-            (99991679, "/team_tasklist/tasks"),
-            (99991663, "/team_tasklist"),
+        for (code, suffix, refresh_code) in [
+            (99991677, "/team_tasklist", 20026),
+            (99991668, "/task_subscription", 20037),
+            (99991679, "/team_tasklist/tasks", 20064),
+            (99991663, "/team_tasklist", 20073),
         ] {
             let original = http.invoke(owner, "get", json!({})).await?;
             {
                 let mut mock = web.0.lock().unwrap();
                 mock.task_error = Some(code);
+                mock.refresh_error = Some(refresh_code);
                 mock.task_error_suffix = Some(suffix.into());
             }
             assert_eq!(
@@ -803,6 +803,7 @@ async fn owner_task_token_expiry_and_revocation_require_sign_in_but_other_errors
             {
                 let mut mock = web.0.lock().unwrap();
                 mock.task_error = None;
+                mock.refresh_error = None;
                 mock.task_error_suffix = None;
             }
             http.invoke(login, "switch_start", json!({})).await?;
@@ -831,6 +832,7 @@ async fn owner_task_token_expiry_and_revocation_require_sign_in_but_other_errors
         web.0.lock().unwrap().task_error = None;
         for status in [401, 403] {
             web.0.lock().unwrap().task_http_status = Some(status);
+            web.0.lock().unwrap().refresh_error = Some(20037);
             assert_eq!(
                 invoke_error(&http, tasks, "list").await?["detail"],
                 "authorization_required"
@@ -840,6 +842,7 @@ async fn owner_task_token_expiry_and_revocation_require_sign_in_but_other_errors
                 "needs_sign_in"
             );
             web.0.lock().unwrap().task_http_status = None;
+            web.0.lock().unwrap().refresh_error = None;
             http.invoke(login, "switch_start", json!({})).await?;
             http.invoke(login, "switch_poll", json!({})).await?;
         }
@@ -854,6 +857,7 @@ async fn owner_task_token_expiry_and_revocation_require_sign_in_but_other_errors
         );
         web.0.lock().unwrap().task_http_status = None;
         web.0.lock().unwrap().task_error = Some(99991677);
+        web.0.lock().unwrap().refresh_error = Some(20026);
         assert_eq!(
             invoke_error(&http, tasks, "list").await?["detail"],
             "authorization_required"
@@ -866,12 +870,134 @@ async fn owner_task_token_expiry_and_revocation_require_sign_in_but_other_errors
             "needs_sign_in"
         );
         web.0.lock().unwrap().task_error = None;
+        web.0.lock().unwrap().refresh_error = None;
         http.invoke(login, "switch_start", json!({})).await?;
         http.invoke(login, "switch_poll", json!({})).await?;
         assert_eq!(
             http.invoke(tasks, "list", json!({})).await?["enabled"],
             true
         );
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    }
+    .await;
+    let cleanup = rig.close().await;
+    scenario?;
+    cleanup
+}
+
+#[tokio::test]
+async fn owner_access_token_refresh_rotates_once_and_survives_runtime_restart() -> Result<()> {
+    let (mut rig, web, mut http) = feishu_review_rig(true).await?;
+    let scenario = async {
+        let owner = "feishu.workspace.owner";
+        let tasks = "feishu.workspace.tasks";
+        let original = http.invoke(owner, "get", json!({})).await?;
+        web.0.lock().unwrap().tasks.push(json!({"guid":"kept-task","summary":"Keep this task","completed_at":"0","tasklist_guid":"team_tasklist"}));
+        // The network rejects the old access token, not the valid rotated pair.
+        for (round, suffix) in ["/team_tasklist", "/task_subscription", "/team_tasklist/tasks"].into_iter().enumerate() {
+            {
+                let mut mock = web.0.lock().unwrap();
+                mock.expired_access_tokens = mock.tokens.keys().cloned().collect();
+                mock.expired_access_suffix = Some(suffix.into());
+            }
+            let before = web.0.lock().unwrap().refresh_calls;
+            let (one, two, profile) = tokio::join!(
+                http.invoke(tasks, "list", json!({})),
+                http.invoke(tasks, "list", json!({})),
+                http.invoke(owner, "refresh", json!({})),
+            );
+            for list in [one?, two?] {
+                assert_eq!(list["items"][0]["text"], "Keep this task");
+            }
+            assert_eq!(profile?["state"], "ready");
+            assert_eq!(http.invoke(owner, "get", json!({})).await?["person_id"], original["person_id"]);
+            assert_eq!(web.0.lock().unwrap().refresh_calls, before + 1, "concurrent list/profile calls must share one refresh");
+            if round == 1 {
+                rig.restart_runtime().await?;
+                http = Http::new(&rig)?;
+            }
+        }
+        // Auth failures at writes can be retried once, without duplicate tasks.
+        for suffix in ["/task/v2/tasks", "/task/v2/tasks/task-1"] {
+            {
+                let mut mock = web.0.lock().unwrap();
+                mock.expired_access_tokens = mock.tokens.keys().cloned().collect();
+                mock.expired_access_suffix = Some(suffix.into());
+            }
+            let before = web.0.lock().unwrap().refresh_calls;
+            if suffix.ends_with("task-1") {
+                let result = http.invoke(tasks, "set_completed", json!({"id":"task-1","completed":true})).await?;
+                assert_eq!(result["completed"], true);
+            } else {
+                let result = http.invoke(tasks, "create", json!({"text":"Only once"})).await?;
+                assert_eq!(result["id"], "task-1");
+                assert_eq!(web.0.lock().unwrap().tasks.iter().filter(|task| task["summary"] == "Only once").count(), 1);
+            }
+            assert_eq!(web.0.lock().unwrap().refresh_calls, before + 1);
+        }
+        // Transient refresh or client configuration failures preserve the grant.
+        for code in [20050, 20002] {
+            {
+                let mut mock = web.0.lock().unwrap();
+                mock.expired_access_tokens = mock.tokens.keys().cloned().collect();
+                mock.expired_access_suffix = None;
+                mock.refresh_error = Some(code);
+            }
+            assert_ne!(invoke_error(&http, tasks, "list").await?["detail"], "authorization_required");
+            assert_eq!(http.invoke(owner, "get", json!({})).await?["state"], "ready");
+            web.0.lock().unwrap().refresh_error = None;
+            assert_eq!(http.invoke(tasks, "list", json!({})).await?["enabled"], true);
+        }
+        // A newly issued token rejected by the same API must not loop or gray the owner.
+        web.0.lock().unwrap().task_error = Some(99991677);
+        let before = web.0.lock().unwrap().refresh_calls;
+        assert_ne!(invoke_error(&http, tasks, "list").await?["detail"], "authorization_required");
+        assert_eq!(web.0.lock().unwrap().refresh_calls, before + 1);
+        assert_eq!(http.invoke(owner, "get", json!({})).await?["state"], "ready");
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    }.await;
+    let cleanup = rig.close().await;
+    scenario?;
+    cleanup
+}
+
+#[tokio::test]
+async fn owner_token_refresh_and_account_switch_preserve_the_new_grant() -> Result<()> {
+    let (rig, web, http) = feishu_review_rig(true).await?;
+    let scenario = async {
+        let owner = "feishu.workspace.owner";
+        let tasks = "feishu.workspace.tasks";
+        let login = "feishu.workspace.console_login";
+        let original = http.invoke(owner, "get", json!({})).await?;
+        {
+            let mut mock = web.0.lock().unwrap();
+            mock.expired_access_tokens = mock.tokens.keys().cloned().collect();
+        }
+        let (entered, release) = web.hold("/open-apis/authen/v2/oauth/token");
+        let (listed, switched) = tokio::join!(http.invoke(tasks, "list", json!({})), async {
+            tokio::time::timeout(Duration::from_secs(5), entered.notified()).await?;
+            web.0.lock().unwrap().user = "other".into();
+            http.invoke(login, "switch_start", json!({})).await?;
+            release.notify_one();
+            http.invoke(login, "switch_poll", json!({})).await
+        });
+        assert_eq!(listed?["enabled"], true);
+        assert_eq!(switched?["state"], "ready");
+        let current = http.invoke(owner, "get", json!({})).await?;
+        assert_ne!(current["person_id"], original["person_id"]);
+        {
+            let mut mock = web.0.lock().unwrap();
+            mock.expired_access_tokens = mock.tokens.keys().cloned().collect();
+        }
+        assert_eq!(
+            http.invoke(tasks, "list", json!({})).await?["enabled"],
+            true
+        );
+        assert_eq!(
+            http.invoke(owner, "refresh", json!({})).await?["person_id"],
+            current["person_id"]
+        );
+        assert_eq!(web.0.lock().unwrap().refresh_calls, 2);
         Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
     }
     .await;

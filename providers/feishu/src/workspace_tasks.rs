@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 pub(crate) struct TasksHandler {
+    pub authorization_lock: Arc<tokio::sync::Mutex<()>>,
     pub context: InitContext,
     pub transport: Arc<dyn Transport>,
 }
@@ -65,11 +66,8 @@ fn item(task: TaskRecord, directory: &crate::identity::IdentityDirectory) -> Val
 impl InvocationHandler for TasksHandler {
     fn invoke<'a>(&'a self, input: Value) -> ProviderFuture<'a, Value> {
         Box::pin(async move {
-            let result = self.run(input).await;
-            if matches!(result, Err(ProviderError::AuthorizationRequired)) {
-                crate::workspace_owner::needs_sign_in(self.context.storage()).await?;
-            }
-            result
+            let _guard = self.authorization_lock.lock().await;
+            self.run(input).await
         })
     }
 }
@@ -87,8 +85,27 @@ impl TasksHandler {
         }
         let state = self.context.storage().workspace_state().await?;
         if !crate::workspace_owner::authorization_ready(&self.context, &state).await? {
+            crate::workspace_owner::needs_sign_in(self.context.storage()).await?;
             return Err(ProviderError::AuthorizationRequired);
         }
+        let result = self.run_authorized(&input, &state).await;
+        if !matches!(result, Err(ProviderError::AuthorizationRequired)) {
+            return result;
+        }
+        crate::workspace_owner::refresh_authorization(&self.context, self.transport.as_ref())
+            .await?;
+        match self.run_authorized(&input, &state).await {
+            // A successful refresh is not evidence that the grant was revoked.
+            Err(ProviderError::AuthorizationRequired) => Err(ProviderError::External {
+                operation: "feishu_workspace_tasks",
+                retryable: false,
+            }),
+            result => result,
+        }
+    }
+
+    async fn run_authorized(&self, input: &Value, state: &Value) -> Result<Value, ProviderError> {
+        let action = text(input, "action")?;
         let directory = crate::identity::IdentityDirectory::from_workspace_state(&state)?;
         let app_id = text(&state, "owner_app_id")?;
         let secret = self

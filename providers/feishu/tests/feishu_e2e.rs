@@ -941,6 +941,26 @@ async fn existing_agent_onboarding_falls_back_to_owner_confirmation() {
             .as_str()
             .is_some_and(|link| link.contains("clientID=cli_authorization_confirmation"))
     );
+    let permission_url = url::Url::parse(confirmation.verification_uri.as_ref().unwrap()).unwrap();
+    let addons = permission_url
+        .query_pairs()
+        .find(|(key, _)| key == "addons")
+        .unwrap()
+        .1
+        .into_owned();
+    let compressed = URL_SAFE_NO_PAD.decode(addons).unwrap();
+    let mut decoded = String::new();
+    GzDecoder::new(compressed.as_slice())
+        .read_to_string(&mut decoded)
+        .unwrap();
+    let permissions: Value = serde_json::from_str(&decoded).unwrap();
+    assert!(
+        permissions["scopes"]["user"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("offline_access")),
+        "manual App setup must request offline access too"
+    );
     assert_eq!(transport.config_updates.load(Ordering::SeqCst), 1);
     assert_eq!(transport.publishes.load(Ordering::SeqCst), 0);
 

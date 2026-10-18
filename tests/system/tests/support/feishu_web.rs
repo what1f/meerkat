@@ -21,6 +21,12 @@ pub struct Feishu {
     pub task_error_suffix: Option<String>,
     pub task_http_status: Option<u16>,
     pub owner_task_calls: usize,
+    pub refresh_calls: usize,
+    pub refresh_error: Option<i64>,
+    pub expired_access_tokens: std::collections::BTreeSet<String>,
+    pub expired_access_suffix: Option<String>,
+    refresh_tokens: std::collections::BTreeMap<String, (String, String)>,
+    token_serial: usize,
     pub tasks: Vec<Value>,
     pub task_subscriptions: usize,
     pub acknowledgements: usize,
@@ -177,11 +183,21 @@ impl Transport for FeishuWeb {
                     "scope" if call.starts_with("scope/all") => data(json!({
                         "scopes": STANDARD_BOT_TENANT_SCOPES
                             .iter()
-                            .chain(["task:tasklist:read", "task:tasklist:write"].iter())
+                            .chain(["task:tasklist:read", "task:tasklist:write", "offline_access"].iter())
                             .enumerate()
                             .map(|(id, name)| json!({"id": id.to_string(), "name": name}))
                             .collect::<Vec<_>>(),
                     })),
+                    "scope" if call.starts_with("scope/update") => {
+                        assert!(
+                            body["userScopeIDs"]
+                                .as_array()
+                                .unwrap()
+                                .contains(&json!("28")),
+                            "published App must enable offline_access"
+                        );
+                        data(json!({}))
+                    }
                     "app_version" => data(json!({"versionId": "v1"})),
                     "publish" => data(json!({"isOk": true})),
                     "robot" | "event" | "scope" | "safe_setting" | "base_info" => data(json!({})),
@@ -190,7 +206,14 @@ impl Transport for FeishuWeb {
             }
             if url.starts_with("https://accounts.feishu.cn/open-apis/authen/v1/authorize") {
                 assert!(cookie.contains("session="));
-                let page = r#"<script>window.serverInjectRes = {"data":{"current_user":{"user_id":"lead","all_scope_key_list":["task:tasklist:read","task:tasklist:write","task:task:read","task:task:write"]}},"X-Auth-Flow-Key":"consent"};
+                let parsed = reqwest::Url::parse(&url).unwrap();
+                assert!(parsed.query_pairs().any(|(key, value)| {
+                    key == "scope"
+                        && value
+                            .split_whitespace()
+                            .any(|scope| scope == "offline_access")
+                }));
+                let page = r#"<script>window.serverInjectRes = {"data":{"current_user":{"user_id":"lead","all_scope_key_list":["offline_access","task:tasklist:read","task:tasklist:write","task:task:read","task:task:write"]}},"X-Auth-Flow-Key":"consent"};
 </script>"#;
                 return Ok(Response {
                     status: 200,
@@ -204,26 +227,66 @@ impl Transport for FeishuWeb {
             if url == "https://accounts.feishu.cn/open-apis/authen/v1/confirm" {
                 assert_eq!(header(&request, "open-csrf-token"), "consent-csrf");
                 assert_eq!(header(&request, "x-auth-flow-key"), "consent");
+                assert!(
+                    body["scope"]
+                        .as_str()
+                        .unwrap()
+                        .split_whitespace()
+                        .any(|scope| scope == "offline_access")
+                );
                 return data(json!({
                     "redirect_uri": format!("http://127.0.0.1/lankide/feishu-oauth?code=granted-{}&state=lankide",cookie.split("session=").nth(1).unwrap().split(';').next().unwrap()),
                 }));
             }
             if url.ends_with("/open-apis/authen/v2/oauth/token") {
-                let user = body["code"]
-                    .as_str()
-                    .unwrap()
-                    .strip_prefix("granted-")
-                    .unwrap()
-                    .to_owned();
-                let token = format!("token-{user}-{}", body["client_id"].as_str().unwrap());
-                feishu.tokens.insert(token.clone(), user);
+                let app = body["client_id"].as_str().unwrap().to_owned();
+                let user = if body["grant_type"] == "refresh_token" {
+                    feishu.refresh_calls += 1;
+                    if let Some(code) = feishu.refresh_error.or(feishu.expired.then_some(20064)) {
+                        let mut response = reply(
+                            json!({"code":code,"error":"invalid_grant","error_description":"mock refresh failure"}),
+                            &[],
+                        )?;
+                        response.status = if code == 20050 { 503 } else { 400 };
+                        return Ok(response);
+                    }
+                    let refresh = body["refresh_token"].as_str().unwrap();
+                    let Some((user, token_app)) = feishu.refresh_tokens.remove(refresh) else {
+                        let mut response =
+                            reply(json!({"code":20073,"error":"invalid_grant"}), &[])?;
+                        response.status = 400;
+                        return Ok(response);
+                    };
+                    assert_eq!(app, token_app, "refresh tokens belong to one App");
+                    user
+                } else {
+                    assert_eq!(body["grant_type"], "authorization_code");
+                    body["code"]
+                        .as_str()
+                        .unwrap()
+                        .strip_prefix("granted-")
+                        .unwrap()
+                        .to_owned()
+                };
+                feishu.token_serial += 1;
+                let serial = feishu.token_serial;
+                let token = format!("token-{user}-{app}-{serial}");
+                let refresh = format!("refresh-{user}-{app}-{serial}");
+                feishu.tokens.insert(token.clone(), user.clone());
+                feishu.refresh_tokens.insert(refresh.clone(), (user, app));
                 return reply(
-                    json!({"code": 0, "access_token": token, "expires_in": 7200}),
+                    json!({"code":0,"access_token":token,"refresh_token":refresh,"expires_in":7200,"refresh_token_expires_in":604800}),
                     &[],
                 );
             }
             if url.ends_with("/open-apis/authen/v1/user_info") {
-                if feishu.expired {
+                if feishu.expired
+                    || feishu.expired_access_tokens.contains(
+                        header(&request, "authorization")
+                            .strip_prefix("Bearer ")
+                            .unwrap(),
+                    )
+                {
                     return reply(json!({"code":99991663,"msg":"expired"}), &[]);
                 }
                 let user = feishu
@@ -339,6 +402,17 @@ impl Transport for FeishuWeb {
                 && header(&request, "authorization").starts_with("Bearer token-")
             {
                 feishu.owner_task_calls += 1;
+                if feishu.expired_access_tokens.contains(
+                    header(&request, "authorization")
+                        .strip_prefix("Bearer ")
+                        .unwrap(),
+                ) && feishu
+                    .expired_access_suffix
+                    .as_ref()
+                    .is_none_or(|suffix| url.ends_with(suffix))
+                {
+                    return reply(json!({"code":99991677,"msg":"token expire"}), &[]);
+                }
                 if let Some(code) = feishu.task_error
                     && feishu
                         .task_error_suffix
