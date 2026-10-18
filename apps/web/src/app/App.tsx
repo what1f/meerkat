@@ -7,7 +7,7 @@ import { AppShell, Sidebar, NavItem, TeamSwitcher, TopBar, type TopBarProps } fr
 import { useWorkspaces } from '../lib/queries/workspaces';
 import { useManagementEvents } from '../lib/events';
 import { readStorage, writeStorage } from '../lib/storage';
-import { navigate, pageViews, usePage } from './routes';
+import { navigate, pageViews, usePage, type Page } from './routes';
 const queryClient = new QueryClient();
 const DesignPreview = import.meta.env.DEV ? lazy(() => import('../dev/DesignPreview')) : null;
 export function App() {
@@ -33,10 +33,18 @@ export function App() {
 
 function WorkspaceShell() {
   const t = useT();
-  const page = usePage();
+  const hashPage = usePage();
   // A global subscription also includes workspaces created outside this page.
   useManagementEvents();
   const { data } = useWorkspaces({ request_id: 'list_workspaces' });
+  // A first launch has no team: onboarding opens, and stays until it hands over.
+  const [gate, setGate] = useState<'idle' | 'onboarding' | 'done'>('idle');
+  if (gate === 'idle' && data?.workspaces.length === 0) setGate('onboarding');
+  const page: Page = gate === 'onboarding' ? { kind: 'onboarding' } : hashPage;
+  const go = (next: Page) => {
+    if (gate === 'onboarding') setGate('done');
+    navigate(next);
+  };
   const [selected, setSelected] = useState(() =>
     readStorage('workspace', '', (v): v is string => typeof v === 'string'),
   );
@@ -108,7 +116,7 @@ function WorkspaceShell() {
     <View
       workspaceId={current}
       page={page}
-      navigate={navigate}
+      navigate={go}
       selectWorkspace={selectWorkspace}
       frame={frame}
     />

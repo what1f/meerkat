@@ -38,6 +38,11 @@ body {
     color var(--d-slow) var(--ease);
 }
 
+/* Inside the Mac app the page lets the window material through. */
+html[data-desktop='true'] body {
+  background: var(--clear);
+}
+
 button,
 input,
 textarea,
