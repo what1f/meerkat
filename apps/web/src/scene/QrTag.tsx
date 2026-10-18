@@ -1,5 +1,5 @@
 import type { UIProps } from '../design/index';
-import { Avatar, BrandMark, Icon, QrCode, Skeleton } from '../design';
+import { Avatar, BrandMark, Icon, IconButton, QrCode, Skeleton } from '../design';
 import peg from './peg.module.css';
 import css from './QrTag.module.css';
 export type QrTagProps = Omit<UIProps, 'className' | 'style'> & {
@@ -9,6 +9,9 @@ export type QrTagProps = Omit<UIProps, 'className' | 'style'> & {
   scannerAvatar?: string;
   onRefresh: () => void;
   refreshLabel: string;
+  /** Closing the tag; shown only when given. */
+  onClose?: () => void;
+  closeLabel?: string;
 };
 // The sign-in code hangs as a tag; once scanned it shows who is signing in.
 export function QrTag({
@@ -18,6 +21,8 @@ export function QrTag({
   scannerAvatar,
   onRefresh,
   refreshLabel,
+  onClose,
+  closeLabel,
   ...rest
 }: QrTagProps) {
   return (
@@ -27,6 +32,11 @@ export function QrTag({
       <div className={peg.shadow}>
         <div className={css.tag}>
           <span className={peg.eyelet} />
+          {onClose && (
+            <span className={css.close}>
+              <IconButton icon="x" size="sm" label={closeLabel ?? ''} onClick={onClose} />
+            </span>
+          )}
           <div className={css.qr}>
             {state === 'loading' ? (
               <Skeleton shape="line" width="100%" height="100%" />

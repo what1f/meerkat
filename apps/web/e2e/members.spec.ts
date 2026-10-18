@@ -1,5 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 import { test, rig } from './rig';
+import { api, bindOwner, signInFeishu } from './feishu';
 
 const open = async (page: Page, workspace: string, hash = 'members') => {
   await page.addInitScript((ws) => {
@@ -387,4 +388,67 @@ test('B3a.9: the advanced drawer edits variables, arguments and command path, th
   await page.getByRole('button', { name: /高级|Advanced/ }).click();
   await expect(args).toHaveValue('--verbose');
   await expect(path).toHaveValue('/usr/local/bin/codex');
+});
+
+test('an owner whose Feishu sign-in lapsed signs in again from the greyed badge', async ({
+  page,
+  baseURL,
+}) => {
+  const workspace = 'members_owner_lapsed';
+  await signInFeishu(baseURL!, workspace);
+  await bindOwner(baseURL!, workspace);
+  const interfaceCall = (interface_id: string, input: object) =>
+    page.request.post('/api/v1/invoke_provider_interface', {
+      data: {
+        request_id: 'spec',
+        workspace: { workspace_id: workspace },
+        interface_id,
+        input_json: JSON.stringify(input),
+      },
+    });
+  await api(baseURL!, 'update_workspace', {
+    workspace: { workspace_id: workspace },
+    name: null,
+    rules: null,
+    provider_config_json: JSON.stringify({ task_system_enabled: true }),
+    cover_resource_id: null,
+    provider_secrets_json: null,
+  });
+  await interfaceCall('feishu.workspace.tasks', {
+    action: 'create',
+    text: 'Draft the launch notes',
+  });
+
+  await open(page, workspace);
+  const card = page.getByTestId('lead-card');
+  await expect(card.getByRole('article')).toBeVisible();
+  await expect(card).not.toHaveAttribute('data-muted', 'true');
+
+  // Feishu stops accepting the owner: the first task call finds out and the badge greys.
+  await rig({ op: 'feishu_authorization', workspace, revoked: true });
+  const lapsed = await interfaceCall('feishu.workspace.tasks', { action: 'list' });
+  expect((await lapsed.json()).detail).toBe('authorization_required');
+  const signIn = page.getByRole('button', { name: /^(Sign in again|重新登录)$/ });
+  await expect(signIn).toHaveAttribute('data-muted', 'true');
+  await expect(signIn).toHaveAttribute('data-testid', 'lead-card');
+
+  // Closing the code leaves it grey.
+  await rig({ op: 'feishu_scan', workspace, state: 'waiting' });
+  await signIn.click();
+  const qr = card.locator('section[data-state]');
+  await expect(qr).toHaveAttribute('data-state', 'wait');
+  await qr.getByRole('button', { name: /^(Close|关闭)$/ }).click();
+  await expect(qr).toHaveCount(0);
+  await expect(signIn).toHaveAttribute('data-muted', 'true');
+
+  // Scanning the code brings the badge and the task list back.
+  await signIn.click();
+  await expect(qr).toHaveAttribute('data-state', 'wait');
+  await rig({ op: 'feishu_authorization', workspace, revoked: false });
+  await rig({ op: 'feishu_scan', workspace, state: 'complete' });
+  await expect(card.getByRole('article')).toBeVisible();
+  await expect(card).not.toHaveAttribute('data-muted', 'true');
+  await expect(qr).toHaveCount(0);
+  await page.goto('/#/team');
+  await expect(page.getByTestId('tasklist')).toContainText('Draft the launch notes');
 });

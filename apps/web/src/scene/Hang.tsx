@@ -20,6 +20,8 @@ export type HangProps = Omit<UIProps, 'className' | 'style'> & {
   swingKey?: number;
   /** Recedes while something else is being read, e.g. the stage while its personality is open. */
   faded?: boolean;
+  /** Greyed out while it needs attention, e.g. a badge whose sign-in has lapsed. */
+  muted?: boolean;
   children: ReactNode;
 };
 // Something hanging from a peg on a lanyard. The peg is the pivot.
@@ -29,6 +31,7 @@ export function Hang({
   swingOnHover,
   swingKey,
   faded,
+  muted,
   ref,
   style,
   children,
@@ -77,6 +80,7 @@ export function Hang({
       data-motion={motion}
       data-swing-hover={swingOnHover}
       data-faded={faded}
+      data-muted={muted}
     >
       <span className={css.peg} data-peg="" />
       <span className={css.cord} />

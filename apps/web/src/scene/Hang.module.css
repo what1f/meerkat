@@ -170,3 +170,21 @@
 .root[data-faded='true'] {
   opacity: 0.35;
 }
+
+/* The lanyard keeps its colour, washed out; the hand-over is to come back to life on hover. */
+.root[data-muted='true'] :is(.cord, .clip) {
+  filter: grayscale(1) opacity(0.7);
+  transition: filter var(--d-base) var(--ease);
+}
+
+.root[data-muted='true'][role='button']:is(:hover, :focus-visible) :is(.cord, .clip) {
+  filter: grayscale(0.4) opacity(0.9);
+}
+
+.root[data-muted='true'][role='button'] > :last-child {
+  transition: transform var(--d-base) var(--ease);
+}
+
+.root[data-muted='true'][role='button']:is(:hover, :focus-visible) > :last-child {
+  transform: translateY(-3px);
+}

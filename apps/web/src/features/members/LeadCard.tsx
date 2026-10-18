@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { BrandMark } from '../../design';
+import { BrandMark, useToast } from '../../design';
 import { Badge, BadgeVerso, FlipCard, Hang, QrTag } from '../../scene';
 import { defaultAvatar } from './avatars';
+import { ApiError } from '../../lib/api/client';
 import { useT } from '../../lib/i18n';
 import { avatarUrl, resourceUrl } from '../../lib/assets';
 import { useRefreshWorkspaceOwner, useWorkspaceOwner } from '../../lib/queries/workspaces';
@@ -20,6 +21,7 @@ export function LeadCard({
   provider: 'feishu' | 'telegram';
 }) {
   const t = useT();
+  const toast = useToast();
   const request = { request_id: 'lead', workspace: { workspace_id: workspace } };
   const owner = useWorkspaceOwner({ ...request, provider });
   const refresh = useRefreshWorkspaceOwner();
@@ -30,7 +32,35 @@ export function LeadCard({
   const start = useStartFeishuAccountSwitch();
   const cancel = useCancelFeishuAccountSwitch();
   const scan = account.data?.state;
+  // Without a picture of its own, the owner wears the same built-in one as on a failed load.
+  const ownerPicture = owner.data?.avatar
+    ? resourceUrl(owner.data.avatar.resource_id, workspace)
+    : owner.isPending
+      ? undefined
+      : builtin;
+  const needsSignIn = provider === 'feishu' && owner.data?.state === 'needs_sign_in';
   const showQr = switching && (start.isPending || scan === 'waiting' || scan === 'scanned');
+
+  const begin = () => {
+    setFlipped(false);
+    setSwitching(true);
+    start.mutate(request, {
+      onError: (error) => {
+        setSwitching(false);
+        toast({
+          message: t(
+            error instanceof ApiError && error.detail === 'owner_app_unavailable'
+              ? 'members.signInUnavailable'
+              : 'members.failed',
+          ),
+        });
+      },
+    });
+  };
+  const close = () => {
+    setSwitching(false);
+    cancel.mutate(request);
+  };
 
   const actions = [
     {
@@ -43,11 +73,7 @@ export function LeadCard({
     actions.push({
       label: t('members.switchAccount'),
       busy: false,
-      onClick: () => {
-        setFlipped(false);
-        setSwitching(true);
-        start.mutate(request);
-      },
+      onClick: begin,
     });
 
   if (showQr)
@@ -65,11 +91,26 @@ export function LeadCard({
           brand="feishu"
           onRefresh={() => start.mutate(request)}
           refreshLabel={t('members.refreshQr')}
-          onKeyDown={(e) => {
-            if (e.key !== 'Escape') return;
-            setSwitching(false);
-            cancel.mutate(request);
-          }}
+          onClose={close}
+          closeLabel={t('members.closeQr')}
+          onKeyDown={(e) => e.key === 'Escape' && close()}
+        />
+      </Hang>
+    );
+  if (needsSignIn)
+    return (
+      <Hang
+        lanyard="lead"
+        muted
+        data-testid="lead-card"
+        aria-label={t('members.signIn')}
+        onClick={begin}
+      >
+        <Badge
+          size="card"
+          avatar={{ src: ownerPicture, fallback: builtin, status: 'err' }}
+          name={owner.data?.name ?? t('members.you')}
+          dimmed
         />
       </Hang>
     );
@@ -82,12 +123,7 @@ export function LeadCard({
           <Badge
             size="card"
             avatar={{
-              // Without a picture of its own, the owner wears the same built-in one as on a failed load.
-              src: owner.data?.avatar
-                ? resourceUrl(owner.data.avatar.resource_id, workspace)
-                : owner.isPending
-                  ? undefined
-                  : builtin,
+              src: ownerPicture,
               fallback: builtin,
             }}
             name={owner.data?.name ?? t('members.you')}

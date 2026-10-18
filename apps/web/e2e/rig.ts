@@ -16,6 +16,7 @@ export type Command =
   | ({ op: 'mention'; chat: string; person: string; text: string } & Member)
   | { op: 'pair_machine'; command: string }
   | { op: 'feishu_scan'; workspace: string; state: 'waiting' | 'scanned' | 'expired' | 'complete' }
+  | { op: 'feishu_authorization'; workspace: string; revoked: boolean }
   | ({ op: 'dm'; text: string } & Member)
   | { op: 'settle' };
 

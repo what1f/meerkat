@@ -173,6 +173,10 @@ impl Im {
             Scan::Complete => 2,
         };
     }
+    pub fn revoke_authorization(&self, workspace: &str, revoked: bool) {
+        // 99991677: the user access token has expired.
+        self.feishu(workspace).0.lock().unwrap().task_error = revoked.then_some(99991677);
+    }
     pub async fn dm(
         &self,
         rig: &SystemRig,

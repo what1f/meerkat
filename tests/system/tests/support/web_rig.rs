@@ -33,6 +33,11 @@ enum Command {
         workspace: String,
         state: web_im::Scan,
     },
+    /// Feishu stops accepting the owner's sign-in (true) or accepts it again (false).
+    FeishuAuthorization {
+        workspace: String,
+        revoked: bool,
+    },
     CreateAgent {
         workspace: String,
         agent: String,
@@ -79,6 +84,9 @@ async fn control(
 ) -> Result<Value> {
     match command {
         Command::FeishuScan { workspace, state } => im.scan(&workspace, state),
+        Command::FeishuAuthorization { workspace, revoked } => {
+            im.revoke_authorization(&workspace, revoked)
+        }
         Command::PairMachine { command } => return machines.pair(rig, &command).await,
         Command::Dm {
             workspace,
