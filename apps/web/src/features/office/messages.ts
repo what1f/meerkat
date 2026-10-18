@@ -52,7 +52,7 @@ registerMessages('office', {
     moveFailed: '没能换到这个工区',
     renameFailed: '没能重命名',
     removeFailed: '没能移除',
-    loadFailed: '没能读取工区',
+    loadFailed: '工区暂时加载不出来',
     retry: '重试',
   },
 });
