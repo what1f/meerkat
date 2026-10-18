@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import type { UIProps } from '../design/index';
 import { Tooltip } from '../design';
 import { Figure } from './Figure';
-import { figureFrame } from './figures';
+import { figureFrame, type FigurePack } from './figures';
 import { desks } from './desks';
 import type { CarryHandle } from './drag/useCarry';
 import laptop from '../assets/office/desk-laptop.png';
@@ -13,7 +13,7 @@ import screenCss from './SeatScreen.module.css';
 export type SeatProps = Omit<UIProps, 'className' | 'style'> & {
   setup: 'laptop' | 'mini';
   screen: 'dark' | 'asleep' | 'alert' | 'busy' | 'ok';
-  occupant: { figure: string } | 'empty-chair';
+  occupant: { figure: string; pack?: FigurePack; seed?: string } | 'empty-chair';
   arriving?: boolean;
   label: string;
   onClick?: () => void;
@@ -89,13 +89,15 @@ export function Seat({
     );
   });
   const figure = occupant === 'empty-chair' ? null : occupant.figure;
-  const carried = figure ? figureFrame(figure, 'carry', sitter) : null;
+  const { pack, seed } = occupant === 'empty-chair' ? {} : occupant;
+  const carried = figure ? figureFrame(figure, 'carry', sitter, pack, seed) : null;
   const who = {
     className: css.who,
     'data-who': '',
     'data-carry': carried?.src,
     'data-carry-width': carried?.width,
     'data-carry-height': carried?.height,
+    'data-carry-factor': carried?.factor,
   };
   const pose = lit ? 'work' : 'sleep';
   return (
@@ -114,11 +116,11 @@ export function Seat({
         <Tooltip label={label}>
           {onClick ? (
             <button {...who} type="button" aria-label={label} onClick={onClick}>
-              <Figure id={figure} pose={pose} scale={sitter} />
+              <Figure id={figure} pose={pose} scale={sitter} pack={pack} seed={seed} />
             </button>
           ) : (
             <span {...who}>
-              <Figure id={figure} pose={pose} scale={sitter} />
+              <Figure id={figure} pose={pose} scale={sitter} pack={pack} seed={seed} />
             </span>
           )}
         </Tooltip>

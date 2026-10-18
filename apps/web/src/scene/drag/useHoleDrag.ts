@@ -1,11 +1,12 @@
-import { useState, type RefCallback } from 'react';
+import { useRef, useState, type RefCallback } from 'react';
 import type { PegPosition } from '../Hang';
 import { clamp, eatClick, follow, grabbing, swing, threshold, trail, useDragLife } from './pointer';
 export type HolePosition = { x: number; y: number };
 export type HoleItem = { key: string; kind: string; pos: HolePosition };
 export type HoleHandle = { ref: RefCallback<HTMLElement>; style: PegPosition; dragging: boolean };
-// Hole pitch on the pegboard. An item's peg sits on the hole at its position.
-const cell = 24;
+// Hole pitch on the pegboard, the same as the `--hole` token. An item's peg sits on the hole at its position.
+export const holePitch = 24;
+const cell = holePitch;
 const pegX = (p: HolePosition) => p.x * cell + cell / 2;
 type Rect = { x: number; y: number; w: number; h: number };
 const hits = (a: Rect, b: Rect) =>
@@ -23,14 +24,24 @@ export function useHoleDrag(
 ): Record<string, HoleHandle> {
   const [dragging, setDragging] = useState<string | null>(null);
   const life = useDragLife();
+  // Counts drags and settles per item, so a settle never cleans up after a newer drag.
+  const rounds = useRef(new WeakMap<HTMLElement, number>());
+  const next = (el: HTMLElement) => {
+    const round = (rounds.current.get(el) ?? 0) + 1;
+    rounds.current.set(el, round);
+    return round;
+  };
   // Ease an item onto a hole, then let it swing.
   const settle = (el: HTMLElement, p: HolePosition) => {
+    const round = next(el);
     el.dataset.settling = '';
     el.style.left = `${pegX(p)}px`;
     el.style.top = `${p.y * cell}px`;
     el.style.rotate = '';
     life.later(() => {
+      if (rounds.current.get(el) !== round) return;
       delete el.dataset.settling;
+      delete el.dataset.dragging;
       setDragging(null);
       swing(el);
     }, 280);
@@ -57,9 +68,11 @@ export function useHoleDrag(
     if (p.x !== item.pos.x || p.y !== item.pos.y) onMove(item.key, p);
   };
   const down = (item: HoleItem, el: HTMLElement) => (e: PointerEvent) => {
-    const target = e.target as Element;
-    if (e.button !== 0 || target.closest('input, textarea, button, a, label, [contenteditable]'))
-      return;
+    // Controls inside the item keep their own pointer. An item that is itself a button still drags.
+    const control = (e.target as Element).closest(
+      'input, textarea, button, a, label, [contenteditable]',
+    );
+    if (e.button !== 0 || (control && control !== el)) return;
     e.preventDefault();
     const l = el.offsetLeft;
     const t = el.offsetTop;
@@ -83,6 +96,9 @@ export function useHoleDrag(
           on = true;
           grabbing(true);
           delete el.dataset.swing;
+          next(el);
+          delete el.dataset.settling;
+          el.dataset.dragging = '';
           setDragging(item.key);
         }
         el.style.left = `${l + dx}px`;

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, type ReactNode, type Ref } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type KeyboardEvent,
+  type ReactNode,
+  type Ref,
+} from 'react';
 import type { UIProps } from '../design/index';
 import { swing } from './drag/pointer';
 import css from './Hang.module.css';
@@ -11,6 +18,8 @@ export type HangProps = Omit<UIProps, 'className' | 'style'> & {
   motion?: 'enter' | 'leave' | 'turn-in';
   swingOnHover?: boolean;
   swingKey?: number;
+  /** Recedes while something else is being read, e.g. the stage while its personality is open. */
+  faded?: boolean;
   children: ReactNode;
 };
 // Something hanging from a peg on a lanyard. The peg is the pivot.
@@ -19,9 +28,12 @@ export function Hang({
   motion,
   swingOnHover,
   swingKey,
+  faded,
   ref,
   style,
   children,
+  onClick,
+  onKeyDown,
   ...rest
 }: HangProps) {
   const own = useRef<HTMLDivElement>(null);
@@ -43,12 +55,28 @@ export function Hang({
   return (
     <div
       {...rest}
+      // With onClick it is a card you open: focusable, and Enter or Space opens it too.
+      {...(onClick && {
+        role: 'button',
+        tabIndex: 0,
+        onClick,
+        onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
+          onKeyDown?.(e);
+          if (e.defaultPrevented || e.target !== e.currentTarget) return;
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            e.currentTarget.click();
+          }
+        },
+      })}
+      {...(!onClick && { onKeyDown })}
       ref={attach}
       style={style}
       className={css.root}
       data-lanyard={lanyard}
       data-motion={motion}
       data-swing-hover={swingOnHover}
+      data-faded={faded}
     >
       <span className={css.peg} data-peg="" />
       <span className={css.cord} />

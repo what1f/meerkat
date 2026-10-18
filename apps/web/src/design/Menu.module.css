@@ -1,3 +1,8 @@
+/* Popups float above the scene: the console, figures and dragged things. */
+.positioner {
+  z-index: var(--z-popup);
+}
+
 .popup {
   min-width: 184px;
   padding: 4px;

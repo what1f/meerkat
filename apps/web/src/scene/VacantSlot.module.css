@@ -1,19 +1,34 @@
-/* An empty hook: add something here. */
+/* An empty hook: add something here. It keeps its peg, like the things it stands in for. */
 .root {
   --r-vacant: calc(16 * var(--u, 0.9px));
 
+  position: relative;
   display: flex;
   flex: none;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  font-size: var(--t-body);
+  color: var(--ink-3);
+  background: var(--clear);
+  border-style: none;
+  outline-style: none;
+}
+
+/* Hangs in the rails like a badge: the outline starts where a badge would. */
+.root[data-shape='badge'] {
+  width: 192px;
+  padding-top: 60px;
+}
+
+.outline {
+  display: flex;
   flex-direction: column;
   gap: 12px;
   align-items: center;
   justify-content: center;
   width: calc(196 * var(--u, 0.9px));
   height: calc(276 * var(--u, 0.9px));
-  padding: 0;
-  font-size: var(--t-body);
-  color: var(--ink-3);
-  background: var(--clear);
   border: var(--dashed-strong);
   border-radius: var(--r-vacant);
   transition:
@@ -21,7 +36,7 @@
     border-color var(--d-base);
 }
 
-.root[data-shape='clipboard'] {
+.root[data-shape='clipboard'] .outline {
   width: 352px;
   height: 452px;
   border-radius: var(--r-badge-lg);
@@ -43,8 +58,11 @@
 .root:hover,
 .root:focus-visible {
   color: var(--ink);
+}
+
+.root:hover .outline,
+.root:focus-visible .outline {
   border-color: var(--ink-4);
-  outline-style: none;
 }
 
 .root:hover .plus {

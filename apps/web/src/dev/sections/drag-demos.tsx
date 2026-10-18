@@ -88,6 +88,11 @@ export function OfficeDemo() {
     home: ['01', '04'],
     office: ['07'],
   });
+  const [titles, setTitles] = useState<Record<string, string>>({
+    home: 'MacBook Pro',
+    office: 'Office mini',
+  });
+  const [renaming, setRenaming] = useState<{ row: string; n: number } | null>(null);
   const { seatHandle, rowProps } = S.useCarry((id, to) =>
     setRows((all) =>
       Object.fromEntries(
@@ -104,9 +109,30 @@ export function OfficeDemo() {
         <S.WorkRow
           key={key}
           {...rowProps(key)}
-          title={key === 'home' ? 'MacBook Pro' : 'Office mini'}
+          title={
+            <D.InlineText
+              key={renaming?.row === key ? renaming.n : 0}
+              value={titles[key] ?? ''}
+              placeholder="Computer"
+              textStyle="title"
+              autoFocus={renaming?.row === key}
+              onCommit={(v) => setTitles({ ...titles, [key]: v })}
+            />
+          }
           status={key === 'home' ? 'ok' : 'idle'}
-          menu={<D.IconButton icon="more" label="More" size="sm" onClick={() => {}} />}
+          menu={
+            <D.Menu
+              align="end"
+              trigger={<D.IconButton icon="more" label="More" size="sm" onClick={() => {}} />}
+            >
+              <D.Menu.Item
+                returnFocus={false}
+                onSelect={() => setRenaming({ row: key, n: (renaming?.n ?? 0) + 1 })}
+              >
+                Rename
+              </D.Menu.Item>
+            </D.Menu>
+          }
         >
           {ids.map((id) => (
             <S.Seat

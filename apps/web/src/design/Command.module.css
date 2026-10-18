@@ -5,13 +5,19 @@
   font-size: var(--t-small);
   line-height: 20px;
   color: var(--ink);
-  overflow-wrap: anywhere;
   background: var(--field);
   border-radius: var(--r-input-lg);
 }
 
 .root > code {
   font-family: inherit;
+}
+
+/* Lines break only between arguments; an argument longer than a line breaks inside itself. */
+.root > code > span {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .root > button {

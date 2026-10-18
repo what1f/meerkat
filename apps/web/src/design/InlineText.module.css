@@ -1,4 +1,4 @@
-/* Inline-editable text stays text. Editing shows only the caret: no box, no ring. */
+/* Inline-editable text stays text. Editing adds only an accent underline under the caret: no box. */
 .root {
   display: block;
   width: 100%;
@@ -20,6 +20,17 @@
   border-radius: var(--r-0);
   outline-style: none;
   field-sizing: content;
+}
+
+/* Editing a committed value adds an underline. Single-line text is only as wide as itself, read or edited, so neighbours stay put. */
+.root[data-mode='commit'] {
+  box-shadow: var(--editing-line);
+}
+
+button.root,
+input.root[data-mode='commit'] {
+  width: fit-content;
+  max-width: 100%;
 }
 
 button.root {

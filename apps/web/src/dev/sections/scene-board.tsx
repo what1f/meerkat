@@ -3,6 +3,7 @@ import * as S from '../../scene';
 import * as D from '../../design';
 import { Spec, State } from '../Spec';
 import { FreeBoardDemo, RailsDemo } from './drag-demos';
+import { WallDemo } from './wall-demo';
 const avatar = new URL('../../assets/avatars/01.jpg', import.meta.url).href;
 const badge = (name: string, size: 'card' | 'stage' | 'intro' = 'card') => (
   <S.Badge
@@ -17,6 +18,7 @@ const badge = (name: string, size: 'card' | 'stage' | 'intro' = 'card') => (
 export function SceneBoard() {
   const [flipped, setFlipped] = useState(false);
   const [replay, setReplay] = useState(0);
+  const [reading, setReading] = useState(false);
   return (
     <>
       <Spec name="Board rails, drag to reorder" surface="board">
@@ -24,6 +26,9 @@ export function SceneBoard() {
       </Spec>
       <Spec name="Board free, drag between holes" surface="board">
         <FreeBoardDemo />
+      </Spec>
+      <Spec name="Team wall, drag anything to another hole" surface="board">
+        <WallDemo />
       </Spec>
       <Spec name="Hang motion" surface="board">
         <S.Board layout="rails" holes="fade">
@@ -33,6 +38,12 @@ export function SceneBoard() {
               {badge(motion)}
             </S.Hang>
           ))}
+        </S.Board>
+      </Spec>
+      <Spec name="Hang, open on click, faded while reading" surface="board">
+        <S.Board layout="rails">
+          <S.Hang onClick={() => setReading(!reading)}>{badge('Open me')}</S.Hang>
+          <S.Hang faded={reading}>{badge('Stage')}</S.Hang>
         </S.Board>
       </Spec>
       <Spec name="Badge">

@@ -3,3 +3,8 @@
   flex: none;
   max-width: none;
 }
+
+/* A pack frame stays hidden until it has its size. */
+.root[data-sizing] {
+  visibility: hidden;
+}

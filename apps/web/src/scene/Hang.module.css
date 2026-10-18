@@ -8,6 +8,7 @@
   width: 192px;
   padding-top: 60px;
   transform-origin: 50% 12px;
+  transition: opacity var(--d-base) var(--ease);
 }
 
 .root:has([data-size='stage'], [data-size='intro']) {
@@ -154,4 +155,18 @@
   80% {
     transform: rotate(-0.3deg);
   }
+}
+
+.root[role='button'] {
+  cursor: pointer;
+  outline-style: none;
+}
+
+/* The ring goes on what hangs, not on the lanyard. */
+.root[role='button']:focus-visible > :last-child {
+  box-shadow: var(--card-shadow-focus);
+}
+
+.root[data-faded='true'] {
+  opacity: 0.35;
 }

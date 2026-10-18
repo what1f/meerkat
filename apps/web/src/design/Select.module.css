@@ -1,3 +1,8 @@
+/* Popups float above the scene: the console, figures and dragged things. */
+.positioner {
+  z-index: var(--z-popup);
+}
+
 /* Quiet: text until hovered. Boxed: a filled field for forms. */
 .root {
   display: inline-flex;

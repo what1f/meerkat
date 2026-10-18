@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import * as D from '../../design';
-import { Reaction } from '../../scene';
+import { Lever, Reaction } from '../../scene';
 import { Spec, State } from '../Spec';
 const options = ['One', 'Two', 'Three'].map((value) => ({ value, label: value }));
 const cells = ['SMILE', 'CLAP', 'Coffee', 'CheckMark', 'AWESOME', 'BEER'].map((id) => ({
@@ -13,6 +13,7 @@ export function DesignLayout() {
   const [pick, setPick] = useState('SMILE');
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'light' | 'dark' | 'system'>('system');
+  const [level, setLevel] = useState(1);
   return (
     <>
       <Spec name="Group" surface="surface">
@@ -57,6 +58,10 @@ export function DesignLayout() {
             </D.OptionColumn.Item>
           ))}
         </D.OptionColumn>
+        <D.OptionColumn
+          title="Thinking"
+          control={<Lever levels={['Low', 'Medium', 'High']} value={level} onChange={setLevel} />}
+        />
       </Spec>
       <Spec name="GridPicker" surface="surface">
         <State label="inline">
@@ -65,7 +70,13 @@ export function DesignLayout() {
             value={pick}
             onPick={setPick}
             columns={3}
-            leading={<D.IconButton icon="upload" label="Upload" onClick={() => {}} />}
+            leading={
+              <D.IconButton
+                icon="upload"
+                label="Upload"
+                onClick={() => void D.pickFile('image/*')}
+              />
+            }
           />
         </State>
         <State label="in popover">

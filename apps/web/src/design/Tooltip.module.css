@@ -7,7 +7,7 @@
   position: absolute;
   bottom: calc(100% + 6px);
   left: 50%;
-  z-index: 60;
+  z-index: var(--z-tooltip);
   padding: 4px 8px;
   font-size: var(--t-caption);
   font-weight: 500;

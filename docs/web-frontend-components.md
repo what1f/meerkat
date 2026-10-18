@@ -60,6 +60,7 @@ apps/web/
       Menu.tsx  Popover.tsx  GridPicker.tsx  Tooltip.tsx
       Toast.tsx  Dialog.tsx  ConfirmDialog.tsx
       Command.tsx  Dashes.tsx  Skeleton.tsx  Spinner.tsx
+      pickFile.ts          调起系统文件选择，features 不自己创建 input
       EmptyState.tsx  Callout.tsx  Message.tsx  QrCode.tsx
       *.module.css         一个组件对应一个样式文件，同名
       index.ts             唯一出口
@@ -71,7 +72,7 @@ apps/web/
       RigFigure.tsx  Sticker.tsx  HarnessRow.tsx
       Figure.tsx  Seat.tsx  WorkRow.tsx  AddRow.tsx
       Reaction.tsx  Mascot.tsx  PullCord.tsx
-      figures.ts           形象帧的尺寸表
+      figures.ts           内置形象帧的尺寸表；`figures`、`FigurePack`、`Pose` 从 scene 的 index 导出
       desks.ts             桌面素材的屏幕区域表
       drag/
         useHoleDrag.ts     自由挂板：吸附到 24px 孔位，带碰撞回退和摆动
@@ -141,6 +142,7 @@ apps/web/
 
 - 需要新外观时，给组件加 variant，不在调用处覆盖样式。
 - `features/` 的 CSS Module 只写布局：`display`、`gap`、`grid`、`margin`、`padding`、`width`。
+- 布局数值也用 token：间距 `--sp-sm` 14、`--sp-md` 16、`--sp-lg` 24、`--sp-xl` 32、`--sp-2xl` 48；设置类页面的内容列宽 `--column` 560；墙孔间距 `--hole` 24（TS 里用 scene 导出的 `holePitch`）。不要拿圆角、高度 token 充当间距。
 - 定时器、轮询和 WS 只出现在 `lib/` 的 hook 和 `scene/drag/` 中。features 不直接写 `useEffect`
   订阅外部资源；如果必须写，在注释里说明理由。
 - 动效只用 CSS transition、keyframes 和 `@starting-style`。少数 FLIP 场景用 `useFlip` 里的 Web Animations API。
@@ -159,26 +161,27 @@ apps/web/
 | `LinkButton` | `children; disclosure?: boolean; open?: boolean; onClick?` | 文字链接；带 disclosure 时显示 chevron，展开后旋转 |
 | `TextInput` | `value; onChange; size?: 'sm' \| 'md' \| 'lg'; align?: 'start' \| 'center'; mono?; invalid?; placeholder` | 填充框，没有描边，聚焦时显示品牌紫光圈。`sm` 用于等宽的小字，例如网络地址、环境变量 |
 | `DocArea` | `value; onChange; placeholder; minRows?` | 文档式多行编辑，高度随内容增长 |
-| `InlineText` | `mode?: 'commit' \| 'live'; value; onCommit?(v); onChange?(v); placeholder; multiline?; textStyle: 'display' \| 'heading' \| 'title' \| 'body' \| 'small'; autoFocus?` | `commit`（默认）：平时就是一段文字，点击后原地编辑，Enter 或失焦时提交，Esc 撤销。用于团队名、工区重命名、清单标题。`live`：一直处于可编辑状态，每次输入都调用 `onChange`，不支持 Esc 撤销（撤销通过返回键的「放弃更改」）。用于成员工卡上的资料 |
+| `InlineText` | `mode?: 'commit' \| 'live'; value; onCommit?(v); onChange?(v); placeholder; multiline?; textStyle: 'display' \| 'heading' \| 'title' \| 'body' \| 'small'; autoFocus?` | `commit`（默认）：平时就是一段文字，点击后原地编辑，Enter 或失焦时提交，Esc 撤销。用于团队名、工区重命名、清单标题。编辑时文字下方有一条强调色底线；单行时不论是否在编辑都只和文字一样宽，不会把同一行的其他元素挤走。`live`：一直处于可编辑状态，每次输入都调用 `onChange`，不支持 Esc 撤销（撤销通过返回键的「放弃更改」）。用于成员工卡上的资料 |
 | `Segmented<T>` | `options: { value: T; label: string; icon?: ReactNode }[]; value; onChange; size?: 'sm' \| 'md'` | 固定的 2 到 4 项 |
 | `Select<T>` | `options: { value: T; label: string; leading?: ReactNode; disabled? }[]; value; onChange; variant?: 'quiet' \| 'boxed'` | 基于 Base UI Select；quiet 平时就是文字 |
 | `SearchField` | `value; onChange; placeholder; autoFocus?; onEnter?(v)` | 放大镜加输入框。在 `BrainPicker` 中按 Enter 可以直接采用输入的自定义模型 |
-| `OptionColumn` / `OptionColumn.Item` | `OptionColumn: title: string; children`；`Item: selected?; dimmed?; mono?; leading?: ReactNode; onSelect; children` | 多列选择器中的一列。`dimmed` 表示离线 |
+| `OptionColumn` / `OptionColumn.Item` | `OptionColumn: title: string; children?; control?: ReactNode`；`Item: selected?; dimmed?; mono?; leading?: ReactNode; onSelect; children` | 多列选择器中的一列。`children` 只放 `Item`，组成 listbox；不是选项的控件（例如思考列的 `Lever`）放 `control`，在 listbox 之外。`dimmed` 表示离线 |
 | `ThemeThumb` | `mode: 'light' \| 'dark' \| 'system'; selected; label; onSelect` | 外观缩略图，画的是一个小窗口 |
 | `Group` / `Group.Row` | `Group: children`；`Row: label; children; align?: 'center' \| 'top'` | 唯一的容器。行高 40，行与行之间是细线 |
 | `Reveal` | `open; children` | 带高度动画的折叠区域 |
 | `StatusDot` | `status: Status; tip?: string` | 表达状态的唯一方式；busy 状态呼吸闪烁 |
 | `Avatar` | `src?; size: 20 \| 26 \| 32 \| 40 \| 44 \| 60 \| 76 \| 88 \| 'fill'; status?: Status; statusTip?: string; dimmed?; creating?; selected?; onEdit?: () => void; editLabel?` | 状态点挂在右下角，`statusTip` 在悬停状态点时显示（例如暂停原因）。`fill` 表示撑满父元素，只供 scene 内部使用。`dimmed` 表示暂停（变灰）；`onEdit` 存在时悬停显示铅笔 |
 | `Menu` | `trigger: ReactElement; align?: 'start' \| 'end'; children` | 基于 Base UI Menu。`trigger` 直接传触发按钮本身，不需要占位的 `onClick`，例如 `<LinkButton disclosure>` |
-| `Menu.Item` | `leading?: ReactNode; checked?; danger?; onSelect; children` | 菜单项高 30，选中时显示勾 |
+| `Menu.Item` | `leading?: ReactNode; checked?; danger?; returnFocus?: boolean; onSelect; children` | 菜单项高 30，选中时显示勾。菜单关闭后焦点默认回到触发按钮；打开原地编辑器（例如重命名）的项传 `returnFocus={false}`，焦点留给编辑器 |
 | `Menu.Separator` | — | |
-| `Popover` | `trigger: ReactElement; align?; open?; onOpenChange?; children` | 基于 Base UI Popover，供网格选择器和多列选择器使用 |
+| `Popover` | `trigger: ReactElement; align?; open?; onOpenChange?; children` | 基于 Base UI Popover，供网格选择器和多列选择器使用。`Popover`、`Menu`、`Select` 的浮层都在 `--z-popup` 层，高于场景（操控台、形象、拖动中的物件）；`Tooltip` 在 `--z-tooltip`，`Toast` 在 `--z-toast` |
 | `GridPicker<T>` | `cells: { value: T; label?: string; content: ReactNode }[]; value?: T; onPick(v); leading?: ReactNode; trailing?: ReactNode; columns: number` | 头像、表情、形象选择器共用。`leading` 放上传格和“不回复”格，`trailing` 放形象的导入格 |
 | `Tooltip` | `label; children` | 对应原型里所有 `data-tip` |
+| `pickFile` | `pickFile(accept: string): Promise<File \| null>` | 调起系统文件选择，取消时得到 `null`，页面里不留元素。上传头像等入口用 `IconButton` 加它 |
 | `Toast` | `ToastProvider`；`useToast()(opts: { leading?: ReactNode; message: string; action?: { label; onAction } })` | 3.6 秒后自动消失；有 action 时用于撤销或打开 |
 | `Dialog` | `open; onClose; title; size?: 'sm' \| 'md'; children; footer: ReactNode` | 基于原生 `<dialog>`，宽度 400 或 460。`ConfirmDialog` 的宽度是 320，由它自己处理 |
 | `ConfirmDialog` | `open; onClose; leading?: ReactNode; title; body; confirmLabel; cancelLabel; onConfirm; tone?: 'danger'` | 只用于不可撤销的操作 |
-| `Command` | `text; copyLabel; copiedLabel` | 等宽命令，带一键复制；复制后在原位反馈 |
+| `Command` | `text; copyLabel; copiedLabel` | 等宽命令，带一键复制；复制后在原位反馈。只在空格处折行，参数不会被拆开（超过一行的单个参数才在内部折行）；复制的始终是原来的单行 `text` |
 | `Dashes` | `total; current` | 引导页顶部的进度细线 |
 | `Skeleton` | `shape: 'line' \| 'circle'; width; height?` | 加载用骨架，不用转圈 |
 | `Spinner` | `size?: 'sm' \| 'md'` | 只用于行内的“正在进行” |
@@ -199,29 +202,29 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 | 组件 | Props | 说明 |
 |---|---|---|
 | `Board` | `layout: 'rails' \| 'free'; holes?: 'on' \| 'fade'; children` | 洞洞板画布。孔网格自动对齐到第一个挂钉；`free` 模式下由子项自行定位 |
-| `Hang` | `ref?: Ref<HTMLDivElement>; style?: { left?: number; top?: number }; lanyard?: 'member' \| 'lead'; motion?: 'enter' \| 'leave' \| 'turn-in'; swingOnHover?; swingKey?: number; children` | 挂钉、挂绳、夹子，以挂钉为支点。`swingKey` 的值每变化一次就晃一下，用于保存、换头像、落位之后。`turn-in` 表示原地翻入，例如二维码吊牌翻成工卡。FLIP 期间的层级由 `useFlip` 通过 data 属性处理，不放进 props。`ref` 和 `style` 用来直接接 `useHoleDrag` 和 `useSortable` 返回的 handle，不需要再包一层 div；`style` 只允许挂钉位置 `left`、`top` |
+| `Hang` | `ref?: Ref<HTMLDivElement>; style?: { left?: number; top?: number }; lanyard?: 'member' \| 'lead'; motion?: 'enter' \| 'leave' \| 'turn-in'; swingOnHover?; swingKey?: number; faded?; onClick?; children` | 挂钉、挂绳、夹子，以挂钉为支点。传 `onClick` 时整张是可打开的卡片：`role="button"`、可聚焦，Enter 和 Space 也能打开。`faded` 让它退到背景（透明度 0.35），用于阅读性格时的 stage；`Badge` 的 `dimmed` 是暂停状态，两者不同。`swingKey` 的值每变化一次就晃一下，用于保存、换头像、落位之后。`turn-in` 表示原地翻入，例如二维码吊牌翻成工卡。FLIP 期间的层级由 `useFlip` 通过 data 属性处理，不放进 props。`ref` 和 `style` 用来直接接 `useHoleDrag` 和 `useSortable` 返回的 handle，不需要再包一层 div；`style` 只允许挂钉位置 `left`、`top` |
 | `Badge` | `ref?: Ref<HTMLElement>; style?: { left?: number; top?: number }; avatar: { src?; status?: Status; statusTip?; creating?; onEdit?; editLabel? }; name: ReactNode; role?: ReactNode; bio?: ReactNode; foot?: ReactNode; size: 'card' \| 'stage' \| 'intro'; dimmed?; ghost?` | 白色工卡。头像由 Badge 内部渲染，并按工卡比例确定尺寸。`name`、`role`、`bio` 可以传纯文字，也可以传 `InlineText`。`intro` 是引导页的尺寸。`ghost` 是骨架状态的空白卡。`ref` 和 `style` 的用途同 `Hang`，用于不挂在挂绳上直接拖动的工卡 |
 | `BadgeVerso` | `mark: ReactNode; actions: { label; onClick; busy? }[]` | 你自己工卡的背面：品牌标志加撕页按钮。`busy` 时显示转圈的刷新图标 |
-| `FlipCard` | `flipped; front; back; onFlip` | 翻面容器，在原地翻转 |
-| `VacantSlot` | `label; onClick; shape: 'badge' \| 'clipboard'` | 虚线空位，例如添加成员、任务清单停用后的位置 |
-| `Tag` | `children; tone?: 'paper'` | 挂在绳上的吊牌（带孔眼），规约、二维码、Token 都用它 |
+| `FlipCard` | `flipped; front; back; onFlip` | 翻面容器，单击在原地翻转；面上的按钮、输入框保留自己的点击。也可以聚焦后按 Enter 或 Space |
+| `VacantSlot` | `ref?: Ref<HTMLButtonElement>; style?: { left?: number; top?: number }; label; onClick; shape: 'badge' \| 'clipboard'` | 虚线空位，例如添加成员、任务清单停用后的位置。两种形状都带挂钉：`badge` 和 rails 里的工卡对齐，`clipboard` 和 `Clipboard` 对齐。`ref`、`style` 的用途同 `Hang` |
+| `Tag` | `ref?: Ref<HTMLElement>; style?: { left?: number; top?: number }; children; tone?: 'paper'` | 挂在绳上的吊牌（带孔眼），规约、二维码、Token 都用它。`ref`、`style` 的用途同 `Hang` |
 | `QrTag` | `state: 'loading' \| 'wait' \| 'scanned' \| 'expired'; value: string; brand: 'feishu' \| 'telegram'; scannerAvatar?: string; onRefresh; refreshLabel` | 二维码吊牌：扫码后变暗，并显示扫码人的头像；过期时刷新按钮就在码上；`loading` 时显示骨架。登录成功后翻成工卡，由 `Hang motion="turn-in"` 完成 |
 | `TokenTag` | `value; onChange; label; invalid?` | Telegram 的 Token 吊牌，填写线样式的输入。`invalid` 时填写线变红，不加文字 |
 | `PaperLabel` | `value; onCommit; label` | 贴在板子上方的团队名纸条，可以原地编辑 |
-| `ShiftSign` | `on; onToggle; onLabel; offLabel; label` | 上班/下班翻牌 |
-| `Clipboard` | `title: ReactNode; actions: ReactNode; children; footer: ReactNode` | 木质写字板和纸，用于任务清单 |
-| `ChecklistRow` | `done; text; avatar?: string; onToggle` 以及 `ChecklistRow.New: placeholder; onAdd(text)` | 清单里的一行 |
+| `ShiftSign` | `ref?: Ref<HTMLDivElement>; style?: { left?: number; top?: number }; on; onToggle; onLabel; offLabel; label` | 上班/下班翻牌。`ref`、`style` 的用途同 `Hang` |
+| `Clipboard` | `ref?: Ref<HTMLElement>; style?: { left?: number; top?: number }; title: ReactNode; actions: ReactNode; children; footer: ReactNode` | 木质写字板和纸，用于任务清单。`ref`、`style` 的用途同 `Hang` |
+| `ChecklistRow` | `done; text; avatar?: string; onToggle` 以及 `ChecklistRow.New: placeholder; onAdd(text)` | 清单里的一行。点击后勾选立即显示，`done` 下一次变化后以 `done` 为准 |
 | `Console` | `figure?: ReactNode; sticker?: ReactNode; notice?: ReactNode; screen: ReactNode; body?: ReactNode; deck: ReactNode; drawer?: { label; content: ReactNode }; reading?` | 暖白色操控台。`reading` 表示性格卡被抽出编辑 |
 | `ConsoleScreen` | `onClick?; variant: 'readout' \| 'list'; children` | 黑色屏幕。`readout` 用于成员；`list` 用于引导页的 AI 列表 |
 | `ScreenReadout` | `ai: { mark: ReactNode; label }; model: string; place: { label; status: Status }; level: { index; total; label }` | 屏幕内容：AI、模型、工区和思考强度刻度 |
 | `ConsoleKey` | `icon?: IconName; label; lit?; go?; disabled?; onClick; children?` | 实体键。`go` 是带 LED 的主键（添加、保存）。没有贴纸时，deck 上的笑脸键也是 ConsoleKey |
-| `RigFigure` | `id: string; onClick?; label?` | 操控台顶上的形象。可以点击，悬停时上浮，更换时有 pop 动画；不传 `onClick` 时是静态的（引导页） |
+| `RigFigure` | `id: string; pack?: FigurePack; seed?: string; onClick?; label?` | 操控台顶上的形象。可以点击，悬停时上浮，更换时有 pop 动画；不传 `onClick` 时是静态的（引导页）。自身不定位，位置由所在的槽位决定（`Console` 的 `figure`） |
 | `Sticker` | `reaction: string \| null; onClick; label` | 操控台上的表情贴纸，更换时有 pop 动画 |
 | `HarnessRow` | `mark: ReactNode; label; test?: 'run' \| 'ok' \| 'fail'; reply?: string; selected?; onSelect?; action?: { label; onClick }` | `ConsoleScreen variant="list"` 中的一行：品牌图标、名字、右侧测试灯。选中后在行下方展开 `reply`。`action` 用于没有安装时的「安装」 |
 | `SoulSlot` | `value; onChange; label; placeholder; onFocusChange(reading)` | 插槽里的性格卡 |
 | `Lever` | `levels: string[]; value: number; onChange` | 竖向档位拉杆，档位数量由模型决定 |
-| `Figure` | `id: string; pose: 'work' \| 'sleep' \| 'carry' \| 'stand'; scale?: number` | 形象帧，尺寸查 `figures.ts` |
-| `Seat` | `setup: 'laptop' \| 'mini'; screen: 'dark' \| 'asleep' \| 'alert' \| 'busy' \| 'ok'; occupant: { figure: string } \| 'empty-chair'; arriving?; label; onClick?; carry?: CarryHandle` | 一张工位：桌子、屏幕、形象或空椅子，睡着时显示 zz。形象的姿势由 `screen` 推出（`asleep` 和 `dark` 对应 sleep，其他对应 work），不另设 `pose` 参数 |
+| `Figure` | `id: string; pose: 'work' \| 'sleep' \| 'carry' \| 'stand'; scale?: number; pack?: { frames: Partial<Record<Pose, string>>; scale: number }; seed?: string` | 形象帧。内置形象只传 `id`，尺寸查 `figures.ts`；导入的形象包传 `pack`（每个姿势一个帧 URL），尺寸是图片原始像素乘以 `pack.scale` 和 `scale`，加载完成前不显示。`id` 是 `default`、不是内置形象，或形象包缺这个姿势（例如没有坐姿）时，按 `seed`（传成员 id）稳定地选一个内置形象顶替，features 不用自己挑 |
+| `Seat` | `setup: 'laptop' \| 'mini'; screen: 'dark' \| 'asleep' \| 'alert' \| 'busy' \| 'ok'; occupant: { figure: string; pack?: FigurePack; seed?: string } \| 'empty-chair'; arriving?; label; onClick?; carry?: CarryHandle` | 一张工位：桌子、屏幕、形象或空椅子，睡着时显示 zz。形象的姿势由 `screen` 推出（`asleep` 和 `dark` 对应 sleep，其他对应 work），不另设 `pose` 参数 |
 | `WorkRow` | `title: ReactNode; status: Status; menu?: ReactNode; arriving?; children` 加上 `useCarry().rowProps(rowKey)` | 一个工区一排，标题是名字加状态点。`arriving` 表示新工区加入时的高亮。拖拽悬停的样式只认 `rowProps` 设置的 `data-over` |
 | `AddRow` | `label; onClick` | 最后一行的添加入口 |
 | `Reaction` | `id: string; size?: number` | 表情图片 |
@@ -232,7 +235,7 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 
 | Hook | 签名 | 用途 |
 |---|---|---|
-| `useHoleDrag` | `(items: { key; kind; pos }[], onMove(key, pos))` 返回每个子项的 `{ ref, style, dragging }` | 团队墙上吊牌、清单、翻牌的自由挂放 |
+| `useHoleDrag` | `(items: { key; kind; pos }[], onMove(key, pos))` 返回每个子项的 `{ ref, style, dragging }`；同文件导出孔距常量 `holePitch` | 团队墙上吊牌、清单、翻牌的自由挂放。`ref`、`style` 直接给 `Hang`、`Badge`、`Tag`、`Clipboard`、`ShiftSign`、`VacantSlot`；拖动中的元素由 hook 标上 `data-dragging`，不需要外包一层。物件内部的按钮、输入框不触发拖动，物件本身是按钮（`VacantSlot`）时可以拖，短按仍是点击 |
 | `useSortable` | `(ids: string[], onReorder(ids))` 返回 `{ itemProps(id) }` | 成员板上的工卡排序 |
 | `useCarry` | `(onDrop(id, rowKey))` 返回 `{ seatHandle(id), rowProps(rowKey) }` | 拎起成员，换到另一个工区 |
 | `useFlip` | `() => (from: DOMRect, el: HTMLElement) => void` | 工卡从板上飞到详情页，或从详情页飞回板上 |

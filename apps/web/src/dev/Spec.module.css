@@ -55,6 +55,11 @@
   overflow: hidden;
 }
 
+/* A board fills its cell, as it fills the page. */
+.cell[data-surface='board'] > * {
+  flex: 1 1 100%;
+}
+
 .cell[data-frame='true'] {
   display: block;
   height: 460px;

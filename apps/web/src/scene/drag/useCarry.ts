@@ -10,6 +10,13 @@ function lift(who: HTMLElement) {
   ghost.src = who.dataset.carry ?? '';
   ghost.width = Number(who.dataset.carryWidth) || 0;
   ghost.height = Number(who.dataset.carryHeight) || 0;
+  // A figure pack frame has no known size: take it from the image once loaded.
+  if (!ghost.width)
+    ghost.onload = () => {
+      const factor = Number(who.dataset.carryFactor) || 1;
+      ghost.width = ghost.naturalWidth * factor;
+      ghost.height = ghost.naturalHeight * factor;
+    };
   ghost.alt = '';
   ghost.dataset.carryGhost = '';
   document.body.append(ghost);

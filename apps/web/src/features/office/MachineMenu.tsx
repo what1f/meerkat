@@ -25,7 +25,7 @@ export function MachineMenu({
         />
       }
     >
-      <Menu.Item leading={<Icon name="pencil" size={14} />} onSelect={onRename}>
+      <Menu.Item leading={<Icon name="pencil" size={14} />} returnFocus={false} onSelect={onRename}>
         {t('office.rename')}
       </Menu.Item>
       {removable && (

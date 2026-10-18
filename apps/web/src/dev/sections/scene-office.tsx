@@ -2,6 +2,20 @@ import * as S from '../../scene';
 import { Spec, State } from '../Spec';
 import { OfficeDemo } from './drag-demos';
 const screens = ['ok', 'busy', 'alert', 'asleep', 'dark'] as const;
+const poses = ['work', 'sleep', 'carry', 'stand'] as const;
+// A figure pack arrives as frame URLs; here the built-in 04 frames stand in for one.
+const frame = (pose: S.Pose) =>
+  new URL(`../../assets/figures/04/${pose}.png`, import.meta.url).href;
+const pack: S.FigurePack = {
+  frames: {
+    work: frame('work'),
+    sleep: frame('sleep'),
+    carry: frame('carry'),
+    stand: frame('stand'),
+  },
+  scale: 1,
+};
+const standOnly: S.FigurePack = { frames: { stand: frame('stand') }, scale: 1 };
 export function SceneOffice() {
   return (
     <>
@@ -19,11 +33,24 @@ export function SceneOffice() {
         </State>
       </Spec>
       <Spec name="Figure">
-        {(['work', 'sleep', 'carry', 'stand'] as const).map((pose) => (
+        {poses.map((pose) => (
           <State key={pose} label={pose}>
             <S.Figure id="01" pose={pose} scale={0.3} />
           </State>
         ))}
+        {poses.map((pose) => (
+          <State key={pose} label={`pack ${pose}`}>
+            <S.Figure id="pack" pose={pose} scale={0.3} pack={pack} />
+          </State>
+        ))}
+        {['ana', 'kai', 'mia'].map((seed) => (
+          <State key={seed} label={`default, seed ${seed}`}>
+            <S.Figure id="default" pose="work" scale={0.3} seed={seed} />
+          </State>
+        ))}
+        <State label="pack without work">
+          <S.Figure id="pack" pose="work" scale={0.3} pack={standOnly} seed="ana" />
+        </State>
       </Spec>
       <Spec name="Reaction, Mascot, PullCord">
         <State label="reaction">

@@ -31,3 +31,4 @@ export * from './drag/useCarry';
 export * from './drag/useHoleDrag';
 export * from './drag/useSortable';
 export * from './drag/useFlip';
+export { figures, type FigurePack, type Pose } from './figures';

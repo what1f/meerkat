@@ -4,15 +4,21 @@ import type { UIProps } from './types';
 import css from './OptionColumn.module.css';
 export type OptionColumnProps = Omit<UIProps, 'className' | 'style'> & {
   title: string;
-  children: ReactNode;
+  /** The options. */
+  children?: ReactNode;
+  /** A control that is not an option, such as a `Lever`. It sits below the listbox. */
+  control?: ReactNode;
 };
-export function OptionColumn({ title, children, ...rest }: OptionColumnProps) {
+export function OptionColumn({ title, children, control, ...rest }: OptionColumnProps) {
   return (
-    <section {...rest} className={css.root}>
+    <section {...rest} className={css.root} aria-label={title}>
       <h3>{title}</h3>
-      <div role="listbox" aria-label={title}>
-        {children}
-      </div>
+      {children && (
+        <div role="listbox" aria-label={title}>
+          {children}
+        </div>
+      )}
+      {control && <div className={css.control}>{control}</div>}
     </section>
   );
 }

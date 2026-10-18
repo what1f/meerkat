@@ -32,3 +32,4 @@ export * from './QrCode';
 export * from './SearchField';
 export * from './OptionColumn';
 export * from './ThemeThumb';
+export * from './pickFile';

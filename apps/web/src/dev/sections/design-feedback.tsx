@@ -61,6 +61,13 @@ export function DesignFeedback() {
       </Spec>
       <Spec name="Command" surface="surface">
         <D.Command text="curl -fsSL lankide.dev/i | sh" copyLabel="Copy" copiedLabel="Copied" />
+        <div style={{ width: 320 }}>
+          <D.Command
+            text="lankide computer pair --server wss://lankide.dev/ws --code 7KQ2-M9XD --name office-mini"
+            copyLabel="Copy"
+            copiedLabel="Copied"
+          />
+        </div>
       </Spec>
       <Spec name="Dashes">
         {[0, 2, 4].map((current) => (

@@ -20,7 +20,16 @@
   --row-lg: 56px;
   --safe-area: 52px;
   --rail: 84px;
+  --column: 560px;
+  --hole: 24px;
   --chevron-line: 1.5px solid currentcolor;
+
+  /* space */
+  --sp-sm: 14px;
+  --sp-md: 16px;
+  --sp-lg: 24px;
+  --sp-xl: 32px;
+  --sp-2xl: 48px;
 
   /* radius: inner = outer − padding */
   --r-xs: 4px;
@@ -35,6 +44,11 @@
   --d-fast: 120ms;
   --d-base: 200ms;
   --d-slow: 320ms;
+
+  /* Layers above the scene: popups, then tooltips, then toasts. */
+  --z-popup: 200;
+  --z-tooltip: 300;
+  --z-toast: 400;
 
   /* utility */
   --clear: transparent;
@@ -97,7 +111,7 @@
   );
   --shimmer-size: 200% 100%;
   --shimmer-end: -200% 0;
-  --holes-size: 24px 24px;
+  --holes-size: var(--hole) var(--hole);
   --paper-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .3 0 0 0 0 .25 0 0 0 0 .15 0 0 0 1.6 -.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   --qr-ink: #15161a;
   --qr-paper: #fff;
@@ -171,6 +185,7 @@
   --rule-line: 1px solid var(--rule);
   --edge-ring: 0 0 0 0.5px var(--edge);
   --inset-line: inset 0 0 0 1px var(--line);
+  --editing-line: 0 1.5px 0 var(--accent);
   --on-ink-soft: color-mix(in srgb, var(--on-ink) 14%, transparent);
   --on-ink-softer: color-mix(in srgb, var(--on-ink) 22%, transparent);
   --ink-hover: color-mix(in srgb, var(--ink) 86%, var(--surface));

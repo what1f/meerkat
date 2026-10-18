@@ -1,8 +1,5 @@
+/* Where it sits is up to the slot it is placed in, e.g. the console's top edge. */
 .root {
-  position: absolute;
-  top: -86px;
-  left: 34px;
-  z-index: 3;
   display: block;
   width: 60px;
   height: 90px;

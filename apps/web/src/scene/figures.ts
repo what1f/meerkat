@@ -114,8 +114,31 @@ const frames = import.meta.glob<string>('../assets/figures/*/*.png', {
   import: 'default',
 });
 export type Pose = 'work' | 'sleep' | 'carry' | 'stand';
-export function figureFrame(id: string, pose: Pose, scale = 1) {
-  const size = figures[id]?.[pose];
-  const src = frames[`../assets/figures/${id}/${pose}.png`];
-  return size && src ? { src, width: size.width * scale, height: size.height * scale } : null;
+/** An imported figure pack: a frame URL per pose it has, sized by `scale` from its natural pixels. */
+export type FigurePack = { frames: Partial<Record<Pose, string>>; scale: number };
+export type FigureFrame = { src: string; width?: number; height?: number; factor: number };
+const builtins = Object.keys(figures).sort();
+// The same seed always gets the same built-in figure.
+const pick = (seed: string) => {
+  let h = 0;
+  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return builtins[h % builtins.length] ?? '';
+};
+// Built-in frames have known sizes; a pack frame is sized once it has loaded.
+// `default`, an unknown id or a pack without this pose falls back to a built-in figure chosen by `seed`.
+export function figureFrame(
+  id: string,
+  pose: Pose,
+  scale = 1,
+  pack?: FigurePack,
+  seed = id,
+): FigureFrame | null {
+  const packed = pack?.frames[pose];
+  if (pack && packed) return { src: packed, factor: pack.scale * scale };
+  const builtin = !pack && figures[id] ? id : pick(seed);
+  const size = figures[builtin]?.[pose];
+  const src = frames[`../assets/figures/${builtin}/${pose}.png`];
+  return size && src
+    ? { src, width: size.width * scale, height: size.height * scale, factor: scale }
+    : null;
 }

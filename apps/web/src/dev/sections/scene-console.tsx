@@ -12,20 +12,31 @@ export function SceneConsole() {
   const [picked, setPicked] = useState('codex');
   return (
     <>
-      <Spec name="Console" surface="board">
-        <S.Board layout="rails">
+      <Spec name="Console">
+        {/* Room above for the figure on the console's top edge. */}
+        <div style={{ paddingTop: 96 }}>
           <S.Console
             figure={<S.RigFigure id="01" label="Change look" onClick={() => {}} />}
             sticker={<S.Sticker reaction="SMILE" label="Reaction" onClick={() => {}} />}
             screen={
-              <S.ConsoleScreen variant="readout" onClick={() => {}}>
-                <S.ScreenReadout
-                  ai={{ mark: <D.BrandMark brand="codex" />, label: 'Codex' }}
-                  model="gpt-6.1-sol"
-                  place={{ label: 'MacBook Pro', status: 'ok' }}
-                  level={{ index: level, total: 3, label: levels[level] ?? '' }}
+              // The picker opens over the console and its figure.
+              <D.Popover
+                trigger={
+                  <S.ConsoleScreen variant="readout">
+                    <S.ScreenReadout
+                      ai={{ mark: <D.BrandMark brand="codex" />, label: 'Codex' }}
+                      model="gpt-6.1-sol"
+                      place={{ label: 'MacBook Pro', status: 'ok' }}
+                      level={{ index: level, total: 3, label: levels[level] ?? '' }}
+                    />
+                  </S.ConsoleScreen>
+                }
+              >
+                <D.OptionColumn
+                  title="Thinking"
+                  control={<S.Lever levels={levels} value={level} onChange={setLevel} />}
                 />
-              </S.ConsoleScreen>
+              </D.Popover>
             }
             body={
               <S.SoulSlot
@@ -51,7 +62,7 @@ export function SceneConsole() {
             }}
             reading={reading}
           />
-        </S.Board>
+        </div>
       </Spec>
       <Spec name="ConsoleKey">
         <State label="text">

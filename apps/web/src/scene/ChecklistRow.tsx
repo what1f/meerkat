@@ -9,12 +9,27 @@ export type ChecklistRowProps = Omit<UIProps, 'className' | 'style'> & {
   onToggle: () => void;
 };
 // One task on the clipboard: ticked in pen, then struck through.
+// A click shows at once; the next `done` from the parent takes over again.
 export function ChecklistRow({ done, text, avatar, onToggle, ...rest }: ChecklistRowProps) {
+  const [shown, setShown] = useState<boolean | null>(null);
+  const [last, setLast] = useState(done);
+  if (last !== done) {
+    setLast(done);
+    setShown(null);
+  }
+  const checked = shown ?? done;
   return (
-    <div {...rest} className={css.root} data-done={done}>
+    <div {...rest} className={css.root} data-done={checked}>
       <label>
         <span className={css.check}>
-          <input type="checkbox" checked={done} onChange={onToggle} />
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={() => {
+              setShown(!checked);
+              onToggle();
+            }}
+          />
           <svg viewBox="0 0 18 18" aria-hidden="true">
             <polyline points="4.5,9.5 7.5,12.5 13.5,6" />
           </svg>

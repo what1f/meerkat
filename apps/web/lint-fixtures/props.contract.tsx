@@ -39,7 +39,7 @@ export type SearchFieldContract = Assert<NoOverrides<Parameters<typeof D.SearchF
 export type OptionColumnContract = Assert<NoOverrides<Parameters<typeof D.OptionColumn>[0]>>;
 export type ThemeThumbContract = Assert<NoOverrides<Parameters<typeof D.ThemeThumb>[0]>>;
 export type BoardContract = Assert<NoOverrides<Parameters<typeof S.Board>[0]>>;
-// Hang and Badge take a peg position for the drag hooks, never appearance.
+// Things that hang on the board take a peg position for the drag hooks, never appearance.
 type PegOnly<T> = T extends { style?: infer P }
   ? Exclude<keyof NonNullable<P>, 'left' | 'top'> extends never
     ? Extract<keyof T, 'className'> extends never
@@ -51,13 +51,13 @@ export type HangContract = Assert<PegOnly<Parameters<typeof S.Hang>[0]>>;
 export type BadgeContract = Assert<PegOnly<Parameters<typeof S.Badge>[0]>>;
 export type BadgeVersoContract = Assert<NoOverrides<Parameters<typeof S.BadgeVerso>[0]>>;
 export type FlipCardContract = Assert<NoOverrides<Parameters<typeof S.FlipCard>[0]>>;
-export type VacantSlotContract = Assert<NoOverrides<Parameters<typeof S.VacantSlot>[0]>>;
-export type TagContract = Assert<NoOverrides<Parameters<typeof S.Tag>[0]>>;
+export type VacantSlotContract = Assert<PegOnly<Parameters<typeof S.VacantSlot>[0]>>;
+export type TagContract = Assert<PegOnly<Parameters<typeof S.Tag>[0]>>;
 export type QrTagContract = Assert<NoOverrides<Parameters<typeof S.QrTag>[0]>>;
 export type TokenTagContract = Assert<NoOverrides<Parameters<typeof S.TokenTag>[0]>>;
 export type PaperLabelContract = Assert<NoOverrides<Parameters<typeof S.PaperLabel>[0]>>;
-export type ShiftSignContract = Assert<NoOverrides<Parameters<typeof S.ShiftSign>[0]>>;
-export type ClipboardContract = Assert<NoOverrides<Parameters<typeof S.Clipboard>[0]>>;
+export type ShiftSignContract = Assert<PegOnly<Parameters<typeof S.ShiftSign>[0]>>;
+export type ClipboardContract = Assert<PegOnly<Parameters<typeof S.Clipboard>[0]>>;
 export type ChecklistRowContract = Assert<NoOverrides<Parameters<typeof S.ChecklistRow>[0]>>;
 export type ConsoleContract = Assert<NoOverrides<Parameters<typeof S.Console>[0]>>;
 export type ConsoleScreenContract = Assert<NoOverrides<Parameters<typeof S.ConsoleScreen>[0]>>;
@@ -96,6 +96,8 @@ export const badBoard = (
 );
 // @ts-expect-error Hang only takes a peg position.
 export const badHang = <S.Hang style={{ opacity: 0 }}>X</S.Hang>;
+// @ts-expect-error Tag only takes a peg position.
+export const badTag = <S.Tag style={{ opacity: 0 }}>X</S.Tag>;
 // @ts-expect-error Unsafe HTML cannot pass through UIProps.
 export const unsafe: UIProps = { dangerouslySetInnerHTML: { __html: 'x' } };
 export const triggerRefs = (
@@ -122,4 +124,72 @@ export const triggerRefs = (
       onClick={() => {}}
     />
   </>
+);
+export const pegRefs = (
+  <>
+    <S.Tag ref={createRef<HTMLElement>()} style={{ left: 12, top: 24 }}>
+      Tag
+    </S.Tag>
+    <S.Clipboard
+      ref={createRef<HTMLElement>()}
+      style={{ left: 12, top: 24 }}
+      title="Clipboard"
+      actions={null}
+      footer={null}
+    >
+      Clipboard
+    </S.Clipboard>
+    <S.ShiftSign
+      ref={createRef<HTMLDivElement>()}
+      style={{ left: 12, top: 24 }}
+      on
+      onToggle={() => {}}
+      onLabel="On"
+      offLabel="Off"
+      label="Shift"
+    />
+    <S.VacantSlot
+      ref={createRef<HTMLButtonElement>()}
+      style={{ left: 12, top: 24 }}
+      label="Add"
+      onClick={() => {}}
+      shape="clipboard"
+    />
+  </>
+);
+const pack: S.FigurePack = {
+  frames: { work: 'w.png', sleep: 's.png', carry: 'c.png', stand: 't.png' },
+  scale: 0.5,
+};
+export const builtinFigures: string[] = Object.keys(S.figures);
+export const sceneSlots = (
+  <>
+    <S.Hang onClick={() => {}} faded>
+      Hang
+    </S.Hang>
+    <S.Figure id="pack" pose="stand" pack={pack} />
+    <S.RigFigure id="pack" pack={pack} />
+    <S.Seat setup="mini" screen="ok" occupant={{ figure: 'pack', pack }} label="Seat" />
+    <S.Figure id="default" pose="work" seed="member-1" />
+    <S.RigFigure id="default" seed="member-1" />
+    <S.Seat
+      setup="laptop"
+      screen="busy"
+      occupant={{ figure: 'default', seed: 'member-1' }}
+      label="Seat"
+    />
+    <D.OptionColumn
+      title="Thinking"
+      control={<S.Lever levels={['Low']} value={0} onChange={() => {}} />}
+    />
+  </>
+);
+export const picked: Promise<File | null> = D.pickFile('image/png');
+export const pitch: number = S.holePitch;
+export const menuEditor = (
+  <D.Menu trigger={<D.Button>More</D.Button>}>
+    <D.Menu.Item returnFocus={false} onSelect={() => {}}>
+      Rename
+    </D.Menu.Item>
+  </D.Menu>
 );

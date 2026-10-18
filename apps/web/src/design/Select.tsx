@@ -41,7 +41,12 @@ export function Select<T>({
         </BaseSelect.Icon>
       </BaseSelect.Trigger>
       <BaseSelect.Portal>
-        <BaseSelect.Positioner alignItemWithTrigger={false} sideOffset={4} align="start">
+        <BaseSelect.Positioner
+          className={css.positioner}
+          alignItemWithTrigger={false}
+          sideOffset={4}
+          align="start"
+        >
           <BaseSelect.Popup className={css.popup}>
             {options.map((option, index) => (
               <BaseSelect.Item
