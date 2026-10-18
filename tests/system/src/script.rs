@@ -210,7 +210,7 @@ impl HarnessFactory for ScriptedHarness {
                 // The same name from two sources, and enough models to fill a picker column.
                 NativeModel {
                     id: "north/twin".into(),
-                    name: "Twin".into(),
+                    name: "Twin Flash Preview With A Very Long Name".into(),
                     description: String::new(),
                     thinking_levels: vec![
                         "low".into(),
@@ -221,7 +221,7 @@ impl HarnessFactory for ScriptedHarness {
                 },
                 NativeModel {
                     id: "south/twin".into(),
-                    name: "Twin".into(),
+                    name: "Twin Flash Preview With A Very Long Name".into(),
                     description: String::new(),
                     thinking_levels: vec!["low".into()],
                 },

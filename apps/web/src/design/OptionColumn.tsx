@@ -76,7 +76,7 @@ OptionColumn.Item = function Item({
       }}
     >
       {leading}
-      {children}
+      <span data-label>{children}</span>
       {hint && <span data-hint>{hint}</span>}
     </button>
   );

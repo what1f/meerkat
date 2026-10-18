@@ -58,8 +58,20 @@
   font-size: var(--t-small);
 }
 
+.item > [data-label] {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Too narrow for both: the hint gives way first, then the name. */
 .item > [data-hint] {
+  flex: 0 100 auto;
+  min-width: 0;
   margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--t-caption);
   color: var(--ink-3);
 }

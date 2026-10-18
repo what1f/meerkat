@@ -98,15 +98,22 @@ test('the model picker stays in the window, shows levels and tells twin names ap
   ).toBe(true);
   // The scripted Harness reports two models called Twin: they carry their source, others stay bare.
   const options = page.getByRole('option');
-  await expect(options.filter({ hasText: 'Twin' })).toHaveCount(2);
-  await expect(options.filter({ hasText: /Twin\s*north$/ })).toHaveCount(1);
-  await expect(options.filter({ hasText: /Twin\s*south$/ })).toHaveCount(1);
+  await expect(options.filter({ hasText: 'Twin Flash' })).toHaveCount(2);
+  await expect(options.filter({ hasText: /Name\s*north$/ })).toHaveCount(1);
+  await expect(options.filter({ hasText: /Name\s*south$/ })).toHaveCount(1);
   await expect(options.filter({ hasText: /^Scripted$/ })).toHaveCount(1);
+  // A long name never spills out of its row: the hint is cut short first.
+  for (const option of await options.all())
+    expect(await option.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  const twin = options.filter({ hasText: /Name\s*north$/ });
+  expect(await twin.locator('[data-hint]').evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(
+    true,
+  );
   // The chosen model brings its own thinking levels.
-  await options.filter({ hasText: /Twin\s*north$/ }).click();
+  await options.filter({ hasText: /Name\s*north$/ }).click();
   const lever = page.getByRole('slider');
   await expect(lever).toHaveAttribute('aria-valuemax', '3');
-  await options.filter({ hasText: /Twin\s*south$/ }).click();
+  await options.filter({ hasText: /Name\s*south$/ }).click();
   await expect(lever).toHaveAttribute('aria-valuemax', '0');
 });
 
