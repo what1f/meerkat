@@ -103,7 +103,7 @@ export function useRefreshWorkspaceOwner() {
   });
 }
 
-type WorkspaceTasksInput = { action: 'list' };
+type WorkspaceTasksInput = DTO.WorkspaceTasksInput;
 export type WorkspaceTask = {
   id: string;
   text: string;
@@ -129,5 +129,24 @@ export function useWorkspaceTasks(input: DTO.GetWorkspaceRequest, enabled = true
       return JSON.parse(response.output_json) as WorkspaceTasks;
     },
     enabled,
+  });
+}
+
+export function useRenameWorkspaceTasklist() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: DTO.GetWorkspaceRequest & { name: string }) =>
+      call('invoke_provider_interface', {
+        request_id: input.request_id,
+        workspace: input.workspace,
+        interface_id: 'feishu.workspace.tasks',
+        input_json: JSON.stringify({
+          action: 'rename',
+          name: input.name,
+        } satisfies WorkspaceTasksInput),
+      }),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: keys.tasks });
+    },
   });
 }

@@ -92,8 +92,13 @@ test('the Feishu task list is read-only and can be turned off', async ({ page, b
   await openTeam(page, workspace);
   const list = page.getByTestId('tasklist');
   await expect(list.getByText('Draft the launch notes')).toBeVisible();
-  await expect(list.getByRole('textbox')).toHaveCount(0);
+  await expect(list.getByRole('textbox')).toHaveCount(1);
   await expect(list.getByRole('checkbox').first()).toBeDisabled();
+  const check = list.getByRole('checkbox').first();
+  await expect(check).toHaveCSS('cursor', 'default');
+  const border = await check.locator('..').evaluate((el) => getComputedStyle(el).borderColor);
+  await check.hover({ force: true });
+  await expect(check.locator('..')).toHaveCSS('border-color', border);
   await page.screenshot({ path: test.info().outputPath('read-only-tasklist.png') });
   for (const action of ['create', 'set_completed']) {
     const client = await request.newContext({ baseURL });
@@ -118,6 +123,57 @@ test('the Feishu task list is read-only and can be turned off', async ({ page, b
   await list.getByRole('button', { name: 'More' }).click();
   await page.getByRole('menuitem', { name: 'Turn off' }).click();
   expect(await tasksEnabled(baseURL!, workspace)).toBe(false);
+});
+
+test('the task list name saves on Enter or blur and restores on failure or Escape', async ({
+  page,
+  baseURL,
+}) => {
+  const workspace = 'rename_tasks';
+  await signInFeishu(baseURL!, workspace);
+  await bindOwner(baseURL!, workspace);
+  await turnTasksOn(baseURL!, workspace);
+  await openTeam(page, workspace);
+  const title = page.getByTestId('tasklist').getByRole('textbox');
+  await expect(title).toHaveValue(/.+/);
+  const original = await title.inputValue();
+  await title.fill('Cancelled');
+  await title.press('Escape');
+  await expect(title).toHaveValue(original);
+  await title.fill('   ');
+  await title.press('Enter');
+  await expect(title).toHaveValue(original);
+  await title.focus();
+  await title.blur();
+  expect((await rig({ op: 'feishu_tasklist', workspace, fail: false })).renames).toEqual([]);
+  await title.fill('Release checklist');
+  await title.press('Enter');
+  await expect(title).toHaveAttribute('aria-busy', 'false');
+  await expect(title).toHaveValue('Release checklist');
+  const first = (await rig({ op: 'feishu_tasklist', workspace, fail: false })).renames!;
+  expect(first).toEqual([
+    [
+      'Bearer tenant-cli_console_1',
+      {
+        tasklist: { name: 'Release checklist' },
+        update_fields: ['name'],
+      },
+    ],
+  ]);
+  await page.reload();
+  await expect(title).toHaveValue('Release checklist');
+  await title.fill('Launch tasks');
+  await title.blur();
+  await expect(title).toHaveAttribute('aria-busy', 'false');
+  await page.reload();
+  await expect(title).toHaveValue('Launch tasks');
+  await rig({ op: 'feishu_tasklist', workspace, fail: true });
+  await title.fill('Denied');
+  await title.press('Enter');
+  await expect(title).toHaveValue('Launch tasks');
+  await expect(page.getByRole('status')).toContainText('Couldn’t save changes');
+  await page.reload();
+  await expect(title).toHaveValue('Launch tasks');
 });
 
 test('a task list turned on before the owner is bound can be retried or turned off', async ({
@@ -365,7 +421,7 @@ test('with the task list off the rules hang in the middle of the board', async (
   expect(apart(bare.list, bare.shift)).toBe(true);
 
   await page.getByTestId('tasklist').click();
-  await expect(page.getByTestId('tasklist').getByRole('textbox')).toHaveCount(0);
+  await expect(page.getByTestId('tasklist').getByRole('textbox')).toHaveCount(1);
   await expect
     .poll(async () => {
       const { board, rules } = await boxes();

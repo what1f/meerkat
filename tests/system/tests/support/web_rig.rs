@@ -33,6 +33,10 @@ enum Command {
         workspace: String,
         state: web_im::Scan,
     },
+    FeishuTasklist {
+        workspace: String,
+        fail: bool,
+    },
     FeishuTask {
         workspace: String,
         text: String,
@@ -82,6 +86,7 @@ async fn control(
     command: Command,
 ) -> Result<Value> {
     match command {
+        Command::FeishuTasklist { workspace, fail } => return Ok(im.tasklist(&workspace, fail)),
         Command::FeishuScan { workspace, state } => im.scan(&workspace, state),
         Command::FeishuTask { workspace, text } => im.task(&workspace, &text),
         Command::PairMachine { command } => return machines.pair(rig, &command).await,

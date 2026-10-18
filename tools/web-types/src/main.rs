@@ -111,6 +111,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         UploadWorkspaceImageResponse,
         Workspace,
         WorkspaceOwner,
+        WorkspaceTasksInput,
         WorkspaceOwnerState,
         WorkspaceImageRequest,
         WorkspaceImageResponse,

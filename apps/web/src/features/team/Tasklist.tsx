@@ -1,8 +1,10 @@
-import { Button, Callout, Icon, IconButton, Menu, useToast } from '../../design';
+import { useRef, useState } from 'react';
+import { Button, Callout, Icon, IconButton, InlineText, Menu, useToast } from '../../design';
 import { ChecklistRow, Clipboard, VacantSlot, type HoleHandle } from '../../scene';
 import { useT } from '../../lib/i18n';
 import {
   useUpdateWorkspace,
+  useRenameWorkspaceTasklist,
   useWorkspaceImage,
   useWorkspaceTasks,
   type WorkspaceTask,
@@ -19,6 +21,24 @@ export function Tasklist({ workspace, handle }: { workspace: Workspace; handle?:
   const request = { request_id: 'workspace_tasks', workspace: workspace.workspace };
   const tasks = useWorkspaceTasks(request);
   const update = useUpdateWorkspace(`tasks-${workspace.workspace?.workspace_id}`);
+  const rename = useRenameWorkspaceTasklist();
+  const [draft, setDraft] = useState<string | null>(null);
+  const cancelled = useRef(false);
+  const commitName = () => {
+    const name = draft?.trim();
+    if (cancelled.current || !name || name === tasks.data?.name || rename.isPending) {
+      cancelled.current = false;
+      setDraft(null);
+      return;
+    }
+    rename.mutate(
+      { ...request, name },
+      {
+        onError: failed,
+        onSettled: () => setDraft(null),
+      },
+    );
+  };
   const peg = { ref: handle?.ref, style: handle?.style };
   const turn = (enabled: boolean) => {
     const config: unknown = JSON.parse(workspace.provider_config_json || '{}');
@@ -97,7 +117,28 @@ export function Tasklist({ workspace, handle }: { workspace: Workspace; handle?:
     <Clipboard
       {...peg}
       data-testid="tasklist"
-      title={tasks.data.name || t('team.tasks')}
+      title={
+        <InlineText
+          mode="live"
+          textStyle="title"
+          aria-label={t('team.tasks')}
+          value={draft ?? tasks.data.name ?? ''}
+          placeholder={t('team.tasks')}
+          aria-busy={rename.isPending}
+          onChange={(value) => {
+            if (!rename.isPending) setDraft(value);
+          }}
+          onBlur={commitName}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
+            if (e.key === 'Escape' || e.key === 'Enter') {
+              e.preventDefault();
+              cancelled.current = e.key === 'Escape';
+              e.currentTarget.blur();
+            }
+          }}
+        />
+      }
       actions={menu}
       footer={null}
     >

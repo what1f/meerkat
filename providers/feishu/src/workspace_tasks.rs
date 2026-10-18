@@ -4,6 +4,7 @@ use crate::{
     http::Transport,
     tasks::ListRequest,
 };
+use lankide_protocol::management::WorkspaceTasksInput;
 use lankide_provider::{InitContext, InvocationHandler, ProviderError, ProviderFuture};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -57,8 +58,12 @@ impl InvocationHandler for TasksHandler {
 }
 impl TasksHandler {
     async fn run(&self, input: Value) -> Result<Value, ProviderError> {
-        if text(&input, "action")? != "list" {
-            return Err(ProviderError::InvalidInput { field: "action" });
+        let action: WorkspaceTasksInput = serde_json::from_value(input)
+            .map_err(|_| ProviderError::InvalidInput { field: "action" })?;
+        if let WorkspaceTasksInput::Rename { name } = &action {
+            if name.trim().is_empty() {
+                return Err(ProviderError::InvalidInput { field: "name" });
+            }
         }
         if !crate::agent_tasks::task_system_enabled(self.context.workspace_config()) {
             return Ok(json!({"enabled":false,"items":[]}));
@@ -103,6 +108,13 @@ impl TasksHandler {
             &config,
             self.context.workspace_config(),
         )?);
+        if let WorkspaceTasksInput::Rename { name } = action {
+            let list = client
+                .patch_tasklist(guid, Some(&name), "open_id", Auth::Tenant)
+                .await
+                .map_err(error)?;
+            return Ok(json!({"name": list.name}));
+        }
         let list = client
             .get_tasklist(guid, "open_id", Auth::Tenant)
             .await

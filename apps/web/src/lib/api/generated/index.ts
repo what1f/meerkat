@@ -86,3 +86,4 @@ export type { WorkspaceImageResponse } from './WorkspaceImageResponse';
 export type { WorkspaceOwner } from './WorkspaceOwner';
 export type { WorkspaceOwnerState } from './WorkspaceOwnerState';
 export type { WorkspaceRef } from './WorkspaceRef';
+export type { WorkspaceTasksInput } from './WorkspaceTasksInput';

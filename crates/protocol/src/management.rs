@@ -42,6 +42,15 @@ pub struct WorkspaceOwner {
     pub avatar: Option<ResourceRef>,
 }
 
+/// Input for the Feishu workspace task-list management interface.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
+pub enum WorkspaceTasksInput {
+    List,
+    Rename { name: String },
+}
+
 pub const PREFIX: &str = "/api/v1/";
 pub const EVENTS_PATH: &str = "/api/v1/events";
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]

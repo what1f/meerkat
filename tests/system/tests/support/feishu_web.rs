@@ -25,6 +25,8 @@ pub struct Feishu {
     pub requests: Vec<String>,
     pub app_owners: std::collections::BTreeMap<String, String>,
     pub tasklist_transfers: Vec<Value>,
+    pub tasklist_renames: Vec<(String, Value)>,
+    pub tasklist_rename_error: bool,
     pub task_error: Option<i64>,
     pub tasks: Vec<Value>,
     pub task_subscriptions: usize,
@@ -509,6 +511,14 @@ impl Transport for FeishuWeb {
                 }
                 if url.ends_with("/team_tasklist") {
                     if request.method == Method::Patch {
+                        if body["update_fields"] == json!(["name"]) {
+                            feishu.tasklist_renames.push((caller.clone(), body.clone()));
+                            if feishu.tasklist_rename_error {
+                                return reply(json!({"code": 403, "msg": "rename denied"}), &[]);
+                            }
+                            feishu.tasklist.as_mut().unwrap()["name"] =
+                                body["tasklist"]["name"].clone();
+                        }
                         if body["update_fields"]
                             .as_array()
                             .is_some_and(|v| v.contains(&json!("owner")))

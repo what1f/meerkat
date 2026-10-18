@@ -40,6 +40,10 @@
   opacity: 0;
 }
 
+.check > input:disabled {
+  cursor: default;
+}
+
 .check:has(:focus-visible) {
   box-shadow: var(--ring-focus);
 }

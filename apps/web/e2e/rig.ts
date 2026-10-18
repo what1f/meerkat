@@ -17,10 +17,12 @@ export type Command =
   | { op: 'pair_machine'; command: string }
   | { op: 'feishu_scan'; workspace: string; state: 'waiting' | 'scanned' | 'expired' | 'complete' }
   | ({ op: 'dm'; text: string } & Member)
+  | { op: 'feishu_tasklist'; workspace: string; fail: boolean }
   | { op: 'feishu_task'; workspace: string; text: string }
   | { op: 'settle' };
 
 type Reply = {
+  renames?: [string, { tasklist: { name: string }; update_fields: string[] }][];
   machine_id?: string;
   outbound?: {
     workspace: string;

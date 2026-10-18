@@ -174,6 +174,12 @@ impl Im {
             Scan::Complete => 2,
         };
     }
+    pub fn tasklist(&self, workspace: &str, fail: bool) -> Value {
+        let web = self.feishu(workspace);
+        let mut state = web.0.lock().unwrap();
+        state.tasklist_rename_error = fail;
+        json!({"renames": state.tasklist_renames})
+    }
     pub fn task(&self, workspace: &str, text: &str) {
         let web = self.feishu(workspace);
         let mut state = web.0.lock().unwrap();

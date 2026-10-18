@@ -292,6 +292,17 @@ async fn console_profile_multiple_apps_and_read_only_team_tasks() -> Result<()> 
         }
         let tasks = "feishu.workspace.tasks";
         assert_eq!(http.invoke(tasks,"list",json!({})).await?["items"][0]["text"], "Remote task");
+        assert_eq!(http.invoke(tasks,"rename",json!({"name":"Release checklist"})).await?["name"], "Release checklist");
+        assert_eq!(http.invoke(tasks,"list",json!({})).await?["name"], "Release checklist");
+        {
+            let state = web.0.lock().unwrap();
+            assert_eq!(state.tasklist_renames, vec![("Bearer tenant-cli_console_1".into(), json!({"tasklist":{"name":"Release checklist"},"update_fields":["name"]}))]);
+        }
+        assert!(http.invoke(tasks,"rename",json!({"name":"  "})).await.is_err());
+        web.0.lock().unwrap().tasklist_rename_error = true;
+        assert!(http.invoke(tasks,"rename",json!({"name":"Denied"})).await.is_err());
+        assert_eq!(http.invoke(tasks,"list",json!({})).await?["name"], "Release checklist");
+        web.0.lock().unwrap().tasklist_rename_error = false;
         for action in ["create","set_completed"] { assert!(http.invoke(tasks,action,json!({"text":"No", "id":"external", "completed":true})).await.is_err()); }
         web.0.lock().unwrap().expired=true;
         assert_eq!(http.invoke(tasks,"list",json!({})).await?["items"][0]["text"], "Remote task");
