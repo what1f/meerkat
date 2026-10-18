@@ -191,10 +191,6 @@ impl RuntimeApplication {
                         );
                         runtime
                             .database()
-                            .set_workspace_active(&workspace.id, false, now_millis())
-                            .await?;
-                        runtime
-                            .database()
                             .set_workspace_setup(
                                 &workspace.id,
                                 lankide_storage::WorkspaceSetupStatus::Error,
@@ -464,10 +460,6 @@ impl RuntimeApplication {
                 .await
                 .is_err()
             {
-                runtime
-                    .database()
-                    .set_workspace_active(&workspace.id, false, now_millis())
-                    .await?;
                 runtime
                     .database()
                     .set_workspace_setup(

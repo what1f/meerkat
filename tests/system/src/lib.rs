@@ -653,6 +653,13 @@ impl SystemRig {
             id: name.into(),
         }
     }
+    pub fn fail_next_provider_startup(&self, workspace: &str) {
+        self.im
+            .startup_failures
+            .lock()
+            .expect("startup failures")
+            .insert(workspace.into());
+    }
     pub async fn workspace(&self, name: &str) -> Result<Workspace<'_>> {
         self.client
             .create_workspace(WorkspaceDraft {

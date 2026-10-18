@@ -1,7 +1,7 @@
 use lankide_core::{AgentId, AttentionLevel, ChannelAbility, ChannelId, ProviderId};
 use lankide_provider::*;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
@@ -44,6 +44,7 @@ pub struct Incoming {
 
 #[derive(Default)]
 pub(crate) struct ImState {
+    pub startup_failures: Mutex<BTreeSet<String>>,
     pub order: AtomicU64,
     pub preparation_gate: Mutex<Option<std::path::PathBuf>>,
     pub resource_contexts: Mutex<BTreeMap<String, InitContext>>,
@@ -119,6 +120,18 @@ impl Provider for ScriptedProvider {
     }
     fn init<'a>(&'a self, context: InitContext) -> ProviderFuture<'a, ()> {
         Box::pin(async move {
+            if self
+                .state
+                .startup_failures
+                .lock()
+                .expect("startup failures")
+                .remove(context.workspace_id().as_str())
+            {
+                return Err(ProviderError::External {
+                    operation: "init",
+                    retryable: true,
+                });
+            }
             self.state
                 .resource_contexts
                 .lock()

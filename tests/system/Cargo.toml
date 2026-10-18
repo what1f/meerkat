@@ -194,3 +194,11 @@ prerequisites = "pnpm dependencies and Playwright Chromium installed; no live ac
 classification = "hermetic"
 unattended = "yes"
 status = "implemented"
+
+[package.metadata.lankide.e2e-additional.system-startup]
+command = "cargo test -p lankide-system-e2e --test e2e startup_recovery_e2e::"
+scenario = "Preserve on-shift intent and expose setup errors after a one-time mock IM initialization failure or a real missing Agent column in an isolated SQLite database; after restart or schema repair, clear the error and deliver exactly one scripted Harness reply. Preserve an explicitly paused team. Provider reconfiguration retry clears setup errors without changing shift intent; a failed owner request to go on shift is retried on restart."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"
