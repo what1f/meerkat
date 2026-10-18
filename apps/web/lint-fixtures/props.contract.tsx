@@ -55,7 +55,7 @@ export type VacantSlotContract = Assert<PegOnly<Parameters<typeof S.VacantSlot>[
 export type TagContract = Assert<PegOnly<Parameters<typeof S.Tag>[0]>>;
 export type QrTagContract = Assert<NoOverrides<Parameters<typeof S.QrTag>[0]>>;
 export type TokenTagContract = Assert<NoOverrides<Parameters<typeof S.TokenTag>[0]>>;
-export type PaperLabelContract = Assert<NoOverrides<Parameters<typeof S.PaperLabel>[0]>>;
+export type PaperLabelContract = Assert<PegOnly<Parameters<typeof S.PaperLabel>[0]>>;
 export type ShiftSignContract = Assert<PegOnly<Parameters<typeof S.ShiftSign>[0]>>;
 export type ClipboardContract = Assert<PegOnly<Parameters<typeof S.Clipboard>[0]>>;
 export type ChecklistRowContract = Assert<NoOverrides<Parameters<typeof S.ChecklistRow>[0]>>;
@@ -130,6 +130,13 @@ export const pegRefs = (
     <S.Tag ref={createRef<HTMLElement>()} style={{ left: 12, top: 24 }}>
       Tag
     </S.Tag>
+    <S.PaperLabel
+      ref={createRef<HTMLDivElement>()}
+      style={{ left: 12, top: 24 }}
+      value="Team"
+      onCommit={() => {}}
+      label="Team"
+    />
     <S.Clipboard
       ref={createRef<HTMLElement>()}
       style={{ left: 12, top: 24 }}

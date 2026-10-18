@@ -1,4 +1,6 @@
 .root {
   display: grid;
-  padding: var(--r-xs) var(--h-md) var(--rail);
+
+  /* Values with no spacing token stay in pixels. */
+  padding: 4px var(--sp-xl) 84px;
 }

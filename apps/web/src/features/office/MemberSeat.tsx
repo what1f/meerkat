@@ -1,9 +1,9 @@
 import type * as DTO from '../../lib/api/generated';
 import { Seat, type CarryHandle } from '../../scene';
-import { figures } from '../../scene/figures';
 import { agentStatus } from '../../lib/queries/agents';
+import { useFigurePacks } from '../../lib/queries/catalogs';
+import { figureId, packFrames } from '../../lib/assets';
 
-const builtIn = Object.keys(figures);
 // A stable pick per member, so the same desk and figure come back on every visit.
 const pick = (id: string, n: number) =>
   [...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % n;
@@ -25,15 +25,25 @@ export function MemberSeat({
 }) {
   const id = agent.agent?.agent_id ?? '';
   const { screen } = agentStatus(agent, machine, workspace);
-  // Figure packs and the default have no seated frames; they sit as a built-in figure.
-  const figure = figures[agent.figure] ? agent.figure : builtIn[pick(id, builtIn.length)]!;
+  const workspaceId = agent.agent?.workspace_id ?? '';
+  const packs = useFigurePacks({ workspace: { workspace_id: workspaceId } }, !!workspaceId);
+  const pack = packs.data?.find((p) => p.id === agent.figure);
+  // The default look stands in as a built-in figure chosen from the member id.
   // Off shift, nobody is at their desk.
   const away = workspace?.desired_state === 'paused';
   return (
     <Seat
       setup={pick(id, 2) ? 'mini' : 'laptop'}
       screen={screen}
-      occupant={away ? 'empty-chair' : { figure }}
+      occupant={
+        away
+          ? 'empty-chair'
+          : {
+              figure: figureId(agent.figure),
+              pack: pack && packFrames(pack, workspaceId),
+              seed: id,
+            }
+      }
       arriving={arriving}
       label={agent.name}
       onClick={onOpen}

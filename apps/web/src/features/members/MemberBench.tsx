@@ -43,7 +43,10 @@ export function MemberBench({
   const status = m.agent ? agentStatus(m.agent, m.machine, team.data).status : undefined;
   const { creation } = m;
   const canCreate =
-    !id && creation.step === 'idle' && m.draft.name.trim() !== '' && !!m.draft.machine_id;
+    !id &&
+    (creation.step === 'idle' || creation.step === 'failed') &&
+    m.draft.name.trim() !== '' &&
+    !!m.draft.machine_id;
 
   const fail = () => toast({ message: t('members.failed') });
   const commit = async () => {
@@ -92,10 +95,13 @@ export function MemberBench({
           ref && resume.mutate({ request_id: crypto.randomUUID(), agent: ref }, { onError: fail })
         }
         onDelete={() => setConfirming(true)}
-        onOpen={onCreated}
+        onOpen={(created) =>
+          // A failed upload keeps this page and the picked avatar, so opening can be tried again.
+          void m.finish().then((done) => done && onCreated(created), fail)
+        }
       />
       <div className={css.stage}>
-        <Hang swingKey={swing}>
+        <Hang swingKey={swing} faded={reading}>
           <AvatarPicker
             open={picking}
             onOpenChange={setPicking}

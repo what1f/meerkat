@@ -14,6 +14,36 @@ const save = async (page: Page) => {
   await expect(key).toBeDisabled();
 };
 
+// 1×1 PNG.
+const png = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+const pngSrc = `data:image/png;base64,${png.toString('base64')}`;
+
+const pickPng = async (page: Page) => {
+  await page.getByRole('button', { name: /更换头像|Change avatar/ }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: /^(上传|Upload)$/ }).click();
+  await (await chooser).setFiles({ name: 'me.png', mimeType: 'image/png', buffer: png });
+  await expect(page.getByTestId('avatar-picker')).toBeHidden();
+};
+
+// A member in a Feishu team, created and scanned through to the point where it can be opened.
+const createdInFeishu = async (page: Page, workspace: string, avatar = false) => {
+  await rig({ op: 'create_workspace', workspace, provider: 'feishu' });
+  await rig({ op: 'feishu_scan', workspace, state: 'waiting' });
+  await open(page, workspace, 'member/new');
+  await page.getByTestId('member-name').fill('Ada');
+  if (avatar) await pickPng(page);
+  await page.getByTestId('member-create').click();
+  await expect(page.getByTestId('member-create-qr')).toHaveAttribute('data-state', 'wait');
+  await rig({ op: 'feishu_scan', workspace, state: 'complete' });
+  const go = page.getByRole('button', { name: /^(打开|Open)$/ });
+  await expect(go).toBeVisible();
+  return go;
+};
+
 const stage = (page: Page) => page.locator('article', { has: page.getByTestId('member-name') });
 
 test('B3a.1: a new member is created from the board and saved', async ({ page }) => {
@@ -105,16 +135,11 @@ test('B3a.4: an uploaded avatar replaces the member picture', async ({ page }) =
   await expect(picker).toBeVisible();
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: /^(上传|Upload)$/ }).click();
-  // 1×1 PNG.
-  const png = Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-    'base64',
-  );
   await (await chooser).setFiles({ name: 'me.png', mimeType: 'image/png', buffer: png });
   await expect(picker).toBeHidden();
   await save(page);
   await page.goto('/#/members');
-  const src = `data:image/png;base64,${png.toString('base64')}`;
+  const src = pngSrc;
   await expect(
     page.getByTestId(`member-card-${member.agent}`).locator(`img[src="${src}"]`),
   ).toBeVisible();
@@ -191,9 +216,7 @@ test('B3a.8: launch arguments keep what is typed and quoted arguments keep their
   expect((await read.json()).launch_arguments).toEqual(['--foo', 'bar', 'two words']);
 });
 
-// Waits for the agent onboarding driver in lib/queries/onboarding (B3d); until then the
-// member is created with a new Feishu app but nothing advances its setup.
-test.fixme('B3a.7: a member created in a Feishu team waits for its app to be set up', async ({
+test('B3a.7: a member created in a Feishu team waits for its app to be set up', async ({
   page,
 }) => {
   const workspace = 'members_feishu';
@@ -213,8 +236,70 @@ test.fixme('B3a.7: a member created in a Feishu team waits for its app to be set
   await rig({ op: 'feishu_scan', workspace, state: 'complete' });
   await expect(qr).toBeHidden();
 
+  await page.getByRole('button', { name: /^(打开|Open)$/ }).click();
+  await expect(page).toHaveURL(/#\/member\/m[0-9a-f]{12}$/);
+  const id = page.url().split('/').pop()!;
+  // The built-in avatar chosen for the member went up when it was opened.
+  await page.reload();
+  await expect(stage(page).locator('img[src^="data:image/jpeg;base64,"]')).toBeVisible();
+  await page.goto('/#/members');
+  const card = page.getByTestId(`member-card-${id}`);
+  await expect(card).toContainText('Ada');
+  await expect(card.locator('img[src^="data:image/jpeg;base64,"]')).toBeVisible();
+});
+
+test('B3a.9: an avatar that fails to upload stays picked and opening can be tried again', async ({
+  page,
+}) => {
+  const workspace = 'members_feishu_retry';
+  let created = 0;
+  let failNext = true;
+  await page.route('**/api/v1/create_agent', (route) => {
+    created += 1;
+    return route.continue();
+  });
+  const go = await createdInFeishu(page, workspace, true);
+  await page.route('**/api/v1/update_agent', (route) => {
+    if (!failNext) return route.continue();
+    failNext = false;
+    return route.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 'failed_precondition', message: 'unavailable', detail: null }),
+    });
+  });
+  await go.click();
+  // The failure leaves the new member page as it was, still holding the picked avatar.
+  await expect(page.getByText(/Something went wrong|没有成功/).first()).toBeVisible();
+  await expect(page).toHaveURL(/#\/member\/new$/);
+  await expect(stage(page).locator(`img[src="${pngSrc}"]`)).toBeVisible();
+  await go.click();
   await expect(page).toHaveURL(/#\/member\/m[0-9a-f]{12}$/);
   const id = page.url().split('/').pop()!;
   await page.goto('/#/members');
-  await expect(page.getByTestId(`member-card-${id}`)).toContainText('Ada');
+  await expect(page.getByTestId(`member-card-${id}`).locator(`img[src="${pngSrc}"]`)).toBeVisible();
+  expect(created).toBe(1);
+});
+
+test('B3a.10: opening a new member waits for its avatar and cannot be repeated', async ({
+  page,
+}) => {
+  const workspace = 'members_feishu_once';
+  const go = await createdInFeishu(page, workspace, true);
+  let uploads = 0;
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/api/v1/update_agent', async (route) => {
+    uploads += 1;
+    await held;
+    await route.continue();
+  });
+  await go.click();
+  await expect(go).toBeDisabled();
+  // A second press while the avatar is on its way does nothing and does not leave the page.
+  await go.click({ force: true });
+  await expect(page).toHaveURL(/#\/member\/new$/);
+  release();
+  await expect(page).toHaveURL(/#\/member\/m[0-9a-f]{12}$/);
+  expect(uploads).toBe(1);
 });

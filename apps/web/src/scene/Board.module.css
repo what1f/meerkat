@@ -33,7 +33,7 @@
   display: grid;
   grid-template-columns: repeat(4, 192px);
   grid-auto-rows: 312px;
-  gap: var(--hole);
+  gap: var(--hole-pitch);
   width: fit-content;
   padding: 0 0 36px;
   margin: 0 auto;

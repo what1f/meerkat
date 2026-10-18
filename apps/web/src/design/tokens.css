@@ -21,7 +21,7 @@
   --safe-area: 52px;
   --rail: 84px;
   --column: 560px;
-  --hole: 24px;
+  --hole-pitch: 24px;
   --chevron-line: 1.5px solid currentcolor;
 
   /* space */
@@ -111,7 +111,7 @@
   );
   --shimmer-size: 200% 100%;
   --shimmer-end: -200% 0;
-  --holes-size: var(--hole) var(--hole);
+  --holes-size: var(--hole-pitch) var(--hole-pitch);
   --paper-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .3 0 0 0 0 .25 0 0 0 0 .15 0 0 0 1.6 -.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   --qr-ink: #15161a;
   --qr-paper: #fff;

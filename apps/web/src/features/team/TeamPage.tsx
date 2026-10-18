@@ -1,6 +1,13 @@
-import { useState, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { useToast } from '../../design';
-import { Board, PaperLabel, useHoleDrag, type HolePosition } from '../../scene';
+import {
+  Board,
+  PaperLabel,
+  holePitch,
+  useHoleDrag,
+  type HoleHandle,
+  type HolePosition,
+} from '../../scene';
 import { useT } from '../../lib/i18n';
 import { readStorage, writeStorage } from '../../lib/storage';
 import { useUpdateWorkspace, useWorkspace } from '../../lib/queries/workspaces';
@@ -12,8 +19,7 @@ import './messages';
 
 type Spot = 'rules' | 'tasks' | 'shift';
 type Wall = Partial<Record<Spot, HolePosition>>;
-// Hole pitch of the board.
-const cell = 24;
+const cell = holePitch;
 // Spots as holes from the top left of the arrangement, and its width in holes. A board too
 // narrow for one row hangs the shift sign under the rules.
 const layouts: { span: number; spots: Record<Spot, HolePosition> }[] = [
@@ -82,13 +88,14 @@ function TeamWall({ workspace }: { workspace: Workspace }) {
     setSaved(next);
     writeStorage(storageKey, next);
   });
-  const content: Record<Spot, ReactNode> = {
-    rules: <RulesTag workspace={workspace} />,
-    tasks: <Tasklist workspace={workspace} />,
-    shift: <ShiftToggle workspace={workspace} />,
+  const content: Record<Spot, (handle: HoleHandle | undefined) => ReactNode> = {
+    rules: (handle) => <RulesTag workspace={workspace} handle={handle} />,
+    tasks: (handle) => <Tasklist workspace={workspace} handle={handle} />,
+    shift: (handle) => <ShiftToggle workspace={workspace} handle={handle} />,
   };
   return (
     <Board layout="free">
+      {/* The board centre moves with the window, which a peg position in pixels cannot follow. */}
       <div
         style={{ left: '50%', top: 0 }}
         ref={(el) => {
@@ -117,19 +124,9 @@ function TeamWall({ workspace }: { workspace: Workspace }) {
           }}
         />
       </div>
-      {items.map(({ key }) => {
-        const handle = handles[key];
-        return (
-          <div
-            key={key}
-            ref={handle?.ref}
-            style={handle?.style}
-            data-dragging={handle?.dragging || undefined}
-          >
-            {content[key]}
-          </div>
-        );
-      })}
+      {items.map(({ key }) => (
+        <Fragment key={key}>{content[key](handles[key])}</Fragment>
+      ))}
     </Board>
   );
 }

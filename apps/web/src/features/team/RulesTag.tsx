@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { DocArea, useToast } from '../../design';
-import { Tag } from '../../scene';
+import { Tag, type HoleHandle } from '../../scene';
 import { useT } from '../../lib/i18n';
 import { useUpdateWorkspace } from '../../lib/queries/workspaces';
 import type { Workspace } from '../../lib/api/generated';
 import './messages';
 
 // The team's rules on a paper tag, saved when the field loses focus.
-export function RulesTag({ workspace }: { workspace: Workspace }) {
+export function RulesTag({ workspace, handle }: { workspace: Workspace; handle?: HoleHandle }) {
   const t = useT();
   const toast = useToast();
   // Saves run in order, so the last edit is the one that stays.
@@ -38,7 +38,7 @@ export function RulesTag({ workspace }: { workspace: Workspace }) {
     );
   };
   return (
-    <Tag>
+    <Tag ref={handle?.ref} style={handle?.style}>
       <h6>{t('team.rules')}</h6>
       <DocArea
         data-testid="team-rules"

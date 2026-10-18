@@ -142,16 +142,19 @@ export function BrainPicker({
               </OptionColumn.Item>
             ))}
           </OptionColumn>
-          <OptionColumn title={t('members.thinking')}>
-            {levels.length > 0 && (
-              <Lever
-                levels={levels.map(levelLabel)}
-                value={level}
-                onChange={(i) => m.set({ thinking_level: levels[i] ?? '' })}
-                aria-label={t('members.thinking')}
-              />
-            )}
-          </OptionColumn>
+          <OptionColumn
+            title={t('members.thinking')}
+            control={
+              levels.length > 0 && (
+                <Lever
+                  levels={levels.map(levelLabel)}
+                  value={level}
+                  onChange={(i) => m.set({ thinking_level: levels[i] ?? '' })}
+                  aria-label={t('members.thinking')}
+                />
+              )
+            }
+          />
         </div>
       </div>
     </Popover>

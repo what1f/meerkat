@@ -3,7 +3,7 @@ import { ApiError } from '../../lib/api/client';
 import { useAgent, useAgentAvatar, useCreateAgent, useUpdateAgent } from '../../lib/queries/agents';
 import { useHarnessCatalog, useModelCatalog } from '../../lib/queries/catalogs';
 import { useMachines } from '../../lib/queries/machines';
-import { useAgentOnboarding } from '../../lib/queries/onboarding';
+import { useAgentOnboardingProgress, useStartAgentOnboarding } from '../../lib/queries/onboarding';
 import { avatarUrl } from '../../lib/assets';
 import { builtinUpload, defaultAvatar } from './avatars';
 import { creationOf, onboards, type Creation } from './creation';
@@ -12,6 +12,7 @@ import {
   blank,
   broken,
   dataUrl,
+  oneAtATime,
   emptyUpdate,
   fields,
   newId,
@@ -39,7 +40,8 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
   // Set as soon as the Runtime has the new member, so a retry never creates it twice.
   const [created, setCreated] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
-  const onboarding = useAgentOnboarding(
+  const start = useStartAgentOnboarding();
+  const onboarding = useAgentOnboardingProgress(
     {
       request_id: 'member',
       agent: pending ? { workspace_id: workspace, agent_id: pending } : null,
@@ -90,23 +92,16 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
         ? undefined
         : avatarUrl(defaultAvatar(newAgentId));
   const creation: Creation = pending
-    ? creationOf(pending, onboarding.data, onboarding.isError)
+    ? start.isPending
+      ? { step: 'creating' }
+      : creationOf(pending, onboarding.data ?? undefined, onboarding.isError || start.isError)
     : create.isPending
       ? { step: 'creating' }
       : { step: 'idle' };
   const notFound = agent.error instanceof ApiError && agent.error.code === 'not_found';
   const extras = [avatar, machines, harnesses, models].filter(broken);
 
-  // Writes to one member go out one at a time.
-  async function once<T>(write: () => Promise<T>) {
-    if (busy.current) return null;
-    busy.current = true;
-    try {
-      return await write();
-    } finally {
-      busy.current = false;
-    }
-  }
+  const once = <T>(write: () => Promise<T>) => oneAtATime(busy, write);
   const save = () =>
     once(async () => {
       if (!agentRef) return;
@@ -131,6 +126,18 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
       setArgsText((current) => (current === sentArgs ? null : current));
       setUpload((current) => (current === sentUpload ? null : current));
     });
+  // The picked avatar, or the built-in one chosen from the member id.
+  async function putAvatar() {
+    const picture = upload ?? (await builtinUpload(defaultAvatar(newAgentId)));
+    if (picture)
+      await update.mutateAsync({
+        ...emptyUpdate(),
+        agent: { workspace_id: workspace, agent_id: newAgentId },
+        avatar: picture,
+      });
+    reset();
+    return true;
+  }
   // Resolves to the new id once the member can be opened, or null while its account is still being set up.
   const add = () =>
     once(async () => {
@@ -142,18 +149,19 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
           request_id: crypto.randomUUID(),
           agent: createdRef,
           attention: null,
-          provider_agent_config_json: setup ? '{"mode":"new"}' : '{}',
+          provider_agent_config_json: setup ? '{"mode":"new","domain":"feishu"}' : '{}',
           provider_agent_secrets_json: '{}',
         });
         setCreated(true);
       }
-      const picture = upload ?? (await builtinUpload(defaultAvatar(newAgentId)));
-      if (picture)
-        await update.mutateAsync({ ...emptyUpdate(), agent: createdRef, avatar: picture });
-      reset();
-      if (!setup) return newAgentId;
-      // The agent onboarding driver from lib/queries/onboarding takes over from here.
+      if (!setup) {
+        await putAvatar();
+        return newAgentId;
+      }
+      // The new app is set up by agent onboarding; the creation state follows it. Its
+      // profile cannot take an avatar before that, so the avatar goes up when it is opened.
       setPending(newAgentId);
+      start.mutate({ request_id: 'member', agent: createdRef });
       return null;
     });
 
@@ -167,6 +175,7 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
     partial: extras.length > 0,
     retryPartial: () => extras.forEach((query) => void query.refetch()),
     retryingPartial: extras.some((query) => query.isFetching),
+    memberId: id ?? newAgentId,
     draft,
     argsText: argsText ?? formatArgs(draft.launch_arguments),
     setArgs: setArgsText,
@@ -175,6 +184,8 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
     reset,
     save,
     add,
+    // True once the avatar is up; false when another write is still on its way.
+    finish: async () => (await once(putAvatar)) === true,
     saving: create.isPending || update.isPending,
     created,
     creation,

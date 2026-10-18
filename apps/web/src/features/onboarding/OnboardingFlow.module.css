@@ -9,7 +9,7 @@
   display: grid;
   grid-template-rows: 3px minmax(calc(100vh - 95px), auto) auto;
   grid-column: 1 / -1;
-  margin-inline: calc((4 * 192px + 3 * var(--hole) - 100vw) / 2);
+  margin-inline: calc((4 * 192px + 3 * var(--hole-pitch) - 100vw) / 2);
   padding: var(--sp-lg);
 }
 

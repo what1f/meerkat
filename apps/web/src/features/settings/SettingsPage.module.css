@@ -1,10 +1,10 @@
-/* There are no spacing tokens yet; the nearest existing values stand in. */
+/* Values with no spacing token stay in pixels. */
 .page {
   /* A centred column, with room either side on a narrow window. */
-  padding: var(--r-xl) max(var(--h-md), calc(50% - 5 * var(--row-lg))) var(--row-lg);
+  padding: var(--sp-md) max(var(--sp-xl), calc(50% - var(--column) / 2)) 56px;
 }
 
 .thumbs {
   display: flex;
-  gap: var(--r-badge-lg);
+  gap: var(--sp-sm);
 }

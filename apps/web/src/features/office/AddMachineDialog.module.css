@@ -1,6 +1,7 @@
+/* Values with no spacing token stay in pixels. */
 .body {
   display: grid;
-  gap: var(--r-badge-lg);
+  gap: var(--sp-sm);
 }
 
 .hint {
@@ -10,8 +11,8 @@
 /* Margins center the dot and the controls on their line without touching their look. */
 .state {
   display: flex;
-  gap: var(--r-menu);
-  padding: var(--r-0) var(--r-hairline);
+  gap: 10px;
+  padding: 0 2px;
 }
 
 .state > :first-child {
@@ -21,8 +22,8 @@
 .network {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: var(--r-md);
-  padding-top: var(--r-badge-lg);
+  gap: 8px;
+  padding-top: var(--sp-sm);
 }
 
 .foot {

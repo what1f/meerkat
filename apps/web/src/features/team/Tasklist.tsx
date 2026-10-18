@@ -1,5 +1,5 @@
 import { Button, Callout, Icon, IconButton, Menu, useToast } from '../../design';
-import { ChecklistRow, Clipboard, VacantSlot } from '../../scene';
+import { ChecklistRow, Clipboard, VacantSlot, type HoleHandle } from '../../scene';
 import { useT } from '../../lib/i18n';
 import {
   useCreateWorkspaceTask,
@@ -14,7 +14,7 @@ import './messages';
 
 // The team's Feishu task list on a clipboard; a vacant outline while the task system is off.
 // When the list can't be read the clipboard stays, with a retry and a way to turn it off.
-export function Tasklist({ workspace }: { workspace: Workspace }) {
+export function Tasklist({ workspace, handle }: { workspace: Workspace; handle?: HoleHandle }) {
   const t = useT();
   const toast = useToast();
   const failed = () => toast({ message: t('team.failed') });
@@ -22,6 +22,7 @@ export function Tasklist({ workspace }: { workspace: Workspace }) {
   const tasks = useWorkspaceTasks(request);
   const update = useUpdateWorkspace(`tasks-${workspace.workspace?.workspace_id}`);
   const create = useCreateWorkspaceTask();
+  const peg = { ref: handle?.ref, style: handle?.style };
   const turn = (enabled: boolean) => {
     const config: unknown = JSON.parse(workspace.provider_config_json || '{}');
     update.mutate(
@@ -50,7 +51,13 @@ export function Tasklist({ workspace }: { workspace: Workspace }) {
   // A list that has failed keeps its clipboard while it is read again, even with nothing loaded.
   if (tasks.isError || (!tasks.data && tasks.errorUpdateCount > 0))
     return (
-      <Clipboard data-testid="tasklist" title={t('team.tasks')} actions={menu} footer={null}>
+      <Clipboard
+        {...peg}
+        data-testid="tasklist"
+        title={t('team.tasks')}
+        actions={menu}
+        footer={null}
+      >
         <Callout
           tone="quiet"
           action={
@@ -67,6 +74,7 @@ export function Tasklist({ workspace }: { workspace: Workspace }) {
   if (!tasks.data.enabled)
     return (
       <VacantSlot
+        {...peg}
         data-testid="tasklist"
         shape="clipboard"
         label={t('team.tasks')}
@@ -75,6 +83,7 @@ export function Tasklist({ workspace }: { workspace: Workspace }) {
     );
   return (
     <Clipboard
+      {...peg}
       data-testid="tasklist"
       title={tasks.data.name || t('team.tasks')}
       actions={menu}

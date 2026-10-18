@@ -52,7 +52,12 @@ export function MemberConsole({
       <Callout
         tone="quiet"
         action={
-          <Button size="sm" variant="primary" onClick={() => onOpen(creation.id)}>
+          <Button
+            size="sm"
+            variant="primary"
+            loading={m.saving}
+            onClick={() => onOpen(creation.id)}
+          >
             {t('members.open')}
           </Button>
         }
@@ -94,6 +99,7 @@ export function MemberConsole({
         <FigurePicker
           workspace={workspace}
           value={m.draft.figure}
+          seed={m.memberId}
           onPick={(figure) => m.set({ figure })}
         />
       }

@@ -1,21 +1,10 @@
 import type { ReactElement } from 'react';
-import { Avatar, GridPicker, IconButton, Popover } from '../../design';
+import { Avatar, GridPicker, IconButton, Popover, pickFile } from '../../design';
 import { useT } from '../../lib/i18n';
 import { avatarUrl } from '../../lib/assets';
 import type { AvatarUpload } from './draft';
 import { builtinAvatars, builtinUpload, toUpload } from './avatars';
 
-// The browser's own file chooser; no element stays in the page.
-export function pickFile(accept: string): Promise<File | null> {
-  return new Promise((resolve) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = accept;
-    input.addEventListener('change', () => resolve(input.files?.[0] ?? null), { once: true });
-    input.addEventListener('cancel', () => resolve(null), { once: true });
-    input.click();
-  });
-}
 export function AvatarPicker({
   open,
   onOpenChange,

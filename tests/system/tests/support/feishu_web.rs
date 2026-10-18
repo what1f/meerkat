@@ -249,6 +249,17 @@ impl Transport for FeishuWeb {
                     &[],
                 );
             }
+            // Profile sync of an Agent app: avatar upload, base update and publish.
+            if url.ends_with("/open-apis/application/v7/app_avatar/upload") {
+                return data(json!({"url": "https://avatar/app.jpg"}));
+            }
+            if url.contains("/open-apis/application/v7/applications/") && url.ends_with("/base") {
+                return data(json!({}));
+            }
+            if url.contains("/open-apis/application/v7/applications/") && url.ends_with("/publish")
+            {
+                return data(json!({"version_id": "v2", "version": "1.0.1"}));
+            }
             if url.contains("/app_versions") {
                 return data(json!({"items": [{
                     "version": "1.0.0",

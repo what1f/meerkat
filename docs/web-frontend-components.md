@@ -142,7 +142,7 @@ apps/web/
 
 - 需要新外观时，给组件加 variant，不在调用处覆盖样式。
 - `features/` 的 CSS Module 只写布局：`display`、`gap`、`grid`、`margin`、`padding`、`width`。
-- 布局数值也用 token：间距 `--sp-sm` 14、`--sp-md` 16、`--sp-lg` 24、`--sp-xl` 32、`--sp-2xl` 48；设置类页面的内容列宽 `--column` 560；墙孔间距 `--hole` 24（TS 里用 scene 导出的 `holePitch`）。不要拿圆角、高度 token 充当间距。
+- 布局数值也用 token：间距 `--sp-sm` 14、`--sp-md` 16、`--sp-lg` 24、`--sp-xl` 32、`--sp-2xl` 48；设置类页面的内容列宽 `--column` 560；墙孔间距 `--hole-pitch` 24（TS 里用 scene 导出的 `holePitch`）。不要拿圆角、高度 token 充当间距。
 - 定时器、轮询和 WS 只出现在 `lib/` 的 hook 和 `scene/drag/` 中。features 不直接写 `useEffect`
   订阅外部资源；如果必须写，在注释里说明理由。
 - 动效只用 CSS transition、keyframes 和 `@starting-style`。少数 FLIP 场景用 `useFlip` 里的 Web Animations API。
@@ -210,7 +210,7 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 | `Tag` | `ref?: Ref<HTMLElement>; style?: { left?: number; top?: number }; children; tone?: 'paper'` | 挂在绳上的吊牌（带孔眼），规约、二维码、Token 都用它。`ref`、`style` 的用途同 `Hang` |
 | `QrTag` | `state: 'loading' \| 'wait' \| 'scanned' \| 'expired'; value: string; brand: 'feishu' \| 'telegram'; scannerAvatar?: string; onRefresh; refreshLabel` | 二维码吊牌：扫码后变暗，并显示扫码人的头像；过期时刷新按钮就在码上；`loading` 时显示骨架。登录成功后翻成工卡，由 `Hang motion="turn-in"` 完成 |
 | `TokenTag` | `value; onChange; label; invalid?` | Telegram 的 Token 吊牌，填写线样式的输入。`invalid` 时填写线变红，不加文字 |
-| `PaperLabel` | `value; onCommit; label` | 贴在板子上方的团队名纸条，可以原地编辑 |
+| `PaperLabel` | `ref?: Ref<HTMLDivElement>; style?: { left?: number; top?: number }; value; onCommit; label` | 贴在板子上方的团队名纸条，可以原地编辑。`ref`、`style` 的用途同 `Tag`，本页只用 `ref` 测宽、`style` 定位 |
 | `ShiftSign` | `ref?: Ref<HTMLDivElement>; style?: { left?: number; top?: number }; on; onToggle; onLabel; offLabel; label` | 上班/下班翻牌。`ref`、`style` 的用途同 `Hang` |
 | `Clipboard` | `ref?: Ref<HTMLElement>; style?: { left?: number; top?: number }; title: ReactNode; actions: ReactNode; children; footer: ReactNode` | 木质写字板和纸，用于任务清单。`ref`、`style` 的用途同 `Hang` |
 | `ChecklistRow` | `done; text; avatar?: string; onToggle` 以及 `ChecklistRow.New: placeholder; onAdd(text)` | 清单里的一行。点击后勾选立即显示，`done` 下一次变化后以 `done` 为准 |
@@ -265,17 +265,27 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 | `MemberBench.tsx` | 打开成员后的页面：左边是 `Console`，右边挂着大工卡，直接在卡上编辑 |
 | `MemberConsole.tsx` | 组合操控台：形象、表情贴纸、屏幕、性格卡、按键、高级抽屉 |
 | `BrainPicker.tsx` | 屏幕点开后的四列选择器：工区、AI、模型、思考。由 `Popover`、`SearchField`、`OptionColumn` 和 `Lever` 组合而成 |
-| `AdvancedDrawer.tsx` | 环境变量、启动参数、命令行路径 |
-| `AvatarPicker.tsx`、`ReactionPicker.tsx`、`FigurePicker.tsx` | 都基于 `GridPicker` 加 `Popover` |
+| `AdvancedDrawer.tsx` | 环境变量、启动参数（输入框保留原始文本，提交时再拆分）、命令行路径、测试 |
+| `AvatarPicker.tsx`、`ReactionPicker.tsx`、`FigurePicker.tsx` | 都基于 `GridPicker` 加 `Popover`；文件选择用 design 的 `pickFile` |
 | `DeleteMemberDialog.tsx` | 基于 `ConfirmDialog` |
-| `useMemberDraft.ts` | 草稿、脏状态、保存，以及创建时的进度 |
+| `MemberUnread.tsx` | 成员读出来之前顶替工作台：加载中的占位工卡、读取失败（带重试）、成员不存在 |
+| `useMemberDraft.ts` | 草稿、脏状态、保存、创建，以及创建时的进度 |
+| `draft.ts` | 草稿类型、空草稿、`emptyUpdate`、`broken`（读取失败的判断）、`oneAtATime`（同一成员的写入逐个进行） |
+| `args.ts` | 启动参数文本和参数列表互转（支持引号和反斜杠） |
+| `avatars.ts` | 内置头像列表，按成员 id 选默认头像，转成上传格式 |
+| `creation.ts` | 飞书团队创建成员时的进度状态：创建中、等待扫码确认、失败、就绪 |
 | `messages.ts` | |
 
-数据：`useAgents`、`useAgent`、`useMachines`、`useHarnessCatalog`、`useModelCatalog`、
-`useReactionCatalog`、`useCreateAgent`、`useUpdateAgent`、`useDeleteAgent`、`useResumeAgent`。
+数据：`useAgents`、`useAgent`、`useAgentAvatar`、`useMachines`、`useHarnessCatalog`、`useModelCatalog`、
+`useReactionCatalog`、`useFigurePacks`、`useImportFigurePack`、`useTestHarness`、`useWorkspace`、
+`useWorkspaceOwner`、`useRefreshWorkspaceOwner`、`useCreateAgent`、`useUpdateAgent`、`useDeleteAgent`、
+`useResumeAgent`、`useStartAgentOnboarding`、`useAgentOnboardingProgress`（飞书团队创建成员）、
+`useFeishuAccountSwitch`、`useStartFeishuAccountSwitch`、`useCancelFeishuAccountSwitch`（LeadCard 切换账号）。
+`lib/assets.ts` 的 `resourceUrl`、`packFrames`（形象包帧）和 `figureId`（`builtin:<id>` 转裸 id）。
 
-testid：`member-card-{id}`、`add-member`、`member-name`、`member-save`、`member-create`、
-`member-pause`、`member-delete`、`confirm-delete-member`、`brain-picker`、`reaction-picker`、`avatar-picker`。
+testid：`member-card-{id}`、`lead-card`、`add-member`、`member-name`、`member-save`、`member-create`、
+`member-create-qr`（`data-state` 为 `wait` 或 `scanned`）、`member-pause`、`member-delete`、`member-test`、
+`confirm-delete-member`、`brain-picker`、`reaction-picker`、`avatar-picker`、`figure-picker`。
 
 ### team（团队）
 
@@ -287,18 +297,28 @@ testid：`member-card-{id}`、`add-member`、`member-name`、`member-save`、`me
 | `ShiftToggle.tsx` | 用 `ShiftSign` 切换上班/下班，对应 `set_workspace_state` |
 | `messages.ts` | |
 
-testid：`team-name`、`team-rules`、`team-shift`、`tasklist`。
+拖动的 handle（`ref`、`style`）直接传给 `Tag`、`Clipboard`、`VacantSlot`、`ShiftSign`，没有外包元素。
+`PaperLabel` 支持 `ref`、`style` 定位，但团队页没有把它接入 `useHoleDrag`；名牌外包一层 `left: 50%` 的元素，让它随窗口和侧栏变宽变窄保持居中（挂钉 `style` 只能是像素数）。如需去掉这层元素，要由 scene 提供跟随容器的居中。
+
+数据：`useWorkspace`、`useUpdateWorkspace`、`useSetWorkspaceState`、`useWorkspaceTasks`、
+`useCreateWorkspaceTask`、`useSetWorkspaceTaskCompleted`、`useWorkspaceImage`。
+
+testid：`team-name`、`team-rules`、`team-shift`、`tasklist`、`task-{id}`。
 
 ### office（工区）
 
 | 文件 | 内容 |
 |---|---|
 | `OfficePage.tsx` | 每台 Machine 一排 `WorkRow`，加 `useCarry`；最后是 `AddRow` |
-| `MemberSeat.tsx` | 把成员状态映射成 `Seat` 的 screen 和 pose |
-| `MachineMenu.tsx` | 重命名（标题原地变成 `InlineText`）和移除 |
-| `AddMachineDialog.tsx` | `Command`、等待连接的状态行，以及可展开的网络地址 |
+| `MemberSeat.tsx` | 把成员状态映射成 `Seat` 的 screen；形象按成员的 figure 取（形象包取帧 URL，`default` 按成员 id 选内置形象） |
+| `MachineMenu.tsx` | 重命名（标题原地变成 `InlineText`，菜单项 `returnFocus={false}`）和移除 |
+| `AddMachineDialog.tsx` | `Command`、等待连接的状态行，以及可展开的网络地址；导出 `usePairing` |
 | `RemoveMachineDialog.tsx` | |
+| `LoadState.tsx` | 工区读出来之前的占位，读取失败时显示重试 |
 | `messages.ts` | |
+
+数据：`useMachines`、`useAgents`、`useWorkspace`、`useFigurePacks`、`useUpdateAgent`、`useRenameMachine`、
+`useRevokeMachine`、`usePairingCode`、`useEnableRemoteAccess`、`useSetRemoteAccess`。
 
 testid：`machine-row-{id}`、`machine-menu-{id}`、`add-machine`、`pair-command`、`pair-state`、
 `remote-address`、`confirm-remove-machine`。
@@ -310,6 +330,10 @@ testid：`machine-row-{id}`、`machine-menu-{id}`、`add-machine`、`pair-comman
 | `SettingsPage.tsx` | 一个 `Group`：语言用 `Select`，外观用三张 `ThemeThumb` |
 | `messages.ts` | |
 
+数据：`useLanguage`、`useTheme`。
+
+testid：`settings-language`、`settings-theme-{system|light|dark}`。
+
 ### onboarding（引导）
 
 | 文件 | 内容 |
@@ -318,7 +342,22 @@ testid：`machine-row-{id}`、`machine-menu-{id}`、`add-machine`、`pair-comman
 | `useOnboarding.ts` | 步骤状态机和跳过规则 |
 | `WelcomeStep.tsx`、`ConnectStep.tsx`、`ChooseAiStep.tsx`、`FirstMemberStep.tsx`、`ReadyStep.tsx` | 每个步骤一个文件，只组合 scene 组件和 design 组件 |
 | `ChatPreview.tsx` | 用 `Message` 组成一段飞书对话 |
+| `OwnerBadge.tsx` | 负责人自己的工卡：飞书扫码登录后显示，Telegram 在确认第一位成员之前保持空白 |
+| `useAiPick.ts` | 进入选 AI 这一步后，测试最近选的（或第一个可用的）AI，并给出每行的测试结果 |
 | `messages.ts` | |
+
+数据：`useCreateWorkspace`、`useFeishuConsoleLogin`、`useStartFeishuConsoleLogin`、`useMachines`、
+`useHarnessTrials`、`useCreateAgent`、`useStartAgentOnboarding`、`useAgentOnboardingProgress`、
+`useAgentFirstReply`、`useAgent`、`useWorkspaceOwner`。
+
+testid：`onboarding`（`data-step` 为当前步骤 0–4）、`onboarding-next`、`onboarding-later`、
+`onboarding-provider`、`onboarding-qr`（`data-state` 为 `loading`、`wait`、`scanned`、`expired`；扫码完成后二维码移除，`onboarding-owner` 出现）、
+`onboarding-token`、`onboarding-owner`（`data-state` 为 `ready`、`unknown`）、`harness-{id}`（`data-test` 为 `run`、`ok`、`fail`）、
+`onboarding-member-name`、`onboarding-confirm`、`onboarding-chat`、`onboarding-open`、`onboarding-retry`。
+
+### 外壳（app）的 testid
+
+`nav-{members|team|office}` 和 `nav-settings`（侧栏入口）、`team-switcher`（团队按钮）。
 
 ### 跨 feature 的共用
 

@@ -223,3 +223,18 @@ test('pieces moved on the wall stay where they were hung, per team', async ({ pa
   const other = (await page.getByTestId('team-shift').boundingBox())!;
   expect(Math.abs(other.y - before.y)).toBeLessThan(2);
 });
+
+test('the team name stays centred on the board when the window is resized', async ({ page }) => {
+  await rig({ op: 'create_workspace', workspace: 'centre_team' });
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await openTeam(page, 'centre_team');
+  // Measured against the real board, not the label's own wrapper.
+  const offset = async () => {
+    const label = (await page.getByTestId('team-name').boundingBox())!;
+    const board = (await page.locator('[data-layout="free"]').boundingBox())!;
+    return label.x + label.width / 2 - (board.x + board.width / 2);
+  };
+  expect(Math.abs(await offset())).toBeLessThan(2);
+  await page.setViewportSize({ width: 960, height: 800 });
+  await expect.poll(async () => Math.abs(await offset())).toBeLessThan(2);
+});

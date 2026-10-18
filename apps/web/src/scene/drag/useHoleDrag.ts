@@ -4,7 +4,7 @@ import { clamp, eatClick, follow, grabbing, swing, threshold, trail, useDragLife
 export type HolePosition = { x: number; y: number };
 export type HoleItem = { key: string; kind: string; pos: HolePosition };
 export type HoleHandle = { ref: RefCallback<HTMLElement>; style: PegPosition; dragging: boolean };
-// Hole pitch on the pegboard, the same as the `--hole` token. An item's peg sits on the hole at its position.
+// Hole pitch on the pegboard, the same as the `--hole-pitch` token. An item's peg sits on the hole at its position.
 export const holePitch = 24;
 const cell = holePitch;
 const pegX = (p: HolePosition) => p.x * cell + cell / 2;

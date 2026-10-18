@@ -64,3 +64,14 @@ export const emptyUpdate = (): Omit<DTO.UpdateAgentRequest, 'agent'> => ({
   provider_agent_config_json: null,
   provider_agent_secrets_json: null,
 });
+
+// Writes to one member go out one at a time; a call made meanwhile does nothing.
+export async function oneAtATime<T>(busy: { current: boolean }, write: () => Promise<T>) {
+  if (busy.current) return null;
+  busy.current = true;
+  try {
+    return await write();
+  } finally {
+    busy.current = false;
+  }
+}
