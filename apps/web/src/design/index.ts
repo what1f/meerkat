@@ -28,6 +28,7 @@ export * from './Skeleton';
 export * from './Spinner';
 export * from './EmptyState';
 export * from './Callout';
+export * from './TrayField';
 export * from './Message';
 export * from './QrCode';
 export * from './SearchField';

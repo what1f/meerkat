@@ -17,10 +17,17 @@ export type AppShellProps = Omit<UIProps, 'className' | 'style'> & {
 };
 export function AppShell({ sidebar, topBar, children, board, ...rest }: AppShellProps) {
   const t = useT();
-  const { hidden, rail, setHidden } = useSidebarLayout();
+  const { hidden, rail, settling, resizing, setHidden } = useSidebarLayout();
   const desktop = isDesktopShell();
   return (
-    <div {...rest} className={css.root} data-board={board} data-desktop={desktop}>
+    <div
+      {...rest}
+      className={css.root}
+      data-board={board}
+      data-desktop={desktop}
+      data-settle={settling || undefined}
+      data-resizing={resizing || undefined}
+    >
       <div data-rail={rail}>
         {desktop && <div aria-hidden="true" data-desktop-safe-area data-tauri-drag-region />}
         <IconButton

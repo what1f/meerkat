@@ -26,17 +26,7 @@
 
 .advanced {
   display: grid;
-  row-gap: var(--sp-sm);
-}
-
-.env {
-  display: grid;
-  row-gap: 6px;
-  width: 280px;
-}
-
-.field {
-  width: 280px;
+  row-gap: 18px;
 }
 
 .pair {

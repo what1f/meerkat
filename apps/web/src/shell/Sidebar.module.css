@@ -6,6 +6,10 @@
   gap: 2px;
   padding: 52px 10px 10px;
   overflow: hidden;
+}
+
+/* The width eases only while the sidebar changes form, never under a dragging pointer. */
+[data-settle] .root {
   transition: width var(--d-slow) var(--ease-pop);
 }
 

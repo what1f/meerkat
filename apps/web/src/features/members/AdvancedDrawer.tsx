@@ -1,4 +1,4 @@
-import { Button, Group, StatusDot, TextInput } from '../../design';
+import { Button, StatusDot, TrayField, TextInput } from '../../design';
 import { useT } from '../../lib/i18n';
 import { useTestHarness } from '../../lib/queries/catalogs';
 import type { MemberDraftState } from './MemberConsole';
@@ -20,56 +20,48 @@ export function AdvancedDrawer({ m }: { m: MemberDraftState }) {
   const passed = result?.state === 'passed';
   return (
     <div className={css.advanced}>
-      <Group>
-        <Group.Row label={t('members.env')} align="top">
-          <div className={css.env}>
-            {rows.map((row, i) => (
-              <div key={i} className={css.pair}>
-                <TextInput
-                  size="sm"
-                  mono
-                  value={row.name}
-                  onChange={(name) => setRow(i, { name })}
-                  placeholder={t('members.envName')}
-                  aria-label={t('members.envName')}
-                />
-                <TextInput
-                  size="sm"
-                  mono
-                  value={row.value}
-                  onChange={(value) => setRow(i, { value })}
-                  placeholder={t('members.envValue')}
-                  aria-label={t('members.envValue')}
-                />
-              </div>
-            ))}
-          </div>
-        </Group.Row>
-        <Group.Row label={t('members.args')}>
-          <div className={css.field}>
+      <TrayField label={t('members.env')}>
+        {rows.map((row, i) => (
+          <div key={i} className={css.pair}>
             <TextInput
               size="sm"
               mono
-              value={m.argsText}
-              onChange={m.setArgs}
-              placeholder="--verbose"
-              aria-label={t('members.args')}
+              value={row.name}
+              onChange={(name) => setRow(i, { name })}
+              placeholder={t('members.envName')}
+              aria-label={t('members.envName')}
             />
-          </div>
-        </Group.Row>
-        <Group.Row label={t('members.cliPath')}>
-          <div className={css.field}>
             <TextInput
               size="sm"
               mono
-              value={draft.cli_path}
-              onChange={(cli_path) => m.set({ cli_path })}
-              placeholder={t('members.auto')}
-              aria-label={t('members.cliPath')}
+              value={row.value}
+              onChange={(value) => setRow(i, { value })}
+              placeholder={t('members.envValue')}
+              aria-label={t('members.envValue')}
             />
           </div>
-        </Group.Row>
-      </Group>
+        ))}
+      </TrayField>
+      <TrayField label={t('members.args')}>
+        <TextInput
+          size="sm"
+          mono
+          value={m.argsText}
+          onChange={m.setArgs}
+          placeholder="--verbose"
+          aria-label={t('members.args')}
+        />
+      </TrayField>
+      <TrayField label={t('members.cliPath')}>
+        <TextInput
+          size="sm"
+          mono
+          value={draft.cli_path}
+          onChange={(cli_path) => m.set({ cli_path })}
+          placeholder={t('members.auto')}
+          aria-label={t('members.cliPath')}
+        />
+      </TrayField>
       <div className={css.trial}>
         <Button
           size="sm"

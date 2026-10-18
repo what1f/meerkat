@@ -128,6 +128,10 @@ export function MemberConsole({
       deck={
         <>
           {!isNew && (
+            // Private chat is not built yet: the key holds its place from the design.
+            <ConsoleKey icon="msg" label={t('members.chat')} disabled onClick={() => {}} />
+          )}
+          {!isNew && (
             // Only the Runtime pauses a member; the key lights up so it can be resumed.
             <ConsoleKey
               icon={paused ? 'play' : 'pause'}

@@ -37,9 +37,11 @@
   z-index: 6;
   color: var(--ink-3);
   -webkit-app-region: no-drag;
-  transition:
-    left var(--d-slow) var(--ease-pop),
-    top var(--d-slow) var(--ease-pop);
+}
+
+.root[data-resizing],
+.root[data-resizing] * {
+  cursor: col-resize !important;
 }
 
 .root > [data-rail='true'] > button {
@@ -48,6 +50,12 @@
 
 .root > [data-rail] > button:hover {
   color: var(--ink);
+}
+
+.root[data-settle] > [data-rail] > button {
+  transition:
+    left var(--d-slow) var(--ease-pop),
+    top var(--d-slow) var(--ease-pop);
 }
 
 .root[data-desktop='true'] > [data-rail] > button {

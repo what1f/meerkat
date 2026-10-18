@@ -60,3 +60,50 @@ test('mock group mentions run on the Machine and held runs can be released twice
     expect(replies.at(-1)).toMatchObject({ account: 'bot-bruce', content: 'hi' });
   }
 });
+
+test('the sidebar edge resizes, folds to icons, restores on double click and persists', async ({
+  page,
+}) => {
+  await rig({ op: 'create_workspace', workspace: 'sidebar_team' });
+  await page.addInitScript(() => localStorage.setItem('lankide.language', JSON.stringify('en')));
+  await page.goto('/#/members');
+  const side = page.locator('aside');
+  const grip = page.getByRole('separator');
+  const width = async () => Math.round((await side.boundingBox())!.width);
+  const drag = async (to: number) => {
+    const box = (await grip.boundingBox())!;
+    const y = box.y + box.height / 2;
+    const x = box.x + box.width / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(to, y, { steps: 6 });
+    await page.mouse.up();
+  };
+  expect(await width()).toBe(220);
+  // Wider, but never past the maximum.
+  await drag(280);
+  await expect.poll(width).toBeGreaterThan(260);
+  await drag(900);
+  await expect.poll(width).toBe(320);
+  await drag(200);
+  await expect.poll(width).toBeLessThanOrEqual(220);
+  expect(await width()).toBeGreaterThanOrEqual(180);
+  // Dragged below the fold: icons only, and the icons still navigate.
+  await drag(40);
+  await expect(side).toHaveAttribute('data-rail', 'true');
+  await expect.poll(width).toBe(84);
+  await page.getByTestId('nav-settings').click();
+  await expect(page).toHaveURL(/#\/settings$/);
+  await expect(page.getByTestId('nav-settings')).toHaveAttribute('aria-current', 'page');
+  await page.reload();
+  await expect(side).toHaveAttribute('data-rail', 'true');
+  expect(await width()).toBe(84);
+  // Double click on the edge brings the full sidebar back, and it stays open after a reload.
+  await grip.dblclick();
+  await expect(side).toHaveAttribute('data-rail', 'false');
+  await expect.poll(width).toBeGreaterThanOrEqual(180);
+  const open = await width();
+  await page.reload();
+  await expect(side).toHaveAttribute('data-rail', 'false');
+  expect(await width()).toBe(open);
+});

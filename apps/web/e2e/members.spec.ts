@@ -351,3 +351,40 @@ test('a profile picture that failed once loads again when it comes back', async 
   await expect.poll(decoded).toBe(true);
   expect(firstRequests).toBe(2);
 });
+
+test('B3a.9: the advanced drawer edits variables, arguments and command path, then saves them', async ({
+  page,
+}) => {
+  const member = { workspace: 'members_advanced', agent: 'barbara' };
+  await rig({ op: 'create_workspace', workspace: member.workspace });
+  await rig({ op: 'create_agent', ...member });
+  await open(page, member.workspace, `member/${member.agent}`);
+  await expect(page.getByTestId('member-name')).not.toHaveValue('');
+  await page.getByRole('button', { name: /高级|Advanced/ }).click();
+  const names = page.getByRole('textbox', { name: /^(名称|Variable)$/ });
+  const values = page.getByRole('textbox', { name: /^(值|Value)$/ });
+  const args = page.getByRole('textbox', { name: /^(启动参数|Launch arguments)$/ });
+  const path = page.getByRole('textbox', { name: /^(命令行路径|Command path)$/ });
+  // A filled row is always followed by one blank row.
+  const rows = await names.count();
+  await names.nth(rows - 1).fill('HTTPS_PROXY');
+  await expect(names).toHaveCount(rows + 1);
+  await values.nth(rows - 1).fill('http://127.0.0.1:7890');
+  await args.fill('--verbose');
+  await path.fill('/usr/local/bin/codex');
+  await save(page);
+  const read = await page.request.post('/api/v1/get_agent', {
+    data: { request_id: 'spec', agent: { workspace_id: member.workspace, agent_id: member.agent } },
+  });
+  const saved = await read.json();
+  expect(saved.environment_variables).toContainEqual({
+    name: 'HTTPS_PROXY',
+    value: 'http://127.0.0.1:7890',
+  });
+  expect(saved.launch_arguments).toEqual(['--verbose']);
+  expect(saved.cli_path).toBe('/usr/local/bin/codex');
+  await page.reload();
+  await page.getByRole('button', { name: /高级|Advanced/ }).click();
+  await expect(args).toHaveValue('--verbose');
+  await expect(path).toHaveValue('/usr/local/bin/codex');
+});
