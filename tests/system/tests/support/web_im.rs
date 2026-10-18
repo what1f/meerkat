@@ -174,8 +174,12 @@ impl Im {
         };
     }
     pub fn revoke_authorization(&self, workspace: &str, revoked: bool) {
-        // 99991677: the user access token has expired.
-        self.feishu(workspace).0.lock().unwrap().task_error = revoked.then_some(99991677);
+        // 99991677: the user access token has expired; 20064: its refresh token was revoked,
+        // so renewal fails too and only a new sign-in brings the owner back.
+        let web = self.feishu(workspace);
+        let mut feishu = web.0.lock().unwrap();
+        feishu.task_error = revoked.then_some(99991677);
+        feishu.refresh_error = revoked.then_some(20064);
     }
     pub async fn dm(
         &self,
