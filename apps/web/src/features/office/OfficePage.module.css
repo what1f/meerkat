@@ -1,0 +1,4 @@
+.root {
+  display: grid;
+  padding: var(--r-xs) var(--h-md) var(--rail);
+}

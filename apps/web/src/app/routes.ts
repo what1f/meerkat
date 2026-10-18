@@ -2,6 +2,7 @@ import { useSyncExternalStore, type ComponentType, type ReactNode } from 'react'
 import type { TopBarProps } from '../shell';
 import { TeamPage } from '../features/team';
 import { SettingsPage } from '../features/settings';
+import { OfficePage } from '../features/office';
 export type Page =
   | { kind: 'members' }
   | { kind: 'member'; id: string }
@@ -20,6 +21,7 @@ export type PageViewProps = {
 export const pageViews: Partial<Record<Page['kind'], ComponentType<PageViewProps>>> = {
   team: TeamPage,
   settings: SettingsPage,
+  office: OfficePage,
 };
 export function parseHash(hash: string): Page {
   const [kind, id] = hash.replace(/^#\/?/, '').split('/');

@@ -9,13 +9,18 @@ export function useMachines(input: DTO.CatalogRequest, enabled = true) {
     enabled,
   });
 }
-export function useCreatePairingCode() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (input: DTO.CatalogRequest) => call('create_pairing_code', input),
-    onSuccess: async () => {
-      await client.invalidateQueries({ queryKey: keys.machines });
-    },
+// A code for one pairing session that renews itself when it expires.
+// It sits outside the event keys so a machine changing state never swaps the command being copied.
+export function usePairingCode(enabled: boolean, session = 0) {
+  return useQuery({
+    queryKey: ['pairing_code', session],
+    queryFn: ({ signal }) =>
+      call('create_pairing_code', { request_id: 'create_pairing_code', workspace: null }, signal),
+    enabled,
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchInterval: (query) =>
+      query.state.data ? Math.max(query.state.data.expires_at - Date.now(), 1000) : false,
   });
 }
 export function useRenameMachine() {

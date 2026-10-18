@@ -1,0 +1,40 @@
+.body {
+  display: grid;
+  gap: var(--r-badge-lg);
+}
+
+.hint {
+  margin: 0;
+}
+
+/* Margins center the dot and the controls on their line without touching their look. */
+.state {
+  display: flex;
+  gap: var(--r-menu);
+  padding: var(--r-0) var(--r-hairline);
+}
+
+.state > :first-child {
+  margin: auto 0;
+}
+
+.network {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--r-md);
+  padding-top: var(--r-badge-lg);
+}
+
+.foot {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  width: 100%;
+}
+
+.foot > * {
+  margin: auto 0;
+}
+
+.foot > :last-child {
+  grid-column: 3;
+}
