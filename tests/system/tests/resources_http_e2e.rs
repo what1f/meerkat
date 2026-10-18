@@ -316,6 +316,22 @@ async fn pinned_tls_machine_receives_attachment_over_its_machine_link() -> Resul
     assert!(agent.harness_inputs()?[0].contains(path.to_str().unwrap()));
     assert!(!path.with_extension("part").exists());
     assert_eq!(team.outbound(&agent, "images").len(), 1);
+    let http = reqwest::Client::builder()
+        .no_proxy()
+        .danger_accept_invalid_certs(true)
+        .build()?;
+    for path in [
+        format!("/resources/{}", resource.resource_id),
+        format!("/api/v1/resources/{}?workspace=team", resource.resource_id),
+    ] {
+        assert_eq!(
+            http.get(format!("https://{address}{path}"))
+                .send()
+                .await?
+                .status(),
+            404
+        );
+    }
     rig.close().await
 }
 

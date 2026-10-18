@@ -15,6 +15,15 @@ pub type ManagementEventStream =
 /// A Runtime-side peer behind the protocol validation and HTTP/JSON and private Agent socket boundaries.
 #[async_trait::async_trait]
 pub trait RuntimePeer: Send + Sync + 'static {
+    /// Local management reads workspace-scoped resources without an execution token.
+    async fn read_management_resource(
+        &self,
+        _workspace_id: String,
+        _resource_id: i64,
+    ) -> Result<(ResourceRef, Vec<u8>), Status> {
+        Err(Status::unimplemented("read_management_resource"))
+    }
+
     async fn upload_resource(&self, chunks: ResourceChunkStream) -> Result<ResourceRef, Status>;
 
     async fn download_resource(

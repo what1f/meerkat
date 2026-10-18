@@ -159,7 +159,7 @@ bench = false
 
 [package.metadata.lankide.e2e-additional.system-member-fields]
 command = "cargo test -p lankide-system-e2e --test e2e member_fields_e2e::"
-scenario = "Verify A4a.1-A4a.4 through real Runtime and Machine daemons with scripted Harness and mock IM: import and persist four figure frames, reject missing frames and traversal without residue, preserve independent argv across session replacement, observe busy events before releasing a held run and idle after completion, and query Machine-scoped model catalogs with distinct thinking levels and empty-level execution."
+scenario = "Verify A4d management GET of all imported figure frames with exact PNG bytes, Content-Type, existing no-store policy, local Host/Origin guards, typed missing-resource errors, rejection of HTML/SVG attachments, CSP sandbox on raster images and unchanged token-only execution route. Verify A4a.1-A4a.4 through real Runtime and Machine daemons with scripted Harness and mock IM: import and persist four figure frames, reject missing frames and traversal without residue, preserve independent argv across session replacement, observe busy events before releasing a held run and idle after completion, and query Machine-scoped model catalogs with distinct thinking levels and empty-level execution."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

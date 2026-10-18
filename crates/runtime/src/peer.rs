@@ -220,6 +220,32 @@ impl lankide_protocol::MachinePeer for RuntimePeerAdapter {
 
 #[async_trait::async_trait]
 impl RuntimePeer for RuntimePeerAdapter {
+    async fn read_management_resource(
+        &self,
+        workspace_id: String,
+        resource_id: i64,
+    ) -> Result<(ResourceRef, Vec<u8>), Status> {
+        let workspace_id = WorkspaceId::new(workspace_id)
+            .map_err(|_| Status::invalid_argument("Choose a valid workspace"))?;
+        let resource_id = ResourceId::new(resource_id)
+            .map_err(|_| Status::invalid_argument("Choose a valid resource"))?;
+        let runtime = self.application.runtime().map_err(status)?;
+        runtime
+            .database()
+            .resource_metadata(&workspace_id, resource_id)
+            .await
+            .map_err(|error| status(error.into()))?
+            .ok_or_else(|| Status::not_found("Resource not found"))?;
+        let value = self
+            .application
+            .resource_store()
+            .map_err(status)?
+            .read(&workspace_id, resource_id)
+            .await
+            .map_err(status)?;
+        Ok((value.resource, value.bytes))
+    }
+
     async fn upload_resource(
         &self,
         mut chunks: ResourceChunkStream,

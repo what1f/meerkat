@@ -137,7 +137,7 @@ where
             _ = &mut shutdown => break,
             result = tasks.join_next(), if !tasks.is_empty() => { let _ = result; }
             accepted = listener.accept() => {
-                let (socket, _) = accepted?;
+                let (socket, address) = accepted?;
                 let peer = peer.clone();
                 let secret = secret.clone();
                 let settings = settings.clone();
@@ -161,10 +161,14 @@ where
                         let secret = secret.clone();
                         let upgrades = upgrades.clone();
                         async move {
-                            let response = if !machine_only && let Some(response) = local_access(&request, local_port) {
+                            let response = if !machine_only && !address.ip().is_loopback() {
+                                crate::management_http::error(crate::Status::permission_denied("request forbidden"))
+                            } else if !machine_only && let Some(response) = local_access(&request, local_port) {
                                 response
                             } else if machine_only && request.uri().path() != "/" && request.uri().path() != "/machines/pair" {
                                 empty(StatusCode::NOT_FOUND)
+                            } else if request.uri().path().starts_with("/api/v1/resources/") {
+                                management_resource(request, peer).await
                             } else if request.uri().path().starts_with(crate::management::PREFIX) {
                                 if matches!(request.uri().path(), "/api/v1/get_remote_access" | "/api/v1/set_remote_access" | "/api/v1/enable_remote_access") {
                                     remote_access(request, remote, config.max_message_bytes).await
@@ -330,6 +334,55 @@ fn empty(status: StatusCode) -> Response<Body> {
         .status(status)
         .body(Full::new(Bytes::new()))
         .expect("HTTP response")
+}
+
+async fn management_resource<P: RuntimePeer>(
+    request: Request<Incoming>,
+    peer: P,
+) -> Response<Body> {
+    if request.method() != hyper::Method::GET {
+        return empty(StatusCode::METHOD_NOT_ALLOWED);
+    }
+    let resource_id = request
+        .uri()
+        .path()
+        .strip_prefix("/api/v1/resources/")
+        .and_then(|id| id.parse::<i64>().ok())
+        .filter(|id| *id > 0);
+    let workspaces: Vec<_> =
+        url::form_urlencoded::parse(request.uri().query().unwrap_or_default().as_bytes())
+            .filter(|(key, _)| key == "workspace")
+            .map(|(_, value)| value.into_owned())
+            .collect();
+    let (Some(resource_id), [workspace]) = (resource_id, workspaces.as_slice()) else {
+        return crate::management_http::error(crate::Status::invalid_argument(
+            "invalid resource request",
+        ));
+    };
+    match peer
+        .read_management_resource(workspace.clone(), resource_id)
+        .await
+    {
+        Ok((resource, _))
+            if !matches!(
+                resource.media_type.as_str(),
+                "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+            ) =>
+        {
+            crate::management_http::error(crate::Status::permission_denied(
+                "Unsupported image format",
+            ))
+        }
+        Ok((resource, bytes)) => Response::builder()
+            .header("content-type", resource.media_type)
+            .header("content-length", bytes.len())
+            .header("cache-control", "no-store")
+            .header("x-content-type-options", "nosniff")
+            .header("content-security-policy", "default-src 'none'; sandbox")
+            .body(Full::new(Bytes::from(bytes)))
+            .unwrap_or_else(|_| empty(StatusCode::INTERNAL_SERVER_ERROR)),
+        Err(error) => crate::management_http::error(error),
+    }
 }
 
 async fn download<P: RuntimePeer>(request: Request<Incoming>, peer: P) -> Response<Body> {

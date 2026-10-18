@@ -11,6 +11,18 @@ impl SystemRig {
 
 impl Workspace<'_> {
     pub async fn save_image(&self, bytes: Vec<u8>) -> Result<lankide_core::ResourceRef> {
+        self.save_attachment(ResourceUpload {
+            file_name: "photo.png".into(),
+            media_type: "image/png".into(),
+            bytes,
+        })
+        .await
+    }
+
+    pub async fn save_attachment(
+        &self,
+        upload: ResourceUpload,
+    ) -> Result<lankide_core::ResourceRef> {
         let context = self
             .rig
             .im
@@ -20,13 +32,7 @@ impl Workspace<'_> {
             .get(&self.id)
             .expect("Provider initialized")
             .clone();
-        Ok(context
-            .save_resource(ResourceUpload {
-                file_name: "photo.png".into(),
-                media_type: "image/png".into(),
-                bytes,
-            })
-            .await?)
+        Ok(context.save_resource(upload).await?)
     }
 
     pub async fn image_message(

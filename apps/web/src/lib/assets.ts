@@ -6,6 +6,9 @@ const assets = import.meta.glob<string>('../assets/**/*', {
 export function assetUrl(path: string): string | undefined {
   return assets[`../assets/${path}`];
 }
+// Resource IDs are scoped to a workspace.
+export const resourceUrl = (id: number, workspaceId: string): string =>
+  `/api/v1/resources/${id}?workspace=${encodeURIComponent(workspaceId)}`;
 export const avatarUrl = (id: string) => assetUrl(`avatars/${id}.jpg`);
 export const figureUrl = (id: string, pose: 'work' | 'sleep' | 'carry' | 'stand') =>
   assetUrl(`figures/${id}/${pose}.png`);

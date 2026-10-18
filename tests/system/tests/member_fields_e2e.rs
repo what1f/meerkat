@@ -90,6 +90,160 @@ fn pack(missing: bool, traversal: bool, broken_png: bool) -> Result<Vec<u8>> {
     Ok(zip.finish()?.into_inner())
 }
 
+// A4d: read imported frames directly, with the same local guards as management RPCs.
+#[tokio::test]
+async fn a4d_management_reads_workspace_resources_with_local_guards() -> Result<()> {
+    let rig = SystemRig::start(RigConfig::default()).await?;
+    let scenario = async {
+        let team = rig.workspace("team").await?;
+        let http = Http::new(&rig)?;
+        let figure = http
+            .post(
+                "import_figure_pack",
+                json!({"workspace":workspace(),"bytes":STANDARD.encode(pack(false,false,false)?)}),
+            )
+            .await?;
+        let port = reqwest::Url::parse(&http.url)?.port().unwrap();
+        for frame in ["work", "sleep", "carry", "stand"] {
+            let id = figure["frames"][frame]["resource_id"].as_i64().unwrap();
+            let path = format!("/api/v1/resources/{id}?workspace=team");
+            // An img GET commonly has no Origin header; explicit same-origin also works.
+            for origin in [
+                None,
+                Some(http.url.clone()),
+                Some(format!("http://localhost:{port}")),
+            ] {
+                let url = if origin.as_deref().is_some_and(|v| v.contains("localhost")) {
+                    format!("http://localhost:{port}{path}")
+                } else {
+                    format!("{}{path}", http.url)
+                };
+                let mut request = http.client.get(url);
+                if let Some(origin) = origin {
+                    request = request.header("origin", origin);
+                }
+                let response = request.send().await?;
+                assert_eq!(response.status(), 200);
+                assert_eq!(response.headers()["content-type"], "image/png");
+                assert_eq!(response.headers()["cache-control"], "no-store");
+                assert_eq!(response.headers()["content-security-policy"], "default-src 'none'; sandbox");
+                assert_eq!(response.bytes().await?.as_ref(), png()?);
+            }
+            for (header, value) in [
+                ("origin", "https://evil.test".to_string()),
+                ("origin", "null".to_string()),
+                ("host", format!("evil.test:{port}")),
+            ] {
+                let response = http
+                    .client
+                    .get(format!("{}{path}", http.url))
+                    .header(header, value)
+                    .send()
+                    .await?;
+                assert_eq!(response.status(), 403);
+                let error: management::ErrorBody = response.json().await?;
+                assert_eq!(error.code, management::ErrorCode::PermissionDenied);
+            }
+            // Execution downloads still require their headers and are not a management alias.
+            assert_eq!(
+                http.client
+                    .get(format!("{}/resources/{id}", http.url))
+                    .send()
+                    .await?
+                    .status(),
+                401
+            );
+        }
+        for (name, media_type, bytes) in [
+            ("attachment.html", "text/html", b"<script>alert(document.origin)</script>".as_slice()),
+            ("attachment.svg", "image/svg+xml", b"<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(document.origin)</script></svg>".as_slice()),
+        ] {
+            let resource = team.save_attachment(lankide_provider::ResourceUpload {
+                file_name: name.into(), media_type: media_type.into(), bytes: bytes.to_vec(),
+            }).await?;
+            let response = http.client.get(format!("{}/api/v1/resources/{}?workspace=team", http.url, resource.resource_id)).send().await?;
+            assert_eq!(response.status(), 403);
+            assert_eq!(response.headers()["content-type"], "application/json");
+            let error: management::ErrorBody = response.json().await?;
+            assert_eq!(error.code, management::ErrorCode::PermissionDenied);
+        }
+        // The same numeric resource ID in another workspace must select its own bytes.
+        let other = rig.workspace("other").await?;
+        let mut other_png = Cursor::new(Vec::new());
+        image::RgbaImage::from_pixel(2, 2, image::Rgba([9, 8, 7, 255]))
+            .write_to(&mut other_png, image::ImageFormat::Png)?;
+        let other_bytes = other_png.into_inner();
+        let other_resource = other.save_image(other_bytes.clone()).await?;
+        assert_eq!(
+            other_resource.resource_id,
+            figure["frames"]["work"]["resource_id"].as_i64().unwrap()
+        );
+        let response = http
+            .client
+            .get(format!(
+                "{}/api/v1/resources/{}?workspace=other",
+                http.url, other_resource.resource_id
+            ))
+            .send()
+            .await?;
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.bytes().await?.as_ref(), other_bytes);
+        for query in ["workspace=team", "workspace=missing"] {
+            let response = http
+                .client
+                .get(format!(
+                    "{}/api/v1/resources/9223372036854775807?{query}",
+                    http.url
+                ))
+                .send()
+                .await?;
+            assert_eq!(response.status(), 404);
+            let error: management::ErrorBody = response.json().await?;
+            assert_eq!(error.code, management::ErrorCode::NotFound);
+        }
+        let id = figure["frames"]["work"]["resource_id"].as_i64().unwrap();
+        assert_eq!(
+            http.client
+                .get(format!(
+                    "{}/api/v1/resources/{id}?workspace=missing",
+                    http.url
+                ))
+                .send()
+                .await?
+                .status(),
+            404
+        );
+        for suffix in [
+            format!("{id}"),
+            format!("{id}?workspace=team&workspace=team"),
+            "0?workspace=team".into(),
+        ] {
+            assert_eq!(
+                http.client
+                    .get(format!("{}/api/v1/resources/{suffix}", http.url))
+                    .send()
+                    .await?
+                    .status(),
+                400
+            );
+        }
+        assert_eq!(
+            http.client
+                .post(format!("{}/api/v1/resources/{id}?workspace=team", http.url))
+                .json(&json!({}))
+                .send()
+                .await?
+                .status(),
+            405
+        );
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    }
+    .await;
+    let close = rig.close().await;
+    scenario?;
+    close
+}
+
 #[tokio::test]
 async fn a4a_1_figure_pack_survives_restart_and_invalid_imports_leave_no_data() -> Result<()> {
     let mut rig = SystemRig::start(RigConfig::default()).await?;
