@@ -274,7 +274,7 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 | `draft.ts`                                                   | 草稿类型、空草稿、`emptyUpdate`、`broken`（读取失败的判断）、`oneAtATime`（同一成员的写入逐个进行）           |
 | `args.ts`                                                    | 启动参数文本和参数列表互转（支持引号和反斜杠）                                                                |
 | `avatars.ts`                                                 | 内置头像列表，按成员 id 选默认头像，转成上传格式                                                              |
-| `creation.ts`                                                | 飞书团队创建成员时的进度状态：创建中、等待扫码确认、失败、就绪                                                |
+| `creation.ts`                                                | 飞书团队创建成员时的进度状态：创建中、等待扫码确认、确认权限与等待审批、失败、就绪                                                |
 | `messages.ts`                                                |                                                                                                               |
 
 数据：`useAgents`、`useAgent`、`useAgentAvatar`、`useMachines`、`useHarnessCatalog`、`useModelCatalog`、
@@ -284,7 +284,7 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 `lib/assets.ts` 的 `resourceUrl`、`packFrames`（形象包帧）和 `figureId`（`builtin:<id>` 转裸 id）。
 
 testid：`member-card-{id}`、`human-card-{person_id}`、`human-position`、`add-member`、`member-name`、`member-save`、`member-create`、
-`member-create-qr`（`data-state` 为 `wait` 或 `scanned`）、`member-pause`、`member-delete`、`member-test`、
+`member-create-permissions`、`member-create-qr`（官方注册等待时 `data-state` 为 `wait`）、`member-pause`、`member-delete`、`member-test`、
 `confirm-delete-member`、`brain-picker`、`reaction-picker`、`avatar-picker`、`figure-picker`。
 
 ### team（团队）
@@ -345,13 +345,13 @@ testid：`settings-language`、`settings-theme-{system|light|dark}`。
 | `useAiPick.ts`                                                                                   | 进入选 AI 这一步后，测试最近选的（或第一个可用的）AI，并给出每行的测试结果  |
 | `messages.ts`                                                                                    |                                                                             |
 
-数据：`useCreateWorkspace`、`useFeishuConsoleLogin`、`useStartFeishuConsoleLogin`、`useMachines`、
+数据：`useCreateWorkspace`、`useMachines`、
 `useHarnessTrials`、`useCreateAgent`、`useStartAgentOnboarding`、`useAgentOnboardingProgress`、
 `useAgentFirstReply`、`useAgent`、`useHumanMembers`。
 
 testid：`onboarding`（`data-step` 为当前步骤 0–4）、`onboarding-next`、`onboarding-later`、
 `onboarding-provider`、`onboarding-qr`（`data-state` 为 `loading`、`wait`、`scanned`、`expired`；扫码完成后二维码移除）、
-`onboarding-token`、`harness-{id}`（`data-test` 为 `run`、`ok`、`fail`）、
+`onboarding-permissions`、`onboarding-token`、`harness-{id}`（`data-test` 为 `run`、`ok`、`fail`）、
 `onboarding-member-name`、`onboarding-confirm`、`onboarding-chat`、`onboarding-open`、`onboarding-retry`。
 
 ### 外壳（app）的 testid
@@ -407,3 +407,5 @@ testid：`onboarding`（`data-step` 为当前步骤 0–4）、`onboarding-next`
 新增会伸进顶栏高度的可交互板面内容时用 `--z-live`，不要自己加数字。弹层仍在 `--z-popup` 以上。
 
 人类成员：`members/HumanCard.tsx` 导出 HumanCard 和 HumanBench，统一使用人类名册接口。小卡与大卡都用品牌挂绳，姓名头像只读，只编辑岗位；没有卡背、介绍、状态或模型脚注。`human-card-<person_id>`、`human-position` 为测试入口。
+
+飞书引导的连接步骤只选择平台；创建第一位成员时显示官方注册二维码，随后使用 LinkButton 确认权限并等待审批。后续成员使用相同流程与现有 Callout、Button、QrTag。

@@ -1,16 +1,15 @@
-import { BrandMark, LinkButton, Segmented, Spinner, StepHeading } from '../../design';
-import { QrTag, TokenTag } from '../../scene';
+import { BrandMark, LinkButton, Segmented, StepHeading } from '../../design';
+import { TokenTag } from '../../scene';
 import { useT } from '../../lib/i18n';
 import type { Flow, Provider } from './useOnboarding';
 import css from './steps.module.css';
 
 const botFather = 'https://t.me/BotFather';
 
-// Feishu signs you in by a code that hangs on the board and turns into your badge;
-// Telegram takes the token of a bot you manage.
+// Pick the chat app here; the first member uses its official creation flow.
 export function ConnectStep({ flow }: { flow: Flow }) {
   const t = useT();
-  const { provider, qr } = flow;
+  const { provider } = flow;
   const feishu = provider === 'feishu';
   return (
     <div className={css.step}>
@@ -38,17 +37,8 @@ export function ConnectStep({ flow }: { flow: Flow }) {
             onChange={flow.setToken}
             invalid={flow.tokenInvalid}
           />
-        ) : qr.state === 'done' ? (
-          <BrandMark brand="feishu" />
         ) : (
-          <QrTag
-            data-testid="onboarding-qr"
-            state={qr.state}
-            value={qr.value}
-            brand="feishu"
-            onRefresh={flow.refreshQr}
-            refreshLabel={t('onboarding.refresh')}
-          />
+          <BrandMark brand="feishu" />
         )}
       </div>
       <div className={css.under}>
@@ -60,13 +50,6 @@ export function ConnectStep({ flow }: { flow: Flow }) {
             </LinkButton>
             <span>{t('onboarding.tokenHintAfter')}</span>
           </>
-        ) : qr.state === 'wait' ? (
-          <>
-            <Spinner />
-            <span>{t('onboarding.scan')}</span>
-          </>
-        ) : qr.state === 'scanned' ? (
-          <span>{t('onboarding.confirmOnPhone')}</span>
         ) : null}
       </div>
     </div>

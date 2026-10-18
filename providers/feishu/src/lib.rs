@@ -6,7 +6,6 @@ mod adapter;
 mod agent_tasks;
 mod authorization;
 pub mod client;
-mod console;
 pub mod dto;
 pub mod events;
 pub mod http;
@@ -16,10 +15,11 @@ pub mod normalize;
 mod onboarding;
 mod person_profile;
 mod reactions;
+pub mod registration;
 pub mod tasks;
 pub mod ws;
 
-pub use adapter::{CONSOLE_LOGIN_INTERFACE, EventSourceFactory, FeishuProvider};
+pub use adapter::{EventSourceFactory, FeishuProvider};
 pub use authorization::{
     STANDARD_BOT_EVENTS, STANDARD_BOT_TENANT_SCOPES, authorization_url,
     contains_standard_capabilities,
@@ -51,3 +51,7 @@ pub use tasks::{
 pub use ws::{FeishuWebSocketSource, native_event_source_factory};
 
 mod workspace_tasks;
+
+pub use registration::{
+    Registrar as FeishuRegistrar, Registration, RegistrationCredential, RegistrationPoll,
+};

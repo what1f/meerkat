@@ -108,43 +108,6 @@ impl InboundResourceCache {
     }
 }
 
-/// Signs the user in to the Feishu developer console with a QR code, so new
-/// Agent Apps are created without another confirmation.
-pub const CONSOLE_LOGIN_INTERFACE: &str = "feishu.workspace.console_login";
-
-struct ConsoleLoginHandler {
-    flow: Arc<AsyncMutex<crate::console::LoginFlow>>,
-    transport: SharedTransport,
-}
-impl InvocationHandler for ConsoleLoginHandler {
-    fn invoke<'a>(&'a self, input: Value) -> ProviderFuture<'a, Value> {
-        Box::pin(async move {
-            let mut flow = self.flow.lock().await;
-            if input["action"] != "start"
-                && let Some(session) = flow.take()
-            {
-                flow.hold(session);
-                return Ok(serde_json::json!({"state":"ready"}));
-            }
-            match flow
-                .advance(
-                    self.transport.as_ref(),
-                    input["action"].as_str().unwrap_or("poll"),
-                )
-                .await?
-            {
-                crate::console::Login::Ready(session) => {
-                    flow.hold(session);
-                    Ok(serde_json::json!({"state":"ready"}))
-                }
-                crate::console::Login::Waiting { qr_code, scanned } => Ok(
-                    serde_json::json!({"state":if scanned {"scanned"} else {"waiting"},"qr_code":qr_code,"poll_interval_seconds":crate::console::LOGIN_POLL_INTERVAL_SECONDS}),
-                ),
-            }
-        })
-    }
-}
-
 /// Feishu Provider with a production reqwest transport by default.
 ///
 /// `with_transport` and `with_event_source_factory` are the two seams used by
@@ -155,7 +118,6 @@ pub struct FeishuProvider {
     workspaces: Arc<Mutex<BTreeMap<String, WorkspaceState>>>,
     contexts: Arc<Mutex<BTreeMap<String, InitContext>>>,
     identity_lock: Arc<AsyncMutex<()>>,
-    login_flows: Arc<Mutex<BTreeMap<String, Arc<AsyncMutex<crate::console::LoginFlow>>>>>,
     inbound_resource_cache: Arc<AsyncMutex<InboundResourceCache>>,
 }
 
@@ -167,7 +129,6 @@ impl Clone for FeishuProvider {
             workspaces: self.workspaces.clone(),
             contexts: self.contexts.clone(),
             identity_lock: self.identity_lock.clone(),
-            login_flows: self.login_flows.clone(),
             inbound_resource_cache: self.inbound_resource_cache.clone(),
         }
     }
@@ -191,23 +152,6 @@ impl Default for FeishuProvider {
 }
 
 impl FeishuProvider {
-    fn login_flow(
-        &self,
-        key: &str,
-    ) -> Result<Arc<AsyncMutex<crate::console::LoginFlow>>, ProviderError> {
-        let mut locks = self
-            .login_flows
-            .lock()
-            .map_err(|_| ProviderError::External {
-                operation: "feishu_login",
-                retryable: false,
-            })?;
-        Ok(locks
-            .entry(key.to_owned())
-            .or_insert_with(|| Arc::new(AsyncMutex::new(crate::console::LoginFlow::default())))
-            .clone())
-    }
-
     pub fn new() -> Self {
         Self {
             transport: Arc::new(ReqwestTransport::new()),
@@ -215,7 +159,6 @@ impl FeishuProvider {
             workspaces: Arc::new(Mutex::new(BTreeMap::new())),
             contexts: Arc::new(Mutex::new(BTreeMap::new())),
             identity_lock: Arc::new(AsyncMutex::new(())),
-            login_flows: Arc::new(Mutex::new(BTreeMap::new())),
             inbound_resource_cache: Arc::new(AsyncMutex::new(InboundResourceCache::default())),
         }
     }
@@ -399,29 +342,6 @@ impl Provider for FeishuProvider {
 
     fn init<'a>(&'a self, context: InitContext) -> ProviderFuture<'a, ()> {
         Box::pin(async move {
-            let flow = self.login_flow(context.workspace_id().as_str())?;
-            context
-                .register_interface(InterfaceDefinition {
-                    id: CONSOLE_LOGIN_INTERFACE.into(),
-                    input_schema: JsonSchema::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {"action": {"enum": ["start", "poll"]}}
-                    }))?,
-                    output_schema: JsonSchema::new(serde_json::json!({
-                        "type": "object",
-                        "required": ["state"],
-                        "properties": {
-                            "state": {"enum": ["ready", "required", "waiting", "scanned"]},
-                            "qr_code": {"type": "string"},
-                            "poll_interval_seconds": {"type": "integer", "minimum": 1}
-                        }
-                    }))?,
-                    handler: Arc::new(ConsoleLoginHandler {
-                        flow,
-                        transport: self.transport.clone(),
-                    }),
-                })
-                .await?;
             for (id, handler) in [(
                 "feishu.workspace.tasks",
                 Arc::new(crate::workspace_tasks::TasksHandler {
@@ -885,21 +805,11 @@ impl Provider for FeishuProvider {
         opaque_payload: Value,
     ) -> ProviderFuture<'a, lankide_provider::ProviderOnboarding> {
         Box::pin(async move {
-            let flow =
-                self.login_flow(&format!("{}/{}", context.workspace_id, context.agent_id))?;
-            let mut flow = flow.lock().await;
-            if action == "start" {
-                let initial = self.login_flow(context.workspace_id.as_str())?;
-                if let Some(session) = initial.lock().await.take() {
-                    flow.hold(session);
-                }
-            }
             crate::onboarding::agent_onboarding_with_transport(
                 context,
                 action,
                 opaque_payload,
                 self.transport.clone(),
-                &mut flow,
             )
             .await
         })

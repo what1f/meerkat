@@ -26,9 +26,10 @@ pub enum ImProvider {
 #[serde(rename_all = "snake_case")]
 pub enum Scan {
     Waiting,
-    Scanned,
     Expired,
     Complete,
+    Approved,
+    Denied,
 }
 #[derive(Clone, Default)]
 pub struct Im {
@@ -183,11 +184,9 @@ impl Im {
         let web = self.feishu(workspace);
         let mut state = web.0.lock().unwrap();
         state.qr_expired = matches!(scan, Scan::Expired);
-        state.login_stage = match scan {
-            Scan::Waiting | Scan::Expired => 0,
-            Scan::Scanned => 1,
-            Scan::Complete => 2,
-        };
+        state.registration_denied = matches!(scan, Scan::Denied);
+        state.permissions_approved = matches!(scan, Scan::Approved);
+        state.registration_confirmed = matches!(scan, Scan::Complete | Scan::Approved);
     }
     pub fn tasklist(&self, workspace: &str, fail: bool) -> Value {
         let web = self.feishu(workspace);
@@ -202,7 +201,7 @@ impl Im {
         state.tasks.push(
             json!({"guid":id,"summary":text,"completed_at":"0","tasklist_guid":"team_tasklist"}),
         );
-        state.events.push_back(lankide_provider_feishu::events::RawEvent::new("task.task.update_user_access_v2", json!({"schema":"2.0","header":{"event_id":id,"event_type":"task.task.update_user_access_v2","app_id":"cli_console_1","tenant_key":"tenant-a"},"event":{"task_guid":id,"event_types":["task_completed_update"]}}).to_string().into_bytes()));
+        state.events.push_back(lankide_provider_feishu::events::RawEvent::new("task.task.update_user_access_v2", json!({"schema":"2.0","header":{"event_id":id,"event_type":"task.task.update_user_access_v2","app_id":"cli_registered_1","tenant_key":"tenant-a"},"event":{"task_guid":id,"event_types":["task_completed_update"]}}).to_string().into_bytes()));
     }
     pub async fn dm(
         &self,

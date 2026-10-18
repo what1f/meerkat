@@ -45,77 +45,11 @@ export function useAdvanceAgentOnboarding() {
     },
   });
 }
-// Both flows share console sign-in; `start` always shows a new code.
-type ConsoleLoginAction = 'start' | 'poll';
-type ConsoleLoginFlow = 'feishu_console_login';
-export type FeishuConsoleLogin = {
-  state: 'required' | 'ready' | 'waiting' | 'scanned';
-  qr_code?: string;
-  poll_interval_seconds?: number;
-};
 const objectKey = (name: string, input: object) => [
   ...keys.onboarding,
   name,
   { ...input, request_id: undefined },
 ];
-async function consoleLogin(
-  input: DTO.GetWorkspaceRequest,
-  action: ConsoleLoginAction,
-  signal?: AbortSignal,
-) {
-  const response = await call(
-    'invoke_provider_interface',
-    {
-      ...input,
-      interface_id: 'feishu.workspace.console_login',
-      input_json: JSON.stringify({ action } satisfies { action: ConsoleLoginAction }),
-    },
-    signal,
-  );
-  return JSON.parse(response.output_json) as FeishuConsoleLogin;
-}
-function useConsoleLogin(
-  flow: ConsoleLoginFlow,
-  action: ConsoleLoginAction,
-  input: DTO.GetWorkspaceRequest,
-  enabled: boolean,
-) {
-  // Pending start/cancel calls own the cache; a late poll must not overwrite them.
-  const pending = useIsMutating({
-    mutationKey: [...keys.onboarding, flow],
-    predicate: (mutation) => {
-      const variables = mutation.state.variables as DTO.GetWorkspaceRequest | undefined;
-      return variables?.workspace?.workspace_id === input.workspace?.workspace_id;
-    },
-  });
-  const poll = usePoll();
-  return useQuery({
-    queryKey: objectKey(flow, input),
-    queryFn: ({ signal }) => consoleLogin(input, action, signal),
-    enabled: enabled && pending === 0,
-    refetchInterval: (q) => poll(q),
-  });
-}
-function useConsoleLoginAction(flow: ConsoleLoginFlow, action: ConsoleLoginAction) {
-  const client = useQueryClient();
-  return useMutation({
-    mutationKey: [...keys.onboarding, flow],
-    mutationFn: async (input: DTO.GetWorkspaceRequest) => {
-      await client.cancelQueries({ queryKey: objectKey(flow, input) });
-      return consoleLogin(input, action);
-    },
-    onSuccess: async (state, input) => {
-      await client.cancelQueries({ queryKey: objectKey(flow, input) });
-      client.setQueryData(objectKey(flow, input), state);
-    },
-  });
-}
-export function useFeishuConsoleLogin(input: DTO.GetWorkspaceRequest, enabled = true) {
-  return useConsoleLogin('feishu_console_login', 'poll', input, enabled);
-}
-export function useStartFeishuConsoleLogin() {
-  return useConsoleLoginAction('feishu_console_login', 'start');
-}
 // Agent onboarding polls from the state seeded by `start`, at the server's cadence.
 const progressKey = (input: DTO.GetAgentOnboardingRequest) =>
   objectKey('agent_onboarding_progress', input);

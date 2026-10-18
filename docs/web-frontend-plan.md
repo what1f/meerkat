@@ -102,7 +102,7 @@ TLS，否则同一 Wi‑Fi 下的任何人都能在这台电脑上执行命令�
   `invalidateQueries`。
 - 连接建立和重连后，失效全部 query。这样可以弥补协议没有回放、sequence 只在进程内
   有效的问题，Runtime 不需要新增回放机制。
-- 工作区和 Agent 改为事件驱动，不再轮询。Feishu 二维码登录和 onboarding 仍然按
+- 工作区和 Agent 改为事件驱动，不再轮询。Feishu 应用注册和 onboarding 仍然按
   `poll_interval_seconds` 轮询，因为它们的状态在外部系统，不在 Runtime。
 
 ## 协议调整
@@ -375,7 +375,7 @@ IM 式对话界面。选用 React，原因如下：
 
 - **管理失效信号**：Provider contract 增加一个窄接口，“这个 workspace 的管理数据变了”，由 Runtime 发出 `WorkspaceUpdated`。人类成员和任务清单都使用它。
 - **人类成员工卡**：统一 `list_human_members` / `update_human_position` 管理接口，与 Provider 无关。
-  - 每次新建飞书 App 使用一次性内存扫码会话；创建者身份来自 App 自己的 applications/me，姓名头像来自官方通讯录，失败走空资料兜底。
+  - 每次新建飞书 App 使用官方设备码注册和权限确认；创建者 open ID 来自注册结果，union ID 来自 App 自己的 applications/me，企业标识来自官方 tenant_key；姓名头像来自通讯录，失败走空资料兜底。
   - 每个创建者入团，只有首个人类成员成为 lead，默认岗位 Team Leader；后续成员岗位默认空，岗位编辑不会改变身份。
   - Telegram 沿用首次配对的负责人规则，资料写入同一人类成员结构。
   - 小卡、大卡无背面和翻转；姓名头像只读，只开放岗位输入，不展示介绍、状态点或引擎模型。
@@ -466,7 +466,7 @@ IM 式对话界面。选用 React，原因如下：
   - 场景：粘贴配对命令后启动第二台 Machine，新工区出现，状态点变为在线；把成员拖到新工区后，
     它下一次运行就在新 Machine 上；重命名；移除。
 - **B3d 引导**：五个步骤、Feishu 二维码的各个状态、Telegram Token、跳过规则。
-  - 场景：mock IM 依次完成扫码、选择 AI、创建第一个成员；成员第一次回复后，引导结束并进入成员板。
+  - 场景：mock IM 依次选择平台和 AI、创建第一个成员、扫码注册并确认权限；成员第一次回复后，引导结束并进入成员板。
 
 ### 外壳与收尾
 

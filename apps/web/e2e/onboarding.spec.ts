@@ -81,29 +81,41 @@ async function firstReply(page: Page, baseURL: string, workspace: string) {
   await expect(page.getByText('Alpha')).toBeVisible();
 }
 
-test('Feishu: scan through every code state, then the first member answers the team lead', async ({
+test('Feishu: official registration and permissions, then the first member answers', async ({
   page,
   baseURL,
 }) => {
   test.setTimeout(90_000);
   const before = await begin(page, baseURL!);
   const workspace = await created(baseURL!, before, 'feishu');
-  const qr = page.getByTestId('onboarding-qr');
-  await rig({ op: 'feishu_scan', workspace, state: 'waiting' });
-  await expect(qr).toHaveAttribute('data-state', 'wait');
-  await expect(next(page)).toBeDisabled();
-  const first = await qr.locator('svg').innerHTML();
-  await rig({ op: 'feishu_scan', workspace, state: 'scanned' });
-  await expect(qr).toHaveAttribute('data-state', 'scanned');
-  // An expired code is replaced by a new one to scan.
-  await rig({ op: 'feishu_scan', workspace, state: 'expired' });
-  await expect(qr).toHaveAttribute('data-state', 'wait');
-  await expect.poll(() => qr.locator('svg').innerHTML()).not.toBe(first);
-  await rig({ op: 'feishu_scan', workspace, state: 'complete' });
-  await expect(next(page)).toBeEnabled();
-  await expect(qr).toHaveCount(0);
+  // There is no sign-in before the first member is created.
+  await expect(page.getByTestId('onboarding-qr')).toHaveCount(0);
   await next(page).click();
   await chooseAiAndCreate(page);
+  const qr = page.getByTestId('onboarding-confirm');
+  await expect(qr).toBeVisible();
+  const first = await qr.locator('svg').innerHTML();
+  await rig({ op: 'feishu_scan', workspace, state: 'expired' });
+  await expect(page.getByText(/Couldn’t connect|没能连接/)).toBeVisible();
+  await next(page).click();
+  await expect(qr).toBeVisible();
+  await expect.poll(() => qr.locator('svg').innerHTML()).not.toBe(first);
+  await rig({ op: 'feishu_scan', workspace, state: 'complete' });
+  await expect(page.getByTestId('onboarding-permissions')).toBeVisible();
+  await page
+    .context()
+    .route('https://open.feishu.cn/page/launcher?**', (route) => route.fulfill({ body: 'Feishu' }));
+  const opened = page.waitForEvent('popup');
+  await page.getByTestId('onboarding-permissions').click();
+  const confirmation = await opened;
+  await expect(confirmation).toHaveURL(
+    /open\.feishu\.cn\/page\/launcher\?clientID=cli_registered_1&addons=/,
+  );
+  await confirmation.close();
+  await page.screenshot({ path: test.info().outputPath('permissions.png') });
+  await expect(qr).toHaveCount(0);
+  await expect(page.getByText(/Waiting for approval|等待审批/)).toBeVisible();
+  await rig({ op: 'feishu_scan', workspace, state: 'approved' });
   await firstReply(page, baseURL!, workspace);
 });
 

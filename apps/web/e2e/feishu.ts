@@ -11,18 +11,9 @@ export async function api(baseURL: string, op: string, body: object = {}) {
     await client.dispose();
   }
 }
-export async function signInFeishu(baseURL: string, workspace: string) {
+export async function createFeishuTeam(workspace: string) {
   await rig({ op: 'create_workspace', workspace, provider: 'feishu' });
-  const login = (action: string) =>
-    api(baseURL, 'invoke_provider_interface', {
-      workspace: { workspace_id: workspace },
-      interface_id: 'feishu.workspace.console_login',
-      input_json: JSON.stringify({ action }),
-    });
-  await rig({ op: 'feishu_scan', workspace, state: 'waiting' });
-  await login('start');
-  await rig({ op: 'feishu_scan', workspace, state: 'complete' });
-  expect(JSON.parse((await login('poll')).output_json).state).toBe('ready');
+  await rig({ op: 'feishu_scan', workspace, state: 'approved' });
 }
 // Each new bot enrolls its authenticated creator.
 export async function addFeishuMember(baseURL: string, workspace: string, agent = 'alpha') {

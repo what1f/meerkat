@@ -1,6 +1,6 @@
 import { expect, request, type Page } from '@playwright/test';
 import { test, rig } from './rig';
-import { api, addFeishuMember, signInFeishu } from './feishu';
+import { api, addFeishuMember, createFeishuTeam } from './feishu';
 
 const workspaceOf = (baseURL: string, workspace_id: string) =>
   api(baseURL, 'get_workspace', { workspace: { workspace_id } });
@@ -86,7 +86,7 @@ test('off shift members stop replying and answer again once back on', async ({ p
 
 test('the Feishu task list is read-only and can be turned off', async ({ page, baseURL }) => {
   const workspace = 'tasks_team';
-  await signInFeishu(baseURL!, workspace);
+  await createFeishuTeam(workspace);
   await addFeishuMember(baseURL!, workspace);
   await turnTasksOn(baseURL!, workspace);
   await openTeam(page, workspace);
@@ -130,7 +130,7 @@ test('the task list name saves on Enter or blur and restores on failure or Escap
   baseURL,
 }) => {
   const workspace = 'rename_tasks';
-  await signInFeishu(baseURL!, workspace);
+  await createFeishuTeam(workspace);
   await addFeishuMember(baseURL!, workspace);
   await turnTasksOn(baseURL!, workspace);
   await openTeam(page, workspace);
@@ -153,7 +153,7 @@ test('the task list name saves on Enter or blur and restores on failure or Escap
   const first = (await rig({ op: 'feishu_tasklist', workspace, fail: false })).renames!;
   expect(first).toEqual([
     [
-      'Bearer tenant-cli_console_1',
+      'Bearer tenant-cli_registered_1',
       {
         tasklist: { name: 'Release checklist' },
         update_fields: ['name'],
@@ -181,7 +181,7 @@ test('a task list turned on before the team lead is bound can be retried or turn
   baseURL,
 }) => {
   const workspace = 'unbound_team';
-  await signInFeishu(baseURL!, workspace);
+  await createFeishuTeam(workspace);
   const list = page.getByTestId('tasklist');
   const retry = list.getByRole('button', { name: 'Try again' });
   const hint = 'The task list can’t be opened right now';
@@ -319,7 +319,7 @@ test('a team with the task list on shows it as soon as the wall opens', async ({
   baseURL,
 }) => {
   const workspace = 'listed_team';
-  await signInFeishu(baseURL!, workspace);
+  await createFeishuTeam(workspace);
   await addFeishuMember(baseURL!, workspace);
   await turnTasksOn(baseURL!, workspace);
   // Feishu is slow to answer; the clipboard must hang on the wall before it does.
@@ -351,7 +351,7 @@ test('dragging a piece leaves the wall texture and the board size alone', async 
   baseURL,
 }) => {
   const workspace = 'steady_team';
-  await signInFeishu(baseURL!, workspace);
+  await createFeishuTeam(workspace);
   await addFeishuMember(baseURL!, workspace);
   await turnTasksOn(baseURL!, workspace);
   // A list long enough that every new task makes the clipboard taller.
@@ -395,7 +395,7 @@ test('with the task list off the rules hang in the middle of the board', async (
   baseURL,
 }) => {
   const workspace = 'bare_team';
-  await signInFeishu(baseURL!, workspace);
+  await createFeishuTeam(workspace);
   await addFeishuMember(baseURL!, workspace);
   await page.setViewportSize({ width: 1600, height: 1000 });
   await openTeam(page, workspace);

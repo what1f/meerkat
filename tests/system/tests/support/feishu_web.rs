@@ -6,9 +6,12 @@ use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 #[derive(Default)]
 pub struct Feishu {
-    /// 0 waiting for a scan, 1 scanned, 2 confirmed on the phone.
-    pub login_stage: u8,
+    pub registration_confirmed: bool,
     pub qr_expired: bool,
+    pub registration_denied: bool,
+    pub permissions_approved: bool,
+    pub inspection_denied: bool,
+    pub app_tenants: std::collections::BTreeMap<String, String>,
     pub sends: Vec<Value>,
     pub message_chats: std::collections::BTreeMap<String, String>,
     pub chat_types: std::collections::BTreeMap<String, String>,
@@ -31,21 +34,10 @@ pub struct Feishu {
     /// Contact profile has no picture.
     pub no_member_avatar: bool,
     pub apps: Vec<String>,
-    pub console_calls: Vec<String>,
-    pub configuration_error: Option<i64>,
-    pub version_status: Option<i64>,
     pub event_polls: usize,
-    pub app_authorization: std::collections::BTreeMap<String, AppAuthorization>,
     pub tasklist: Option<Value>,
     pub tasklist_creates: Vec<(String, Value)>,
     pub tasklist_member_adds: Vec<(String, Value)>,
-}
-
-#[derive(Default)]
-pub struct AppAuthorization {
-    pub scopes: Vec<Value>,
-    pub published: bool,
-    pub versions: Vec<String>,
 }
 
 #[derive(Clone, Default)]
@@ -83,145 +75,61 @@ impl Transport for FeishuWeb {
         Box::pin(async move {
             let url = request.path.clone();
             let body: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
-            let cookie = header(&request, "cookie").to_owned();
             let mut feishu = self.0.lock().unwrap();
             feishu.requests.push(url.clone());
+            assert!(!url.contains("/napi/") && !url.contains("/developers/v1/"));
+            assert!(!url.contains("/authen/"));
             assert!(
-                !url.contains("/authen/v1/authorize") && !url.contains("/authen/v2/oauth/token")
+                !url.contains("/oauth/")
+                    || url == "https://accounts.feishu.cn/oauth/v1/app/registration"
             );
-            assert!(!url.contains("safe_setting"));
-            assert!(!url.contains("/napi/profile") && !url.contains("/oauth/"));
-            if url == "https://open.feishu.cn/napi/check/login" {
-                assert!(cookie.contains("session="));
-                return data(json!({"tenantId":feishu.tenant}));
-            }
-            if url.starts_with("https://accounts.feishu.cn/accounts/page/login") {
-                return reply(
-                    json!({}),
-                    &[("set-cookie", "passport_web_did=device; Domain=.feishu.cn")],
-                );
-            }
-            if url == "https://accounts.feishu.cn/accounts/qrlogin/init" {
-                assert!(cookie.contains("passport_web_did=device"));
-                feishu.qr_codes += 1;
-                let token = format!("qr-{}", feishu.qr_codes);
-                return reply(
-                    json!({"code": 0, "data": {"step_info": {"token": token}}}),
-                    &[("x-flow-key", "flow")],
-                );
-            }
-            if url == "https://accounts.feishu.cn/accounts/qrlogin/polling" {
-                assert_eq!(header(&request, "x-flow-key"), "flow");
-                if feishu.qr_expired {
-                    return data(json!({"next_step":"qr_login_polling","step_info":{"status":3}}));
-                }
-                return match feishu.login_stage {
-                    0 | 1 => data(json!({
-                        "next_step": "qr_login_polling",
-                        "step_info": {"status": feishu.login_stage + 1},
-                    })),
-                    _ => reply(
-                        json!({"code": 0, "data": {"next_step": "enter_app"}}),
-                        &[(
-                            "set-cookie",
-                            &format!("session={}; Domain=.feishu.cn; Path=/", feishu.user),
-                        )],
-                    ),
-                };
-            }
-            if url == "https://open.feishu.cn/app" {
-                assert!(cookie.contains("session="));
-                return Ok(Response {
-                    status: 200,
-                    headers: vec![],
-                    body: br#"<script>window.csrfToken = "console-csrf";</script>"#.to_vec(),
-                });
-            }
-            if let Some(call) = url.strip_prefix("https://open.feishu.cn/developers/v1/") {
-                if !cookie.contains("session=")
-                    || header(&request, "x-csrf-token") != "console-csrf"
-                {
-                    return Ok(Response {
-                        status: 302,
-                        headers: vec![("location".into(), "https://accounts.feishu.cn/".into())],
-                        body: vec![],
-                    });
-                }
-                let call = call.split('?').next().unwrap_or_default().to_owned();
-                feishu.console_calls.push(call.clone());
-                if call.starts_with("scope/update")
-                    && let Some(code) = feishu.configuration_error
-                {
+            if url == "https://accounts.feishu.cn/oauth/v1/app/registration" {
+                assert_eq!(request.method, Method::Post);
+                let fields: std::collections::BTreeMap<_, _> = reqwest::Url::parse(&format!(
+                    "http://form/?{}",
+                    String::from_utf8_lossy(&request.body)
+                ))
+                .unwrap()
+                .query_pairs()
+                .into_owned()
+                .collect();
+                if fields["action"] == "begin" {
+                    assert_eq!(fields["archetype"], "PersonalAgent");
+                    assert_eq!(fields["request_user_info"], "open_id tenant_brand");
+                    feishu.qr_codes += 1;
+                    feishu.qr_expired = false;
+                    feishu.registration_denied = false;
                     return reply(
-                        json!({"code":code,"msg":"denied sensitive-cookie sensitive-secret sensitive-token"}),
+                        json!({"device_code":format!("device-{}",feishu.qr_codes),"verification_uri_complete":format!("https://open.feishu.cn/page/cli?user_code=code-{}",feishu.qr_codes),"interval":1,"expires_in":600}),
                         &[],
                     );
                 }
-                let app = format!("cli_console_{}", feishu.apps.len());
-                return match call.split('/').next().unwrap_or_default() {
-                    "app" if call == "app/create" => {
-                        let app = format!("cli_console_{}", feishu.apps.len() + 1);
-                        let user = cookie
-                            .split("session=")
-                            .nth(1)
-                            .unwrap()
-                            .split(';')
-                            .next()
-                            .unwrap()
-                            .to_owned();
-                        feishu.app_creators.insert(app.clone(), user);
-                        feishu.apps.push(body["name"].as_str().unwrap().to_owned());
-                        data(json!({"ClientID": app}))
-                    }
-                    "app" if call == "app/upload/image" => data(json!({"url": "https://icon"})),
-                    "secret" => data(json!({"secret": format!("{app}-secret")})),
-                    "event" if call.starts_with("event/update") => {
-                        assert_eq!(body["events"], json!(STANDARD_BOT_EVENTS));
-                        data(json!({}))
-                    }
-                    "scope" if call.starts_with("scope/all") => data(json!({
-                        "scopes": STANDARD_BOT_TENANT_SCOPES
-                            .iter()
-                            .enumerate()
-                            .map(|(id, name)| json!({"id": id.to_string(), "name": name}))
-                            .collect::<Vec<_>>(),
-                    })),
-                    "scope" if call.starts_with("scope/update") => {
-                        assert_eq!(body["userScopeIDs"], json!([]));
-                        let app = call.split('/').nth(2).unwrap();
-                        let config = feishu.app_authorization.entry(app.into()).or_default();
-                        for scope in body["appScopeIDs"].as_array().unwrap() {
-                            if !config.scopes.contains(scope) {
-                                config.scopes.push(scope.clone());
-                            }
-                        }
-                        config.published = false;
-                        data(json!({}))
-                    }
-                    "app_version" => {
-                        let app = call.split('/').nth(2).unwrap();
-                        let status = feishu.version_status;
-                        let config = feishu.app_authorization.entry(app.into()).or_default();
-                        if call.starts_with("app_version/list") {
-                            return data(
-                                json!({"versions":config.versions.iter().enumerate().map(|(i, version)| json!({"appVersion":version,"versionId":format!("v{}",i+1),"versionStatus":status.unwrap_or(if config.published { 2 } else { 1 })})).collect::<Vec<_>>()}),
-                            );
-                        }
-                        let name = body["appVersion"].as_str().unwrap().to_owned();
-                        assert!(!config.versions.contains(&name), "version must be new");
-                        config.versions.push(name);
-                        data(json!({"versionId":format!("v{}",config.versions.len())}))
-                    }
-                    "publish" => {
-                        let app = call.split('/').nth(2).unwrap();
-                        let config = feishu.app_authorization.entry(app.into()).or_default();
-                        assert_eq!(config.scopes.len(), STANDARD_BOT_TENANT_SCOPES.len());
-                        config.published = true;
-                        data(json!({"isOk": true}))
-                    }
-                    "robot" | "event" | "scope" | "base_info" => data(json!({})),
-                    _ => panic!("unexpected console call {call}"),
-                };
+                assert!(fields["device_code"].starts_with("device-"));
+                if feishu.qr_expired {
+                    return reply(json!({"error":"expired_token"}), &[]);
+                }
+                if feishu.registration_denied {
+                    return reply(json!({"error":"access_denied"}), &[]);
+                }
+                if !feishu.registration_confirmed {
+                    return reply(json!({"error":"authorization_pending"}), &[]);
+                }
+                let app = format!("cli_registered_{}", feishu.apps.len() + 1);
+                let user = feishu.user.clone();
+                let tenant = feishu.tenant.clone();
+                feishu.app_creators.insert(app.clone(), user.clone());
+                feishu.app_tenants.insert(app.clone(), tenant);
+                feishu.apps.push(app.clone());
+                return reply(
+                    json!({"client_id":app,"client_secret":format!("{app}-secret"),"user_info":{"open_id":format!("ou_{user}_{app}")}}),
+                    &[],
+                );
+            }
+            if url.ends_with("/open-apis/tenant/v2/tenant/query") {
+                let app = header(&request, "authorization")
+                    .strip_prefix("Bearer tenant-")
+                    .unwrap();
+                return data(json!({"tenant":{"tenant_key":feishu.app_tenants.get(app).unwrap()}}));
             }
             if url.ends_with("/auth/v3/tenant_access_token/internal") {
                 return reply(
@@ -238,20 +146,13 @@ impl Transport for FeishuWeb {
                     .get(app)
                     .map(String::as_str)
                     .unwrap_or("lead");
-                let prefix = if request
-                    .query
-                    .iter()
-                    .any(|(k, v)| k == "user_id_type" && v == "union_id")
-                {
-                    "on"
-                } else {
-                    "ou"
-                };
-                let id = if prefix == "on" {
-                    format!("on_{user}")
-                } else {
-                    format!("ou_{user}_{app}")
-                };
+                assert!(
+                    request
+                        .query
+                        .iter()
+                        .any(|(k, v)| k == "user_id_type" && v == "union_id")
+                );
+                let id = format!("on_{user}");
                 return data(json!({"app":{"creator_id":id}}));
             }
             // Profile sync of an Agent app: avatar upload, base update and publish.
@@ -266,6 +167,15 @@ impl Transport for FeishuWeb {
                 return data(json!({"version_id": "v2", "version": "1.0.1"}));
             }
             if url.contains("/app_versions") {
+                if feishu.inspection_denied {
+                    return reply(
+                        json!({"code":99991672,"msg":"permission not effective yet"}),
+                        &[],
+                    );
+                }
+                if !feishu.permissions_approved {
+                    return data(json!({"items":[]}));
+                }
                 return data(json!({"items": [{
                     "version": "1.0.0",
                     "status": 1,

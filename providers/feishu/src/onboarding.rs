@@ -1,9 +1,6 @@
 use crate::{
-    Auth, Credentials, Domain, FeishuClient, Transport,
-    authorization::standard_capability_gaps,
-    authorization_url,
-    console::{self, DeveloperConsole, Login},
-    contains_standard_capabilities,
+    Auth, Credentials, Domain, FeishuClient, FeishuRegistrar, RegistrationPoll, Transport,
+    authorization::standard_capability_gaps, authorization_url, contains_standard_capabilities,
 };
 use lankide_provider::{
     AgentOnboardingContext, ProviderError, ProviderOnboarding, ProviderOnboardingStatus,
@@ -33,7 +30,7 @@ fn onboarding(step: &str, status: ProviderOnboardingStatus, payload: Value) -> P
             ProviderOnboardingStatus::ActionRequired | ProviderOnboardingStatus::Verifying
         ) && matches!(
             payload.get("phase").and_then(Value::as_str),
-            Some("permissions" | "console_login")
+            Some("permissions" | "registration")
         ))
         .then(|| {
             payload
@@ -58,7 +55,6 @@ pub(crate) async fn agent_onboarding_with_transport(
     action: String,
     payload: Value,
     transport: Arc<dyn Transport>,
-    flow: &mut console::LoginFlow,
 ) -> Result<ProviderOnboarding, ProviderError> {
     if context
         .provider_agent_config
@@ -93,91 +89,89 @@ pub(crate) async fn agent_onboarding_with_transport(
     if payload.get("phase").and_then(Value::as_str) == Some("permissions") {
         return poll_permissions(context, payload, transport).await;
     }
-    if action == "start" || payload["phase"] == "console_login" {
+    if action == "start" {
         if !matches!(configured_domain(&context)?, Domain::Feishu) {
             return Err(ProviderError::InvalidInput { field: "domain" });
         }
-        return console_onboarding(&context, &action, transport, flow).await;
+        let registration = FeishuRegistrar::new(transport.clone())
+            .start()
+            .await
+            .map_err(|_| external("feishu_registration_start"))?;
+        return Ok(onboarding(
+            "create_app",
+            ProviderOnboardingStatus::ActionRequired,
+            json!({
+                "phase": "registration",
+                "device_code": registration.device_code,
+                "verification_uri": registration.verification_uri,
+                "interval_seconds": registration.interval.as_secs(),
+                "expires_in_seconds": registration.expires_in.as_secs(),
+            }),
+        ));
     }
-    Err(ProviderError::InvalidInput { field: "action" })
-}
-
-/// Creates the Agent App through the developer console, asking the user to
-/// sign in with a fresh, one-use QR session.
-async fn console_onboarding(
-    context: &AgentOnboardingContext,
-    action: &str,
-    transport: Arc<dyn Transport>,
-    flow: &mut console::LoginFlow,
-) -> Result<ProviderOnboarding, ProviderError> {
-    let login = if let Some(session) = flow.take() {
-        Ok(Login::Ready(session))
-    } else {
-        flow.advance(
-            transport.as_ref(),
-            if action == "start" { "start" } else { "poll" },
-        )
+    let device_code = payload
+        .get("device_code")
+        .and_then(Value::as_str)
+        .ok_or(ProviderError::InvalidInput {
+            field: "device_code",
+        })?
+        .to_owned();
+    let result = FeishuRegistrar::new(transport.clone())
+        .poll(&device_code)
         .await
-    };
-    let login = match login {
-        Ok(login) => login,
-        Err(error) => return Err(error),
-    };
-    let session = match login {
-        Login::Ready(session) => session,
-        Login::Waiting { qr_code, scanned } => {
-            return Ok(onboarding(
-                "console_login",
-                if scanned {
-                    ProviderOnboardingStatus::Verifying
-                } else {
-                    ProviderOnboardingStatus::ActionRequired
-                },
-                json!({
-                    "phase": "console_login",
-                    "qr_code": qr_code,
-                    "interval_seconds": console::LOGIN_POLL_INTERVAL_SECONDS,
-                }),
-            ));
+        .map_err(|_| external("feishu_registration_poll"))?;
+    match result {
+        RegistrationPoll::Pending { slow_down } => {
+            let mut payload = payload;
+            if slow_down {
+                payload["interval_seconds"] =
+                    json!((payload["interval_seconds"].as_u64().unwrap_or(5) + 5).min(30));
+            }
+            Ok(onboarding(
+                "create_app",
+                ProviderOnboardingStatus::ActionRequired,
+                payload,
+            ))
         }
-    };
-    let mut developer_console = DeveloperConsole::new(transport.clone(), session);
-    let tenant_id = match developer_console.tenant_id().await {
-        Ok(id) => id,
-        Err(e) => return Err(e.provider_error(false)),
-    };
-    let created = developer_console
-        .create_agent_app(&context.name)
-        .await
-        .map_err(|e| e.provider_error(false))?;
-    drop(developer_console);
-    async {
-        context
-            .write_agent_secret("app_secret", SecretValue::new(created.app_secret()))
-            .await?;
-        let permissions_payload = json!({
-            "phase": "permissions",
-            "app_id": created.app_id,
-            "creator_open_id": "",
-            "tenant_id": tenant_id,
-            "domain": "feishu",
-            "interval_seconds": 2,
-        });
-        context
-            .storage()
-            .put(
-                &pending_state_key(context),
-                serde_json::to_vec(&permissions_payload)
-                    .map_err(|_| external("feishu_authorization_state"))?,
-            )
-            .await?;
-        Ok(onboarding(
-            "permissions",
-            ProviderOnboardingStatus::Verifying,
-            permissions_payload,
-        ))
+        RegistrationPoll::Complete(credential) => {
+            context
+                .write_agent_secret("app_secret", SecretValue::new(credential.app_secret()))
+                .await?;
+            let link = authorization_url(&Domain::Feishu, &credential.app_id)
+                .map_err(|_| external("feishu_authorization_link"))?;
+            let permissions_payload = json!({
+                "phase": "permissions",
+                "app_id": credential.app_id,
+                "creator_open_id": credential.creator_open_id,
+                "domain": "feishu",
+                "verification_uri": link,
+                "interval_seconds": 5,
+            });
+            context
+                .storage()
+                .put(
+                    &pending_state_key(&context),
+                    serde_json::to_vec(&permissions_payload)
+                        .map_err(|_| external("feishu_authorization_state"))?,
+                )
+                .await?;
+            Ok(onboarding(
+                "permissions",
+                ProviderOnboardingStatus::ActionRequired,
+                permissions_payload,
+            ))
+        }
+        RegistrationPoll::Denied => Ok(ProviderOnboarding {
+            error_code: Some("access_denied".into()),
+            error_message: None,
+            ..onboarding("create_app", ProviderOnboardingStatus::Error, payload)
+        }),
+        RegistrationPoll::Expired => Ok(ProviderOnboarding {
+            error_code: Some("expired".into()),
+            error_message: None,
+            ..onboarding("create_app", ProviderOnboardingStatus::Error, json!({}))
+        }),
     }
-    .await
 }
 
 async fn poll_permissions(
@@ -227,8 +221,14 @@ async fn poll_permissions(
                 .application_creator("union_id")
                 .await
                 .map_err(|e| e.provider_error(false))?;
-            let creator_open_id = client
-                .application_creator("open_id")
+            let creator_open_id = payload["creator_open_id"]
+                .as_str()
+                .filter(|v| !v.is_empty())
+                .ok_or(ProviderError::InvalidInput {
+                    field: "creator_open_id",
+                })?;
+            let tenant = client
+                .tenant_key()
                 .await
                 .map_err(|e| e.provider_error(false))?;
             let mut person = context.storage().get_or_create_person(&union).await?;
@@ -271,15 +271,9 @@ async fn poll_permissions(
                     }
                 }
             }
-            let tenant = payload["tenant_id"]
-                .as_str()
-                .filter(|v| !v.is_empty())
-                .ok_or(ProviderError::InvalidInput {
-                    field: "team_enterprise",
-                })?;
             context
                 .storage()
-                .join_human_team(&person.person_id, Some(tenant), name, avatar.as_ref())
+                .join_human_team(&person.person_id, Some(&tenant), name, avatar.as_ref())
                 .await?;
             let creator_person_id = Some(person.person_id.to_string());
             if !creator_open_id.is_empty() {
@@ -313,11 +307,16 @@ async fn poll_permissions(
             ProviderOnboardingStatus::Verifying,
             payload,
         )),
-        Err(error) if error.is_retryable() => Ok(onboarding(
-            "permissions",
-            ProviderOnboardingStatus::Verifying,
-            payload,
-        )),
+        Err(error)
+            if error.is_retryable()
+                || matches!(error, crate::ClientError::Api { code: 99991672, .. }) =>
+        {
+            Ok(onboarding(
+                "permissions",
+                ProviderOnboardingStatus::Verifying,
+                payload,
+            ))
+        }
         Err(_) => Ok(ProviderOnboarding {
             error_code: Some("inspection_failed".into()),
             error_message: Some("无法读取飞书应用状态。".into()),

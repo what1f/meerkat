@@ -868,6 +868,32 @@ impl<T: Transport> Client<T> {
         })
     }
 
+    /// The enterprise of this App's tenant token (not a developer-session tenant ID).
+    pub(crate) async fn tenant_key(&self) -> Result<String, ClientError> {
+        let response: ApiResponse<Value> = self
+            .json_request(
+                Method::Get,
+                "/open-apis/tenant/v2/tenant/query",
+                &[],
+                None,
+                Auth::Tenant,
+                "tenant_info",
+            )
+            .await?;
+        response
+            .data
+            .and_then(|data| {
+                data["tenant"]["tenant_key"]
+                    .as_str()
+                    .filter(|v| !v.is_empty())
+                    .map(str::to_owned)
+            })
+            .ok_or_else(|| ClientError::MissingField {
+                operation: "tenant_info".into(),
+                field: "tenant_key".into(),
+            })
+    }
+
     pub(crate) async fn application_creator(&self, id_type: &str) -> Result<String, ClientError> {
         let response: ApiResponse<Value> = self
             .json_request(

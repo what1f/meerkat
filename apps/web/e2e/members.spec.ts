@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 import { test, rig } from './rig';
-import { api, addFeishuMember, signInFeishu } from './feishu';
+import { api, addFeishuMember, createFeishuTeam } from './feishu';
 
 const open = async (page: Page, workspace: string, hash = 'members') => {
   await page.addInitScript((ws) => {
@@ -39,7 +39,7 @@ const createdInFeishu = async (page: Page, workspace: string, avatar = false) =>
   if (avatar) await pickPng(page);
   await page.getByTestId('member-create').click();
   await expect(page.getByTestId('member-create-qr')).toHaveAttribute('data-state', 'wait');
-  await rig({ op: 'feishu_scan', workspace, state: 'complete' });
+  await rig({ op: 'feishu_scan', workspace, state: 'approved' });
   const go = page.getByRole('button', { name: /^(打开|Open)$/ });
   await expect(go).toBeVisible();
   return go;
@@ -232,10 +232,23 @@ test('B3a.7: a member created in a Feishu team waits for its app to be set up', 
 
   const qr = page.getByTestId('member-create-qr');
   await expect(qr).toHaveAttribute('data-state', 'wait');
-  await rig({ op: 'feishu_scan', workspace, state: 'scanned' });
-  await expect(qr).toHaveAttribute('data-state', 'scanned');
   await rig({ op: 'feishu_scan', workspace, state: 'complete' });
   await expect(qr).toBeHidden();
+  await expect(page.getByTestId('member-create-permissions')).toBeVisible();
+  await page
+    .context()
+    .route('https://open.feishu.cn/page/launcher?**', (route) => route.fulfill({ body: 'Feishu' }));
+  const opened = page.waitForEvent('popup');
+  await page.getByTestId('member-create-permissions').click();
+  const confirmation = await opened;
+  await expect(confirmation).toHaveURL(
+    /open\.feishu\.cn\/page\/launcher\?clientID=cli_registered_1&addons=/,
+  );
+  await confirmation.close();
+  await page.screenshot({ path: test.info().outputPath('permissions.png') });
+  await expect(page.getByText(/Waiting for approval|等待审批/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /^(打开|Open)$/ })).toHaveCount(0);
+  await rig({ op: 'feishu_scan', workspace, state: 'approved' });
 
   await page.getByRole('button', { name: /^(打开|Open)$/ }).click();
   await expect(page).toHaveURL(/#\/member\/m[0-9a-f]{12}$/);
@@ -347,7 +360,7 @@ test('human badges show contact profiles and save positions without changing ide
   baseURL,
 }) => {
   const workspace = 'human_badges';
-  await signInFeishu(baseURL!, workspace);
+  await createFeishuTeam(workspace);
   await addFeishuMember(baseURL!, workspace);
   await rig({ op: 'feishu_person', workspace, user: 'bob', name: 'Bob', tenant: 'tenant-a' });
   await addFeishuMember(baseURL!, workspace, 'beta');
@@ -413,7 +426,7 @@ test('human badges show contact profiles and save positions without changing ide
 
 test('a creator without contact access still gets a human badge', async ({ page, baseURL }) => {
   const workspace = 'human_fallback';
-  await signInFeishu(baseURL!, workspace);
+  await createFeishuTeam(workspace);
   await rig({
     op: 'feishu_person',
     workspace,
@@ -440,7 +453,7 @@ for (const language of ['en', 'zh']) {
     baseURL,
   }) => {
     const workspace = `human_enterprise_${language}`;
-    await signInFeishu(baseURL!, workspace);
+    await createFeishuTeam(workspace);
     await addFeishuMember(baseURL!, workspace);
     await rig({
       op: 'feishu_person',
@@ -457,7 +470,7 @@ for (const language of ['en', 'zh']) {
     await page.getByTestId('member-name').fill('Second');
     await page.getByTestId('member-create').click();
     await expect(page.getByTestId('member-create-qr')).toHaveAttribute('data-state', 'wait');
-    await rig({ op: 'feishu_scan', workspace, state: 'complete' });
+    await rig({ op: 'feishu_scan', workspace, state: 'approved' });
     await expect(
       page.getByText(
         language === 'en'
@@ -479,7 +492,7 @@ test('rapid human position saves keep their order and preserve a newer draft', a
   baseURL,
 }) => {
   const workspace = 'human_rapid_saves';
-  await signInFeishu(baseURL!, workspace);
+  await createFeishuTeam(workspace);
   await addFeishuMember(baseURL!, workspace);
   await open(page, workspace);
   await page.getByTestId(/^human-card-/).click();

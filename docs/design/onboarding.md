@@ -10,7 +10,7 @@ puts AI members into our Feishu". On first launch they think:
 1. What does this give me, and what do I do first? One sentence, one button.
    No "workspace", "Agent", "Harness", or "App".
 2. Where does my team chat? Feishu. Pick it.
-3. Authorize? Scanning a QR code is fine, once.
+3. Create the member with the official QR and confirm its permissions.
 4. Where does the AI run? It should find Codex or Claude Code on this Mac
    and prove it works. If nothing is installed, say what to install.
 5. Name the first member. Everything else has a default.
@@ -42,9 +42,9 @@ hairline dashes at the top show progress after Welcome.
 | Step | Hero | Mockup |
 |---|---|---|
 | Welcome | A desk with a member at work, a Feishu chat beside it, a task ticked off | [1](onboarding/1-welcome.jpg) |
-| Connect | QR code hanging as a paper tag; flips into your own badge in place | [2](onboarding/2-connect.jpg), [3](onboarding/3-signed-in.jpg) |
+| Connect | Chat app selection | [2](onboarding/2-connect.jpg), [3](onboarding/3-signed-in.jpg) |
 | Choose AI | The member console; its screen lists the AI found on this Mac | [4](onboarding/4-choose-ai.jpg) |
-| First member | Your badge and the new member's blank badge side by side | [5](onboarding/5-member.jpg) |
+| First member | The new member’s badge, official registration QR, then permissions confirmation | [5](onboarding/5-member.jpg) |
 | Ready | The new member's desk and the direct chat | [6](onboarding/6-ready.jpg) |
 
 ### Welcome
@@ -55,21 +55,8 @@ progress.
 ### Connect
 
 - Segmented 飞书 / Telegram. Telegram is described in [Telegram](#telegram).
-- QR states: waiting (spinner caption), scanned (QR dims, user avatar with a
-  check, 「在手机上确认」), signed in (the tag flips into the user's badge,
-  **切换账号** under it), expired (refresh button on the QR itself, no error
-  banner).
-- Feishu requires this one sign-in: it identifies who leads the team, owns
-  the tasklist, and appears on the board. The earlier 每次手动确认 mode is
-  dropped; it still needed a scan per member and only avoided storing the
-  session. Sign-in is always kept; there is no option. Lankide stores the Feishu web
-  session (encrypted in the workspace secrets) and creates every member's App
-  through the developer console. The team tasklist is created as the user and
-  owned by them.
-- When the stored session expires, the next member creation asks for the QR
-  again inline.
-- The workspace is created from the signed-in tenant name. No user-facing
-  workspace ID.
+- Feishu only selects the platform here. No account sign-in is required.
+- The first member uses the same official registration flow as later members.
 
 ### Choose AI
 
@@ -88,10 +75,10 @@ progress.
 - **高级设置** hangs the member console beside the badge: the screen opens
   the machine, AI, model, and thinking picker, and the personality card sits
   below it.
-- **创建** (or Enter) shows progress on the badge itself. If the developer
-  console fails, a QR tag hangs next to the badge with
-  「用飞书扫一扫，确认创建」 (PersonalAgent flow; the tasklist is then created
-  by the App and transferred to the user).
+- **创建** (or Enter) shows progress on the badge, then an official registration
+  QR tag captioned 「用飞书扫一扫，确认创建」. After confirmation, show
+  「去飞书确认权限」 and wait for permissions and events to take effect.
+- Enterprise approval can keep this step waiting. Keep the confirmation link available.
 
 ### Ready
 
@@ -115,7 +102,7 @@ Same steps and objects; the differences come from what Telegram allows
   that identity (`ManagedBotUpdated.user`).
 - **First member** always ends with a confirm QR (Managed Bots): Telegram has
   no way to create a bot without the owner confirming it. Same QR tag as the
-  Feishu fallback, captioned 「用 Telegram 扫一扫，确认创建」. Until then your
+  Feishu registration, captioned 「用 Telegram 扫一扫，确认创建」. Until then your
   badge is blank; confirming flips it into your badge (name and photo from
   Telegram, default avatar when the photo is hidden). If this step is skipped,
   your badge appears with the first member added later.
@@ -134,18 +121,14 @@ Same steps and objects; the differences come from what Telegram allows
 No dialog: the empty peg on the members board brings a blank badge forward
 with a random avatar; type the name and press Enter or **添加**. The badge
 hangs back on the board and shows creation progress in place. The old
-four-step wizard is removed. A QR appears inline only when the stored session
-has expired or the developer console fails.
+four-step wizard is removed. Each Feishu member uses official QR registration,
+then the permissions confirmation link and approval waiting state.
 
 ## You
 
-The signed-in user hangs on the members board like everyone else, on a
-periwinkle brand lanyard instead of black (no label, no other styling), and
-can be reordered, but is not edited in Lankide: name, photo, and role come
-from the chat app. Clicking the badge flips it over; the back shows only the
-chat app mark (no organization name, on any provider) and two tear-off rows,
-**同步资料** and **切换账号**. Clicking anywhere else flips it back. It cannot
-be deleted.
+Every bot creator joins once. The first human becomes the team lead. Human
+badges use brand lanyards, with read-only platform names and photos and an
+editable position. There is no back side or account switch.
 
 ## Avatars
 
@@ -161,7 +144,7 @@ be deleted.
 
 1. Design system groundwork from [design-system.md](design-system.md):
    tokens, status colors, typography, and the new primitives.
-2. Onboarding scaffold and the Connect step, including the two Feishu modes.
+2. Onboarding scaffold and the Connect step, including chat app selection.
 3. Choose AI: detection and the inline test.
 4. First member: avatar picker and built-in avatars.
 5. Ready: open the direct chat and wait for the first reply.

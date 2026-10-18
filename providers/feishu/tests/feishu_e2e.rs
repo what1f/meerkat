@@ -855,7 +855,7 @@ async fn existing_agent_onboarding_repairs_missing_published_permissions() {
 }
 
 #[tokio::test]
-async fn new_app_permission_check_stops_on_lasting_failure() {
+async fn new_app_permission_check_waits_for_approval() {
     let transport = PermissionInspectionTransport::default();
     let host = ProviderHost::new(
         FeishuProvider::new()
@@ -887,12 +887,16 @@ async fn new_app_permission_check_stops_on_lasting_failure() {
     assert_eq!(throttled.status, ProviderOnboardingStatus::Verifying);
     assert!(throttled.poll_interval_seconds.is_some());
 
-    let failed = poll(throttled.opaque_payload)
+    let waiting = poll(throttled.opaque_payload)
         .await
-        .expect("failed inspection");
-    assert_eq!(failed.step, "permissions");
-    assert_eq!(failed.status, ProviderOnboardingStatus::Error);
-    assert_eq!(failed.poll_interval_seconds, None);
+        .expect("permissions still awaiting approval");
+    assert_eq!(waiting.step, "permissions");
+    assert_eq!(waiting.status, ProviderOnboardingStatus::Verifying);
+    assert!(waiting.poll_interval_seconds.is_some());
+    assert_eq!(
+        waiting.verification_uri,
+        payload["verification_uri"].as_str().map(str::to_owned)
+    );
     assert_eq!(transport.version_requests.load(Ordering::SeqCst), 2);
 }
 

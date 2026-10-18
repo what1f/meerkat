@@ -3,12 +3,7 @@ import { useToast } from '../../design';
 import { useT } from '../../lib/i18n';
 import { useCreateWorkspace } from '../../lib/queries/workspaces';
 import { useAgent, useAgentFirstReply, useCreateAgent } from '../../lib/queries/agents';
-import {
-  useAgentOnboardingProgress,
-  useFeishuConsoleLogin,
-  useStartAgentOnboarding,
-  useStartFeishuConsoleLogin,
-} from '../../lib/queries/onboarding';
+import { useAgentOnboardingProgress, useStartAgentOnboarding } from '../../lib/queries/onboarding';
 import { firstModel, useAiPick } from './useAiPick';
 import './messages';
 
@@ -26,7 +21,7 @@ export function useOnboarding(onFinish: (workspace?: string) => void) {
   const toast = useToast();
   const [raw, setStep] = useState<Step>(0);
   const [provider, setProviderState] = useState<Provider>('feishu');
-  // A late answer must not move on a flow the team lead has left.
+  // A late answer must not move on a flow the person has left.
   const current = useRef<Provider>('feishu');
   const [teams, setTeams] = useState<Partial<Record<Provider, string>>>({});
   const [offline, setOffline] = useState(false);
@@ -37,10 +32,7 @@ export function useOnboarding(onFinish: (workspace?: string) => void) {
   const createWorkspace = useCreateWorkspace();
   const createAgent = useCreateAgent();
   const startMember = useStartAgentOnboarding();
-  const startLogin = useStartFeishuConsoleLogin();
   const workspace = teams[provider];
-  const feishu = { request_id, workspace: { workspace_id: teams.feishu ?? '' } };
-  const login = useFeishuConsoleLogin(feishu, !!teams.feishu && raw === 1);
   const ai = useAiPick(request_id);
   const agent = { request_id, agent: { workspace_id: workspace ?? '', agent_id: agentId ?? '' } };
   const progressQuery = useAgentOnboardingProgress(agent, !!agentId);
@@ -49,22 +41,10 @@ export function useOnboarding(onFinish: (workspace?: string) => void) {
   const firstReply = useAgentFirstReply(agent, step === 4);
   const replied = firstReply.data?.state === 'replied';
   const member = useAgent(agent, step === 4).data;
-  const connected = provider === 'feishu' ? login.data?.state === 'ready' : !!teams.telegram;
+  const connected = provider === 'feishu' ? !!teams.feishu : !!teams.telegram;
   const failed = progress?.status === 'error' || progressQuery.isError || startMember.isError;
   const creating =
     createAgent.isPending || startMember.isPending || (!!agentId && !!progress && !failed);
-  const loginFailed =
-    !teams.feishu && createWorkspace.isError && createWorkspace.variables?.provider_id === 'feishu';
-  const qr: 'loading' | 'wait' | 'scanned' | 'expired' | 'done' =
-    loginFailed || login.isError || login.data?.state === 'required'
-      ? 'expired'
-      : !teams.feishu || login.isPending || startLogin.isPending
-        ? 'loading'
-        : login.data?.state === 'ready'
-          ? 'done'
-          : login.data?.state === 'scanned'
-            ? 'scanned'
-            : 'wait';
 
   function create(provider_id: Provider, secrets: object, onDone?: () => void) {
     const workspace_id = newId('t', 8);
@@ -171,11 +151,6 @@ export function useOnboarding(onFinish: (workspace?: string) => void) {
       if (value === 'feishu') ensureFeishu();
     },
     workspace,
-    qr: { state: qr, value: login.data?.qr_code ?? '' },
-    refreshQr: () => {
-      if (!teams.feishu) ensureFeishu();
-      else if (!startLogin.isPending) startLogin.mutate(feishu);
-    },
     token,
     setToken: (value: string) => {
       setTokenState(value);
@@ -187,7 +162,12 @@ export function useOnboarding(onFinish: (workspace?: string) => void) {
     setDraft,
     creating,
     failed,
-    confirm: progress?.status === 'action_required' ? progress.verification_uri : '',
+    confirm:
+      progress?.status !== 'ready' && progress?.status !== 'error'
+        ? progress?.verification_uri
+        : '',
+    permissions: progress?.step === 'permissions',
+    refreshQr: () => startMember.mutate(agent),
     member,
     replied,
     reply: {

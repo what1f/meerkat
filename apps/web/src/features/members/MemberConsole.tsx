@@ -42,7 +42,23 @@ export function MemberConsole({
   const pickReaction = (auto_reaction: string) => m.set({ auto_reaction });
   const { creation } = m;
   const creating: ReactNode =
-    creation.step === 'confirm' ? (
+    creation.step === 'permissions' ? (
+      <Callout
+        tone="quiet"
+        leading={<Spinner />}
+        action={
+          <Button
+            size="sm"
+            data-testid="member-create-permissions"
+            onClick={() => window.open(creation.url, '_blank', 'noopener')}
+          >
+            {t('members.confirmPermissions')}
+          </Button>
+        }
+      >
+        {t('members.waiting')}
+      </Callout>
+    ) : creation.step === 'confirm' ? (
       <Callout tone="quiet" leading={<Spinner />}>
         {t('members.scanToCreate')}
       </Callout>

@@ -5,8 +5,7 @@ import { useState } from 'react';
 import type { Flow } from './useOnboarding';
 import css from './steps.module.css';
 
-// A blank badge beside yours. Without a kept sign-in, the chat app asks you to
-// confirm the new member with one more scan.
+// The first member uses the same official registration as later members.
 export function FirstMemberStep({ flow }: { flow: Flow }) {
   const t = useT();
   const [advanced, setAdvanced] = useState(false);
@@ -47,19 +46,30 @@ export function FirstMemberStep({ flow }: { flow: Flow }) {
             }
           />
         </Hang>
-        {confirm && (
+        {confirm && !flow.permissions && (
           <QrTag
             data-testid="onboarding-confirm"
             state="wait"
             value={confirm}
             brand={provider}
-            onRefresh={() => undefined}
+            onRefresh={flow.refreshQr}
             refreshLabel={t('onboarding.refresh')}
           />
         )}
       </div>
       <div className={css.under}>
-        {confirm ? (
+        {flow.permissions && confirm ? (
+          <>
+            <Spinner />
+            <LinkButton
+              data-testid="onboarding-permissions"
+              onClick={() => window.open(confirm, '_blank', 'noopener')}
+            >
+              {t('onboarding.confirmPermissions')}
+            </LinkButton>
+            <span>{t('onboarding.waiting')}</span>
+          </>
+        ) : confirm ? (
           <>
             <Spinner />
             <span>

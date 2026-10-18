@@ -15,7 +15,11 @@ export type Command =
   | ({ op: 'create_agent' | 'hold_next_run' | 'release_run' | 'wait_running' } & Member)
   | ({ op: 'mention'; chat: string; person: string; text: string } & Member)
   | { op: 'pair_machine'; command: string }
-  | { op: 'feishu_scan'; workspace: string; state: 'waiting' | 'scanned' | 'expired' | 'complete' }
+  | {
+      op: 'feishu_scan';
+      workspace: string;
+      state: 'waiting' | 'expired' | 'complete' | 'approved' | 'denied';
+    }
   | ({ op: 'dm'; text: string } & Member)
   | { op: 'feishu_tasklist'; workspace: string; fail: boolean }
   | {

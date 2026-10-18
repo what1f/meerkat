@@ -20,7 +20,9 @@ test('A first launch with no team opens onboarding and stays on it', async ({ pa
   // The first team appears while onboarding runs; the page must not be taken away.
   await page.getByTestId('onboarding-next').click();
   await expect(onboarding).toHaveAttribute('data-step', '1');
-  await expect(page.getByTestId('onboarding-qr')).toBeVisible();
+  await expect(page.getByTestId('onboarding-provider')).toBeVisible();
+  await expect(page.getByTestId('onboarding-next')).toBeEnabled();
+  await expect(page.getByTestId('onboarding-qr')).toHaveCount(0);
   await page.getByTestId('onboarding-later').click();
   await expect(onboarding).toHaveAttribute('data-step', '2');
   await page.getByTestId('onboarding-later').click();

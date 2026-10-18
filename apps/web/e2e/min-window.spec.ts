@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 import { test, rig } from './rig';
-import { addFeishuMember, signInFeishu } from './feishu';
+import { addFeishuMember, createFeishuTeam } from './feishu';
 
 // The smallest window the app ships in.
 test.use({ viewport: { width: 960, height: 660 } });
@@ -138,7 +138,7 @@ test('off duty every screen is off and no member looks broken', async ({ page })
 test('a human member without a picture wears a built-in avatar', async ({ page, baseURL }) => {
   const workspace = 'min_human';
   await rig({ op: 'create_workspace', workspace, provider: 'feishu', member_avatar: false });
-  await rig({ op: 'feishu_scan', workspace, state: 'complete' });
+  await rig({ op: 'feishu_scan', workspace, state: 'approved' });
   await addFeishuMember(baseURL!, workspace, 'hal');
   await open(page, workspace, 'members');
   const avatar = page.getByTestId(/^human-card-/).locator('article img:not([data-brand])');
@@ -158,7 +158,7 @@ test('moving one piece on a narrow board leaves the others as they were hung', a
   baseURL,
 }) => {
   const workspace = 'min_keep';
-  await signInFeishu(baseURL!, workspace);
+  await createFeishuTeam(workspace);
   await addFeishuMember(baseURL!, workspace);
   await hang(page, workspace);
   await page.setViewportSize({ width: 1600, height: 900 });
@@ -219,7 +219,7 @@ const crowded = [
 for (const { name, width, layout } of crowded) {
   test(`${name} never lets pieces cover each other`, async ({ page, baseURL }) => {
     const workspace = `min_clash_${width}_${layout.rules.y}`;
-    await signInFeishu(baseURL!, workspace);
+    await createFeishuTeam(workspace);
     await addFeishuMember(baseURL!, workspace);
     await hang(page, workspace, layout);
     await page.setViewportSize({ width: 1600, height: 900 });
@@ -265,7 +265,7 @@ const grown = [
 for (const { name, layout } of grown) {
   test(`${name} keeps its pieces apart when the rules grow taller`, async ({ page, baseURL }) => {
     const workspace = `min_grow_${layout ? 'saved' : 'new'}`;
-    await signInFeishu(baseURL!, workspace);
+    await createFeishuTeam(workspace);
     await addFeishuMember(baseURL!, workspace);
     if (layout) await hang(page, workspace, layout);
     await open(page, workspace, 'team');

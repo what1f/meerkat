@@ -126,7 +126,7 @@ export function MemberBench({
                     src: m.avatarSrc,
                     status,
                     statusTip: m.agent?.pause_reason ?? undefined,
-                    creating: creation.step === 'creating' || creation.step === 'confirm',
+                    creating: ['creating', 'confirm', 'permissions'].includes(creation.step),
                     onEdit: () => setPicking(true),
                     editLabel: t('members.avatar'),
                   }}
@@ -166,7 +166,7 @@ export function MemberBench({
           </Hang>
           {creation.step === 'confirm' && (
             <QrTag
-              state={creation.scanned ? 'scanned' : 'wait'}
+              state="wait"
               value={creation.qr}
               brand="feishu"
               // Codes are renewed by the onboarding driver; there is nothing to refresh by hand yet.

@@ -5,7 +5,8 @@ import type * as DTO from '../../lib/api/generated';
 export type Creation =
   | { step: 'idle' }
   | { step: 'creating' }
-  | { step: 'confirm'; qr: string; scanned: boolean }
+  | { step: 'confirm'; qr: string }
+  | { step: 'permissions'; url: string }
   | { step: 'failed'; enterprise?: boolean }
   | { step: 'ready'; id: string };
 
@@ -23,11 +24,8 @@ export function creationOf(
       enterprise: error instanceof ApiError && error.detail === 'team_enterprise',
     };
   if (state?.status === 'ready') return { step: 'ready', id };
-  const payload = state
-    ? (JSON.parse(state.payload_json || '{}') as { qr_code?: string; verification_uri?: string })
-    : {};
-  const qr = payload.qr_code || payload.verification_uri || state?.verification_uri;
-  return qr
-    ? { step: 'confirm', qr, scanned: state?.status === 'verifying' }
-    : { step: 'creating' };
+  if (state?.step === 'permissions' && state.verification_uri)
+    return { step: 'permissions', url: state.verification_uri };
+  const qr = state?.verification_uri;
+  return qr ? { step: 'confirm', qr } : { step: 'creating' };
 }

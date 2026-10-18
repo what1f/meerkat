@@ -163,7 +163,8 @@ async fn feishu_unbound_rig(enabled: bool) -> Result<(SystemRig, FeishuWeb, Http
         state.name = "Alice".into();
         state.user = "lead".into();
         state.tenant = "tenant-a".into();
-        state.login_stage = 2;
+        state.registration_confirmed = true;
+        state.permissions_approved = true;
     }
     let factories = ProviderFactoryRegistry::default();
     let transport = web.clone();
@@ -196,10 +197,6 @@ async fn feishu_unbound_rig(enabled: bool) -> Result<(SystemRig, FeishuWeb, Http
 
 async fn feishu_review_rig(enabled: bool) -> Result<(SystemRig, FeishuWeb, Http)> {
     let (rig, web, http) = feishu_unbound_rig(enabled).await?;
-    http.invoke("feishu.workspace.console_login", "start", json!({}))
-        .await?;
-    http.invoke("feishu.workspace.console_login", "poll", json!({}))
-        .await?;
     let (mut binding_events, _) = tokio_tungstenite::connect_async(format!(
         "{}/api/v1/events?workspace=team",
         http.url.replacen("http://", "ws://", 1)
@@ -212,10 +209,12 @@ async fn feishu_review_rig(enabled: bool) -> Result<(SystemRig, FeishuWeb, Http)
 }
 
 async fn feishu_review_member(http: &Http, id: &str) -> Result<()> {
-    feishu_member_flow(http, id, &["start", "poll", "start"]).await
+    feishu_member_flow(http, id, &["start", "poll", "start"])
+        .await
+        .map(|_| ())
 }
 
-async fn feishu_member_flow(http: &Http, id: &str, actions: &[&str]) -> Result<()> {
+async fn feishu_member_flow(http: &Http, id: &str, actions: &[&str]) -> Result<Value> {
     let harness = RigConfig::default().harness_executable;
     let machines = http
         .post(
@@ -275,6 +274,7 @@ async fn feishu_member_flow(http: &Http, id: &str, actions: &[&str]) -> Result<(
     http.post("create_agent", serde_json::to_value(request)?)
         .await?;
     let mut payload = "{}".to_owned();
+    let mut last = Value::Null;
     for action in actions {
         let progress = http.post("advance_agent_onboarding",json!({"request_id":action,"agent":{"workspace_id":"team","agent_id":id},"action":action,"field_values_json":payload})).await
             .map_err(|error| format!("member onboarding {action}: {error}"))?;
@@ -282,8 +282,9 @@ async fn feishu_member_flow(http: &Http, id: &str, actions: &[&str]) -> Result<(
             .as_str()
             .ok_or("onboarding payload")?
             .to_owned();
+        last = progress;
     }
-    Ok(())
+    Ok(last)
 }
 
 fn database(rig: &SystemRig) -> Result<rusqlite::Connection> {
@@ -379,16 +380,13 @@ async fn stranger_cannot_claim_lead_and_union_identity_survives_multiple_apps() 
             );
             assert_ne!(stranger, existing);
         }
-        let login = "feishu.workspace.console_login";
-        http.invoke(login, "start", json!({})).await?;
-        http.invoke(login, "poll", json!({})).await?;
         feishu_review_member(&http, "alpha").await?;
         feishu_review_member(&http, "beta").await?;
         let roster = humans(&http).await?;
         assert_eq!(roster[0]["person_id"], existing);
         for (app, id) in [
-            ("cli_console_1", "alpha-message"),
-            ("cli_console_2", "beta-message"),
+            ("cli_registered_1", "alpha-message"),
+            ("cli_registered_2", "beta-message"),
         ] {
             assert_eq!(inbound(&web, &rig, app, "lead", id).await?, existing);
         }
@@ -432,7 +430,7 @@ async fn task_callback(web: &FeishuWeb, id: &str, sequence: usize, kind: &str) -
     let acknowledgements = {
         let mut state = web.0.lock().unwrap();
         let n = state.acknowledgements;
-        state.events.push_back(lankide_provider_feishu::events::RawEvent::new("task.task.update_user_access_v2",json!({"schema":"2.0","header":{"event_id":format!("review-{sequence}"),"event_type":"task.task.update_user_access_v2","app_id":"cli_console_1","tenant_key":"tenant-a"},"event":{"task_guid":id,"event_types":[kind]}}).to_string().into_bytes()));
+        state.events.push_back(lankide_provider_feishu::events::RawEvent::new("task.task.update_user_access_v2",json!({"schema":"2.0","header":{"event_id":format!("review-{sequence}"),"event_type":"task.task.update_user_access_v2","app_id":"cli_registered_1","tenant_key":"tenant-a"},"event":{"task_guid":id,"event_types":[kind]}}).to_string().into_bytes()));
         n
     };
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -468,7 +466,7 @@ async fn a4b_review_task_callbacks_follow_enabled_state() -> Result<()> {
         {let mut state=web.0.lock().unwrap();state.denied_tasks.retain(|id|id!=task["id"].as_str().unwrap());state.tasks.retain(|t|t["guid"]!=task["id"]);}
         task_callback(&web,task["id"].as_str().unwrap(),6,"task_deleted").await?;event(&mut events,"workspace_updated").await?;no_workspace_event(&mut events).await?;
         let acknowledged=web.0.lock().unwrap().acknowledgements;
-        web.0.lock().unwrap().events.push_back(lankide_provider_feishu::events::RawEvent::new("im.message.receive_v1",json!({"schema":"2.0","header":{"event_id":"ordinary-message","event_type":"im.message.receive_v1","app_id":"cli_console_1","tenant_key":"tenant-a"},"event":{"sender":{"sender_type":"user","sender_id":{"open_id":"ou_lead_cli_console_1","union_id":"on_lead"}},"message":{"message_id":"ordinary","chat_id":"oc_team","chat_type":"group","create_time":"1000","message_type":"text","content":json!({"text":"Hello team"}).to_string()}}}).to_string().into_bytes()));
+        web.0.lock().unwrap().events.push_back(lankide_provider_feishu::events::RawEvent::new("im.message.receive_v1",json!({"schema":"2.0","header":{"event_id":"ordinary-message","event_type":"im.message.receive_v1","app_id":"cli_registered_1","tenant_key":"tenant-a"},"event":{"sender":{"sender_type":"user","sender_id":{"open_id":"ou_lead_cli_registered_1","union_id":"on_lead"}},"message":{"message_id":"ordinary","chat_id":"oc_team","chat_type":"group","create_time":"1000","message_type":"text","content":json!({"text":"Hello team"}).to_string()}}}).to_string().into_bytes()));
         tokio::time::timeout(Duration::from_secs(5),async {loop{if web.0.lock().unwrap().acknowledgements>acknowledged{break;}tokio::time::sleep(Duration::from_millis(10)).await;}}).await?;
         no_workspace_event(&mut events).await?;
         http.post("update_workspace",json!({"request_id":"disable","workspace":{"workspace_id":"team"},"provider_config_json":"{\"domain\":\"feishu\",\"task_system_enabled\":false}"})).await?;
@@ -511,7 +509,7 @@ async fn bot_creators_join_once_with_real_profiles_and_custom_positions() -> Res
         http.post("update_human_position",request).await?;
         let roster=humans(&http).await?;
         assert_eq!(roster.as_array().unwrap().iter().find(|p|p["person_id"]==bob["person_id"]).unwrap()["team_role"],"member");
-        inbound(&web,&rig,"cli_console_2","bob","position-prompt").await?;
+        inbound(&web,&rig,"cli_registered_2","bob","position-prompt").await?;
         let started=tokio::time::timeout(Duration::from_secs(10),async {loop {
             if let Ok(contents)=std::fs::read_to_string(http.journals.join("controls-beta")) {
                 if let Some(first)=contents.lines().next() { if let Ok(value)=serde_json::from_str::<Value>(first) { break value; } }
@@ -529,7 +527,7 @@ async fn bot_creators_join_once_with_real_profiles_and_custom_positions() -> Res
         assert_eq!(secrets,0);
         let state:String=db.query_row("SELECT provider_state_json FROM workspaces WHERE workspace_id='team'",[],|r|r.get(0))?;
         let state:Value=serde_json::from_str(&state)?;assert!(state.get("owner").is_none() && state.get("console_user_id").is_none() && state.get("console_tenant_id").is_none());
-        let requests=web.0.lock().unwrap().requests.clone();assert!(requests.iter().all(|url| !url.contains("/napi/profile") && !url.contains("oauth")));
+        let requests=web.0.lock().unwrap().requests.clone();assert!(requests.iter().all(|url| !url.contains("/napi/") && !url.contains("/developers/v1/") && !url.contains("/authen/")));
         Ok::<_,Box<dyn std::error::Error+Send+Sync>>(())
     }.await;
     let cleanup = rig.close().await;
@@ -568,6 +566,53 @@ async fn enterprise_mismatch_rejects_and_missing_contact_still_joins() -> Result
         Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
     }
     .await;
+    let cleanup = rig.close().await;
+    scenario?;
+    cleanup
+}
+
+#[tokio::test]
+async fn official_registration_recovers_from_expiry_refusal_and_waits_for_admin() -> Result<()> {
+    let (rig, web, http) = feishu_unbound_rig(false).await?;
+    let scenario = async {
+        { let mut state = web.0.lock().unwrap(); state.registration_confirmed = false; state.permissions_approved = false; }
+        let first = feishu_member_flow(&http, "alpha", &["start"]).await?;
+        assert!(first["verification_uri"].as_str().unwrap().contains("/page/cli?user_code="));
+        let advance = |action: &str, payload: Value| http.post("advance_agent_onboarding", json!({"request_id":"official","agent":{"workspace_id":"team","agent_id":"alpha"},"action":action,"field_values_json":payload.to_string()}));
+        web.0.lock().unwrap().qr_expired = true;
+        let expired = advance("poll", serde_json::from_str(first["payload_json"].as_str().unwrap())?).await?;
+        assert_eq!(expired["error_code"], "expired");
+        let second = advance("start", json!({})).await?;
+        assert_ne!(first["verification_uri"], second["verification_uri"]);
+        web.0.lock().unwrap().registration_denied = true;
+        let denied = advance("poll", serde_json::from_str(second["payload_json"].as_str().unwrap())?).await?;
+        assert_eq!(denied["error_code"], "access_denied");
+        let third = advance("start", json!({})).await?;
+        web.0.lock().unwrap().registration_confirmed = true;
+        let permissions = advance("poll", serde_json::from_str(third["payload_json"].as_str().unwrap())?).await?;
+        assert_eq!(permissions["step"], "permissions");
+        let link = permissions["verification_uri"].as_str().unwrap();
+        assert!(link.contains("/page/launcher?clientID=cli_registered_1&addons="));
+        let payload: Value = serde_json::from_str(permissions["payload_json"].as_str().unwrap())?;
+        web.0.lock().unwrap().inspection_denied = true;
+        assert_eq!(advance("poll", payload.clone()).await?["status"], "verifying");
+        web.0.lock().unwrap().inspection_denied = false;
+        for _ in 0..3 { assert_eq!(advance("poll", payload.clone()).await?["status"], "verifying"); }
+        assert!(humans(&http).await?.as_array().unwrap().is_empty());
+        // Starting again resumes the published-capability wait, without registering another App.
+        assert_eq!(advance("start", json!({})).await?["status"], "verifying");
+        assert_eq!(web.0.lock().unwrap().apps.len(), 1);
+        web.0.lock().unwrap().permissions_approved = true;
+        assert_eq!(advance("poll", payload).await?["status"], "ready");
+        let roster = humans(&http).await?;
+        assert_eq!(roster[0]["team_role"], "lead");
+        assert_eq!(roster[0]["name"], "Alice");
+        let db = database(&rig)?;
+        assert_eq!(db.query_row("SELECT tenant_id FROM people WHERE team_role='lead'", [], |row| row.get::<_,String>(0))?, "tenant-a");
+        let requests = web.0.lock().unwrap().requests.clone();
+        assert!(requests.iter().all(|url| !url.contains("/napi/") && !url.contains("/developers/v1/") && !url.contains("/authen/") && (!url.contains("/oauth/") || url.ends_with("/oauth/v1/app/registration"))));
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    }.await;
     let cleanup = rig.close().await;
     scenario?;
     cleanup

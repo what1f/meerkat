@@ -2,6 +2,7 @@ import { expect, request as playwrightRequest } from '@playwright/test';
 import { readFile, access } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import { test, rig } from './rig';
 import { startRig } from './rig-process';
 
@@ -125,58 +126,66 @@ async function advance(
     field_values_json: payload,
   });
 }
-async function consoleLogin(baseURL: string, workspace: string, action: string) {
-  const reply = await api(baseURL, 'invoke_provider_interface', {
-    workspace: { workspace_id: workspace },
-    interface_id: 'feishu.workspace.console_login',
-    input_json: JSON.stringify({ action }),
-  });
-  return JSON.parse(reply.output_json);
-}
-
-test('Feishu scan mock drives waiting, scanned, expiry and completion through the real Provider', async ({
+test('Feishu registration expires, is denied, waits for permissions and enrolls once per creator', async ({
   baseURL,
 }) => {
   const member = { workspace: 'feishu_rig', agent: 'alpha' };
   await rig({ op: 'create_workspace', workspace: member.workspace, provider: 'feishu' });
-  await rig({ op: 'feishu_scan', workspace: member.workspace, state: 'waiting' });
-  const waiting = await consoleLogin(baseURL!, member.workspace, 'start');
-  expect(waiting.state).toBe('waiting');
-  expect((await consoleLogin(baseURL!, member.workspace, 'poll')).state).toBe('waiting');
-  await rig({ op: 'feishu_scan', workspace: member.workspace, state: 'scanned' });
-  expect((await consoleLogin(baseURL!, member.workspace, 'poll')).state).toBe('scanned');
-  await rig({ op: 'feishu_scan', workspace: member.workspace, state: 'expired' });
-  const expired = await consoleLogin(baseURL!, member.workspace, 'poll');
-  expect(expired.state).toBe('waiting');
-  expect(expired.qr_code).toBe('');
-  const replacement = await consoleLogin(baseURL!, member.workspace, 'poll');
-  expect(replacement.state).toBe('waiting');
-  expect(replacement.qr_code).toBeTruthy();
-  expect(replacement.qr_code).not.toBe(waiting.qr_code);
-  await rig({ op: 'feishu_scan', workspace: member.workspace, state: 'complete' });
-  expect((await consoleLogin(baseURL!, member.workspace, 'poll')).state).toBe('ready');
   await rig({ op: 'create_agent', ...member });
-  await advance(baseURL!, member.workspace, member.agent, 'start');
-  const ready = await advance(baseURL!, member.workspace, member.agent, 'start');
-  expect(ready.status).toBe('ready');
-  await rig({ op: 'dm', ...member, text: 'hello from the owner' });
-  const result = await rig({ op: 'settle' });
-  expect(result.outbound).toContainEqual(
-    expect.objectContaining({
-      workspace: member.workspace,
-      channel_type: 'private_chat',
-    }),
+  const start = () => advance(baseURL!, member.workspace, member.agent, 'start');
+  const poll = (payload: string) =>
+    advance(baseURL!, member.workspace, member.agent, 'poll', payload);
+  const first = await start();
+  expect(first.verification_uri).toContain('/page/cli?user_code=');
+  expect((await poll(first.payload_json)).status).toBe('action_required');
+  await rig({ op: 'feishu_scan', workspace: member.workspace, state: 'expired' });
+  expect((await poll(first.payload_json)).error_code).toBe('expired');
+  const second = await start();
+  expect(second.verification_uri).not.toBe(first.verification_uri);
+  await rig({ op: 'feishu_scan', workspace: member.workspace, state: 'denied' });
+  expect((await poll(second.payload_json)).error_code).toBe('access_denied');
+  const third = await start();
+  await rig({ op: 'feishu_scan', workspace: member.workspace, state: 'complete' });
+  const permissions = await poll(third.payload_json);
+  expect(permissions.verification_uri).toContain('/page/launcher?clientID=cli_registered_1');
+  expect(permissions.step).toBe('permissions');
+  const addons = new URL(permissions.verification_uri).searchParams.get('addons')!;
+  const requested = JSON.parse(gunzipSync(Buffer.from(addons, 'base64url')).toString());
+  expect(requested.scopes.user).toEqual([]);
+  expect(requested.scopes.tenant).toEqual(
+    expect.arrayContaining([
+      'tenant:tenant:readonly',
+      'contact:contact.base:readonly',
+      'contact:user.base:readonly',
+      'application:application:self_manage',
+    ]),
   );
+  expect(requested.events.items.tenant).toEqual(
+    expect.arrayContaining(['im.message.receive_v1', 'task.task.comment.updated_v1']),
+  );
+  const waiting = await poll(permissions.payload_json);
+  expect(waiting.status).toBe('verifying');
+  expect((await poll(waiting.payload_json)).status).toBe('verifying');
+  const before = await api(baseURL!, 'list_human_members', {
+    workspace: { workspace_id: member.workspace },
+  });
+  expect(before).toHaveLength(0);
+  await rig({ op: 'feishu_scan', workspace: member.workspace, state: 'approved' });
+  expect((await poll(waiting.payload_json)).status).toBe('ready');
+  await rig({ op: 'dm', ...member, text: 'hello' });
+  await rig({ op: 'settle' });
   const reply = await api(baseURL!, 'get_agent_first_reply', {
     agent: { workspace_id: member.workspace, agent_id: member.agent },
   });
   expect(reply.state).toBe('replied');
-  // The first App consumed this scan. Another App must show a new QR code.
   await rig({ op: 'create_agent', workspace: member.workspace, agent: 'beta' });
+  await rig({ op: 'feishu_scan', workspace: member.workspace, state: 'waiting' });
   const next = await advance(baseURL!, member.workspace, 'beta', 'start');
-  expect(next.status).toBe('action_required');
-  expect(JSON.parse(next.payload_json).qr_code).toBeTruthy();
-  await rig({ op: 'feishu_scan', workspace: member.workspace, state: 'complete' });
+  expect(next.verification_uri).not.toBe(third.verification_uri);
+  expect(
+    (await advance(baseURL!, member.workspace, 'beta', 'poll', next.payload_json)).status,
+  ).toBe('action_required');
+  await rig({ op: 'feishu_scan', workspace: member.workspace, state: 'approved' });
   const created = await advance(baseURL!, member.workspace, 'beta', 'poll', next.payload_json);
   expect(
     (await advance(baseURL!, member.workspace, 'beta', 'poll', created.payload_json)).status,
@@ -185,6 +194,7 @@ test('Feishu scan mock drives waiting, scanned, expiry and completion through th
     workspace: { workspace_id: member.workspace },
   });
   expect(humans).toHaveLength(1);
+  expect(humans[0].team_role).toBe('lead');
 });
 
 test('Telegram Token completes real onboarding and owner DM records the first private reply', async ({
