@@ -34,9 +34,3 @@
   grid-template-columns: 2fr 3fr;
   column-gap: 6px;
 }
-
-.trial {
-  display: grid;
-  grid-template-columns: max-content;
-  margin-left: auto;
-}

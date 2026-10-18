@@ -280,7 +280,7 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 | `messages.ts`                                                |                                                                                                               |
 
 数据：`useAgents`、`useAgent`、`useAgentAvatar`、`useMachines`、`useHarnessCatalog`、`useModelCatalog`、
-`useReactionCatalog`、`useFigurePacks`、`useImportFigurePack`、`useTestHarness`、`useWorkspace`、
+`useReactionCatalog`、`useFigurePacks`、`useImportFigurePack`、`useWorkspace`、
 `useWorkspaceOwner`、`useRefreshWorkspaceOwner`、`useCreateAgent`、`useUpdateAgent`、`useDeleteAgent`、
 `useResumeAgent`、`useStartAgentOnboarding`、`useAgentOnboardingProgress`（飞书团队创建成员）、
 `useFeishuAccountSwitch`、`useStartFeishuAccountSwitch`、`useCancelFeishuAccountSwitch`（LeadCard 切换账号）。

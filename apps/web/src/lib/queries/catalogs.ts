@@ -77,8 +77,3 @@ export function useImportFigurePack() {
     },
   });
 }
-export function useTestHarness() {
-  return useMutation({
-    mutationFn: (input: DTO.TestHarnessRequest) => call('test_harness', input),
-  });
-}
