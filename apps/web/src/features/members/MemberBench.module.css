@@ -1,0 +1,63 @@
+/* There are no spacing tokens yet; the nearest existing values stand in. */
+
+/* The console on the left, the badge hanging beside it. */
+.bench {
+  display: grid;
+  grid-template-columns: calc(12.5 * var(--row)) auto;
+  column-gap: calc(var(--row-lg) + var(--r-xl));
+  width: fit-content;
+  padding: calc(2 * var(--row-lg) + var(--row)) var(--row) calc(2 * var(--row));
+  margin: 0 auto;
+}
+
+.stage {
+  display: grid;
+  grid-auto-flow: column;
+  column-gap: var(--row);
+  margin-top: calc(-1 * var(--row));
+}
+
+.spacer {
+  margin-left: auto;
+}
+
+.brain {
+  display: grid;
+  row-gap: var(--r-menu);
+  padding: var(--r-menu);
+}
+
+.columns {
+  display: grid;
+  grid-template-columns:
+    calc(4 * var(--row)) calc(2 * var(--row-lg) + var(--row)) calc(5.5 * var(--row))
+    calc(var(--row-lg) + var(--row));
+  column-gap: var(--r-sm);
+}
+
+.advanced {
+  display: grid;
+  row-gap: var(--r-badge-lg);
+}
+
+.env {
+  display: grid;
+  row-gap: var(--r-sm);
+  width: calc(7 * var(--row));
+}
+
+.field {
+  width: calc(7 * var(--row));
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 2fr 3fr;
+  column-gap: var(--r-sm);
+}
+
+.trial {
+  display: grid;
+  grid-template-columns: max-content;
+  margin-left: auto;
+}

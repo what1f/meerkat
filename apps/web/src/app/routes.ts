@@ -3,6 +3,7 @@ import type { TopBarProps } from '../shell';
 import { TeamPage } from '../features/team';
 import { SettingsPage } from '../features/settings';
 import { OfficePage } from '../features/office';
+import { MembersPage } from '../features/members';
 export type Page =
   | { kind: 'members' }
   | { kind: 'member'; id: string }
@@ -19,6 +20,8 @@ export type PageViewProps = {
   frame: (bar: TopBarProps, body: ReactNode) => ReactNode;
 };
 export const pageViews: Partial<Record<Page['kind'], ComponentType<PageViewProps>>> = {
+  members: MembersPage,
+  member: MembersPage,
   team: TeamPage,
   settings: SettingsPage,
   office: OfficePage,
