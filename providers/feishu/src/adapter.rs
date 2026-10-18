@@ -147,6 +147,7 @@ impl InvocationHandler for ConsoleLoginHandler {
                 crate::console::Login::Waiting { qr_code, scanned } => serde_json::json!({
                     "state": if scanned { "scanned" } else { "waiting" },
                     "qr_code": qr_code,
+                    "poll_interval_seconds": crate::console::LOGIN_POLL_INTERVAL_SECONDS,
                 }),
             })
         })

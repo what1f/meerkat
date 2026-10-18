@@ -1,0 +1,33 @@
+/* The board fills the window. The column spans the whole board width, wider
+   than the rails track it sits in, and rests the footer on the bottom edge. */
+.root {
+  display: grid;
+  grid-template-rows: minmax(100vh, auto);
+}
+
+.column {
+  display: grid;
+  grid-template-rows: 3px minmax(calc(100vh - 95px), auto) auto;
+  grid-column: 1 / -1;
+  margin-inline: calc((4 * 192px + 3 * var(--hole) - 100vw) / 2);
+  padding: var(--sp-lg);
+}
+
+.column > ol {
+  margin-inline: auto;
+}
+
+.body {
+  grid-row: 2;
+  padding: var(--sp-2xl) 0 var(--sp-lg);
+}
+
+.foot {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-row: 3;
+}
+
+.go {
+  grid-column: 3;
+}

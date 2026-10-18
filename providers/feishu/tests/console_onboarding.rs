@@ -338,8 +338,19 @@ async fn one_sign_in_creates_every_agent_app_and_shares_the_leads_tasklist() {
     let shown = workspace.sign_in("start").await;
     assert_eq!(shown["state"], "waiting");
     assert_eq!(shown["qr_code"], r#"{"qrlogin":{"token":"qr-1"}}"#);
+    assert!(
+        shown["poll_interval_seconds"]
+            .as_u64()
+            .is_some_and(|seconds| seconds > 0)
+    );
     workspace.stage(1);
-    assert_eq!(workspace.sign_in("poll").await["state"], "scanned");
+    let scanned = workspace.sign_in("poll").await;
+    assert_eq!(scanned["state"], "scanned");
+    assert!(
+        scanned["poll_interval_seconds"]
+            .as_u64()
+            .is_some_and(|seconds| seconds > 0)
+    );
     workspace.stage(2);
     assert_eq!(workspace.sign_in("poll").await["state"], "ready");
     assert_eq!(workspace.sign_in("status").await["state"], "ready");

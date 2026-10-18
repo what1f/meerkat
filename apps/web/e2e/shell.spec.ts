@@ -4,6 +4,8 @@ import { test, rig } from './rig';
 test('B4.1: navigate and receive a new workspace without a page reload', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
+  // A team exists before the page opens; teams made later must not replace it.
+  await rig({ op: 'create_workspace', workspace: 'team_home' });
   const eventsReady = page.waitForEvent('websocket', (socket) =>
     socket.url().includes('/api/v1/events'),
   );
@@ -18,15 +20,17 @@ test('B4.1: navigate and receive a new workspace without a page reload', async (
     await expect(item).toHaveAttribute('aria-current', 'page');
   }
   const document = await page.locator('html').elementHandle();
-  await rig({ op: 'create_workspace', workspace: 'browser_team' });
-  await frame;
-  // The team title opens a menu: the new team is listed, the current one is checked.
   const switcher = page.getByTestId('team-switcher');
   const menu = page.getByRole('menu');
+  await expect(switcher).toHaveText(/\S/);
   const current = (await switcher.textContent())!.trim();
+  await rig({ op: 'create_workspace', workspace: 'browser_team' });
+  await frame;
+  // The team title opens a menu: once the new team is listed, the current team is unchanged.
   await switcher.click();
   await expect(menu.getByRole('menuitemcheckbox', { name: 'browser_team' })).toBeVisible();
   await expect(menu.getByRole('menuitemcheckbox', { checked: true })).toHaveText(current);
+  await expect(switcher).toHaveText(current);
   await menu.getByRole('menuitemcheckbox', { name: 'browser_team' }).click();
   await expect(menu).toBeHidden();
   await expect(switcher).toHaveText('browser_team');

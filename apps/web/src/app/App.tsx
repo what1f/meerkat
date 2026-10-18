@@ -43,10 +43,19 @@ function WorkspaceShell() {
   const teams = (data?.workspaces ?? []).flatMap((workspace) =>
     workspace.workspace ? [{ id: workspace.workspace.workspace_id, name: workspace.name }] : [],
   );
-  const current = teams.some((team) => team.id === selected) ? selected : (teams[0]?.id ?? '');
+  // Without a valid selection the first team is pinned, so a team that appears
+  // later cannot take the current place. Deleting the selected one pins again.
+  const valid = teams.some((team) => team.id === selected);
+  const first = teams[0]?.id;
+  if (!valid && first) setSelected(first);
+  const current = valid ? selected : (first ?? '');
   const pages = ['members', 'team', 'office', 'settings'] as const;
   const active = page.kind === 'member' ? 'members' : page.kind;
   const View = pageViews[page.kind];
+  const selectWorkspace = (id: string) => {
+    setSelected(id);
+    writeStorage('workspace', id);
+  };
   const title = pages.includes(active as (typeof pages)[number])
     ? t(`common.${active as (typeof pages)[number]}`)
     : undefined;
@@ -60,8 +69,7 @@ function WorkspaceShell() {
               teams={teams}
               current={current}
               onSelect={(id) => {
-                setSelected(id);
-                writeStorage('workspace', id);
+                selectWorkspace(id);
                 navigate({ kind: 'members' });
               }}
               onCreate={() => navigate({ kind: 'onboarding' })}
@@ -97,7 +105,13 @@ function WorkspaceShell() {
     </AppShell>
   );
   return View ? (
-    <View workspaceId={current} page={page} navigate={navigate} frame={frame} />
+    <View
+      workspaceId={current}
+      page={page}
+      navigate={navigate}
+      selectWorkspace={selectWorkspace}
+      frame={frame}
+    />
   ) : (
     frame({ title }, null)
   );

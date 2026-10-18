@@ -1,0 +1,68 @@
+/* One step: a centered column of title, hero and the line under it. */
+.step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.step > * {
+  margin-inline: auto;
+}
+
+.step > h1,
+.step > p {
+  margin-block: 0;
+}
+
+.step > p {
+  margin-top: 10px;
+}
+
+.provider {
+  width: 240px;
+  margin-top: var(--sp-lg);
+}
+
+.hero {
+  display: grid;
+  grid-auto-flow: column;
+  column-gap: var(--sp-2xl);
+  margin-top: var(--sp-lg);
+}
+
+.hero > * {
+  margin-bottom: auto;
+}
+
+.hello {
+  column-gap: var(--sp-2xl);
+  margin-top: var(--sp-2xl);
+}
+
+.hello > * {
+  margin-block: auto;
+}
+
+.rig {
+  margin-top: 110px;
+}
+
+.under {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: minmax(20px, auto);
+  column-gap: 8px;
+  margin-top: var(--sp-md);
+}
+
+.under > * {
+  margin-block: auto;
+}
+
+.go {
+  margin-top: var(--sp-xl);
+}
+
+.advanced {
+  width: 320px;
+  margin-top: var(--sp-sm);
+}
