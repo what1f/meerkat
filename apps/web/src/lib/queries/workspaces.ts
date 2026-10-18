@@ -41,18 +41,21 @@ export function useCreateWorkspace() {
     },
   });
 }
-export function useUpdateWorkspace() {
+// Writes that share a scope run one after another, so the last one made is the one kept.
+export function useUpdateWorkspace(scope?: string) {
   const client = useQueryClient();
   return useMutation({
+    scope: scope ? { id: scope } : undefined,
     mutationFn: (input: DTO.UpdateWorkspaceRequest) => call('update_workspace', input),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: keys.workspaces });
     },
   });
 }
-export function useSetWorkspaceState() {
+export function useSetWorkspaceState(scope?: string) {
   const client = useQueryClient();
   return useMutation({
+    scope: scope ? { id: scope } : undefined,
     mutationFn: (input: DTO.SetWorkspaceStateRequest) => call('set_workspace_state', input),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: keys.workspaces });

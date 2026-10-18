@@ -1,13 +1,13 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '../design';
 import { I18nProvider, useT } from '../lib/i18n';
 import { ThemeProvider } from '../lib/theme';
-import { AppShell, Sidebar, NavItem, TeamSwitcher, TopBar } from '../shell';
+import { AppShell, Sidebar, NavItem, TeamSwitcher, TopBar, type TopBarProps } from '../shell';
 import { useWorkspaces } from '../lib/queries/workspaces';
 import { useManagementEvents } from '../lib/events';
 import { readStorage, writeStorage } from '../lib/storage';
-import { navigate, usePage } from './routes';
+import { navigate, pageViews, usePage } from './routes';
 const queryClient = new QueryClient();
 const DesignPreview = import.meta.env.DEV ? lazy(() => import('../dev/DesignPreview')) : null;
 export function App() {
@@ -46,10 +46,11 @@ function WorkspaceShell() {
   const current = teams.some((team) => team.id === selected) ? selected : (teams[0]?.id ?? '');
   const pages = ['members', 'team', 'office', 'settings'] as const;
   const active = page.kind === 'member' ? 'members' : page.kind;
+  const View = pageViews[page.kind];
   const title = pages.includes(active as (typeof pages)[number])
     ? t(`common.${active as (typeof pages)[number]}`)
     : undefined;
-  return (
+  const frame = (bar: TopBarProps, body: ReactNode) => (
     <AppShell
       sidebar={
         <Sidebar
@@ -90,9 +91,14 @@ function WorkspaceShell() {
           }
         />
       }
-      topBar={<TopBar title={title} />}
+      topBar={<TopBar {...bar} />}
     >
-      {null}
+      {body}
     </AppShell>
+  );
+  return View ? (
+    <View workspaceId={current} page={page} navigate={navigate} frame={frame} />
+  ) : (
+    frame({ title }, null)
   );
 }

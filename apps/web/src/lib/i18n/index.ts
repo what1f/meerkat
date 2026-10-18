@@ -40,9 +40,10 @@ function subscribe(listener: () => void) {
 export function useLanguage() {
   return useSyncExternalStore(subscribe, () => language);
 }
+// One function per language, so memoized components re-render their text when it changes.
+const translators: Record<Language, typeof t> = { zh: (key) => t(key), en: (key) => t(key) };
 export function useT() {
-  useLanguage();
-  return t;
+  return translators[useLanguage()];
 }
 export function t(key: MessageKey): string {
   const [namespace, ...path] = key.split('.');

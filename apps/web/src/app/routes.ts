@@ -1,4 +1,7 @@
-import { useSyncExternalStore } from 'react';
+import { useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
+import type { TopBarProps } from '../shell';
+import { TeamPage } from '../features/team';
+import { SettingsPage } from '../features/settings';
 export type Page =
   | { kind: 'members' }
   | { kind: 'member'; id: string }
@@ -7,6 +10,17 @@ export type Page =
   | { kind: 'settings' }
   | { kind: 'onboarding' }
   | { kind: 'design' }; // Only parsed and rendered in DEV; Vite erases its branch in production.
+export type PageViewProps = {
+  workspaceId: string;
+  page: Page;
+  navigate: (page: Page) => void;
+  // Puts the page's top bar and body into the app shell.
+  frame: (bar: TopBarProps, body: ReactNode) => ReactNode;
+};
+export const pageViews: Partial<Record<Page['kind'], ComponentType<PageViewProps>>> = {
+  team: TeamPage,
+  settings: SettingsPage,
+};
 export function parseHash(hash: string): Page {
   const [kind, id] = hash.replace(/^#\/?/, '').split('/');
   if (kind === 'member' && id) {
