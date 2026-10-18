@@ -1,4 +1,4 @@
-import { InlineText, LinkButton, Reveal, Spinner } from '../../design';
+import { InlineText, LinkButton, Reveal, Spinner, StepHeading } from '../../design';
 import { Badge, Hang, QrTag, SoulSlot } from '../../scene';
 import { useT } from '../../lib/i18n';
 import { useState } from 'react';
@@ -16,7 +16,7 @@ export function FirstMemberStep({ flow }: { flow: Flow }) {
     setDraft((current) => ({ ...current, [field]: value }));
   return (
     <div className={css.step}>
-      <h1>{t('onboarding.firstMember')}</h1>
+      <StepHeading>{t('onboarding.firstMember')}</StepHeading>
       <div className={css.hero}>
         <OwnerBadge workspace={flow.workspace} provider={provider} />
         <Hang>

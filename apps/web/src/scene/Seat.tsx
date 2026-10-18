@@ -15,6 +15,8 @@ export type SeatProps = Omit<UIProps, 'className' | 'style'> & {
   screen: 'dark' | 'asleep' | 'alert' | 'busy' | 'ok';
   occupant: { figure: string; pack?: FigurePack; seed?: string } | 'empty-chair';
   arriving?: boolean;
+  // `hero` is the desk at 1.35 times, for the first-run steps.
+  size?: 'seat' | 'hero';
   label: string;
   onClick?: () => void;
   carry?: CarryHandle;
@@ -51,6 +53,7 @@ export function Seat({
   screen,
   occupant,
   arriving,
+  size = 'seat',
   label,
   onClick,
   carry,
@@ -108,6 +111,7 @@ export function Seat({
       data-setup={setup}
       data-screen={screen}
       data-arriving={arriving}
+      data-size={size}
     >
       <span className={css.floor} />
       {screens}

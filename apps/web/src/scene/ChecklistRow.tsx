@@ -36,7 +36,7 @@ export function ChecklistRow({ done, text, avatar, onToggle, ...rest }: Checklis
         </span>
         <span className={css.text}>{text}</span>
       </label>
-      {avatar && <Avatar src={avatar} size={20} />}
+      {avatar && <Avatar src={avatar} size={22} />}
     </div>
   );
 }

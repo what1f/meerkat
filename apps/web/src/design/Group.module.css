@@ -13,7 +13,8 @@
 
 .row[data-align='top'] {
   align-items: flex-start;
-  padding-top: 11px;
+  padding-top: 12px;
+  padding-bottom: 16px;
 }
 
 .row > div:first-child {
@@ -27,6 +28,10 @@
   align-items: center;
   min-width: 0;
   margin-left: auto;
+}
+
+.row[data-align='top'] > div:first-child {
+  padding-top: 2px;
 }
 
 .root > * + * {

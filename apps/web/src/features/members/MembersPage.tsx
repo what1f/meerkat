@@ -16,7 +16,7 @@ export type MembersPageProps = {
   workspaceId: string;
   page: { kind: string; id?: string };
   navigate: (page: { kind: 'members' } | { kind: 'member'; id: string }) => void;
-  frame: (bar: TopBarConfig, body: ReactNode) => ReactNode;
+  frame: (bar: TopBarConfig, body: ReactNode, board?: 'wall' | 'open') => ReactNode;
 };
 
 export function MembersPage({ workspaceId: workspace, page, navigate, frame }: MembersPageProps) {
@@ -32,20 +32,28 @@ export function MembersPage({ workspaceId: workspace, page, navigate, frame }: M
         frame={frame}
       />
     );
-  return frame(
-    {},
+  return (
     <MemberBoard
       key={workspace}
       workspace={workspace}
       onOpen={(id) => navigate({ kind: 'member', id })}
-    />,
+      frame={frame}
+    />
   );
 }
 
 const isIds = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((x) => typeof x === 'string');
 
-function MemberBoard({ workspace, onOpen }: { workspace: string; onOpen: (id: string) => void }) {
+function MemberBoard({
+  workspace,
+  onOpen,
+  frame,
+}: {
+  workspace: string;
+  onOpen: (id: string) => void;
+  frame: MembersPageProps['frame'];
+}) {
   const t = useT();
   const ref = { workspace_id: workspace };
   const agents = useAgents({ request_id: 'members', workspace: ref });
@@ -71,7 +79,8 @@ function MemberBoard({ workspace, onOpen }: { workspace: string; onOpen: (id: st
 
   const failed = [agents, team, machines].filter(broken);
   if (failed.length)
-    return (
+    return frame(
+      {},
       <EmptyState
         title={t('members.boardUnavailable')}
         action={
@@ -82,20 +91,23 @@ function MemberBoard({ workspace, onOpen }: { workspace: string; onOpen: (id: st
             {t('members.retry')}
           </Button>
         }
-      />
+      />,
     );
   if (agents.isPending)
-    return (
+    return frame(
+      {},
       <Board layout="rails">
         {[0, 1, 2].map((i) => (
           <Hang key={i}>
             <Badge avatar={{}} name={null} size="card" ghost />
           </Hang>
         ))}
-      </Board>
+      </Board>,
+      'wall',
     );
   if (!list.length && !lead)
-    return (
+    return frame(
+      {},
       <EmptyState
         title={t('members.empty')}
         action={
@@ -103,9 +115,10 @@ function MemberBoard({ workspace, onOpen }: { workspace: string; onOpen: (id: st
             {t('members.add')}
           </Button>
         }
-      />
+      />,
     );
-  return (
+  return frame(
+    {},
     <Board layout="rails">
       {lead && <LeadCard workspace={workspace} provider={lead} />}
       {list.map((agent) => (
@@ -119,6 +132,7 @@ function MemberBoard({ workspace, onOpen }: { workspace: string; onOpen: (id: st
         />
       ))}
       <VacantSlot label={t('members.add')} onClick={add} shape="badge" data-testid="add-member" />
-    </Board>
+    </Board>,
+    'wall',
   );
 }

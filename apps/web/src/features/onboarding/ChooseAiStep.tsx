@@ -1,4 +1,4 @@
-import { BrandMark, LinkButton, Spinner, type BrandMarkProps } from '../../design';
+import { BrandMark, LinkButton, Spinner, StepHeading, type BrandMarkProps } from '../../design';
 import { Console, ConsoleScreen, HarnessRow, RigFigure } from '../../scene';
 import { useT } from '../../lib/i18n';
 import type { Flow } from './useOnboarding';
@@ -12,7 +12,7 @@ export function ChooseAiStep({ flow }: { flow: Flow }) {
   const { available, pick, tests, choose, loading, loadFailed, reload } = flow.ai;
   return (
     <div className={css.step}>
-      <h1>{t('onboarding.chooseAi')}</h1>
+      <StepHeading>{t('onboarding.chooseAi')}</StepHeading>
       <span className={css.rig}>
         <Console
           figure={<RigFigure id="01" />}

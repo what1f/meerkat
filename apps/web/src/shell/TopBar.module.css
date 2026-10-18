@@ -35,12 +35,11 @@
 }
 
 /* Back points the way it goes; a menu trigger keeps its own chevron. */
-.root > button:first-child:not([aria-haspopup])::before {
-  width: 6px;
-  height: 6px;
-  margin-right: 4px;
-  content: '';
-  border-bottom: var(--chevron-line);
-  border-left: var(--chevron-line);
-  rotate: 45deg;
+.root > button:first-child:not([aria-haspopup]) {
+  gap: 2px;
+  padding-left: 4px;
+}
+
+.root > button:first-child > svg:first-child {
+  color: var(--ink-3);
 }

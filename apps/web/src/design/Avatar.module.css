@@ -55,6 +55,10 @@
   --s: 20px;
 }
 
+.root[data-size='22'] {
+  --s: 22px;
+}
+
 .root[data-size='26'] {
   --s: 26px;
 }

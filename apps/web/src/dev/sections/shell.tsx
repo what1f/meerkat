@@ -30,7 +30,7 @@ export function ShellSection() {
         <H.AppShell
           sidebar={<H.Sidebar header={team} nav={nav} footer={settings} />}
           topBar={<H.TopBar title="Members" />}
-          board
+          board="wall"
         >
           {null}
         </H.AppShell>

@@ -23,12 +23,12 @@ const cell = holePitch;
 // Spots as holes from the top left of the arrangement, and its width in holes. A board too
 // narrow for one row hangs the shift sign under the rules.
 const layouts: { span: number; spots: Record<Spot, HolePosition> }[] = [
-  { span: 39, spots: { rules: { x: 7, y: 4 }, tasks: { x: 24, y: 4 }, shift: { x: 36, y: 4 } } },
-  { span: 30, spots: { rules: { x: 7, y: 4 }, tasks: { x: 22, y: 4 }, shift: { x: 7, y: 24 } } },
+  { span: 36, spots: { rules: { x: 7, y: 1 }, tasks: { x: 24, y: 1 }, shift: { x: 34, y: 1 } } },
+  { span: 30, spots: { rules: { x: 7, y: 1 }, tasks: { x: 22, y: 1 }, shift: { x: 7, y: 21 } } },
 ];
 const plain = {
-  span: 22,
-  spots: { rules: { x: 7, y: 4 }, tasks: { x: 7, y: 4 }, shift: { x: 19, y: 4 } },
+  span: 36,
+  spots: { rules: { x: 7, y: 1 }, tasks: { x: 7, y: 1 }, shift: { x: 17, y: 1 } },
 };
 const isHole = (v: unknown): v is HolePosition =>
   !!v &&
@@ -40,22 +40,22 @@ const isWall = (v: unknown): v is Wall =>
 
 export type TeamPageProps = {
   workspaceId: string;
-  frame: (bar: { title: string }, body: ReactNode) => ReactNode;
+  frame: (bar: Record<string, never>, body: ReactNode, board?: 'wall' | 'open') => ReactNode;
 };
 
 export function TeamPage({ workspaceId, frame }: TeamPageProps) {
-  const t = useT();
   const { data } = useWorkspace(
     { request_id: 'get_workspace', workspace: { workspace_id: workspaceId } },
     !!workspaceId,
   );
   return frame(
-    { title: t('common.team') },
+    {},
     !data || data.workspace?.workspace_id !== workspaceId ? (
       <Board layout="free">{null}</Board>
     ) : (
       <TeamWall key={workspaceId} workspace={data} />
     ),
+    'wall',
   );
 }
 
@@ -94,15 +94,9 @@ function TeamWall({ workspace }: { workspace: Workspace }) {
     shift: (handle) => <ShiftToggle workspace={workspace} handle={handle} />,
   };
   return (
-    <Board layout="free">
-      {/* The board centre moves with the window, which a peg position in pixels cannot follow. */}
-      <div
-        style={{ left: '50%', top: 0 }}
-        ref={(el) => {
-          if (el?.parentElement && cols === null)
-            setCols(Math.floor(el.parentElement.clientWidth / cell));
-        }}
-      >
+    <Board
+      layout="free"
+      lead={
         <PaperLabel
           data-testid="team-name"
           value={workspace.name}
@@ -123,7 +117,16 @@ function TeamWall({ workspace }: { workspace: Workspace }) {
             );
           }}
         />
-      </div>
+      }
+    >
+      {/* Default spots are centred on the board, so they wait for its width. */}
+      <div
+        aria-hidden="true"
+        ref={(el) => {
+          if (el?.parentElement && cols === null)
+            setCols(Math.floor(el.parentElement.clientWidth / cell));
+        }}
+      />
       {items.map(({ key }) => (
         <Fragment key={key}>{content[key](handles[key])}</Fragment>
       ))}

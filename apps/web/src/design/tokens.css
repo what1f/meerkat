@@ -11,6 +11,7 @@
   --t-title: 15px;
   --t-heading: 22px;
   --t-display: 28px;
+  --t-hero: 32px;
 
   /* size */
   --h-sm: 28px;
@@ -19,12 +20,16 @@
   --row: 40px;
   --row-lg: 56px;
   --safe-area: 52px;
+
+  /* the top bar the board runs under; 0 when the page has none over it */
+  --bar-h: 0px;
   --rail: 84px;
   --column: 560px;
   --hole-pitch: 24px;
   --chevron-line: 1.5px solid currentcolor;
 
   /* space */
+  --sp-xs: 4px;
   --sp-sm: 14px;
   --sp-md: 16px;
   --sp-lg: 24px;
@@ -44,6 +49,11 @@
   --d-fast: 120ms;
   --d-base: 200ms;
   --d-slow: 320ms;
+
+  /* Title bar over the wall, bottom to top: drag layer, live board content, bar controls. */
+  --z-drag: 1;
+  --z-live: 4;
+  --z-bar: 30;
 
   /* Layers above the scene: popups, then tooltips, then toasts. */
   --z-popup: 200;

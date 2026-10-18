@@ -52,7 +52,7 @@ test('B3a.1: a new member is created from the board and saved', async ({ page })
   await page.getByTestId('add-member').click();
   await expect(page.getByTestId('member-create')).toBeDisabled();
   // A new member already wears a built-in avatar.
-  await expect(stage(page).locator('img')).toBeVisible();
+  await expect(stage(page).locator('img:not([data-brand])')).toBeVisible();
   await page.getByTestId('member-name').fill('Ada');
   await page.getByTestId('member-create').click();
   await expect(page).toHaveURL(/#\/member\/m[0-9a-f]{12}$/);
@@ -302,4 +302,52 @@ test('B3a.10: opening a new member waits for its avatar and cannot be repeated',
   release();
   await expect(page).toHaveURL(/#\/member\/m[0-9a-f]{12}$/);
   expect(uploads).toBe(1);
+});
+
+test('a profile picture that failed once loads again when it comes back', async ({ page }) => {
+  const workspace = 'members_avatar_back';
+  await rig({ op: 'create_workspace', workspace, provider: 'feishu' });
+  let refreshed = 0;
+  let reads = 0;
+  let firstRequests = 0;
+  await page.route('**/api/v1/invoke_provider_interface', async (route) => {
+    const input = route.request().postDataJSON();
+    if (input.interface_id !== 'feishu.workspace.owner') return route.continue();
+    if (JSON.parse(input.input_json).action === 'refresh') refreshed += 1;
+    else reads += 1;
+    await route.fulfill({
+      json: {
+        output_json: JSON.stringify({
+          state: 'ready',
+          name: 'Owner',
+          avatar: { resource_id: refreshed === 1 ? 99102 : 99101 },
+        }),
+      },
+    });
+  });
+  await page.route('**/api/v1/resources/9910*', async (route) => {
+    if (new URL(route.request().url()).pathname.endsWith('/99101') && ++firstRequests === 1)
+      return route.abort('failed');
+    return route.fulfill({ contentType: 'image/png', body: png });
+  });
+  await open(page, workspace);
+  const card = page.getByTestId('lead-card');
+  const avatar = card.locator('article img:not([data-brand])');
+  const decoded = () =>
+    avatar.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0);
+  await expect.poll(() => firstRequests).toBe(1);
+  // The picture that cannot load gives way to a built-in avatar.
+  await expect(avatar).toHaveAttribute('src', /assets\/\d\d-.*\.jpg$/);
+  await expect.poll(decoded).toBe(true);
+  await card.locator('[data-flipped]').press('Enter');
+  const sync = card.getByRole('button', { name: /Sync|同步/ });
+  await sync.click();
+  await expect(avatar).toHaveAttribute('src', /resources\/99102/);
+  await expect.poll(decoded).toBe(true);
+  const before = reads;
+  await sync.click();
+  await expect.poll(() => reads).toBeGreaterThan(before);
+  await expect(avatar).toHaveAttribute('src', /resources\/99101/);
+  await expect.poll(decoded).toBe(true);
+  expect(firstRequests).toBe(2);
 });

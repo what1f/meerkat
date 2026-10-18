@@ -67,8 +67,9 @@ function WorkspaceShell() {
   const title = pages.includes(active as (typeof pages)[number])
     ? t(`common.${active as (typeof pages)[number]}`)
     : undefined;
-  const frame = (bar: TopBarProps, body: ReactNode) => (
+  const frame = (bar: TopBarProps, body: ReactNode, board?: 'wall' | 'open') => (
     <AppShell
+      board={board}
       sidebar={
         <Sidebar
           header={

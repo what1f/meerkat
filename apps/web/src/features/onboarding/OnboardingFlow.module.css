@@ -10,7 +10,7 @@
   grid-template-rows: 3px minmax(calc(100vh - 95px), auto) auto;
   grid-column: 1 / -1;
   margin-inline: calc((4 * 192px + 3 * var(--hole-pitch) - 100vw) / 2);
-  padding: var(--sp-lg);
+  padding: 28px 28px var(--sp-lg);
 }
 
 .column > ol {
@@ -19,7 +19,7 @@
 
 .body {
   grid-row: 2;
-  padding: var(--sp-2xl) 0 var(--sp-lg);
+  padding: 53px 0 var(--sp-lg);
 }
 
 .foot {

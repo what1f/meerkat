@@ -4,7 +4,15 @@ import css from './ChatPreview.module.css';
 type Line = { from: 'me' | 'them' | 'done'; text: string; delay?: number };
 
 // A short chat beside the desk: what you sent and what the member answered.
-export function ChatPreview({ lines, waiting }: { lines: Line[]; waiting?: string }) {
+export function ChatPreview({
+  lines,
+  waiting,
+  avatar,
+}: {
+  lines: Line[];
+  waiting?: string;
+  avatar?: string;
+}) {
   return (
     <div className={css.root} data-testid="onboarding-chat">
       {waiting ? (
@@ -18,6 +26,7 @@ export function ChatPreview({ lines, waiting }: { lines: Line[]; waiting?: strin
             key={i}
             from={line.from === 'me' ? 'me' : 'them'}
             variant={line.from === 'done' ? 'done' : 'bubble'}
+            avatar={line.from === 'them' ? avatar : undefined}
             delay={line.delay}
           >
             {line.text}

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { InlineText, Menu, useToast } from '../../design';
-import { Badge, Hang, QrTag } from '../../scene';
+import { BrandMark, InlineText, Menu, useToast } from '../../design';
+import { Badge, Board, Hang, QrTag } from '../../scene';
 import { useT } from '../../lib/i18n';
 import { agentStatus, useDeleteAgent, useResumeAgent } from '../../lib/queries/agents';
 import { useWorkspace } from '../../lib/queries/workspaces';
@@ -9,6 +9,7 @@ import { MemberConsole } from './MemberConsole';
 import { AvatarPicker } from './AvatarPicker';
 import { DeleteMemberDialog } from './DeleteMemberDialog';
 import { MemberUnread } from './MemberUnread';
+import { isBrand, modelLabel } from './MemberCard';
 import css from './MemberBench.module.css';
 
 export type TopBarConfig = {
@@ -27,7 +28,7 @@ export function MemberBench({
   id: string | null;
   onBack: () => void;
   onCreated: (id: string) => void;
-  frame: (bar: TopBarConfig, body: ReactNode) => ReactNode;
+  frame: (bar: TopBarConfig, body: ReactNode, board?: 'wall' | 'open') => ReactNode;
 }) {
   const t = useT();
   const toast = useToast();
@@ -81,107 +82,115 @@ export function MemberBench({
 
   if (m.notFound || m.failed || m.loading) return frame({ back: home }, <MemberUnread m={m} />);
   const body = (
-    <div className={css.bench}>
-      <MemberConsole
-        m={m}
-        workspace={workspace}
-        isNew={!id}
-        status={status}
-        reading={reading}
-        onReading={setReading}
-        canCreate={canCreate}
-        onCommit={() => void commit()}
-        onResume={() =>
-          ref && resume.mutate({ request_id: crypto.randomUUID(), agent: ref }, { onError: fail })
-        }
-        onDelete={() => setConfirming(true)}
-        onOpen={(created) =>
-          // A failed upload keeps this page and the picked avatar, so opening can be tried again.
-          void m.finish().then((done) => done && onCreated(created), fail)
-        }
-      />
-      <div className={css.stage}>
-        <Hang swingKey={swing} faded={reading}>
-          <AvatarPicker
-            open={picking}
-            onOpenChange={setPicking}
-            onPick={(upload) => {
-              m.setUpload(upload);
-              setPicking(false);
-              setSwing((n) => n + 1);
-            }}
-            trigger={
-              <Badge
-                size="stage"
-                dimmed={!!m.agent?.pause_reason}
-                avatar={{
-                  src: m.avatarSrc,
-                  status,
-                  statusTip: m.agent?.pause_reason ?? undefined,
-                  creating: creation.step === 'creating' || creation.step === 'confirm',
-                  onEdit: () => setPicking(true),
-                  editLabel: t('members.avatar'),
-                }}
-                name={
-                  <InlineText
-                    mode="live"
-                    value={m.draft.name}
-                    onChange={(name) => m.set({ name })}
-                    placeholder={t('members.name')}
-                    textStyle="heading"
-                    autoFocus={!id}
-                    data-testid="member-name"
-                  />
-                }
-                role={
-                  <InlineText
-                    mode="live"
-                    value={m.draft.role}
-                    onChange={(role) => m.set({ role })}
-                    placeholder={t('members.role')}
-                    textStyle="small"
-                  />
-                }
-                bio={
-                  <InlineText
-                    mode="live"
-                    multiline
-                    value={m.draft.bio}
-                    onChange={(bio) => m.set({ bio })}
-                    placeholder={t('members.bio')}
-                    textStyle="small"
-                  />
-                }
-              />
-            }
-          />
-        </Hang>
-        {creation.step === 'confirm' && (
-          <QrTag
-            state={creation.scanned ? 'scanned' : 'wait'}
-            value={creation.qr}
-            brand="feishu"
-            // Codes are renewed by the onboarding driver; there is nothing to refresh by hand yet.
-            onRefresh={() => {}}
-            refreshLabel={t('members.refreshQr')}
-            data-testid="member-create-qr"
-          />
-        )}
+    <Board layout="open">
+      <div className={css.bench}>
+        <MemberConsole
+          m={m}
+          workspace={workspace}
+          isNew={!id}
+          status={status}
+          reading={reading}
+          onReading={setReading}
+          canCreate={canCreate}
+          onCommit={() => void commit()}
+          onResume={() =>
+            ref && resume.mutate({ request_id: crypto.randomUUID(), agent: ref }, { onError: fail })
+          }
+          onDelete={() => setConfirming(true)}
+          onOpen={(created) =>
+            // A failed upload keeps this page and the picked avatar, so opening can be tried again.
+            void m.finish().then((done) => done && onCreated(created), fail)
+          }
+        />
+        <div className={css.stage}>
+          <Hang swingKey={swing} faded={reading}>
+            <AvatarPicker
+              open={picking}
+              onOpenChange={setPicking}
+              onPick={(upload) => {
+                m.setUpload(upload);
+                setPicking(false);
+                setSwing((n) => n + 1);
+              }}
+              trigger={
+                <Badge
+                  size="stage"
+                  dimmed={!!m.agent?.pause_reason}
+                  foot={
+                    <>
+                      {isBrand(m.draft.harness_id) && <BrandMark brand={m.draft.harness_id} />}
+                      {m.draft.model ? modelLabel(m.draft.model) : t('members.defaultModel')}
+                    </>
+                  }
+                  avatar={{
+                    src: m.avatarSrc,
+                    status,
+                    statusTip: m.agent?.pause_reason ?? undefined,
+                    creating: creation.step === 'creating' || creation.step === 'confirm',
+                    onEdit: () => setPicking(true),
+                    editLabel: t('members.avatar'),
+                  }}
+                  name={
+                    <InlineText
+                      mode="live"
+                      value={m.draft.name}
+                      onChange={(name) => m.set({ name })}
+                      placeholder={t('members.name')}
+                      textStyle="heading"
+                      autoFocus={!id}
+                      data-testid="member-name"
+                    />
+                  }
+                  role={
+                    <InlineText
+                      mode="live"
+                      value={m.draft.role}
+                      onChange={(role) => m.set({ role })}
+                      placeholder={t('members.role')}
+                      textStyle="small"
+                    />
+                  }
+                  bio={
+                    <InlineText
+                      mode="live"
+                      multiline
+                      value={m.draft.bio}
+                      onChange={(bio) => m.set({ bio })}
+                      placeholder={t('members.bio')}
+                      textStyle="small"
+                    />
+                  }
+                />
+              }
+            />
+          </Hang>
+          {creation.step === 'confirm' && (
+            <QrTag
+              state={creation.scanned ? 'scanned' : 'wait'}
+              value={creation.qr}
+              brand="feishu"
+              // Codes are renewed by the onboarding driver; there is nothing to refresh by hand yet.
+              onRefresh={() => {}}
+              refreshLabel={t('members.refreshQr')}
+              data-testid="member-create-qr"
+            />
+          )}
+        </div>
+        <DeleteMemberDialog
+          open={confirming}
+          name={m.draft.name}
+          avatar={m.avatarSrc}
+          onClose={() => setConfirming(false)}
+          onConfirm={() =>
+            ref &&
+            remove.mutate(
+              { request_id: crypto.randomUUID(), agent: ref },
+              { onSuccess: onBack, onError: fail, onSettled: () => setConfirming(false) },
+            )
+          }
+        />
       </div>
-      <DeleteMemberDialog
-        open={confirming}
-        name={m.draft.name}
-        avatar={m.avatarSrc}
-        onClose={() => setConfirming(false)}
-        onConfirm={() =>
-          ref &&
-          remove.mutate(
-            { request_id: crypto.randomUUID(), agent: ref },
-            { onSuccess: onBack, onError: fail, onSettled: () => setConfirming(false) },
-          )
-        }
-      />
-    </div>
+    </Board>
   );
-  return frame({ back }, body);
+  return frame({ back }, body, 'open');
 }

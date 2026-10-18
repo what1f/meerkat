@@ -1,4 +1,4 @@
-import { BrandMark, LinkButton, Segmented, Spinner } from '../../design';
+import { BrandMark, LinkButton, Segmented, Spinner, StepHeading } from '../../design';
 import { QrTag, TokenTag } from '../../scene';
 import { useT } from '../../lib/i18n';
 import type { Flow, Provider } from './useOnboarding';
@@ -15,7 +15,9 @@ export function ConnectStep({ flow }: { flow: Flow }) {
   const feishu = provider === 'feishu';
   return (
     <div className={css.step}>
-      <h1>{t(feishu ? 'onboarding.connectFeishu' : 'onboarding.connectTelegram')}</h1>
+      <StepHeading>
+        {t(feishu ? 'onboarding.connectFeishu' : 'onboarding.connectTelegram')}
+      </StepHeading>
       <span className={css.provider}>
         <Segmented<Provider>
           data-testid="onboarding-provider"

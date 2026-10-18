@@ -1,7 +1,7 @@
 import { useRef, useSyncExternalStore, type DOMAttributes } from 'react';
 import { readStorage, writeStorage } from '../lib/storage';
 export type SidebarLayout = { width: number; rail: boolean; hidden: boolean };
-const defaults: SidebarLayout = { width: 240, rail: false, hidden: false };
+const defaults: SidebarLayout = { width: 220, rail: false, hidden: false };
 function valid(value: unknown): value is SidebarLayout {
   if (!value || typeof value !== 'object') return false;
   const v = value as Partial<SidebarLayout>;

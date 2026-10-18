@@ -238,3 +238,18 @@ test('the team name stays centred on the board when the window is resized', asyn
   await page.setViewportSize({ width: 960, height: 800 });
   await expect.poll(async () => Math.abs(await offset())).toBeLessThan(2);
 });
+
+test('the team name opens its editor from the top edge and from the keyboard', async ({ page }) => {
+  await rig({ op: 'create_workspace', workspace: 'edge_team' });
+  await openTeam(page, 'edge_team');
+  const name = page.getByTestId('team-name').getByRole('button');
+  const editor = page.getByTestId('team-name').getByRole('textbox');
+  // The transparent top bar must not cover the board under it.
+  await name.click({ position: { x: 20, y: 2 } });
+  await expect(editor).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(editor).toHaveCount(0);
+  await name.focus();
+  await page.keyboard.press('Enter');
+  await expect(editor).toBeFocused();
+});

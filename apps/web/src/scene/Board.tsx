@@ -2,14 +2,16 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { UIProps } from '../design/index';
 import css from './Board.module.css';
 export type BoardProps = Omit<UIProps, 'className' | 'style'> & {
-  layout: 'rails' | 'free';
+  layout: 'rails' | 'free' | 'open';
   holes?: 'on' | 'fade';
+  // Sits above the board's items in the flow; a free board's holes count from below it.
+  lead?: ReactNode;
   children: ReactNode;
 };
 // Hole pitch; the first peg on the board sits exactly on a hole.
 const cell = 24;
 const offset = (v: number) => `${((((v - cell / 2) % cell) + cell) % cell).toFixed(2)}px`;
-export function Board({ layout, holes = 'on', children, ...rest }: BoardProps) {
+export function Board({ layout, holes = 'on', lead, children, ...rest }: BoardProps) {
   const ref = useRef<HTMLElement>(null);
   const itemsRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -41,6 +43,7 @@ export function Board({ layout, holes = 'on', children, ...rest }: BoardProps) {
   });
   return (
     <section {...rest} ref={ref} className={css.root} data-layout={layout} data-holes={holes}>
+      {lead}
       <div ref={itemsRef} className={css.items}>
         {children}
       </div>

@@ -8,6 +8,7 @@ export type BadgeProps = Omit<UIProps, 'className' | 'style'> & {
   style?: PegPosition;
   avatar: {
     src?: string;
+    fallback?: string;
     status?: Status;
     statusTip?: string;
     creating?: boolean;

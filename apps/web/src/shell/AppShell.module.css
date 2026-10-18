@@ -70,6 +70,10 @@
   box-shadow: var(--edge-left);
 }
 
+.root[data-board] > div:last-child {
+  background: var(--board);
+}
+
 .root:has(aside[hidden]) > div:last-child {
   box-shadow: var(--none);
 }
@@ -79,6 +83,35 @@
   flex: 1;
   overflow: auto;
   user-select: text;
+}
+
+/* On the wall the pegboard runs under a transparent top bar. The bar makes no stacking context of
+   its own: a drag layer, the live board content and the bar controls share one order. */
+.root[data-board] > div:last-child > header {
+  position: absolute;
+  inset: 0 0 auto;
+  pointer-events: none;
+}
+
+.root[data-board] > div:last-child > header::before {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-drag);
+  pointer-events: none;
+  content: '';
+}
+
+.root[data-board][data-desktop='true'] > div:last-child > header::before {
+  pointer-events: auto;
+}
+
+.root[data-board] > div:last-child > header > * {
+  pointer-events: auto;
+}
+
+.root[data-board] > div:last-child > header > button {
+  position: relative;
+  z-index: var(--z-bar);
 }
 
 .root[data-desktop='true'] > div:last-child > header {
@@ -96,4 +129,8 @@
 
 .root[data-desktop='true'] > div:last-child > header > * {
   -webkit-app-region: no-drag;
+}
+
+.root[data-board='wall'] > div:last-child > main {
+  --bar-h: var(--safe-area);
 }

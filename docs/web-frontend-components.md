@@ -170,7 +170,7 @@ apps/web/
 | `Group` / `Group.Row` | `Group: children`；`Row: label; children; align?: 'center' \| 'top'` | 唯一的容器。行高 40，行与行之间是细线 |
 | `Reveal` | `open; children` | 带高度动画的折叠区域 |
 | `StatusDot` | `status: Status; tip?: string` | 表达状态的唯一方式；busy 状态呼吸闪烁 |
-| `Avatar` | `src?; size: 20 \| 26 \| 32 \| 40 \| 44 \| 60 \| 76 \| 88 \| 'fill'; status?: Status; statusTip?: string; dimmed?; creating?; selected?; onEdit?: () => void; editLabel?` | 状态点挂在右下角，`statusTip` 在悬停状态点时显示（例如暂停原因）。`fill` 表示撑满父元素，只供 scene 内部使用。`dimmed` 表示暂停（变灰）；`onEdit` 存在时悬停显示铅笔 |
+| `Avatar` | `src?; fallback?: string; size: 20 \| 22 \| 26 \| 32 \| 40 \| 44 \| 60 \| 76 \| 88 \| 'fill'; status?: Status; statusTip?: string; dimmed?; creating?; selected?; onEdit?: () => void; editLabel?` | 状态点挂在右下角，`statusTip` 在悬停状态点时显示（例如暂停原因）。图片按 `src` 生命周期处理：加载失败时改用 `fallback`（没有则留空圆），`src` 一变就重新尝试。`fill` 表示撑满父元素，只供 scene 内部使用。`dimmed` 表示暂停（变灰）；`onEdit` 存在时悬停显示铅笔 |
 | `Menu` | `trigger: ReactElement; align?: 'start' \| 'end'; children` | 基于 Base UI Menu。`trigger` 直接传触发按钮本身，不需要占位的 `onClick`，例如 `<LinkButton disclosure>` |
 | `Menu.Item` | `leading?: ReactNode; checked?; danger?; returnFocus?: boolean; onSelect; children` | 菜单项高 30，选中时显示勾。菜单关闭后焦点默认回到触发按钮；打开原地编辑器（例如重命名）的项传 `returnFocus={false}`，焦点留给编辑器 |
 | `Menu.Separator` | — | |
@@ -183,6 +183,7 @@ apps/web/
 | `ConfirmDialog` | `open; onClose; leading?: ReactNode; title; body; confirmLabel; cancelLabel; onConfirm; tone?: 'danger'` | 只用于不可撤销的操作 |
 | `Command` | `text; copyLabel; copiedLabel` | 等宽命令，带一键复制；复制后在原位反馈。只在空格处折行，参数不会被拆开（超过一行的单个参数才在内部折行）；复制的始终是原来的单行 `text` |
 | `Dashes` | `total; current` | 引导页顶部的进度细线 |
+| `StepHeading` | `children; sub?: ReactNode` | 引导每一步的标题（衬线 32px）和下面的一行小字，渲染成 `h1` 加 `p`，直接放在步骤的网格里 |
 | `Skeleton` | `shape: 'line' \| 'circle'; width; height?` | 加载用骨架，不用转圈 |
 | `Spinner` | `size?: 'sm' \| 'md'` | 只用于行内的“正在进行” |
 | `EmptyState` | `title; action?: ReactNode` | 带探头的狐獴 |
@@ -201,16 +202,16 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 
 | 组件 | Props | 说明 |
 |---|---|---|
-| `Board` | `layout: 'rails' \| 'free'; holes?: 'on' \| 'fade'; children` | 洞洞板画布。孔网格自动对齐到第一个挂钉；`free` 模式下由子项自行定位 |
+| `Board` | `layout: 'rails' \| 'free' \| 'open'; holes?: 'on' \| 'fade'; lead?: ReactNode; children` | 洞洞板画布。孔网格自动对齐到第一个挂钉；`free` 模式下由子项自行定位，孔坐标从 `lead` 之下算起；`open` 不排布子项，用于成员详情。板面铺在透明顶栏之下（`AppShell` 的 `board`），`rails`、`free` 顶部留出顶栏和 4px，`free` 左右各 32px |
 | `Hang` | `ref?: Ref<HTMLDivElement>; style?: { left?: number; top?: number }; lanyard?: 'member' \| 'lead'; motion?: 'enter' \| 'leave' \| 'turn-in'; swingOnHover?; swingKey?: number; faded?; onClick?; children` | 挂钉、挂绳、夹子，以挂钉为支点。传 `onClick` 时整张是可打开的卡片：`role="button"`、可聚焦，Enter 和 Space 也能打开。`faded` 让它退到背景（透明度 0.35），用于阅读性格时的 stage；`Badge` 的 `dimmed` 是暂停状态，两者不同。`swingKey` 的值每变化一次就晃一下，用于保存、换头像、落位之后。`turn-in` 表示原地翻入，例如二维码吊牌翻成工卡。FLIP 期间的层级由 `useFlip` 通过 data 属性处理，不放进 props。`ref` 和 `style` 用来直接接 `useHoleDrag` 和 `useSortable` 返回的 handle，不需要再包一层 div；`style` 只允许挂钉位置 `left`、`top` |
-| `Badge` | `ref?: Ref<HTMLElement>; style?: { left?: number; top?: number }; avatar: { src?; status?: Status; statusTip?; creating?; onEdit?; editLabel? }; name: ReactNode; role?: ReactNode; bio?: ReactNode; foot?: ReactNode; size: 'card' \| 'stage' \| 'intro'; dimmed?; ghost?` | 白色工卡。头像由 Badge 内部渲染，并按工卡比例确定尺寸。`name`、`role`、`bio` 可以传纯文字，也可以传 `InlineText`。`intro` 是引导页的尺寸。`ghost` 是骨架状态的空白卡。`ref` 和 `style` 的用途同 `Hang`，用于不挂在挂绳上直接拖动的工卡 |
+| `Badge` | `ref?: Ref<HTMLElement>; style?: { left?: number; top?: number }; avatar: { src?; fallback?: string; status?: Status; statusTip?; creating?; onEdit?; editLabel? }; name: ReactNode; role?: ReactNode; bio?: ReactNode; foot?: ReactNode; size: 'card' \| 'stage' \| 'intro'; dimmed?; ghost?` | 白色工卡。头像由 Badge 内部渲染，并按工卡比例确定尺寸；`avatar.fallback` 与 `Avatar` 的失败回退一致，`src` 加载失败时改用它。`name`、`role`、`bio` 可以传纯文字，也可以传 `InlineText`。`intro` 是引导页的尺寸。`ghost` 是骨架状态的空白卡。`ref` 和 `style` 的用途同 `Hang`，用于不挂在挂绳上直接拖动的工卡 |
 | `BadgeVerso` | `mark: ReactNode; actions: { label; onClick; busy? }[]` | 你自己工卡的背面：品牌标志加撕页按钮。`busy` 时显示转圈的刷新图标 |
 | `FlipCard` | `flipped; front; back; onFlip` | 翻面容器，单击在原地翻转；面上的按钮、输入框保留自己的点击。也可以聚焦后按 Enter 或 Space |
 | `VacantSlot` | `ref?: Ref<HTMLButtonElement>; style?: { left?: number; top?: number }; label; onClick; shape: 'badge' \| 'clipboard'` | 虚线空位，例如添加成员、任务清单停用后的位置。两种形状都带挂钉：`badge` 和 rails 里的工卡对齐，`clipboard` 和 `Clipboard` 对齐。`ref`、`style` 的用途同 `Hang` |
 | `Tag` | `ref?: Ref<HTMLElement>; style?: { left?: number; top?: number }; children; tone?: 'paper'` | 挂在绳上的吊牌（带孔眼），规约、二维码、Token 都用它。`ref`、`style` 的用途同 `Hang` |
 | `QrTag` | `state: 'loading' \| 'wait' \| 'scanned' \| 'expired'; value: string; brand: 'feishu' \| 'telegram'; scannerAvatar?: string; onRefresh; refreshLabel` | 二维码吊牌：扫码后变暗，并显示扫码人的头像；过期时刷新按钮就在码上；`loading` 时显示骨架。登录成功后翻成工卡，由 `Hang motion="turn-in"` 完成 |
 | `TokenTag` | `value; onChange; label; invalid?` | Telegram 的 Token 吊牌，填写线样式的输入。`invalid` 时填写线变红，不加文字 |
-| `PaperLabel` | `ref?: Ref<HTMLDivElement>; style?: { left?: number; top?: number }; value; onCommit; label` | 贴在板子上方的团队名纸条，可以原地编辑。`ref`、`style` 的用途同 `Tag`，本页只用 `ref` 测宽、`style` 定位 |
+| `PaperLabel` | `ref?: Ref<HTMLDivElement>; style?: { left?: number; top?: number }; value; onCommit; label` | 团队名纸条，可以原地编辑。团队页把它放进 `Board` 的 `lead` 槽：它在文档流里居中，不再靠 `ref`、`style` 定位，也不被 `useHoleDrag` 接管 |
 | `ShiftSign` | `ref?: Ref<HTMLDivElement>; style?: { left?: number; top?: number }; on; onToggle; onLabel; offLabel; label` | 上班/下班翻牌。`ref`、`style` 的用途同 `Hang` |
 | `Clipboard` | `ref?: Ref<HTMLElement>; style?: { left?: number; top?: number }; title: ReactNode; actions: ReactNode; children; footer: ReactNode` | 木质写字板和纸，用于任务清单。`ref`、`style` 的用途同 `Hang` |
 | `ChecklistRow` | `done; text; avatar?: string; onToggle` 以及 `ChecklistRow.New: placeholder; onAdd(text)` | 清单里的一行。点击后勾选立即显示，`done` 下一次变化后以 `done` 为准 |
@@ -224,7 +225,7 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 | `SoulSlot` | `value; onChange; label; placeholder; onFocusChange(reading)` | 插槽里的性格卡 |
 | `Lever` | `levels: string[]; value: number; onChange` | 竖向档位拉杆，档位数量由模型决定 |
 | `Figure` | `id: string; pose: 'work' \| 'sleep' \| 'carry' \| 'stand'; scale?: number; pack?: { frames: Partial<Record<Pose, string>>; scale: number }; seed?: string` | 形象帧。内置形象只传 `id`，尺寸查 `figures.ts`；导入的形象包传 `pack`（每个姿势一个帧 URL），尺寸是图片原始像素乘以 `pack.scale` 和 `scale`，加载完成前不显示。`id` 是 `default`、不是内置形象，或形象包缺这个姿势（例如没有坐姿）时，按 `seed`（传成员 id）稳定地选一个内置形象顶替，features 不用自己挑 |
-| `Seat` | `setup: 'laptop' \| 'mini'; screen: 'dark' \| 'asleep' \| 'alert' \| 'busy' \| 'ok'; occupant: { figure: string; pack?: FigurePack; seed?: string } \| 'empty-chair'; arriving?; label; onClick?; carry?: CarryHandle` | 一张工位：桌子、屏幕、形象或空椅子，睡着时显示 zz。形象的姿势由 `screen` 推出（`asleep` 和 `dark` 对应 sleep，其他对应 work），不另设 `pose` 参数 |
+| `Seat` | `setup: 'laptop' \| 'mini'; screen: 'dark' \| 'asleep' \| 'alert' \| 'busy' \| 'ok'; occupant: { figure: string; pack?: FigurePack; seed?: string } \| 'empty-chair'; arriving?; size?: 'seat' \| 'hero'; label; onClick?; carry?: CarryHandle` | 一张工位：桌子、屏幕、形象或空椅子，睡着时显示 zz。形象的姿势由 `screen` 推出（`asleep` 和 `dark` 对应 sleep，其他对应 work），不另设 `pose` 参数 |
 | `WorkRow` | `title: ReactNode; status: Status; menu?: ReactNode; arriving?; children` 加上 `useCarry().rowProps(rowKey)` | 一个工区一排，标题是名字加状态点。`arriving` 表示新工区加入时的高亮。拖拽悬停的样式只认 `rowProps` 设置的 `data-over` |
 | `AddRow` | `label; onClick` | 最后一行的添加入口 |
 | `Reaction` | `id: string; size?: number` | 表情图片 |
@@ -244,7 +245,7 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 
 | 组件 | Props | 说明 |
 |---|---|---|
-| `AppShell` | `sidebar; topBar; children; board?: boolean` | 窗口布局：在外壳内时为红绿灯留出安全区，并设置拖拽区；toast 容器；拉线。侧栏开关按钮也由 AppShell 内部渲染（展开时在红绿灯右侧，图标栏模式时移到栏内），状态读 `useSidebarLayout` |
+| `AppShell` | `sidebar; topBar; children; board?: 'wall' \| 'open'` | 窗口布局：在外壳内时为红绿灯留出安全区，并设置拖拽区；toast 容器；拉线。侧栏开关按钮也由 AppShell 内部渲染（展开时在红绿灯右侧，图标栏模式时移到栏内），状态读 `useSidebarLayout` |
 | `Sidebar` | `header: ReactNode; nav: ReactNode; footer: ReactNode` | 可以拖动边缘调宽（160–480）、折叠成图标栏（宽 84，token `--rail`）、完全隐藏；图标栏模式下隐藏 `header`；状态来自 `useSidebarLayout` |
 | `SidebarGrip` | — | 拖拽调宽；双击切换图标模式 |
 | `NavItem` | `icon: IconName; label; active; onClick; testId` | 侧栏专用的行按钮（原生 button 加自己的样式，不借用 `Button`）。当前页是浅色填充。只有图标模式下才包 `Tooltip`，名字显示在图标右侧 |
@@ -298,7 +299,7 @@ testid：`member-card-{id}`、`lead-card`、`add-member`、`member-name`、`memb
 | `messages.ts` | |
 
 拖动的 handle（`ref`、`style`）直接传给 `Tag`、`Clipboard`、`VacantSlot`、`ShiftSign`，没有外包元素。
-`PaperLabel` 支持 `ref`、`style` 定位，但团队页没有把它接入 `useHoleDrag`；名牌外包一层 `left: 50%` 的元素，让它随窗口和侧栏变宽变窄保持居中（挂钉 `style` 只能是像素数）。如需去掉这层元素，要由 scene 提供跟随容器的居中。
+`PaperLabel` 放在 `Board` 的 `lead` 槽，位于文档流中，随窗口和侧栏宽度居中，不需要外包 `left: 50%` 的元素。`items` 里的孔坐标从 `lead` 之下算起；列数由 `items` 内一个单独的不可见元素测量其父容器宽度得到，不借用名牌的 `ref`。
 
 数据：`useWorkspace`、`useUpdateWorkspace`、`useSetWorkspaceState`、`useWorkspaceTasks`、
 `useCreateWorkspaceTask`、`useSetWorkspaceTaskCompleted`、`useWorkspaceImage`。
@@ -395,3 +396,15 @@ testid：`onboarding`（`data-step` 为当前步骤 0–4）、`onboarding-next`
 `#/design` 按 `design/`、`scene/`、`shell/` 分组，每个组件列出全部 variant 和状态，浅色和深色并排显示。
 视觉验收会拿它和 `system.html` 对照。新增组件时，必须在 `dev/sections/` 中同时补上它的预览。
 生产构建通过 `import.meta.env.DEV` 去掉整个 `dev/` 目录。
+
+## 墙板顶栏的层级
+
+墙板（`AppShell` 的 `board="wall"|"open"`）上的顶栏是透明的，叠在板面之上。顶栏本身不建立层叠上下文，拖窗层、板面内容、顶栏控件在同一个上下文里按 token 比较，从下到上：
+
+| token | 值 | 用途 |
+|---|---|---|
+| `--z-drag` | 1 | 拖窗层：顶栏的 `::before`，Desktop 下命中它即命中带 `data-tauri-drag-region` 的 header |
+| `--z-live` | 4 | 伸进顶栏高度内、仍需点击的板面内容，例如 `Console` 的 notice |
+| `--z-bar` | 30 | 顶栏内的按钮（返回键、菜单触发器），高于板面内容 |
+
+新增会伸进顶栏高度的可交互板面内容时用 `--z-live`，不要自己加数字。弹层仍在 `--z-popup` 以上。

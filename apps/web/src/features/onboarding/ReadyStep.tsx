@@ -1,4 +1,4 @@
-import { BrandMark, Button, LinkButton } from '../../design';
+import { BrandMark, Button, LinkButton, StepHeading } from '../../design';
 import { Seat } from '../../scene';
 import { useT } from '../../lib/i18n';
 import { memberFigure, type Flow } from './useOnboarding';
@@ -21,10 +21,11 @@ export function ReadyStep({ flow }: { flow: Flow }) {
   const feishu = provider === 'feishu';
   return (
     <div className={css.step}>
-      <h1>{t('onboarding.ready').replace('{name}', name)}</h1>
+      <StepHeading>{t('onboarding.ready').replace('{name}', name)}</StepHeading>
       <div className={`${css.hero} ${css.hello}`}>
         <Seat
           setup="laptop"
+          size="hero"
           screen={replied ? 'ok' : 'busy'}
           occupant={{ figure: memberFigure }}
           label={name}

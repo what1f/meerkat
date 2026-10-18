@@ -29,6 +29,7 @@ export type ConfirmDialogContract = Assert<NoOverrides<Parameters<typeof D.Confi
 export type ToastContract = Assert<NoOverrides<Parameters<typeof D.ToastProvider>[0]>>;
 export type CommandContract = Assert<NoOverrides<Parameters<typeof D.Command>[0]>>;
 export type DashesContract = Assert<NoOverrides<Parameters<typeof D.Dashes>[0]>>;
+export type StepHeadingContract = Assert<NoOverrides<Parameters<typeof D.StepHeading>[0]>>;
 export type SkeletonContract = Assert<NoOverrides<Parameters<typeof D.Skeleton>[0]>>;
 export type SpinnerContract = Assert<NoOverrides<Parameters<typeof D.Spinner>[0]>>;
 export type EmptyStateContract = Assert<NoOverrides<Parameters<typeof D.EmptyState>[0]>>;

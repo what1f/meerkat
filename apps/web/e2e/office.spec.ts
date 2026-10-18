@@ -56,7 +56,7 @@ test.describe.serial('office', () => {
   });
 
   test('the copied pairing command adds a new online office row', async () => {
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Office');
+    await expect(page.getByTestId('nav-office')).toHaveAttribute('aria-current', 'page');
     await page.getByTestId('add-machine').click();
     const command = page.getByTestId('pair-command');
     await expect(command).toContainText('lankide-machine pair wss://');

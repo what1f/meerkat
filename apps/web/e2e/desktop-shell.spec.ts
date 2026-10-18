@@ -8,6 +8,8 @@ test('Desktop reserves an unobstructed title strip and keeps controls clickable'
   baseURL,
 }) => {
   await rig({ op: 'create_workspace', workspace: 'desktop_shell' });
+  await rig({ op: 'create_workspace', workspace: 'desktop_wall' });
+  await rig({ op: 'create_agent', workspace: 'desktop_wall', agent: 'wall' });
   const context = await browser.newContext({
     baseURL,
     userAgent: 'Mozilla/5.0 LankideDesktop/0.1.0',
@@ -20,7 +22,8 @@ test('Desktop reserves an unobstructed title strip and keeps controls clickable'
     expect(
       await strip.evaluate((element) => {
         const { x, y, width } = element.getBoundingClientRect();
-        return document.elementFromPoint(x + width / 2, y + 20) === element;
+        // Clear of the sidebar toggle beside the traffic lights.
+        return document.elementFromPoint(x + width - 16, y + 20) === element;
       }),
     ).toBe(true);
     await page.getByTestId('nav-members').click();
@@ -31,6 +34,32 @@ test('Desktop reserves an unobstructed title strip and keeps controls clickable'
       .getByRole('button', { name: /Members|成员/, exact: true })
       .click();
     await expect(page).toHaveURL(/#\/members$/);
+    // The empty bar stays a drag handle on the wall and the open board, above no content.
+    const bar = () =>
+      page.locator('header[data-tauri-drag-region]').evaluate((header) => {
+        const { x, y, width, height } = header.getBoundingClientRect();
+        const hit = document.elementFromPoint(x + width - 80, y + height / 2);
+        return { drag: hit?.closest('[data-tauri-drag-region]') === hit, bottom: y + height };
+      });
+    await page.addInitScript((id) => {
+      localStorage.setItem('lankide.workspace', JSON.stringify(id));
+    }, 'desktop_wall');
+    await page.goto('/#/members');
+    await page.reload();
+    await expect(page.locator('div[data-desktop]')).toHaveAttribute('data-board', 'wall');
+    await expect(page.locator('main [data-layout="rails"]')).toBeVisible();
+    await expect(page.getByTestId('member-card-wall')).toBeVisible();
+    expect((await bar()).drag).toBe(true);
+    await page.getByTestId('add-member').click();
+    await expect(page.getByTestId('member-name')).toBeVisible();
+    await expect(page.locator('div[data-desktop]')).toHaveAttribute('data-board', 'open');
+    expect((await bar()).drag).toBe(true);
+    await page.goto('/#/team');
+    const name = page.getByTestId('team-name');
+    await expect(name).toBeVisible();
+    const { drag, bottom } = await bar();
+    expect(drag).toBe(true);
+    expect((await name.boundingBox())!.y).toBeGreaterThanOrEqual(bottom);
     await page.goto('/#/onboarding');
     await expect(strip).toHaveAttribute('data-tauri-drag-region', 'true');
   } finally {
@@ -88,4 +117,66 @@ for (const locale of ['en-US', 'zh-CN']) {
       }
     });
   }
+}
+
+for (const viewport of [
+  { width: 1240, height: 820 },
+  { width: 960, height: 660 },
+]) {
+  test(`Desktop ${viewport.width}px: the back button, the resume notice and the drag bar of a paused member all work`, async ({
+    browser,
+    baseURL,
+  }) => {
+    const member = { workspace: `desktop_notice_${viewport.width}`, agent: 'linus' };
+    await rig({ op: 'create_workspace', workspace: member.workspace });
+    await rig({ op: 'create_agent', ...member });
+    const context = await browser.newContext({
+      baseURL,
+      userAgent: 'Mozilla/5.0 LankideDesktop/0.1.0',
+      viewport,
+    });
+    const page = await context.newPage();
+    try {
+      await page.addInitScript((id) => {
+        localStorage.setItem('lankide.workspace', JSON.stringify(id));
+      }, member.workspace);
+      await page.goto(`/#/member/${member.agent}`);
+      await page.getByRole('button', { name: /高级|Advanced/ }).click();
+      const names = page.getByRole('textbox', { name: /^(名称|Variable)$/ });
+      const values = page.getByRole('textbox', { name: /^(值|Value)$/ });
+      const blank = (await names.count()) - 1;
+      await names.nth(blank).fill('LANKIDE_SYSTEM_SCRIPT');
+      await values.nth(blank).fill('{"behaviour":"fail_spawn","text":"model not found"}');
+      await page.getByTestId('member-save').click();
+      await expect(page.getByTestId('member-save')).toBeDisabled();
+      await rig({ op: 'mention', ...member, chat: 'group', person: 'alice', text: 'hello' });
+      await expect(page.getByTestId('member-pause')).toBeEnabled();
+      await page.goto('/#/members');
+      await page.getByTestId(`member-card-${member.agent}`).click();
+      const resume = page.locator('main [data-tone] button');
+      await expect(resume).toBeVisible();
+      // The empty bar is still the drag handle.
+      const drag = await page.locator('header[data-tauri-drag-region]').evaluate((header) => {
+        const { x, y, width, height } = header.getBoundingClientRect();
+        const hit = document.elementFromPoint(x + width - 8, y + height / 2);
+        return hit === header;
+      });
+      expect(drag).toBe(true);
+      // While the notice is up and the member is paused, the back button keeps its lower edge.
+      const back = page
+        .locator('header')
+        .getByRole('button', { name: /Members|成员/, exact: true });
+      const box = (await back.boundingBox())!;
+      await expect(page.getByTestId('member-pause')).toBeEnabled();
+      await back.click({ position: { x: box.width / 2, y: box.height - 2 } });
+      await expect(page).toHaveURL(/#\/members$/);
+      // Opened again, the notice reaches into the title strip; its upper edge is still its own.
+      await page.getByTestId(`member-card-${member.agent}`).click();
+      await expect(resume).toBeVisible();
+      await resume.click({ position: { x: 10, y: 2 } });
+      await expect(page.getByTestId('member-pause')).toBeDisabled();
+    } finally {
+      await context.close();
+    }
+  });
 }

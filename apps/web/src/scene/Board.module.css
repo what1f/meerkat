@@ -6,7 +6,16 @@
 
   position: relative;
   min-height: 100%;
+  padding-top: calc(var(--bar-h) + var(--sp-xs));
   background: var(--board-face);
+}
+
+.root[data-layout='open'] {
+  padding-top: var(--bar-h);
+}
+
+.root[data-layout='free'] {
+  padding-inline: var(--sp-xl);
 }
 
 .root::before {

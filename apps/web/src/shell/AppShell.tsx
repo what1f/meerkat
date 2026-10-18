@@ -12,7 +12,8 @@ export type AppShellProps = Omit<UIProps, 'className' | 'style'> & {
   sidebar: ReactNode;
   topBar: ReactNode;
   children: ReactNode;
-  board?: boolean;
+  // 'wall': the pegboard runs under the transparent top bar; 'open': content starts at the top.
+  board?: 'wall' | 'open';
 };
 export function AppShell({ sidebar, topBar, children, board, ...rest }: AppShellProps) {
   const t = useT();

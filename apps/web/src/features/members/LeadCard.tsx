@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { BrandMark } from '../../design';
 import { Badge, BadgeVerso, FlipCard, Hang, QrTag } from '../../scene';
+import { defaultAvatar } from './avatars';
 import { useT } from '../../lib/i18n';
-import { resourceUrl } from '../../lib/assets';
+import { avatarUrl, resourceUrl } from '../../lib/assets';
 import { useRefreshWorkspaceOwner, useWorkspaceOwner } from '../../lib/queries/workspaces';
 import {
   useCancelFeishuAccountSwitch,
@@ -83,6 +84,7 @@ export function LeadCard({
               src: owner.data?.avatar
                 ? resourceUrl(owner.data.avatar.resource_id, workspace)
                 : undefined,
+              fallback: avatarUrl(defaultAvatar(workspace)),
             }}
             name={owner.data?.name ?? t('members.you')}
             ghost={owner.isPending}

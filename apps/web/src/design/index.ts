@@ -23,6 +23,7 @@ export * from './ConfirmDialog';
 export * from './Toast';
 export * from './Command';
 export * from './Dashes';
+export * from './StepHeading';
 export * from './Skeleton';
 export * from './Spinner';
 export * from './EmptyState';

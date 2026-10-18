@@ -76,6 +76,16 @@ export function DesignFeedback() {
           </State>
         ))}
       </Spec>
+      <Spec name="StepHeading" surface="surface">
+        <State label="title">
+          <D.StepHeading>Connect Feishu</D.StepHeading>
+        </State>
+        <State label="with line">
+          <D.StepHeading sub="They take work, reply and tick off tasks.">
+            Let AI join the team
+          </D.StepHeading>
+        </State>
+      </Spec>
       <Spec name="Skeleton and Spinner">
         <State label="line">
           <D.Skeleton shape="line" width={120} />

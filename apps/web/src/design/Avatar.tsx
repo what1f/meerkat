@@ -1,12 +1,13 @@
 import type { UIProps, Status } from './types';
-import type { Ref } from 'react';
+import { useState, type Ref } from 'react';
 import { StatusDot } from './StatusDot';
 import { Icon } from './Icon';
 import css from './Avatar.module.css';
 export type AvatarProps = Omit<UIProps, 'className' | 'style'> & {
   ref?: Ref<HTMLButtonElement | HTMLSpanElement>;
   src?: string;
-  size: 20 | 26 | 32 | 40 | 44 | 60 | 76 | 88 | 'fill';
+  fallback?: string;
+  size: 20 | 22 | 26 | 32 | 40 | 44 | 60 | 76 | 88 | 'fill';
   status?: Status;
   statusTip?: string;
   dimmed?: boolean;
@@ -15,9 +16,34 @@ export type AvatarProps = Omit<UIProps, 'className' | 'style'> & {
   onEdit?: () => void;
   editLabel?: string;
 };
+// A picture that cannot be read gives way to the fallback, else the plain placeholder; each src starts afresh.
+function AvatarImage({
+  src,
+  fallback,
+  size,
+}: {
+  src: string;
+  fallback?: string;
+  size: AvatarProps['size'];
+}) {
+  const [failed, setFailed] = useState(false);
+  const shown = failed ? fallback : src;
+  if (!shown) return null;
+  return (
+    <img
+      key={shown}
+      src={shown}
+      onError={() => !failed && setFailed(true)}
+      width={size === 'fill' ? undefined : size}
+      height={size === 'fill' ? undefined : size}
+      alt=""
+    />
+  );
+}
 export function Avatar({
   ref,
   src,
+  fallback,
   size,
   status,
   statusTip,
@@ -30,14 +56,7 @@ export function Avatar({
 }: AvatarProps) {
   const content = (
     <>
-      {src && (
-        <img
-          src={src}
-          width={size === 'fill' ? undefined : size}
-          height={size === 'fill' ? undefined : size}
-          alt=""
-        />
-      )}
+      {src && <AvatarImage key={src} src={src} fallback={fallback} size={size} />}
       {status && <StatusDot status={status} tip={statusTip} />}
       {onEdit && (
         <span className={css.edit}>

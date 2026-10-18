@@ -20,7 +20,7 @@ export type PageViewProps = {
   // Makes a team the current one without leaving the page.
   selectWorkspace: (id: string) => void;
   // Puts the page's top bar and body into the app shell.
-  frame: (bar: TopBarProps, body: ReactNode) => ReactNode;
+  frame: (bar: TopBarProps, body: ReactNode, board?: 'wall' | 'open') => ReactNode;
 };
 export const pageViews: Partial<Record<Page['kind'], ComponentType<PageViewProps>>> = {
   members: MembersPage,

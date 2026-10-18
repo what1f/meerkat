@@ -19,7 +19,7 @@ export type OfficePageProps = {
   workspaceId: string;
   navigate: (page: { kind: 'member'; id: string }) => void;
   // Supplied by the app shell, which puts the top bar and body in place.
-  frame: (bar: { title: string }, body: ReactNode) => ReactNode;
+  frame: (bar: Record<string, never>, body: ReactNode) => ReactNode;
 };
 const rowStatus: Partial<Record<DTO.ObservedState, Status>> = {
   running: 'ok',
@@ -73,7 +73,7 @@ export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePa
       onError: () => toast({ message: t('office.moveFailed') }),
     });
   });
-  const bar = { title: t('common.office') };
+  const bar = {};
   // Members that failed to load must not read as an empty office.
   const failed = [catalog, ...(ref ? [crew] : [])].filter((q) => q.isError && !q.data);
   if (failed.length || !catalog.data || (ref && !agents))
