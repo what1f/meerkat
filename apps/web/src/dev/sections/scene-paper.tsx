@@ -17,7 +17,7 @@ export function ScenePaper() {
         </S.Tag>
       </Spec>
       <Spec name="QrTag">
-        {(['loading', 'wait', 'scanned', 'expired'] as const).map((state) => (
+        {(['loading', 'wait', 'scanned', 'expired', 'error'] as const).map((state) => (
           <State key={state} label={state}>
             <S.QrTag
               state={state}
@@ -25,6 +25,7 @@ export function ScenePaper() {
               brand="feishu"
               scannerAvatar={avatar}
               onRefresh={() => {}}
+              errorLabel={state}
               refreshLabel="Refresh"
             />
           </State>

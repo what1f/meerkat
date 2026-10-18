@@ -113,6 +113,7 @@ impl InboundResourceCache {
 pub const CONSOLE_LOGIN_INTERFACE: &str = "feishu.workspace.console_login";
 
 struct ConsoleLoginHandler {
+    poll_lock: AsyncMutex<()>,
     switch_lock: AsyncMutex<()>,
     authorization_lock: Arc<AsyncMutex<()>>,
     context: InitContext,
@@ -127,6 +128,11 @@ impl InvocationHandler for ConsoleLoginHandler {
                 .and_then(Value::as_str)
                 .unwrap_or("status");
             if action.starts_with("switch_") {
+                let _poll_guard = if action == "switch_poll" {
+                    Some(self.poll_lock.lock().await)
+                } else {
+                    None
+                };
                 return crate::workspace_owner::switch_account(
                     &self.context,
                     self.transport.clone(),
@@ -428,6 +434,7 @@ impl Provider for FeishuProvider {
                         }
                     }))?,
                     handler: Arc::new(ConsoleLoginHandler {
+                        poll_lock: AsyncMutex::new(()),
                         switch_lock: AsyncMutex::new(()),
                         authorization_lock: authorization_lock.clone(),
                         context: context.clone(),

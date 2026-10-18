@@ -1005,3 +1005,138 @@ async fn owner_token_refresh_and_account_switch_preserve_the_new_grant() -> Resu
     scenario?;
     cleanup
 }
+
+#[tokio::test]
+async fn owner_sign_in_repairs_the_existing_legacy_app_before_authorizing() -> Result<()> {
+    let (rig, web, http) = feishu_review_rig(true).await?;
+    let scenario = async {
+        let owner = "feishu.workspace.owner";
+        let login = "feishu.workspace.console_login";
+        let previous = http.invoke(owner, "get", json!({})).await?;
+        let app_count = web.0.lock().unwrap().apps.len();
+        {
+            let mut mock = web.0.lock().unwrap();
+            let app = mock.app_authorization.get_mut("cli_console_1").unwrap();
+            app.scopes.clear();
+            app.redirects = vec![json!("https://existing.example/callback")];
+            app.allow_refresh = false;
+            app.published = false;
+            mock.expired = true;
+        }
+        assert_eq!(
+            http.invoke(owner, "refresh", json!({})).await?["state"],
+            "needs_sign_in"
+        );
+        {
+            let mut mock = web.0.lock().unwrap();
+            mock.expired = false;
+            mock.login_stage = 1;
+        }
+        http.invoke(login, "switch_start", json!({})).await?;
+        assert_eq!(
+            http.invoke(login, "switch_poll", json!({})).await?["state"],
+            "scanned"
+        );
+        web.0.lock().unwrap().login_stage = 2;
+        assert_eq!(
+            http.invoke(login, "switch_poll", json!({})).await?["state"],
+            "ready"
+        );
+        let current = http.invoke(owner, "get", json!({})).await?;
+        assert_eq!(current["state"], "ready");
+        assert_eq!(current["person_id"], previous["person_id"]);
+        {
+            let mut mock = web.0.lock().unwrap();
+            assert_eq!(mock.apps.len(), app_count);
+            let app = &mock.app_authorization["cli_console_1"];
+            assert!(app.published && app.allow_refresh);
+            assert_eq!(app.scopes.len(), 5);
+            assert!(
+                app.redirects
+                    .contains(&json!("https://existing.example/callback"))
+            );
+            assert_eq!(app.versions, ["1.0.0", "1.0.1"]);
+            mock.expired_access_tokens = mock.tokens.keys().cloned().collect();
+        }
+        assert_eq!(
+            http.invoke("feishu.workspace.tasks", "list", json!({}))
+                .await?["enabled"],
+            true
+        );
+        assert_eq!(web.0.lock().unwrap().refresh_calls, 2);
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    }
+    .await;
+    let cleanup = rig.close().await;
+    scenario?;
+    cleanup
+}
+
+#[tokio::test]
+async fn owner_app_repair_failure_is_categorized_sanitized_and_restartable() -> Result<()> {
+    // The daemon logger is global; isolate this full Runtime scenario.
+    const CHILD: &str = "LANKIDE_OWNER_REPAIR_LOG_SCENARIO";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe()?)
+            .args(["--exact", "provider_management_e2e::owner_app_repair_failure_is_categorized_sanitized_and_restartable", "--nocapture"])
+            .env(CHILD, "1").output()?;
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return Ok(());
+    }
+    let (rig, web, http) = feishu_review_rig(true).await?;
+    let scenario = async {
+        let login = "feishu.workspace.console_login";
+        let previous = http
+            .invoke("feishu.workspace.owner", "get", json!({}))
+            .await?;
+        lankide_daemon_runtime::init_logging(rig.runtime_home(), "lankided")?;
+        let calls = web.0.lock().unwrap().user_authorizations;
+        web.0.lock().unwrap().configuration_error = Some(10013);
+        http.invoke(login, "switch_start", json!({})).await?;
+        let error = invoke_error(&http, login, "switch_poll").await?;
+        assert_eq!(error["detail"], "app_configuration_failed");
+        assert_eq!(web.0.lock().unwrap().user_authorizations, calls);
+        assert_eq!(
+            http.invoke("feishu.workspace.owner", "get", json!({}))
+                .await?["person_id"],
+            previous["person_id"]
+        );
+        let logs = std::fs::read_to_string(rig.runtime_home().join("logs/lankided.log"))?;
+        assert!(logs.contains(
+            "category=app_configuration_failed step=console_scopes upstream_code=Some(10013)"
+        ));
+        for sensitive in [
+            "sensitive-cookie",
+            "sensitive-secret",
+            "sensitive-token",
+            "console-csrf",
+            "cli_console_1-secret",
+        ] {
+            assert!(!logs.contains(sensitive));
+        }
+        assert_eq!(
+            http.invoke(login, "switch_cancel", json!({})).await?["state"],
+            "required"
+        );
+        assert_eq!(
+            http.invoke(login, "switch_poll", json!({})).await?["state"],
+            "required"
+        );
+        web.0.lock().unwrap().configuration_error = None;
+        http.invoke(login, "switch_start", json!({})).await?;
+        assert_eq!(
+            http.invoke(login, "switch_poll", json!({})).await?["state"],
+            "ready"
+        );
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    }
+    .await;
+    let cleanup = rig.close().await;
+    scenario?;
+    cleanup
+}

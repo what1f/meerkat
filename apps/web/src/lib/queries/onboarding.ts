@@ -45,8 +45,7 @@ export function useAdvanceAgentOnboarding() {
     },
   });
 }
-// One console sign-in interface serves both flows: `poll` shows a code, follows
-// the scan and replaces an expired code; `start` always shows a new one.
+// Both flows share console sign-in; `start` always shows a new code.
 type ConsoleLoginAction = 'start' | 'poll' | 'switch_start' | 'switch_poll' | 'switch_cancel';
 type ConsoleLoginFlow = 'feishu_account_switch' | 'feishu_console_login';
 export type FeishuAccountSwitch = {
@@ -54,13 +53,11 @@ export type FeishuAccountSwitch = {
   qr_code?: string;
   poll_interval_seconds?: number;
 };
-// The request id does not change what a read returns.
 const objectKey = (name: string, input: object) => [
   ...keys.onboarding,
   name,
   { ...input, request_id: undefined },
 ];
-const loginKey = objectKey;
 async function consoleLogin(
   input: DTO.GetWorkspaceRequest,
   action: ConsoleLoginAction,
@@ -91,11 +88,16 @@ function useConsoleLogin(
       return variables?.workspace?.workspace_id === input.workspace?.workspace_id;
     },
   });
+  const poll = usePoll();
+  const stopOnError = flow === 'feishu_account_switch';
   return useQuery({
-    queryKey: loginKey(flow, input),
+    queryKey: objectKey(flow, input),
     queryFn: ({ signal }) => consoleLogin(input, action, signal),
-    enabled: enabled && pending === 0,
-    refetchInterval: usePoll(),
+    enabled: (q) => enabled && pending === 0 && !(stopOnError && q.state.error),
+    retry: stopOnError ? false : undefined,
+    refetchOnWindowFocus: stopOnError ? false : undefined,
+    refetchOnReconnect: stopOnError ? false : undefined,
+    refetchInterval: (q) => (stopOnError && q.state.error ? false : poll(q)),
   });
 }
 function useConsoleLoginAction(flow: ConsoleLoginFlow, action: ConsoleLoginAction) {
@@ -103,12 +105,12 @@ function useConsoleLoginAction(flow: ConsoleLoginFlow, action: ConsoleLoginActio
   return useMutation({
     mutationKey: [...keys.onboarding, flow],
     mutationFn: async (input: DTO.GetWorkspaceRequest) => {
-      await client.cancelQueries({ queryKey: loginKey(flow, input) });
+      await client.cancelQueries({ queryKey: objectKey(flow, input) });
       return consoleLogin(input, action);
     },
     onSuccess: async (state, input) => {
-      await client.cancelQueries({ queryKey: loginKey(flow, input) });
-      client.setQueryData(loginKey(flow, input), state);
+      await client.cancelQueries({ queryKey: objectKey(flow, input) });
+      client.setQueryData(objectKey(flow, input), state);
     },
   });
 }
@@ -121,15 +123,13 @@ export function useStartFeishuAccountSwitch() {
 export function useCancelFeishuAccountSwitch() {
   return useConsoleLoginAction('feishu_account_switch', 'switch_cancel');
 }
-// Workspace sign-in before the first member.
 export function useFeishuConsoleLogin(input: DTO.GetWorkspaceRequest, enabled = true) {
   return useConsoleLogin('feishu_console_login', 'poll', input, enabled);
 }
 export function useStartFeishuConsoleLogin() {
   return useConsoleLoginAction('feishu_console_login', 'start');
 }
-// Agent onboarding moves only on advance: `start` seeds the state, then the
-// query polls with the last payload at the server's cadence until it settles.
+// Agent onboarding polls from the state seeded by `start`, at the server's cadence.
 const progressKey = (input: DTO.GetAgentOnboardingRequest) =>
   objectKey('agent_onboarding_progress', input);
 export function useAgentOnboardingProgress(input: DTO.GetAgentOnboardingRequest, enabled = true) {
@@ -186,7 +186,6 @@ export function useStartAgentOnboarding() {
     },
   });
 }
-// Onboarding tries each AI the owner picks once and keeps the answer.
 export function useHarnessTrials(inputs: DTO.TestHarnessRequest[]) {
   return useQueries({
     queries: inputs.map((input) => ({

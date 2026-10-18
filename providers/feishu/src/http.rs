@@ -312,6 +312,58 @@ pub enum ClientError {
 }
 
 impl ClientError {
+    pub(crate) fn provider_error(&self, configuration: bool) -> lankide_provider::ProviderError {
+        let (operation, upstream_code, status) = match self {
+            Self::Api {
+                operation, code, ..
+            } => (operation.as_str(), Some(*code), None),
+            Self::HttpStatus { operation, status } => (operation.as_str(), None, Some(*status)),
+            Self::MissingField { operation, .. } => (operation.as_str(), None, None),
+            Self::Transport(_) => ("transport", None, None),
+            Self::Decode(_) => ("decode", None, None),
+            Self::Encode(_) | Self::InvalidInput(_) => ("request", None, None),
+        };
+        // Do not forward arbitrary strings, URLs or upstream messages into diagnostics.
+        let operation = match operation {
+            "console_app_secret" => "console_app_secret",
+            "console_scope_catalog" => "console_scope_catalog",
+            "console_scopes" => "console_scopes",
+            "console_safe_settings" => "console_safe_settings",
+            "console_redirect_url" => "console_redirect_url",
+            "console_version_list" => "console_version_list",
+            "console_version_create" => "console_version_create",
+            "console_version_commit" => "console_version_commit",
+            "console_app_list" => "console_app_list",
+            "console_login_page" => "console_login_page",
+            "console_login_init" => "console_login_init",
+            "console_login_poll" => "console_login_poll",
+            "console_home" => "console_home",
+            "user_authorize" => "user_authorize",
+            "user_consent" => "user_consent",
+            "user_token" => "user_token",
+            "user_info" => "user_info",
+            "owner_avatar" => "owner_avatar",
+            "transport" => "transport",
+            "decode" => "decode",
+            "request" => "request",
+            _ => "feishu_console_login",
+        };
+        if configuration {
+            lankide_provider::ProviderError::AppConfigurationFailed {
+                operation,
+                upstream_code,
+                status,
+            }
+        } else {
+            lankide_provider::ProviderError::Upstream {
+                operation,
+                upstream_code,
+                status,
+                retryable: self.is_retryable(),
+            }
+        }
+    }
+
     pub fn is_retryable(&self) -> bool {
         match self {
             Self::Transport(_) => true,

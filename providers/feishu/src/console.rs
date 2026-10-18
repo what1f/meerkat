@@ -537,36 +537,7 @@ impl DeveloperConsole {
             "console_events",
         )
         .await?;
-        let catalog = self
-            .call(
-                Method::Get,
-                &format!("scope/all/{app_id}"),
-                None,
-                "console_scope_catalog",
-            )
-            .await?;
-        let tenant_scope_ids = scope_ids(&catalog, &STANDARD_BOT_TENANT_SCOPES)?;
-        let user_scope_ids = scope_ids(&catalog, &USER_TASKLIST_SCOPES)?;
-        self.call(
-            Method::Post,
-            &format!("scope/update/{app_id}"),
-            Some(json!({
-                "clientId": app_id,
-                "appScopeIDs": tenant_scope_ids,
-                "userScopeIDs": user_scope_ids,
-                "scopeIds": [],
-                "operation": "add",
-            })),
-            "console_scopes",
-        )
-        .await?;
-        self.call(
-            Method::Post,
-            &format!("safe_setting/update/{app_id}"),
-            Some(json!({"clientId": app_id, "redirectURL": [OAUTH_REDIRECT_URI]})),
-            "console_redirect_url",
-        )
-        .await?;
+        self.configure_authorization(app_id, true).await?;
         let avatar = self.upload_icon().await?;
         self.call(
             Method::Post,
@@ -582,13 +553,163 @@ impl DeveloperConsole {
             "console_base_info",
         )
         .await?;
+        self.publish_authorization(app_id, "1.0.0").await?;
+        Ok(app_secret)
+    }
+
+    /// Upgrade only authorization settings; keep the selected App's identity,
+    /// branding, bot/event configuration and existing redirect URLs intact.
+    pub(crate) async fn repair_user_authorization(
+        &mut self,
+        app_id: &str,
+    ) -> Result<(), ClientError> {
+        self.configure_authorization(app_id, false).await?;
+        let versions = self
+            .call(
+                Method::Get,
+                &format!("app_version/list/{app_id}"),
+                None,
+                "console_version_list",
+            )
+            .await?;
+        let mut next = [1_u64, 0, 0];
+        for version in versions
+            .get("versions")
+            .and_then(Value::as_array)
+            .ok_or_else(|| ClientError::MissingField {
+                operation: "console_version_list".into(),
+                field: "versions".into(),
+            })?
+        {
+            let name = text_field(version, "appVersion", "console_version_list")?;
+            let parts = name
+                .split('.')
+                .map(str::parse::<u64>)
+                .collect::<Result<Vec<_>, _>>()
+                .ok()
+                .filter(|parts| parts.len() == 3)
+                .ok_or_else(|| ClientError::MissingField {
+                    operation: "console_version_list".into(),
+                    field: "numeric_app_version".into(),
+                })?;
+            let current = [parts[0], parts[1], parts[2]];
+            if current >= next {
+                next = [
+                    current[0],
+                    current[1],
+                    current[2]
+                        .checked_add(1)
+                        .ok_or_else(|| ClientError::MissingField {
+                            operation: "console_version_list".into(),
+                            field: "next_app_version".into(),
+                        })?,
+                ];
+            }
+        }
+        self.publish_authorization(app_id, &format!("{}.{}.{}", next[0], next[1], next[2]))
+            .await
+    }
+
+    async fn configure_authorization(
+        &mut self,
+        app_id: &str,
+        tenant_scopes: bool,
+    ) -> Result<(), ClientError> {
+        let catalog = self
+            .call(
+                Method::Get,
+                &format!("scope/all/{app_id}"),
+                None,
+                "console_scope_catalog",
+            )
+            .await?;
+        let tenant_scope_ids = if tenant_scopes {
+            scope_ids(&catalog, &STANDARD_BOT_TENANT_SCOPES)?
+        } else {
+            Vec::new()
+        };
+        let user_scope_ids = scope_ids(&catalog, &USER_TASKLIST_SCOPES)?;
+        self.call(
+            Method::Post,
+            &format!("scope/update/{app_id}"),
+            Some(json!({
+                "clientId": app_id,
+                "appScopeIDs": tenant_scope_ids,
+                "userScopeIDs": user_scope_ids,
+                "scopeIds": [],
+                "operation": "add",
+            })),
+            "console_scopes",
+        )
+        .await?;
+        let settings = self
+            .call(
+                Method::Get,
+                &format!("safe_setting/{app_id}"),
+                None,
+                "console_safe_settings",
+            )
+            .await?;
+        let mut redirects = match settings.get("redirectURL") {
+            None | Some(Value::Null) => Vec::new(),
+            Some(Value::Array(urls)) => urls.clone(),
+            _ => {
+                return Err(ClientError::MissingField {
+                    operation: "console_safe_settings".into(),
+                    field: "redirectURL".into(),
+                });
+            }
+        };
+        if !redirects
+            .iter()
+            .any(|url| url.as_str() == Some(OAUTH_REDIRECT_URI))
+        {
+            redirects.push(json!(OAUTH_REDIRECT_URI));
+        }
+        self.call(
+            Method::Post,
+            &format!("safe_setting/update/{app_id}"),
+            Some(json!({"clientId": app_id, "redirectURL": redirects, "allowRefreshToken": true})),
+            "console_redirect_url",
+        )
+        .await?;
+        let settings = self
+            .call(
+                Method::Get,
+                &format!("safe_setting/{app_id}"),
+                None,
+                "console_safe_settings",
+            )
+            .await?;
+        if settings.get("allowRefreshToken").and_then(Value::as_bool) == Some(false)
+            || !settings
+                .get("redirectURL")
+                .and_then(Value::as_array)
+                .is_some_and(|urls| {
+                    urls.iter()
+                        .any(|url| url.as_str() == Some(OAUTH_REDIRECT_URI))
+                })
+        {
+            return Err(ClientError::MissingField {
+                operation: "console_safe_settings".into(),
+                field: "authorization_settings".into(),
+            });
+        }
+        Ok(())
+    }
+
+    async fn publish_authorization(
+        &mut self,
+        app_id: &str,
+        version_name: &str,
+    ) -> Result<(), ClientError> {
         let version = self
             .call(
                 Method::Post,
                 &format!("app_version/create/{app_id}"),
                 Some(json!({
                     "clientId": app_id,
-                    "appVersion": "1.0.0",
+                    "appVersion": version_name,
                     "changeLog": "Lankide",
                     "autoPublish": false,
                     "pcDefaultAbility": "bot",
@@ -612,7 +733,7 @@ impl DeveloperConsole {
                 field: "isOk".into(),
             });
         }
-        Ok(app_secret)
+        Ok(())
     }
 
     async fn upload_icon(&mut self) -> Result<String, ClientError> {
@@ -715,6 +836,17 @@ impl DeveloperConsole {
                 operation: "user_consent".into(),
                 field: "serverInjectRes".into(),
             })?;
+        if let Some(code) = injected
+            .get("code")
+            .and_then(Value::as_i64)
+            .filter(|code| *code != 0)
+        {
+            return Err(ClientError::Api {
+                code,
+                message: String::new(),
+                operation: "user_consent".into(),
+            });
+        }
         let user =
             injected
                 .pointer("/data/current_user")
@@ -921,13 +1053,6 @@ async fn write_secret<T: Serialize>(
     writer.write(name, SecretValue::new(encoded)).await
 }
 
-fn console_error(operation: &'static str, error: &ClientError) -> ProviderError {
-    ProviderError::External {
-        operation,
-        retryable: error.is_retryable(),
-    }
-}
-
 /// The saved console session, when it still signs in.
 pub(crate) async fn saved_session(
     transport: Arc<dyn Transport>,
@@ -939,7 +1064,7 @@ pub(crate) async fn saved_session(
     let mut console = DeveloperConsole::new(transport, session);
     match console.verify().await {
         Ok(()) => Ok(Some(console.session)),
-        Err(error) if error.is_retryable() => Err(console_error("feishu_console_verify", &error)),
+        Err(error) if error.is_retryable() => Err(error.provider_error(false)),
         Err(_) => Ok(None),
     }
 }
@@ -970,7 +1095,7 @@ pub(crate) async fn login(
         ("start" | "poll", _) => {
             let pending = start_login(transport.as_ref())
                 .await
-                .map_err(|error| console_error("feishu_console_login", &error))?;
+                .map_err(|error| error.provider_error(false))?;
             write_secret(writer, PENDING_LOGIN_SECRET, &pending).await?;
             return Ok(Login::Waiting {
                 qr_code: pending.qr_code,
@@ -981,7 +1106,7 @@ pub(crate) async fn login(
     };
     let polled = poll_login(transport.as_ref(), &mut pending)
         .await
-        .map_err(|error| console_error("feishu_console_login", &error))?;
+        .map_err(|error| error.provider_error(false))?;
     let scanned = match polled {
         LoginPoll::Complete(session) => {
             save_session(writer, &session).await?;
@@ -991,7 +1116,7 @@ pub(crate) async fn login(
         LoginPoll::Expired => {
             let pending = start_login(transport.as_ref())
                 .await
-                .map_err(|error| console_error("feishu_console_login", &error))?;
+                .map_err(|error| error.provider_error(false))?;
             write_secret(writer, PENDING_LOGIN_SECRET, &pending).await?;
             return Ok(Login::Waiting {
                 qr_code: pending.qr_code,
@@ -1046,7 +1171,7 @@ pub(crate) async fn switch_login(
         drop(guard);
         let pending = start_login(transport.as_ref())
             .await
-            .map_err(|e| console_error("feishu_console_login", &e))?;
+            .map_err(|e| e.provider_error(false))?;
         let _guard = lock.lock().await;
         if !switch_is_current(reader, &candidate).await? {
             return Ok((candidate, Login::Required));
@@ -1072,7 +1197,7 @@ pub(crate) async fn switch_login(
     drop(guard);
     let result = poll_login(transport.as_ref(), &mut pending)
         .await
-        .map_err(|e| console_error("feishu_console_login", &e))?;
+        .map_err(|e| e.provider_error(false))?;
     let _guard = lock.lock().await;
     if !switch_is_current(reader, &candidate).await? {
         return Ok((candidate, Login::Required));

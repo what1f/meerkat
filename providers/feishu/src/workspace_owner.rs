@@ -16,10 +16,7 @@ pub(crate) struct OwnerHandler {
 }
 
 pub(crate) fn external(error: crate::ClientError) -> ProviderError {
-    ProviderError::External {
-        operation: "feishu_workspace_owner",
-        retryable: error.is_retryable(),
-    }
+    error.provider_error(false)
 }
 
 pub(crate) async fn user_info(
@@ -391,10 +388,24 @@ pub(crate) async fn switch_account(
             let state = context.storage().workspace_state().await?;
             let binding = owner_app(context, &state).await?;
             let mut console = console::DeveloperConsole::new(transport.clone(), session);
+            if !console::switch_is_current(context.secret_reader(), &candidate).await? {
+                return Ok(json!({"state":"required"}));
+            }
+            console
+                .repair_user_authorization(&binding.app)
+                .await
+                .map_err(|error| error.provider_error(true))?;
+            if !console::switch_is_current(context.secret_reader(), &candidate).await? {
+                return Ok(json!({"state":"required"}));
+            }
             let grant = console
                 .authorize_user(&binding.app, binding.secret.expose_secret(), &binding.base)
                 .await
-                .map_err(external)?;
+                .map_err(|error| {
+                    let configuration = matches!(&error, crate::ClientError::MissingField { operation, field }
+                        if operation == "user_token" && field == "refresh_token");
+                    error.provider_error(configuration)
+                })?;
             let tenant =
                 nonempty(&grant.info["tenant_key"]).ok_or(ProviderError::InvalidInput {
                     field: "owner_tenant",

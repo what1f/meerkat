@@ -38,6 +38,10 @@ enum Command {
         workspace: String,
         revoked: bool,
     },
+    FeishuAppConfiguration {
+        workspace: String,
+        denied: bool,
+    },
     CreateAgent {
         workspace: String,
         agent: String,
@@ -86,6 +90,9 @@ async fn control(
         Command::FeishuScan { workspace, state } => im.scan(&workspace, state),
         Command::FeishuAuthorization { workspace, revoked } => {
             im.revoke_authorization(&workspace, revoked)
+        }
+        Command::FeishuAppConfiguration { workspace, denied } => {
+            im.app_configuration(&workspace, denied)
         }
         Command::PairMachine { command } => return machines.pair(rig, &command).await,
         Command::Dm {

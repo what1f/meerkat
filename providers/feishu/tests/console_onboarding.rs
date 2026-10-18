@@ -53,6 +53,7 @@ struct Feishu {
     qr_codes: usize,
     reject_app_create: bool,
     apps: Vec<String>,
+    safe_settings: Value,
     console_calls: Vec<String>,
     tasklist: Option<Value>,
     tasklist_creates: Vec<(String, Value)>,
@@ -179,9 +180,18 @@ impl Transport for FeishuWeb {
                         );
                         data(json!({}))
                     }
+                    "safe_setting" => {
+                        if call.starts_with("safe_setting/update") {
+                            feishu.safe_settings = body.clone();
+                        }
+                        if feishu.safe_settings.is_null() {
+                            return data(json!({"redirectURL":[]}));
+                        }
+                        data(feishu.safe_settings.clone())
+                    }
                     "app_version" => data(json!({"versionId": "v1"})),
                     "publish" => data(json!({"isOk": true})),
-                    "robot" | "event" | "scope" | "safe_setting" | "base_info" => data(json!({})),
+                    "robot" | "event" | "scope" | "base_info" => data(json!({})),
                     _ => panic!("unexpected console call {call}"),
                 };
             }

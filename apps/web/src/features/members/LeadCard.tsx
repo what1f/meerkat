@@ -39,7 +39,9 @@ export function LeadCard({
       ? undefined
       : builtin;
   const needsSignIn = provider === 'feishu' && owner.data?.state === 'needs_sign_in';
-  const showQr = switching && (start.isPending || scan === 'waiting' || scan === 'scanned');
+  const failed = account.isError && !start.isPending;
+  const showQr =
+    switching && (failed || start.isPending || scan === 'waiting' || scan === 'scanned');
 
   const begin = () => {
     setFlipped(false);
@@ -81,16 +83,19 @@ export function LeadCard({
       <Hang lanyard="lead" data-testid="lead-card">
         <QrTag
           state={
-            start.isPending || !account.data?.qr_code
-              ? 'loading'
-              : scan === 'scanned'
-                ? 'scanned'
-                : 'wait'
+            failed
+              ? 'error'
+              : start.isPending || !account.data?.qr_code
+                ? 'loading'
+                : scan === 'scanned'
+                  ? 'scanned'
+                  : 'wait'
           }
+          errorLabel={t('members.failed')}
           value={account.data?.qr_code ?? ''}
           brand="feishu"
-          onRefresh={() => start.mutate(request)}
-          refreshLabel={t('members.refreshQr')}
+          onRefresh={begin}
+          refreshLabel={t(failed ? 'members.retry' : 'members.refreshQr')}
           onClose={close}
           closeLabel={t('members.closeQr')}
           onKeyDown={(e) => e.key === 'Escape' && close()}

@@ -36,11 +36,23 @@ pub struct Feishu {
     pub reject_app_create: bool,
     /// The owner has no profile picture.
     pub no_owner_avatar: bool,
-    apps: Vec<String>,
-    console_calls: Vec<String>,
+    pub apps: Vec<String>,
+    pub console_calls: Vec<String>,
+    pub configuration_error: Option<i64>,
+    pub user_authorizations: usize,
+    pub app_authorization: std::collections::BTreeMap<String, AppAuthorization>,
     pub tasklist: Option<Value>,
     tasklist_creates: Vec<(String, Value)>,
     tasklist_member_adds: Vec<(String, Value)>,
+}
+
+#[derive(Default)]
+pub struct AppAuthorization {
+    pub scopes: Vec<Value>,
+    pub redirects: Vec<Value>,
+    pub allow_refresh: bool,
+    pub published: bool,
+    pub versions: Vec<String>,
 }
 
 #[derive(Clone, Default)]
@@ -163,6 +175,14 @@ impl Transport for FeishuWeb {
                 }
                 let call = call.split('?').next().unwrap_or_default().to_owned();
                 feishu.console_calls.push(call.clone());
+                if call.starts_with("scope/update")
+                    && let Some(code) = feishu.configuration_error
+                {
+                    return reply(
+                        json!({"code":code,"msg":"denied sensitive-cookie sensitive-secret sensitive-token"}),
+                        &[],
+                    );
+                }
                 let app = format!("cli_console_{}", feishu.apps.len());
                 return match call.split('/').next().unwrap_or_default() {
                     "app" if call == "app/list" => data(json!({"apps": []})),
@@ -196,17 +216,78 @@ impl Transport for FeishuWeb {
                                 .contains(&json!("28")),
                             "published App must enable offline_access"
                         );
+                        let app = call.split('/').nth(2).unwrap();
+                        let config = feishu.app_authorization.entry(app.into()).or_default();
+                        for scope in body["userScopeIDs"].as_array().unwrap() {
+                            if !config.scopes.contains(scope) {
+                                config.scopes.push(scope.clone());
+                            }
+                        }
+                        config.published = false;
                         data(json!({}))
                     }
-                    "app_version" => data(json!({"versionId": "v1"})),
-                    "publish" => data(json!({"isOk": true})),
-                    "robot" | "event" | "scope" | "safe_setting" | "base_info" => data(json!({})),
+                    "safe_setting" => {
+                        let app = call.split('/').next_back().unwrap();
+                        let config = feishu.app_authorization.entry(app.into()).or_default();
+                        if call.starts_with("safe_setting/update") {
+                            config.redirects = body["redirectURL"].as_array().unwrap().clone();
+                            config.allow_refresh = body["allowRefreshToken"].as_bool().unwrap();
+                            config.published = false;
+                        }
+                        data(
+                            json!({"redirectURL":config.redirects,"allowRefreshToken":config.allow_refresh}),
+                        )
+                    }
+                    "app_version" => {
+                        let app = call.split('/').nth(2).unwrap();
+                        let config = feishu.app_authorization.entry(app.into()).or_default();
+                        if call.starts_with("app_version/list") {
+                            return data(
+                                json!({"versions":config.versions.iter().map(|version| json!({"appVersion":version})).collect::<Vec<_>>()}),
+                            );
+                        }
+                        let name = body["appVersion"].as_str().unwrap().to_owned();
+                        assert!(!config.versions.contains(&name), "version must be new");
+                        config.versions.push(name);
+                        data(json!({"versionId":format!("v{}",config.versions.len())}))
+                    }
+                    "publish" => {
+                        let app = call.split('/').nth(2).unwrap();
+                        let config = feishu.app_authorization.entry(app.into()).or_default();
+                        assert_eq!(config.scopes.len(), 5);
+                        assert!(config.allow_refresh);
+                        assert!(
+                            config
+                                .redirects
+                                .contains(&json!("http://127.0.0.1/lankide/feishu-oauth"))
+                        );
+                        config.published = true;
+                        data(json!({"isOk": true}))
+                    }
+                    "robot" | "event" | "scope" | "base_info" => data(json!({})),
                     _ => panic!("unexpected console call {call}"),
                 };
             }
             if url.starts_with("https://accounts.feishu.cn/open-apis/authen/v1/authorize") {
                 assert!(cookie.contains("session="));
                 let parsed = reqwest::Url::parse(&url).unwrap();
+                let app = parsed
+                    .query_pairs()
+                    .find(|(key, _)| key == "client_id")
+                    .unwrap()
+                    .1
+                    .into_owned();
+                feishu.user_authorizations += 1;
+                if !feishu
+                    .app_authorization
+                    .get(&app)
+                    .is_some_and(|config| config.published)
+                {
+                    return reply(
+                        json!({"code":10013,"msg":"App authorization is not configured"}),
+                        &[],
+                    );
+                }
                 assert!(parsed.query_pairs().any(|(key, value)| {
                     key == "scope"
                         && value

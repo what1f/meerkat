@@ -184,10 +184,17 @@ impl Runtime {
             .await;
         if let Err(error) = &result {
             // Never log interface input or upstream error text: either can contain secrets.
-            log::warn!(
-                "provider interface failed workspace={workspace_id} category={}",
-                error.code()
-            );
+            if let Some((step, code, status)) = error.upstream_diagnostic() {
+                log::warn!(
+                    "provider interface failed workspace={workspace_id} category={} step={step} upstream_code={code:?} http_status={status:?}",
+                    error.code()
+                );
+            } else {
+                log::warn!(
+                    "provider interface failed workspace={workspace_id} category={}",
+                    error.code()
+                );
+            }
         }
         result.map_err(Into::into)
     }

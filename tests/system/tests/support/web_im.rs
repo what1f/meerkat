@@ -173,6 +173,17 @@ impl Im {
             Scan::Complete => 2,
         };
     }
+    pub fn app_configuration(&self, workspace: &str, denied: bool) {
+        let web = self.feishu(workspace);
+        let mut mock = web.0.lock().unwrap();
+        mock.configuration_error = denied.then_some(10013);
+        for app in mock.app_authorization.values_mut() {
+            app.scopes.clear();
+            app.redirects = vec![json!("https://existing.example/callback")];
+            app.allow_refresh = false;
+            app.published = false;
+        }
+    }
     pub fn revoke_authorization(&self, workspace: &str, revoked: bool) {
         // 99991677: the user access token has expired; 20064: its refresh token was revoked,
         // so renewal fails too and only a new sign-in brings the owner back.
