@@ -68,6 +68,29 @@ impl Database {
             signals: self.signals.0.clone(),
         }
     }
+    pub(crate) async fn agent_record(
+        &self,
+        workspace_id: &WorkspaceId,
+        agent_id: &AgentId,
+    ) -> std::result::Result<AgentRecord, RuntimeError> {
+        let workspace = workspace_id.clone();
+        let agent = agent_id.clone();
+        self.call(false, false, move |storage| {
+            storage.agent_record(&workspace, &agent)
+        })
+        .await
+        .map_err(|error| {
+            if error.is_not_found() {
+                RuntimeError::UnknownAgent {
+                    workspace_id: workspace_id.clone(),
+                    agent_id: agent_id.clone(),
+                }
+            } else {
+                error.into()
+            }
+        })
+    }
+
     pub(crate) fn changes(&self) -> Arc<Notify> {
         self.signals.changed.clone()
     }
@@ -238,13 +261,6 @@ database_methods! {
         let workspace_id = workspace_id.to_owned();
         let agent_id = agent_id.to_owned();
     ] (&workspace_id, &agent_id);
-    false agent_record(
-        w: &WorkspaceId,
-        a: &AgentId,
-    ) -> AgentRecord [
-        let w = w.to_owned();
-        let a = a.to_owned();
-    ] (&w, &a);
     true allocate_resource_id(
         workspace_id: &WorkspaceId,
         now: i64,

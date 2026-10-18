@@ -10,6 +10,12 @@ pub enum StorageError {
     LockPoisoned,
     Busy(String),
 }
+impl StorageError {
+    pub fn is_not_found(&self) -> bool {
+        matches!(self, Self::Sqlite(rusqlite::Error::QueryReturnedNoRows))
+    }
+}
+
 impl fmt::Display for StorageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

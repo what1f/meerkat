@@ -420,3 +420,43 @@ async fn local_client_sees_machine_pairing_presence_and_revocation_from_events()
     scenario?;
     cleanup
 }
+
+#[tokio::test]
+async fn a4e_missing_agent_returns_not_found() -> Result<()> {
+    let rig = SystemRig::start(RigConfig::default()).await?;
+    let scenario = async {
+        let team = rig.workspace("team").await?;
+        team.agent("existing")
+            .harness(Script::reply("done"))
+            .create()
+            .await?;
+        let url = std::fs::read_to_string(rig.runtime_run().join(management::URL_FILE))?;
+        let http = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(3))
+            .build()?;
+        for operation in ["get_agent", "update_agent", "delete_agent"] {
+            let response = http
+                .post(format!("{url}/api/v1/{operation}"))
+                .json(&serde_json::json!({
+                    "request_id": "missing-agent",
+                    "agent": {"workspace_id": "team", "agent_id": "missing"}
+                }))
+                .send()
+                .await?;
+            assert_eq!(response.status(), 404, "{operation}");
+            let error: management::ErrorBody = response.json().await?;
+            assert_eq!(error.code, management::ErrorCode::NotFound, "{operation}");
+        }
+        assert_eq!(
+            rig.management().get_agent("team", "existing").await?.id,
+            "existing"
+        );
+        assert_eq!(rig.management().list_agents("team").await?.len(), 1);
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    }
+    .await;
+    let cleanup = rig.close().await;
+    scenario?;
+    cleanup
+}
