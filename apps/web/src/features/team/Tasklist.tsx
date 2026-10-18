@@ -70,8 +70,22 @@ export function Tasklist({ workspace, handle }: { workspace: Workspace; handle?:
         </Callout>
       </Clipboard>
     );
-  if (!tasks.data) return null;
-  if (!tasks.data.enabled)
+  // Until the list has been read, the team's own setting decides what hangs on the wall, so a
+  // slow Feishu answer never leaves the spot empty.
+  const enabled = tasks.data ? tasks.data.enabled : configured(workspace);
+  if (!tasks.data && enabled)
+    return (
+      <Clipboard
+        {...peg}
+        data-testid="tasklist"
+        title={t('team.tasks')}
+        actions={menu}
+        footer={null}
+      >
+        {null}
+      </Clipboard>
+    );
+  if (!enabled)
     return (
       <VacantSlot
         {...peg}
@@ -81,6 +95,7 @@ export function Tasklist({ workspace, handle }: { workspace: Workspace; handle?:
         onClick={() => turn(true)}
       />
     );
+  if (!tasks.data) return null;
   return (
     <Clipboard
       {...peg}
@@ -99,6 +114,17 @@ export function Tasklist({ workspace, handle }: { workspace: Workspace; handle?:
       ))}
     </Clipboard>
   );
+}
+
+function configured(workspace: Workspace) {
+  try {
+    const config: unknown = JSON.parse(workspace.provider_config_json || '{}');
+    return !!config && typeof config === 'object' && 'task_system_enabled' in config
+      ? config.task_system_enabled === true
+      : false;
+  } catch {
+    return false;
+  }
 }
 
 function TaskRow({

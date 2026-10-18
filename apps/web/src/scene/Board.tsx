@@ -19,6 +19,10 @@ export function Board({ layout, holes = 'on', lead, children, ...rest }: BoardPr
     const items = itemsRef.current;
     if (!root || !items) return;
     const fit = () => {
+      // An item in the hand or settling is somewhere else: it neither places the holes nor
+      // resizes the board, so the wall stays put under a drag.
+      const moving = root.querySelector('[data-dragging], [data-settling]');
+      if (moving) return;
       const peg = root.querySelector('[data-peg]');
       if (peg) {
         const r = root.getBoundingClientRect();

@@ -217,3 +217,105 @@ test('the team name opens its editor from the top edge and from the keyboard', a
   await page.keyboard.press('Enter');
   await expect(editor).toBeFocused();
 });
+
+async function turnTasksOn(baseURL: string, workspace: string) {
+  await api(baseURL, 'update_workspace', {
+    workspace: { workspace_id: workspace },
+    name: null,
+    rules: null,
+    provider_config_json: JSON.stringify({ task_system_enabled: true }),
+    cover_resource_id: null,
+    provider_secrets_json: null,
+  });
+  for (const text of ['Draft the launch notes', 'Book the venue with the long name for the team'])
+    await api(baseURL, 'invoke_provider_interface', {
+      workspace: { workspace_id: workspace },
+      interface_id: 'feishu.workspace.tasks',
+      input_json: JSON.stringify({ action: 'create', text }),
+    });
+}
+
+test('a team with the task list on shows it as soon as the wall opens', async ({
+  page,
+  baseURL,
+}) => {
+  const workspace = 'listed_team';
+  await signInFeishu(baseURL!, workspace);
+  await bindOwner(baseURL!, workspace);
+  await turnTasksOn(baseURL!, workspace);
+  // Feishu is slow to answer; the clipboard must hang on the wall before it does.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/api/v1/invoke_provider_interface', async (route) => {
+    if ((route.request().postData() ?? '').includes('feishu.workspace.tasks')) await held;
+    await route.continue();
+  });
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await openTeam(page, workspace);
+
+  const list = page.getByTestId('tasklist');
+  await expect(list).toBeVisible();
+  await expect(list.getByText('Draft the launch notes')).toHaveCount(0);
+  release();
+  await expect(list.getByText('Draft the launch notes')).toBeVisible();
+  const view = page.viewportSize()!;
+  const box = (await list.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(view.width);
+  expect(box.y + box.height).toBeLessThanOrEqual(view.height);
+  const rules = (await page.getByTestId('team-rules').boundingBox())!;
+  expect(box.x >= rules.x + rules.width || box.y >= rules.y + rules.height).toBe(true);
+});
+
+test('dragging a piece leaves the wall texture and the board size alone', async ({
+  page,
+  baseURL,
+}) => {
+  const workspace = 'steady_team';
+  await signInFeishu(baseURL!, workspace);
+  await bindOwner(baseURL!, workspace);
+  await turnTasksOn(baseURL!, workspace);
+  // A list long enough that every new task makes the clipboard taller.
+  for (let i = 0; i < 10; i++)
+    await api(baseURL!, 'invoke_provider_interface', {
+      workspace: { workspace_id: workspace },
+      interface_id: 'feishu.workspace.tasks',
+      input_json: JSON.stringify({ action: 'create', text: `Errand ${i}` }),
+    });
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await openTeam(page, workspace);
+  await expect(page.getByTestId('tasklist').getByText('Draft the launch notes')).toBeVisible();
+
+  const wall = () =>
+    page.locator('[data-layout="free"]').evaluate((board) => {
+      const holes = getComputedStyle(board, '::before').backgroundPosition;
+      const scroll: number[] = [];
+      for (let el: Element | null = board; el; el = el.parentElement)
+        scroll.push(el.scrollHeight, el.scrollWidth);
+      return { holes, scroll };
+    });
+  await page.waitForTimeout(500);
+  const still = await wall();
+  // Held by the cord above the paper, where no field takes the pointer.
+  const piece = page.locator('[data-spot="rules"]');
+  const at = (await piece.boundingBox())!;
+  await page.mouse.move(at.x + at.width / 2, at.y + 4);
+  await page.mouse.down();
+  for (const [dx, dy] of [
+    [40, 80],
+    [90, 150],
+    [-30, 250],
+  ]) {
+    await page.mouse.move(at.x + at.width / 2 + dx, at.y + 4 + dy, { steps: 8 });
+    // Something redraws the wall mid-drag: a task arrives from Feishu.
+    await api(baseURL!, 'invoke_provider_interface', {
+      workspace: { workspace_id: workspace },
+      interface_id: 'feishu.workspace.tasks',
+      input_json: JSON.stringify({ action: 'create', text: `Arrived ${dy}` }),
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect(page.getByTestId('tasklist').getByText(`Arrived ${dy}`)).toBeVisible();
+    expect(await wall()).toEqual(still);
+  }
+  await page.mouse.up();
+});
