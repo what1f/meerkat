@@ -193,8 +193,10 @@ impl Im {
         match provider.as_str() {
             "system_im" => {
                 let team = rig.existing_workspace(workspace);
-                team.direct_message(&team.existing_agent(agent), "owner", text)
-                    .await?;
+                // This step already acknowledges delivery (or offline IM acceptance).
+                return team
+                    .direct_message(&team.existing_agent(agent), "owner", text)
+                    .await;
             }
             "feishu" => {
                 let member = rig

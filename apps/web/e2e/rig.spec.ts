@@ -298,3 +298,37 @@ test('page API Telegram member completes onboarding and receives its first owner
   );
   expect((await api(baseURL!, 'get_agent_first_reply', { agent })).state).toBe('replied');
 });
+
+test('off-duty IM accepts mention and DM without replies, then new messages get replies on duty', async ({
+  baseURL,
+}) => {
+  const member = { workspace: 'shift_rig', agent: 'bruce' };
+  const workspace = { workspace_id: member.workspace };
+  await rig({ op: 'create_workspace', workspace: member.workspace });
+  await rig({ op: 'create_agent', ...member });
+  const mention = {
+    op: 'mention' as const,
+    ...member,
+    chat: 'group',
+    person: 'alice',
+    text: 'hello while off duty',
+  };
+  await api(baseURL!, 'set_workspace_state', { workspace, desired_state: 'paused' });
+  await rig(mention);
+  await rig({ op: 'dm', ...member, text: 'owner message while off duty' });
+  const replies = (result: Awaited<ReturnType<typeof rig>>) =>
+    result.outbound!.filter((message) => message.workspace === member.workspace);
+  expect(replies(await rig({ op: 'settle' }))).toEqual([]);
+
+  await api(baseURL!, 'set_workspace_state', { workspace, desired_state: 'running' });
+  expect(replies(await rig({ op: 'settle' }))).toEqual([]);
+  await rig({ ...mention, text: 'hello back on duty' });
+  expect(replies(await rig({ op: 'settle' }))).toEqual([
+    expect.objectContaining({ chat: 'group', channel_type: 'group_chat', content: 'hi' }),
+  ]);
+  await rig({ op: 'dm', ...member, text: 'owner message back on duty' });
+  expect(replies(await rig({ op: 'settle' }))).toEqual([
+    expect.objectContaining({ chat: 'group', channel_type: 'group_chat', content: 'hi' }),
+    expect.objectContaining({ chat: 'owner', channel_type: 'private_chat', content: 'hi' }),
+  ]);
+});

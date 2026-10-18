@@ -990,10 +990,16 @@ impl<'a> Workspace<'a> {
         } else {
             format!("incoming-{id}")
         };
-        sink.emit(ProviderEvent { receiving_agent_id, channel_id: ChannelId::new(channel)?, provider_chat_id: chat.into(),
+        // The IM accepts human messages while the team's Provider is offline.
+        // Do not queue these events for replay when the team starts work again.
+        if self.rig.management().get_workspace(&self.id).await?.status
+            != lankide_client::WorkspaceStatus::Paused
+        {
+            sink.emit(ProviderEvent { receiving_agent_id, channel_id: ChannelId::new(channel)?, provider_chat_id: chat.into(),
             sender: EventSender { id: person.into(), kind: EventSenderType::Human, name: person.into() },
             kind: ProviderEventKind::Message(MessageEvent { provider_message_id, content: text.into(), reply_to_provider_message_id: None, mentioned_agent_ids: mentions.to_vec(), attachments: Vec::new() }),
             provider_data: json!({"event_id":format!("event-{id}"), "chat_name":chat, "receiving_account":account}) }).await?;
+        }
         self.rig
             .im
             .incoming
