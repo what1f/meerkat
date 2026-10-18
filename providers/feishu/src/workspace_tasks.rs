@@ -2,31 +2,18 @@ use crate::{
     client::{Auth, Client, Credentials},
     dto::TaskRecord,
     http::Transport,
-    tasks::{CreateTask, ListRequest, MemberIdentity, TaskPatch},
+    tasks::ListRequest,
 };
 use lankide_provider::{InitContext, InvocationHandler, ProviderError, ProviderFuture};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
 pub(crate) struct TasksHandler {
-    pub authorization_lock: Arc<tokio::sync::Mutex<()>>,
     pub context: InitContext,
     pub transport: Arc<dyn Transport>,
 }
 fn error(e: crate::ClientError) -> ProviderError {
-    if crate::workspace_owner::requires_sign_in(&e) {
-        return ProviderError::AuthorizationRequired;
-    }
-    ProviderError::External {
-        operation: "feishu_workspace_tasks",
-        retryable: e.is_retryable(),
-    }
-}
-fn authorization_error(error: ProviderError) -> ProviderError {
-    match error {
-        ProviderError::SecretAccessDenied => ProviderError::AuthorizationRequired,
-        other => other,
-    }
+    e.provider_error(false)
 }
 fn text<'a>(v: &'a Value, k: &'static str) -> Result<&'a str, ProviderError> {
     v.get(k)
@@ -65,156 +52,85 @@ fn item(task: TaskRecord, directory: &crate::identity::IdentityDirectory) -> Val
 }
 impl InvocationHandler for TasksHandler {
     fn invoke<'a>(&'a self, input: Value) -> ProviderFuture<'a, Value> {
-        Box::pin(async move {
-            let _guard = self.authorization_lock.lock().await;
-            self.run(input).await
-        })
+        Box::pin(async move { self.run(input).await })
     }
 }
 impl TasksHandler {
     async fn run(&self, input: Value) -> Result<Value, ProviderError> {
-        let action = text(&input, "action")?;
-        let enabled = crate::agent_tasks::task_system_enabled(self.context.workspace_config());
-        if !enabled {
-            if action == "list" {
-                return Ok(json!({"enabled":false,"items":[]}));
-            }
-            return Err(ProviderError::InvalidInput {
-                field: "task_system_enabled",
-            });
+        if text(&input, "action")? != "list" {
+            return Err(ProviderError::InvalidInput { field: "action" });
+        }
+        if !crate::agent_tasks::task_system_enabled(self.context.workspace_config()) {
+            return Ok(json!({"enabled":false,"items":[]}));
         }
         let state = self.context.storage().workspace_state().await?;
-        if !crate::workspace_owner::authorization_ready(&self.context, &state).await? {
-            crate::workspace_owner::needs_sign_in(self.context.storage()).await?;
-            return Err(ProviderError::AuthorizationRequired);
-        }
-        let result = self.run_authorized(&input, &state).await;
-        if !matches!(result, Err(ProviderError::AuthorizationRequired)) {
-            return result;
-        }
-        crate::workspace_owner::refresh_authorization(&self.context, self.transport.as_ref())
-            .await?;
-        match self.run_authorized(&input, &state).await {
-            // A successful refresh is not evidence that the grant was revoked.
-            Err(ProviderError::AuthorizationRequired) => Err(ProviderError::External {
-                operation: "feishu_workspace_tasks",
-                retryable: false,
-            }),
-            result => result,
-        }
-    }
-
-    async fn run_authorized(&self, input: &Value, state: &Value) -> Result<Value, ProviderError> {
-        let action = text(input, "action")?;
         let directory = crate::identity::IdentityDirectory::from_workspace_state(&state)?;
-        let app_id = text(&state, "owner_app_id")?;
+        let guid = match state["tasklist_guid"].as_str().filter(|v| !v.is_empty()) {
+            Some(guid) => guid,
+            None => {
+                return Err(ProviderError::InvalidInput {
+                    field: "tasklist_guid",
+                });
+            }
+        };
+        // The list's creating App is the explicit reader. Never pick the first roster member.
+        let app_id = text(&state, "tasklist_reader_app_id")?;
+        let mut selected = None;
+        for member in self.context.storage().team_members().await? {
+            let lankide_provider::ProviderTeamMember::Agent { agent_id } = member else {
+                continue;
+            };
+            let config = self.context.storage().agent_config(&agent_id).await?;
+            if config["app_id"] == app_id {
+                selected = Some((agent_id, config));
+                break;
+            }
+        }
+        let (id, config) = selected.ok_or(ProviderError::NotFound {
+            entity: "tasklist_reader",
+        })?;
         let secret = self
             .context
             .secret_reader()
-            .read("feishu_owner_app_secret")
-            .await
-            .map_err(authorization_error)?;
-        let token = self
-            .context
-            .secret_reader()
-            .read("feishu_owner_access_token")
-            .await
-            .map_err(authorization_error)?;
-        let domain = crate::client::Domain::Custom(text(&state, "owner_api_base")?.into());
+            .read(&format!("agent:{id}:app_secret"))
+            .await?;
         let client = Client::new(
             self.transport.clone(),
-            Credentials::app(app_id, secret.expose_secret())
-                .with_user_access_token(token.expose_secret()),
+            Credentials::app(app_id, secret.expose_secret()),
         )
         .map_err(error)?
-        .with_domain(domain);
-        let guid = crate::agent_tasks::join_team_tasklist_as_lead(
-            self.context.storage(),
+        .with_domain(crate::adapter::configured_domain(
+            &config,
             self.context.workspace_config(),
-            &client,
-            app_id,
-        )
-        .await?;
-        let guid = guid.as_str();
-        match action {
-            "list" => {
-                client
-                    .subscribe_task_events("open_id", Auth::User)
-                    .await
-                    .map_err(error)?;
-                let list = client
-                    .get_tasklist(guid, "open_id", Auth::User)
-                    .await
-                    .map_err(error)?;
-                let mut request = ListRequest {
-                    task_type: None,
-                    ..Default::default()
-                };
-                let mut items = Vec::new();
-                loop {
-                    let page = client
-                        .list_tasklist_tasks(guid, &request, Auth::User)
-                        .await
-                        .map_err(error)?;
-                    items.extend(page.items.into_iter().map(|task| item(task, &directory)));
-                    if !page.has_more {
-                        break;
-                    }
-                    request.page_token = page.next_page_token;
-                    if request.page_token.is_none() {
-                        break;
-                    }
-                }
-                Ok(json!({"enabled":true,"name":list.name,"items":items}))
+        )?);
+        let list = client
+            .get_tasklist(guid, "open_id", Auth::Tenant)
+            .await
+            .map_err(error)?;
+        let mut request = ListRequest {
+            task_type: None,
+            ..Default::default()
+        };
+        let mut items = Vec::new();
+        loop {
+            let page = client
+                .list_tasklist_tasks(guid, &request, Auth::Tenant)
+                .await
+                .map_err(error)?;
+            items.extend(page.items.into_iter().map(|task| item(task, &directory)));
+            if !page.has_more {
+                break;
             }
-            "create" => {
-                let task = client
-                    .create_task(
-                        &CreateTask {
-                            summary: text(&input, "text")?.trim().into(),
-                            tasklist_guid: Some(guid.into()),
-                            assignees: vec![MemberIdentity::user(text(&state, "owner_open_id")?)],
-                            ..Default::default()
-                        },
-                        "open_id",
-                        Auth::User,
-                    )
-                    .await
-                    .map_err(error)?;
-                self.context.storage().management_changed().await?;
-                Ok(item(task, &directory))
+            let next = page.next_page_token.ok_or(ProviderError::InvalidInput {
+                field: "page_token",
+            })?;
+            if request.page_token.as_ref() == Some(&next) {
+                return Err(ProviderError::InvalidInput {
+                    field: "page_token",
+                });
             }
-            "set_completed" => {
-                let id = text(&input, "id")?;
-                let completed = input
-                    .get("completed")
-                    .and_then(Value::as_bool)
-                    .ok_or(ProviderError::InvalidInput { field: "completed" })?;
-                let task = client
-                    .get_task(id, "open_id", Auth::User)
-                    .await
-                    .map_err(error)?;
-                if task.tasklist_guid != guid
-                    && !task.tasklists.iter().any(|l| l.tasklist_guid == guid)
-                {
-                    return Err(ProviderError::InvalidInput { field: "id" });
-                }
-                let updated = client
-                    .update_task(
-                        id,
-                        &TaskPatch {
-                            status: Some(if completed { "completed" } else { "todo" }.into()),
-                            ..Default::default()
-                        },
-                        "open_id",
-                        Auth::User,
-                    )
-                    .await
-                    .map_err(error)?;
-                self.context.storage().management_changed().await?;
-                Ok(item(updated, &directory))
-            }
-            _ => Err(ProviderError::InvalidInput { field: "action" }),
+            request.page_token = Some(next);
         }
+        Ok(json!({"enabled":true,"name":list.name,"items":items}))
     }
 }

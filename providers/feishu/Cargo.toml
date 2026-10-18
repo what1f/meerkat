@@ -34,7 +34,7 @@ tempfile.workspace = true
 
 [package.metadata.lankide.e2e]
 command = "LANKIDE_E2E_LIVE=1 cargo test -p lankide-provider-feishu --test e2e feishu_e2e:: -- --ignored --nocapture"
-scenario = "Run one complete Feishu Provider scenario covering public mention, normalization, and diagnostic contracts together with real receive/send, reply, attachment, reaction, and task behavior. Resolve the receiving Agent from the receiving App for direct messages and reactions. Preserve the receiving App identity on group messages for per-Agent conversation access. Additional Provider owner, task invalidation and first-reply behavior is covered by system-provider-management. Owner sign-in status, existing member App credential resolution, offline authorization, concurrent access/refresh-token rotation, Runtime restart and revoked-refresh recovery are covered by system-provider-management."
+scenario = "Run one complete Feishu Provider scenario covering public mention, normalization, and diagnostic contracts together with real receive/send, reply, attachment, reaction, and task behavior. Resolve the receiving Agent from the receiving App for direct messages and reactions. Preserve the receiving App identity on group messages for per-Agent conversation access. Additional Provider owner, task invalidation and first-reply behavior is covered by system-provider-management. Console profile, tenant-only owner identity and session reuse are covered by system-provider-management."
 prerequisites = "Existing secure Feishu fixture; Lankide E2E Chat and Tasklist; feishu-live prerequisite probe"
 classification = "live"
 unattended = "yes after live opt-in and preflight"

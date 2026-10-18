@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { BrandMark, useToast } from '../../design';
 import { Badge, BadgeVerso, FlipCard, Hang, QrTag } from '../../scene';
 import { defaultAvatar } from './avatars';
-import { ApiError } from '../../lib/api/client';
 import { useT } from '../../lib/i18n';
 import { avatarUrl, resourceUrl } from '../../lib/assets';
 import { useRefreshWorkspaceOwner, useWorkspaceOwner } from '../../lib/queries/workspaces';
@@ -38,7 +37,6 @@ export function LeadCard({
     : owner.isPending
       ? undefined
       : builtin;
-  const needsSignIn = provider === 'feishu' && owner.data?.state === 'needs_sign_in';
   const failed = account.isError && !start.isPending;
   const showQr =
     switching && (failed || start.isPending || scan === 'waiting' || scan === 'scanned');
@@ -47,15 +45,9 @@ export function LeadCard({
     setFlipped(false);
     setSwitching(true);
     start.mutate(request, {
-      onError: (error) => {
+      onError: () => {
         setSwitching(false);
-        toast({
-          message: t(
-            error instanceof ApiError && error.detail === 'owner_app_unavailable'
-              ? 'members.signInUnavailable'
-              : 'members.failed',
-          ),
-        });
+        toast({ message: t('members.failed') });
       },
     });
   };
@@ -99,23 +91,6 @@ export function LeadCard({
           onClose={close}
           closeLabel={t('members.closeQr')}
           onKeyDown={(e) => e.key === 'Escape' && close()}
-        />
-      </Hang>
-    );
-  if (needsSignIn)
-    return (
-      <Hang
-        lanyard="lead"
-        muted
-        data-testid="lead-card"
-        aria-label={t('members.signIn')}
-        onClick={begin}
-      >
-        <Badge
-          size="card"
-          avatar={{ src: ownerPicture, fallback: builtin, status: 'err' }}
-          name={owner.data?.name ?? t('members.you')}
-          dimmed
         />
       </Hang>
     );

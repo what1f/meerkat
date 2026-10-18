@@ -922,63 +922,132 @@ fn team_lead_id(team_members: &[ProviderTeamMember]) -> Result<String, ProviderE
         })
 }
 
-fn owner_task_error(operation: &'static str, error: ClientError) -> ProviderError {
-    if crate::workspace_owner::requires_sign_in(&error) {
-        ProviderError::AuthorizationRequired
-    } else {
-        task_error(operation, error.is_retryable())
+pub(crate) async fn initialize_tasklist(
+    context: &lankide_provider::AgentOnboardingContext,
+    transport: Arc<dyn crate::http::Transport>,
+    app: &str,
+    secret: &str,
+    lead_open_id: &str,
+    domain: crate::Domain,
+) -> Result<(), ProviderError> {
+    if !task_system_enabled(&context.workspace_config) {
+        return Ok(());
     }
+    let mut state = context.storage().workspace_state().await?;
+    let mut members = vec![TasklistMember::editor(MemberIdentity::app(app))];
+    let mut reader = None;
+    for member in context.storage().team_members().await? {
+        let ProviderTeamMember::Agent { agent_id } = member else {
+            continue;
+        };
+        let config = context.storage().agent_config(&agent_id).await?;
+        if let Some(id) = config["app_id"].as_str() {
+            members.push(TasklistMember::editor(MemberIdentity::app(id)));
+            if state["tasklist_reader_app_id"] == id {
+                reader = Some((agent_id, id.to_owned(), config));
+            }
+        }
+    }
+    let (caller, client) = if state["tasklist_guid"]
+        .as_str()
+        .is_some_and(|v| !v.is_empty())
+    {
+        let (id, app, config) = reader.ok_or(ProviderError::NotFound {
+            entity: "tasklist_reader",
+        })?;
+        let secret = context
+            .workspace_secrets()
+            .read(&format!("agent:{id}:app_secret"))
+            .await?;
+        let domain = crate::adapter::configured_domain(&config, &context.workspace_config)?;
+        let client = SharedClient::new(
+            transport,
+            crate::Credentials::app(&app, secret.expose_secret()),
+        )
+        .map_err(crate::workspace_owner::external)?
+        .with_domain(domain);
+        (app, client)
+    } else {
+        (
+            app.to_owned(),
+            SharedClient::new(transport, crate::Credentials::app(app, secret))
+                .map_err(crate::workspace_owner::external)?
+                .with_domain(domain),
+        )
+    };
+    let lead_open_id = if caller == app {
+        lead_open_id.to_owned()
+    } else {
+        let person_id = state["owner"]["person_id"]
+            .as_str()
+            .ok_or(ProviderError::NotFound {
+                entity: "team_lead",
+            })?;
+        let person_id =
+            lankide_core::PersonId::new(person_id).map_err(|_| ProviderError::InvalidInput {
+                field: "owner_identity",
+            })?;
+        let person = context.storage().person(&person_id).await?;
+        person.provider_state["open_ids_by_app"][&caller]
+            .as_str()
+            .ok_or(ProviderError::NotFound {
+                entity: "lead_open_id",
+            })?
+            .to_owned()
+    };
+    members.push(TasklistMember::editor(MemberIdentity::user(&lead_open_id)));
+    let guid = ensure_tasklist(
+        Arc::new(client),
+        Auth::Tenant,
+        state["tasklist_guid"].as_str(),
+        tasklist_name(&context.workspace_config).as_deref(),
+        &members,
+        &MemberIdentity::user(&lead_open_id),
+        &caller,
+    )
+    .await?;
+    state["tasklist_guid"] = serde_json::json!(guid);
+    if state["tasklist_reader_app_id"].as_str().is_none() {
+        state["tasklist_reader_app_id"] = serde_json::json!(caller);
+    }
+    context.storage().put_workspace_state(state).await?;
+    context.storage().management_changed().await
 }
 
-/// Joins `app_id` to the Team Tasklist as the team lead, creating the list
-/// under the lead's own identity when the workspace has none yet.
-pub(crate) async fn join_team_tasklist_as_lead(
-    storage: &dyn lankide_provider::ProviderStorage,
-    workspace_config: &Value,
-    lead_client: &SharedClient,
+pub(crate) async fn initialize_existing_tasklist(
+    context: &lankide_provider::InitContext,
+    client: Arc<SharedClient>,
     app_id: &str,
-) -> Result<String, ProviderError> {
-    let mut workspace_state = storage.workspace_state().await?;
-    let saved_guid = text(&workspace_state, "tasklist_guid");
-    let agent = [TasklistMember::editor(MemberIdentity::app(app_id))];
-    let saved = match saved_guid.as_deref() {
-        Some(guid) => match lead_client.get_tasklist(guid, "open_id", Auth::User).await {
-            Ok(tasklist) => Some(tasklist),
-            Err(ClientError::Api { code: 1470404, .. }) => None,
-            Err(error) => {
-                return Err(owner_task_error("feishu_tasklist_access", error));
-            }
-        },
-        None => None,
-    };
-    let tasklist = match saved {
-        Some(tasklist) => {
-            let missing = missing_tasklist_members(&tasklist, &agent);
-            if !missing.is_empty() {
-                lead_client
-                    .add_tasklist_members(&tasklist.guid, &missing, "open_id", Auth::User)
-                    .await
-                    .map_err(|error| owner_task_error("feishu_tasklist_members", error))?;
-            }
-            tasklist
-        }
-        None => {
-            let name =
-                tasklist_name(workspace_config).unwrap_or_else(|| DEFAULT_TASKLIST_NAME.to_owned());
-            lead_client
-                .create_tasklist(&name, &agent, "open_id", Auth::User)
-                .await
-                .map_err(|error| owner_task_error("feishu_tasklist_create", error))?
-        }
-    };
-    if tasklist.guid.trim().is_empty() {
-        return Err(task_error("feishu_tasklist_get", false));
+) -> Result<(), ProviderError> {
+    if !task_system_enabled(context.workspace_config()) {
+        return Ok(());
     }
-    if saved_guid.as_deref() != Some(tasklist.guid.as_str()) {
-        workspace_state["tasklist_guid"] = Value::String(tasklist.guid.clone());
-        storage.put_workspace_state(workspace_state).await?;
-    }
-    Ok(tasklist.guid)
+    let roster = context.storage().team_members().await?;
+    let lead_id = match team_lead_id(&roster) {
+        Ok(id) => id,
+        Err(ProviderError::NotFound { .. }) => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    let (_, identity) = crate::identity::load(context.storage()).await?;
+    let directory = MemberDirectory::from_roster(
+        &identity,
+        &roster,
+        app_id,
+        context.storage(),
+        client.clone(),
+        Auth::Tenant,
+    )
+    .await?;
+    ensure_team_tasklist(
+        context.storage(),
+        context.workspace_config(),
+        &directory,
+        &lead_id,
+        client,
+        Auth::Tenant,
+    )
+    .await?;
+    Ok(())
 }
 
 async fn ensure_team_tasklist(
@@ -1011,6 +1080,7 @@ async fn ensure_team_tasklist(
     .await?;
     if saved_tasklist_id.as_deref() != Some(tasklist_id.as_str()) {
         workspace_state["tasklist_guid"] = Value::String(tasklist_id.clone());
+        workspace_state["tasklist_reader_app_id"] = serde_json::json!(directory.current_app_id);
         storage.put_workspace_state(workspace_state).await?;
     }
     Ok(tasklist_id)

@@ -868,6 +868,34 @@ impl<T: Transport> Client<T> {
         })
     }
 
+    pub(crate) async fn application_creator(&self, id_type: &str) -> Result<String, ClientError> {
+        let response: ApiResponse<Value> = self
+            .json_request(
+                Method::Get,
+                "/open-apis/application/v6/applications/me",
+                &[
+                    ("lang".into(), "zh_cn".into()),
+                    ("user_id_type".into(), id_type.into()),
+                ],
+                None,
+                Auth::Tenant,
+                "application_creator",
+            )
+            .await?;
+        response
+            .data
+            .and_then(|data| {
+                data["app"]["creator_id"]
+                    .as_str()
+                    .filter(|v| !v.is_empty())
+                    .map(str::to_owned)
+            })
+            .ok_or_else(|| ClientError::MissingField {
+                operation: "application_creator".into(),
+                field: "creator_id".into(),
+            })
+    }
+
     pub async fn get_user(&self, open_id: &str, auth: Auth) -> Result<UserRecord, ClientError> {
         self.get_user_by_id(open_id, "open_id", auth).await
     }

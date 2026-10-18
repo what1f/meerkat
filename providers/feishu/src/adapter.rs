@@ -115,7 +115,7 @@ pub const CONSOLE_LOGIN_INTERFACE: &str = "feishu.workspace.console_login";
 struct ConsoleLoginHandler {
     poll_lock: AsyncMutex<()>,
     switch_lock: AsyncMutex<()>,
-    authorization_lock: Arc<AsyncMutex<()>>,
+    profile_lock: Arc<AsyncMutex<()>>,
     context: InitContext,
     transport: SharedTransport,
 }
@@ -138,7 +138,7 @@ impl InvocationHandler for ConsoleLoginHandler {
                     self.transport.clone(),
                     action,
                     &self.switch_lock,
-                    &self.authorization_lock,
+                    &self.profile_lock,
                 )
                 .await;
             }
@@ -150,7 +150,32 @@ impl InvocationHandler for ConsoleLoginHandler {
             )
             .await?;
             Ok(match login {
-                crate::console::Login::Ready(_) => serde_json::json!({"state": "ready"}),
+                crate::console::Login::Ready(session) => {
+                    let _guard = self.profile_lock.lock().await;
+                    let mut console =
+                        crate::console::DeveloperConsole::new(self.transport.clone(), session);
+                    let info = console
+                        .profile()
+                        .await
+                        .map_err(crate::workspace_owner::external)?;
+                    let state = self.context.storage().workspace_state().await?;
+                    crate::workspace_owner::check_account(&state, &info, false)?;
+                    let owner = crate::workspace_owner::profile(
+                        &crate::workspace_owner::ContextSaver(&self.context),
+                        self.transport.as_ref(),
+                        &info,
+                        state["owner"]["person_id"].as_str(),
+                    )
+                    .await?;
+                    crate::workspace_owner::save_profile(self.context.storage(), &info, owner)
+                        .await?;
+                    crate::console::save_session(
+                        self.context.secret_writer(),
+                        &console.into_session(),
+                    )
+                    .await?;
+                    serde_json::json!({"state": "ready"})
+                }
                 crate::console::Login::Required => serde_json::json!({"state": "required"}),
                 crate::console::Login::Waiting { qr_code, scanned } => serde_json::json!({
                     "state": if scanned { "scanned" } else { "waiting" },
@@ -172,7 +197,7 @@ pub struct FeishuProvider {
     workspaces: Arc<Mutex<BTreeMap<String, WorkspaceState>>>,
     contexts: Arc<Mutex<BTreeMap<String, InitContext>>>,
     identity_lock: Arc<AsyncMutex<()>>,
-    authorization_locks: Arc<Mutex<BTreeMap<String, Arc<AsyncMutex<()>>>>>,
+    profile_locks: Arc<Mutex<BTreeMap<String, Arc<AsyncMutex<()>>>>>,
     inbound_resource_cache: Arc<AsyncMutex<InboundResourceCache>>,
 }
 
@@ -184,7 +209,7 @@ impl Clone for FeishuProvider {
             workspaces: self.workspaces.clone(),
             contexts: self.contexts.clone(),
             identity_lock: self.identity_lock.clone(),
-            authorization_locks: self.authorization_locks.clone(),
+            profile_locks: self.profile_locks.clone(),
             inbound_resource_cache: self.inbound_resource_cache.clone(),
         }
     }
@@ -208,15 +233,15 @@ impl Default for FeishuProvider {
 }
 
 impl FeishuProvider {
-    fn authorization_lock(
+    fn profile_lock(
         &self,
         workspace: &lankide_core::WorkspaceId,
     ) -> Result<Arc<AsyncMutex<()>>, ProviderError> {
         let mut locks = self
-            .authorization_locks
+            .profile_locks
             .lock()
             .map_err(|_| ProviderError::External {
-                operation: "feishu_owner_authorization",
+                operation: "feishu_owner_profile",
                 retryable: false,
             })?;
         Ok(locks
@@ -232,7 +257,7 @@ impl FeishuProvider {
             workspaces: Arc::new(Mutex::new(BTreeMap::new())),
             contexts: Arc::new(Mutex::new(BTreeMap::new())),
             identity_lock: Arc::new(AsyncMutex::new(())),
-            authorization_locks: Arc::new(Mutex::new(BTreeMap::new())),
+            profile_locks: Arc::new(Mutex::new(BTreeMap::new())),
             inbound_resource_cache: Arc::new(AsyncMutex::new(InboundResourceCache::default())),
         }
     }
@@ -416,7 +441,7 @@ impl Provider for FeishuProvider {
 
     fn init<'a>(&'a self, context: InitContext) -> ProviderFuture<'a, ()> {
         Box::pin(async move {
-            let authorization_lock = self.authorization_lock(context.workspace_id())?;
+            let profile_lock = self.profile_lock(context.workspace_id())?;
             context
                 .register_interface(InterfaceDefinition {
                     id: CONSOLE_LOGIN_INTERFACE.into(),
@@ -436,7 +461,7 @@ impl Provider for FeishuProvider {
                     handler: Arc::new(ConsoleLoginHandler {
                         poll_lock: AsyncMutex::new(()),
                         switch_lock: AsyncMutex::new(()),
-                        authorization_lock: authorization_lock.clone(),
+                        profile_lock: profile_lock.clone(),
                         context: context.clone(),
                         transport: self.transport.clone(),
                     }),
@@ -446,7 +471,7 @@ impl Provider for FeishuProvider {
                 (
                     "feishu.workspace.owner",
                     Arc::new(crate::workspace_owner::OwnerHandler {
-                        authorization_lock: authorization_lock.clone(),
+                        profile_lock: profile_lock.clone(),
                         context: context.clone(),
                         transport: self.transport.clone(),
                     }) as Arc<dyn InvocationHandler>,
@@ -454,7 +479,6 @@ impl Provider for FeishuProvider {
                 (
                     "feishu.workspace.tasks",
                     Arc::new(crate::workspace_tasks::TasksHandler {
-                        authorization_lock: authorization_lock.clone(),
                         context: context.clone(),
                         transport: self.transport.clone(),
                     }) as Arc<dyn InvocationHandler>,
@@ -835,6 +859,13 @@ impl Provider for FeishuProvider {
                 .ok_or(ProviderError::NotFound {
                     entity: "workspace",
                 })?;
+            // Task availability is optional and does not prevent this Agent from receiving IM.
+            let _ = crate::agent_tasks::initialize_existing_tasklist(
+                &init_context,
+                client.clone(),
+                &app_id,
+            )
+            .await;
             let mut event_task = None;
             if let Some(factory) = self.event_source_factory.clone() {
                 let source_workspace_id = context.workspace_id.clone();
@@ -909,7 +940,7 @@ impl Provider for FeishuProvider {
         opaque_payload: Value,
     ) -> ProviderFuture<'a, lankide_provider::ProviderOnboarding> {
         Box::pin(async move {
-            let lock = self.authorization_lock(&context.workspace_id)?;
+            let lock = self.profile_lock(&context.workspace_id)?;
             let _guard = lock.lock().await;
             crate::onboarding::agent_onboarding_with_transport(
                 context,

@@ -12,8 +12,6 @@ pub enum ProviderError {
         entity: &'static str,
     },
     SecretAccessDenied,
-    AuthorizationRequired,
-    OwnerAppUnavailable,
     AppConfigurationFailed {
         operation: &'static str,
         upstream_code: Option<i64>,
@@ -54,8 +52,6 @@ impl ProviderError {
             Self::InvalidInput { .. } => "invalid_input",
             Self::NotFound { .. } => "not_found",
             Self::SecretAccessDenied => "secret_access_denied",
-            Self::AuthorizationRequired => "authorization_required",
-            Self::OwnerAppUnavailable => "owner_app_unavailable",
             Self::AppConfigurationFailed { .. } => "app_configuration_failed",
             Self::Upstream { .. } => "external",
             Self::EventSinkClosed => "event_sink_closed",

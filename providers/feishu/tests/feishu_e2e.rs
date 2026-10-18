@@ -954,13 +954,7 @@ async fn existing_agent_onboarding_falls_back_to_owner_confirmation() {
         .read_to_string(&mut decoded)
         .unwrap();
     let permissions: Value = serde_json::from_str(&decoded).unwrap();
-    assert!(
-        permissions["scopes"]["user"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("offline_access")),
-        "manual App setup must request offline access too"
-    );
+    assert_eq!(permissions["scopes"]["user"], json!([]));
     assert_eq!(transport.config_updates.load(Ordering::SeqCst), 1);
     assert_eq!(transport.publishes.load(Ordering::SeqCst), 0);
 

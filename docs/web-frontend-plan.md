@@ -377,14 +377,12 @@ IM 式对话界面。选用 React，原因如下：
 - **你自己的工卡**：
   - 新增 `<provider>.workspace.owner` interface，通过 `InvokeProviderInterface` 调用。`get` 和 `refresh` 返回
     `{ state: unbound | ready | reauth_required, person_id?, name?, avatar?: ResourceRef }`。头像存入 workspace 资源。
-  - 飞书：先确认首次 console 登录后能否拿到 user_info。拿不到时，资料在第一次成员 App 授权后补齐。
+  - 飞书：console 扫码后通过 `/napi/profile` 获取资料；各 Agent App 用自身 tenant token 查询 applications/me，以 union_id 绑定负责人并记录 per-App open_id。
     切换账号扩展 `console_login`，增加 `switch_start` 和 `switch_poll`。跨租户的切换直接拒绝；失败时保留旧账号。
   - Telegram：资料取自 `ManagedBotUpdated.user`，头像通过 getUserProfilePhotos 获取。这一版不做切换账号，工卡背面只有「同步资料」。
 - **任务清单（只做飞书）**：
-  - 新增 `feishu.workspace.tasks` interface，提供三个操作：
+  - 新增 `feishu.workspace.tasks` interface，只提供读取操作：
     - `list` 返回 `{ enabled, name?, items: [{ id, text, completed, assignee?: { agent_id?, name?, avatar? } }] }`
-    - `create { text }` 新建条目
-    - `set_completed { id, completed }` 修改完成状态
   - 复用现有的 task client 和 tasklist_guid。启用和停用沿用 `provider_config_json.task_system_enabled`；停用时不删除远程数据。
   - 外部任务回调通过管理失效信号刷新界面。
 - **第一条回复**：

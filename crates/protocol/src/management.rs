@@ -20,13 +20,12 @@ pub struct AgentFirstReply {
 }
 
 /// Existing `<provider>.workspace.owner` interface output. Feishu uses
-/// ready/needs_sign_in; unbound/reauth_required remain Telegram states.
+/// ready/unbound; reauth_required remains a Telegram state.
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkspaceOwnerState {
     Ready,
-    NeedsSignIn,
     Unbound,
     ReauthRequired,
 }

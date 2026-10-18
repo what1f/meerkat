@@ -97,8 +97,9 @@ impl Im {
                 ProviderHost::new(
                     lankide_provider_feishu::FeishuProvider::new()
                         .with_transport(transport.clone())
-                        .with_event_source_factory(move |_, _, _, _| {
-                            let source = feishu_web::Source(transport.clone());
+                        .with_event_source_factory(move |_, credentials, _, _| {
+                            let source =
+                                feishu_web::Source(transport.clone(), credentials.app_id.clone());
                             Box::pin(async move {
                                 Ok(Box::new(source)
                                     as Box<dyn lankide_provider_feishu::events::EventSource>)
@@ -173,24 +174,14 @@ impl Im {
             Scan::Complete => 2,
         };
     }
-    pub fn app_configuration(&self, workspace: &str, denied: bool) {
+    pub fn task(&self, workspace: &str, text: &str) {
         let web = self.feishu(workspace);
-        let mut mock = web.0.lock().unwrap();
-        mock.configuration_error = denied.then_some(10013);
-        for app in mock.app_authorization.values_mut() {
-            app.scopes.clear();
-            app.redirects = vec![json!("https://existing.example/callback")];
-            app.allow_refresh = false;
-            app.published = false;
-        }
-    }
-    pub fn revoke_authorization(&self, workspace: &str, revoked: bool) {
-        // 99991677: the user access token has expired; 20064: its refresh token was revoked,
-        // so renewal fails too and only a new sign-in brings the owner back.
-        let web = self.feishu(workspace);
-        let mut feishu = web.0.lock().unwrap();
-        feishu.task_error = revoked.then_some(99991677);
-        feishu.refresh_error = revoked.then_some(20064);
+        let mut state = web.0.lock().unwrap();
+        let id = format!("remote-task-{}", state.tasks.len());
+        state.tasks.push(
+            json!({"guid":id,"summary":text,"completed_at":"0","tasklist_guid":"team_tasklist"}),
+        );
+        state.events.push_back(lankide_provider_feishu::events::RawEvent::new("task.task.update_user_access_v2", json!({"schema":"2.0","header":{"event_id":id,"event_type":"task.task.update_user_access_v2","app_id":"cli_console_1","tenant_key":"tenant-a"},"event":{"task_guid":id,"event_types":["task_completed_update"]}}).to_string().into_bytes()));
     }
     pub async fn dm(
         &self,
@@ -238,7 +229,7 @@ impl Im {
                 state
                     .message_chats
                     .insert(message.clone(), "owner_dm".into());
-                state.events.push_back(lankide_provider_feishu::events::RawEvent::new("im.message.receive_v1",json!({"schema":"2.0","header":{"event_id":format!("web-{id}"),"event_type":"im.message.receive_v1","app_id":app,"tenant_key":"tenant-a"},"event":{"sender":{"sender_type":"user","sender_id":{"open_id":"ou_lead","union_id":"on_lead"}},"message":{"message_id":message,"chat_id":"owner_dm","chat_type":"p2p","create_time":"1900000000000","message_type":"text","content":json!({"text":text}).to_string()}}}).to_string().into_bytes()));
+                state.events.push_back(lankide_provider_feishu::events::RawEvent::new("im.message.receive_v1",json!({"schema":"2.0","header":{"event_id":format!("web-{id}"),"event_type":"im.message.receive_v1","app_id":app,"tenant_key":"tenant-a"},"event":{"sender":{"sender_type":"user","sender_id":{"open_id":format!("ou_lead_{app}"),"union_id":"on_lead"}},"message":{"message_id":message,"chat_id":"owner_dm","chat_type":"p2p","create_time":"1900000000000","message_type":"text","content":json!({"text":text}).to_string()}}}).to_string().into_bytes()));
             }
             "telegram" => {
                 self.telegram(workspace).state.lock().unwrap().updates.push_back(json!({"update_id":id,"message":{"message_id":id,"date":1900000000,"chat":{"id":300,"type":"private"},"from":{"id":300,"first_name":"Alice"},"text":text}}));

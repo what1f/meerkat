@@ -2,6 +2,6 @@
 
 /**
  * Existing `<provider>.workspace.owner` interface output. Feishu uses
- * ready/needs_sign_in; unbound/reauth_required remain Telegram states.
+ * ready/unbound; reauth_required remains a Telegram state.
  */
-export type WorkspaceOwnerState = "ready" | "needs_sign_in" | "unbound" | "reauth_required";
+export type WorkspaceOwnerState = "ready" | "unbound" | "reauth_required";

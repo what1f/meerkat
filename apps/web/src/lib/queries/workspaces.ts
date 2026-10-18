@@ -103,10 +103,7 @@ export function useRefreshWorkspaceOwner() {
   });
 }
 
-type WorkspaceTasksInput =
-  | { action: 'list' }
-  | { action: 'create'; text: string }
-  | { action: 'set_completed'; id: string; completed: boolean };
+type WorkspaceTasksInput = { action: 'list' };
 export type WorkspaceTask = {
   id: string;
   text: string;
@@ -114,20 +111,11 @@ export type WorkspaceTask = {
   assignee?: { agent_id?: string; name?: string; avatar?: DTO.ResourceRef };
 };
 export type WorkspaceTasks = { enabled: boolean; name?: string; items: WorkspaceTask[] };
-export type CreateWorkspaceTaskRequest = DTO.GetWorkspaceRequest & { text: string };
-export type SetWorkspaceTaskCompletedRequest = DTO.GetWorkspaceRequest & {
-  id: string;
-  completed: boolean;
-};
 export function useWorkspaceTasks(input: DTO.GetWorkspaceRequest, enabled = true) {
   return useQuery({
     queryKey: [...keys.tasks, { ...input, request_id: undefined }],
     retry: (count, error) =>
-      count < 3 &&
-      !(
-        error instanceof ApiError &&
-        (error.detail === 'authorization_required' || error.code === 'invalid_argument')
-      ),
+      count < 3 && !(error instanceof ApiError && error.code === 'invalid_argument'),
     queryFn: async ({ signal }) => {
       const response = await call(
         'invoke_provider_interface',
@@ -141,46 +129,5 @@ export function useWorkspaceTasks(input: DTO.GetWorkspaceRequest, enabled = true
       return JSON.parse(response.output_json) as WorkspaceTasks;
     },
     enabled,
-  });
-}
-export function useCreateWorkspaceTask() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: CreateWorkspaceTaskRequest) => {
-      const response = await call('invoke_provider_interface', {
-        request_id: input.request_id,
-        workspace: input.workspace,
-        interface_id: 'feishu.workspace.tasks',
-        input_json: JSON.stringify({
-          action: 'create',
-          text: input.text,
-        } satisfies WorkspaceTasksInput),
-      });
-      return JSON.parse(response.output_json) as WorkspaceTask;
-    },
-    onSuccess: async () => {
-      await client.invalidateQueries({ queryKey: keys.tasks });
-    },
-  });
-}
-export function useSetWorkspaceTaskCompleted() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: SetWorkspaceTaskCompletedRequest) => {
-      const response = await call('invoke_provider_interface', {
-        request_id: input.request_id,
-        workspace: input.workspace,
-        interface_id: 'feishu.workspace.tasks',
-        input_json: JSON.stringify({
-          action: 'set_completed',
-          id: input.id,
-          completed: input.completed,
-        } satisfies WorkspaceTasksInput),
-      });
-      return JSON.parse(response.output_json) as WorkspaceTask;
-    },
-    onSuccess: async () => {
-      await client.invalidateQueries({ queryKey: keys.tasks });
-    },
   });
 }

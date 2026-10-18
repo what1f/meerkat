@@ -2,8 +2,6 @@ import { Button, Callout, Icon, IconButton, Menu, useToast } from '../../design'
 import { ChecklistRow, Clipboard, VacantSlot, type HoleHandle } from '../../scene';
 import { useT } from '../../lib/i18n';
 import {
-  useCreateWorkspaceTask,
-  useSetWorkspaceTaskCompleted,
   useUpdateWorkspace,
   useWorkspaceImage,
   useWorkspaceTasks,
@@ -21,7 +19,6 @@ export function Tasklist({ workspace, handle }: { workspace: Workspace; handle?:
   const request = { request_id: 'workspace_tasks', workspace: workspace.workspace };
   const tasks = useWorkspaceTasks(request);
   const update = useUpdateWorkspace(`tasks-${workspace.workspace?.workspace_id}`);
-  const create = useCreateWorkspaceTask();
   const peg = { ref: handle?.ref, style: handle?.style };
   const turn = (enabled: boolean) => {
     const config: unknown = JSON.parse(workspace.provider_config_json || '{}');
@@ -102,15 +99,10 @@ export function Tasklist({ workspace, handle }: { workspace: Workspace; handle?:
       data-testid="tasklist"
       title={tasks.data.name || t('team.tasks')}
       actions={menu}
-      footer={
-        <ChecklistRow.New
-          placeholder={t('team.newTask')}
-          onAdd={(text) => create.mutate({ ...request, text }, { onError: failed })}
-        />
-      }
+      footer={null}
     >
       {tasks.data.items.map((task) => (
-        <TaskRow key={task.id} task={task} workspace={workspace.workspace} onError={failed} />
+        <TaskRow key={task.id} task={task} workspace={workspace.workspace} />
       ))}
     </Clipboard>
   );
@@ -137,22 +129,13 @@ function configured(workspace: Workspace) {
   }
 }
 
-function TaskRow({
-  task,
-  workspace,
-  onError,
-}: {
-  task: WorkspaceTask;
-  workspace: WorkspaceRef | null;
-  onError: () => void;
-}) {
-  const complete = useSetWorkspaceTaskCompleted();
+function TaskRow({ task, workspace }: { task: WorkspaceTask; workspace: WorkspaceRef | null }) {
   const resource = task.assignee?.avatar;
   const image = useWorkspaceImage(
     { request_id: 'task_assignee', workspace, resource_id: resource?.resource_id ?? 0 },
     !!resource,
   );
-  const done = complete.isPending ? complete.variables.completed : task.completed;
+  const done = task.completed;
   return (
     <ChecklistRow
       data-testid={`task-${task.id}`}
@@ -162,12 +145,6 @@ function TaskRow({
         image.data?.resource
           ? `data:${image.data.resource.media_type};base64,${image.data.bytes}`
           : undefined
-      }
-      onToggle={() =>
-        complete.mutate(
-          { request_id: 'set_task_completed', workspace, id: task.id, completed: !done },
-          { onError },
-        )
       }
     />
   );

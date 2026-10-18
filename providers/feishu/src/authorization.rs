@@ -74,7 +74,7 @@ pub fn authorization_url(domain: &Domain, app_id: &str) -> Result<String, String
     let raw = serde_json::to_vec(&Addons {
         scopes: Scopes {
             tenant: &STANDARD_BOT_TENANT_SCOPES,
-            user: &crate::console::USER_TASKLIST_SCOPES,
+            user: &[],
         },
         events: Events {
             items: EventItems {

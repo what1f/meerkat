@@ -25,13 +25,13 @@ export async function signInFeishu(baseURL: string, workspace: string) {
   expect(JSON.parse((await login('poll')).output_json).state).toBe('ready');
 }
 // The first member's onboarding binds the owner who keeps the team task list.
-export async function bindOwner(baseURL: string, workspace: string) {
-  await rig({ op: 'create_agent', workspace, agent: 'alpha' });
+export async function bindOwner(baseURL: string, workspace: string, agent = 'alpha') {
+  await rig({ op: 'create_agent', workspace, agent });
   for (const status of ['verifying', 'ready'])
     expect(
       (
         await api(baseURL, 'advance_agent_onboarding', {
-          agent: { workspace_id: workspace, agent_id: 'alpha' },
+          agent: { workspace_id: workspace, agent_id: agent },
           action: 'start',
           field_values_json: '{}',
         })

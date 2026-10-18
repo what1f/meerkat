@@ -84,40 +84,39 @@ test('off shift members stop replying and answer again once back on', async ({ p
   );
 });
 
-test('the Feishu task list turns on, takes new tasks, ticks them off and turns off', async ({
-  page,
-  baseURL,
-}) => {
+test('the Feishu task list is read-only and can be turned off', async ({ page, baseURL }) => {
   const workspace = 'tasks_team';
   await signInFeishu(baseURL!, workspace);
   await bindOwner(baseURL!, workspace);
+  await turnTasksOn(baseURL!, workspace);
   await openTeam(page, workspace);
-
   const list = page.getByTestId('tasklist');
-  await list.click();
-  const input = list.getByRole('textbox');
-  await input.fill('Draft the launch notes');
-  await input.press('Enter');
-  const row = list.getByText('Draft the launch notes');
-  await expect(row).toBeVisible();
-  await list.getByRole('checkbox').first().click();
-  await expect(list.getByRole('checkbox').first()).toBeChecked();
-  await expect
-    .poll(async () => {
-      const reply = await api(baseURL!, 'invoke_provider_interface', {
+  await expect(list.getByText('Draft the launch notes')).toBeVisible();
+  await expect(list.getByRole('textbox')).toHaveCount(0);
+  await expect(list.getByRole('checkbox').first()).toBeDisabled();
+  await page.screenshot({ path: test.info().outputPath('read-only-tasklist.png') });
+  for (const action of ['create', 'set_completed']) {
+    const client = await request.newContext({ baseURL });
+    const response = await client.post('/api/v1/invoke_provider_interface', {
+      data: {
+        request_id: action,
         workspace: { workspace_id: workspace },
         interface_id: 'feishu.workspace.tasks',
-        input_json: JSON.stringify({ action: 'list' }),
-      });
-      return JSON.parse(reply.output_json).items[0]?.completed;
-    })
-    .toBe(true);
+        input_json: JSON.stringify({
+          action,
+          text: 'Forbidden',
+          id: 'remote-task-0',
+          completed: true,
+        }),
+      },
+    });
+    expect(response.ok()).toBe(false);
+    await client.dispose();
+  }
   await page.reload();
-  await expect(page.getByTestId('tasklist').getByRole('checkbox').first()).toBeChecked();
-
-  await page.getByTestId('tasklist').getByRole('button', { name: 'More' }).click();
+  await expect(list.getByText('Draft the launch notes')).toBeVisible();
+  await list.getByRole('button', { name: 'More' }).click();
   await page.getByRole('menuitem', { name: 'Turn off' }).click();
-  await expect(page.getByTestId('tasklist')).not.toContainText('Draft the launch notes');
   expect(await tasksEnabled(baseURL!, workspace)).toBe(false);
 });
 
@@ -184,9 +183,7 @@ test('a task list turned on before the owner is bound can be retried or turned o
   await page.screenshot({ path: test.info().outputPath('task-unavailable-zh.png') });
   // Once the owner is bound the list comes back on its own.
   await bindOwner(baseURL!, workspace);
-  const input = list.getByRole('textbox');
-  await input.fill('Book the venue');
-  await input.press('Enter');
+  await rig({ op: 'feishu_task', workspace, text: 'Book the venue' });
   await expect(list.getByText('Book the venue')).toBeVisible();
 });
 
@@ -256,12 +253,9 @@ async function turnTasksOn(baseURL: string, workspace: string) {
     cover_resource_id: null,
     provider_secrets_json: null,
   });
+  await bindOwner(baseURL, workspace, 'beta');
   for (const text of ['Draft the launch notes', 'Book the venue with the long name for the team'])
-    await api(baseURL, 'invoke_provider_interface', {
-      workspace: { workspace_id: workspace },
-      interface_id: 'feishu.workspace.tasks',
-      input_json: JSON.stringify({ action: 'create', text }),
-    });
+    await rig({ op: 'feishu_task', workspace, text });
 }
 
 test('a team with the task list on shows it as soon as the wall opens', async ({
@@ -305,12 +299,7 @@ test('dragging a piece leaves the wall texture and the board size alone', async 
   await bindOwner(baseURL!, workspace);
   await turnTasksOn(baseURL!, workspace);
   // A list long enough that every new task makes the clipboard taller.
-  for (let i = 0; i < 10; i++)
-    await api(baseURL!, 'invoke_provider_interface', {
-      workspace: { workspace_id: workspace },
-      interface_id: 'feishu.workspace.tasks',
-      input_json: JSON.stringify({ action: 'create', text: `Errand ${i}` }),
-    });
+  for (let i = 0; i < 10; i++) await rig({ op: 'feishu_task', workspace, text: `Errand ${i}` });
   await page.setViewportSize({ width: 1600, height: 1000 });
   await openTeam(page, workspace);
   await expect(page.getByTestId('tasklist').getByText('Draft the launch notes')).toBeVisible();
@@ -337,11 +326,7 @@ test('dragging a piece leaves the wall texture and the board size alone', async 
   ]) {
     await page.mouse.move(at.x + at.width / 2 + dx, at.y + 4 + dy, { steps: 8 });
     // Something redraws the wall mid-drag: a task arrives from Feishu.
-    await api(baseURL!, 'invoke_provider_interface', {
-      workspace: { workspace_id: workspace },
-      interface_id: 'feishu.workspace.tasks',
-      input_json: JSON.stringify({ action: 'create', text: `Arrived ${dy}` }),
-    });
+    await rig({ op: 'feishu_task', workspace, text: `Arrived ${dy}` });
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await expect(page.getByTestId('tasklist').getByText(`Arrived ${dy}`)).toBeVisible();
     expect(await wall()).toEqual(still);
@@ -380,7 +365,7 @@ test('with the task list off the rules hang in the middle of the board', async (
   expect(apart(bare.list, bare.shift)).toBe(true);
 
   await page.getByTestId('tasklist').click();
-  await expect(page.getByTestId('tasklist').getByRole('textbox')).toBeVisible();
+  await expect(page.getByTestId('tasklist').getByRole('textbox')).toHaveCount(0);
   await expect
     .poll(async () => {
       const { board, rules } = await boxes();

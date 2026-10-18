@@ -1,10 +1,9 @@
 use crate::{
     Auth, Credentials, Domain, FeishuClient, FeishuRegistrar, RegistrationPoll, ReqwestTransport,
     Transport,
-    agent_tasks::{join_team_tasklist_as_lead, task_system_enabled},
     authorization::standard_capability_gaps,
     authorization_url,
-    console::{self, DeveloperConsole, Login, UserGrant},
+    console::{self, DeveloperConsole, Login},
     contains_standard_capabilities,
 };
 use lankide_provider::{
@@ -201,8 +200,11 @@ async fn console_onboarding(
         context.workspace_secret_writer(),
         if action == "start" { "start" } else { "poll" },
     )
-    .await
-    .ok()?;
+    .await;
+    let login = match login {
+        Ok(login) => login,
+        Err(error) => return Some(Err(error)),
+    };
     let session = match login {
         Login::Ready(session) => session,
         Login::Waiting { qr_code, scanned } => {
@@ -222,7 +224,36 @@ async fn console_onboarding(
         }
         Login::Required => return None,
     };
-    let mut developer_console = DeveloperConsole::new(transport, session);
+    let mut developer_console = DeveloperConsole::new(transport.clone(), session);
+    match developer_console.profile().await {
+        Ok(info) => {
+            let state = match context.storage().workspace_state().await {
+                Ok(state) => state,
+                Err(error) => return Some(Err(error)),
+            };
+            if let Err(error) = crate::workspace_owner::check_account(&state, &info, false) {
+                return Some(Err(error));
+            }
+            let profile = crate::workspace_owner::profile(
+                &crate::workspace_owner::OnboardingSaver(context),
+                transport.as_ref(),
+                &info,
+                state["owner"]["person_id"].as_str(),
+            )
+            .await;
+            let owner = match profile {
+                Ok(owner) => owner,
+                Err(error) => return Some(Err(error)),
+            };
+            if let Err(error) =
+                crate::workspace_owner::save_profile(context.storage(), &info, owner).await
+            {
+                return Some(Err(error));
+            }
+        }
+        Err(error) => return Some(Err(crate::workspace_owner::external(error))),
+    }
+
     let created = developer_console.create_agent_app(&context.name).await;
     console::save_session(
         context.workspace_secret_writer(),
@@ -260,30 +291,6 @@ async fn console_onboarding(
         }
         .await,
     )
-}
-
-/// The team lead's token for `app_id`, granted with the saved console
-/// session instead of a separate consent page.
-async fn lead_grant(
-    context: &AgentOnboardingContext,
-    transport: Arc<dyn Transport>,
-    app_id: &str,
-    app_secret: &str,
-    domain: &Domain,
-) -> Option<UserGrant> {
-    let session = console::saved_session(transport.clone(), context.workspace_secrets())
-        .await
-        .ok()??;
-    let mut developer_console = DeveloperConsole::new(transport, session);
-    let grant = developer_console
-        .authorize_user(app_id, app_secret, domain.base_url())
-        .await;
-    let _ = console::save_session(
-        context.workspace_secret_writer(),
-        &developer_console.into_session(),
-    )
-    .await;
-    grant.ok()
 }
 
 async fn poll_permissions(
@@ -344,37 +351,45 @@ async fn poll_permissions(
     match result {
         Ok(Some((bot_open_id, mut creator))) => {
             let mut creator_open_id = creator_open_id;
-            if payload.get("via").and_then(Value::as_str) == Some("console")
-                && let Some(grant) =
-                    lead_grant(&context, transport.clone(), &app_id, &app_secret, &domain).await
-            {
-                crate::workspace_owner::save_grant(
-                    &context,
-                    transport.as_ref(),
-                    &grant,
-                    &app_id,
-                    domain.base_url(),
-                    &app_secret,
-                )
-                .await?;
-                if task_system_enabled(&context.workspace_config)
-                    && let Ok(client) = FeishuClient::new(
-                        transport,
-                        Credentials::app(app_id.clone(), app_secret)
-                            .with_user_access_token(grant.access_token()),
-                    )
-                {
-                    // The Agent still works without the list; task tools join it later.
-                    let _ = join_team_tasklist_as_lead(
-                        context.storage(),
-                        &context.workspace_config,
-                        &client.with_domain(domain),
-                        &app_id,
-                    )
-                    .await;
-                }
-                creator_open_id = grant.open_id.clone();
-                creator = Some((grant.open_id, grant.union_id, grant.user_id));
+            let mut console_profile = None;
+            if payload.get("via").and_then(Value::as_str) == Some("console") {
+                let session =
+                    console::saved_session(transport.clone(), context.workspace_secrets())
+                        .await?
+                        .ok_or(ProviderError::InvalidInput {
+                            field: "console_session",
+                        })?;
+                let mut console = DeveloperConsole::new(transport.clone(), session);
+                let info = console
+                    .profile()
+                    .await
+                    .map_err(crate::workspace_owner::external)?;
+                crate::workspace_owner::check_account(
+                    &context.storage().workspace_state().await?,
+                    &info,
+                    false,
+                )?;
+                console
+                    .verify_creator(&app_id, &info)
+                    .await
+                    .map_err(crate::workspace_owner::external)?;
+                console::save_session(context.workspace_secret_writer(), &console.into_session())
+                    .await?;
+                let client =
+                    FeishuClient::new(transport.clone(), Credentials::app(&app_id, &app_secret))
+                        .map_err(crate::workspace_owner::external)?
+                        .with_domain(domain.clone());
+                let union = client
+                    .application_creator("union_id")
+                    .await
+                    .map_err(crate::workspace_owner::external)?;
+                let open = client
+                    .application_creator("open_id")
+                    .await
+                    .map_err(crate::workspace_owner::external)?;
+                creator_open_id = open.clone();
+                creator = Some((open, union, String::new()));
+                console_profile = Some(info);
             }
             let creator_person_id = if let Some((open_id, union_id, user_id)) = creator {
                 let (external_id_type, external_id) = if !union_id.trim().is_empty() {
@@ -414,6 +429,36 @@ async fn poll_permissions(
             } else {
                 None
             };
+            if let Some(info) = console_profile {
+                let state = context.storage().workspace_state().await?;
+                if state["owner"]["person_id"]
+                    .as_str()
+                    .is_some_and(|id| Some(id) != creator_person_id.as_deref())
+                {
+                    return Err(ProviderError::InvalidInput {
+                        field: "owner_identity",
+                    });
+                }
+                let owner = crate::workspace_owner::profile(
+                    &crate::workspace_owner::OnboardingSaver(&context),
+                    transport.as_ref(),
+                    &info,
+                    creator_person_id.as_deref(),
+                )
+                .await?;
+                crate::workspace_owner::save_profile(context.storage(), &info, owner).await?;
+            }
+            if !creator_open_id.is_empty() {
+                crate::agent_tasks::initialize_tasklist(
+                    &context,
+                    transport.clone(),
+                    &app_id,
+                    &app_secret,
+                    &creator_open_id,
+                    domain,
+                )
+                .await?;
+            }
             context
                 .storage()
                 .put(&pending_state_key(&context), b"{}".to_vec())

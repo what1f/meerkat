@@ -6,7 +6,7 @@ export type ChecklistRowProps = Omit<UIProps, 'className' | 'style'> & {
   done: boolean;
   text: string;
   avatar?: string;
-  onToggle: () => void;
+  onToggle?: () => void;
 };
 // One task on the clipboard: ticked in pen, then struck through.
 // A click shows at once; the next `done` from the parent takes over again.
@@ -25,9 +25,10 @@ export function ChecklistRow({ done, text, avatar, onToggle, ...rest }: Checklis
           <input
             type="checkbox"
             checked={checked}
+            disabled={!onToggle}
             onChange={() => {
               setShown(!checked);
-              onToggle();
+              onToggle?.();
             }}
           />
           <svg viewBox="0 0 18 18" aria-hidden="true">

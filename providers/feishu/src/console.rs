@@ -2,7 +2,7 @@
 //!
 //! Feishu has no public API that creates an App. The console's own web API
 //! does, so a user who scans one sign-in QR code lets Lankide create, configure
-//! and publish Agent Apps, and authorize as that user, without further
+//! and publish Agent Apps without further
 //! confirmations. Every call here is the same request the console page makes.
 
 use crate::authorization::{STANDARD_BOT_EVENTS, STANDARD_BOT_TENANT_SCOPES};
@@ -24,17 +24,6 @@ const MAX_HOPS: usize = 10;
 /// before the user can scan an expired code.
 pub(crate) const LOGIN_QR_LIFETIME_MS: u64 = 150_000;
 pub(crate) const LOGIN_POLL_INTERVAL_SECONDS: u32 = 2;
-/// Never visited: Lankide reads the authorization code from the redirect.
-pub(crate) const OAUTH_REDIRECT_URI: &str = "http://127.0.0.1/lankide/feishu-oauth";
-/// User scopes Agent Apps request so the team lead's own Tasklist can be
-/// created, shared, and updated as the team lead.
-pub(crate) const USER_TASKLIST_SCOPES: [&str; 5] = [
-    "offline_access",
-    "task:tasklist:read",
-    "task:tasklist:write",
-    "task:task:read",
-    "task:task:write",
-];
 const APP_ICON: &[u8] = include_bytes!("../assets/app-icon.png");
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -153,9 +142,6 @@ async fn fetch(
         let Some(next) = location else {
             return Ok((response, url));
         };
-        if next.as_str().starts_with(OAUTH_REDIRECT_URI) {
-            return Ok((response, next.into()));
-        }
         request = Request::new(Method::Get, next.to_string()).header("User-Agent", USER_AGENT);
     }
     Err(ClientError::HttpStatus {
@@ -371,34 +357,7 @@ impl CreatedApp {
     }
 }
 
-/// Team lead identity returned by the user's authorization.
-pub(crate) struct UserGrant {
-    access_token: String,
-    refresh_token: String,
-    pub(crate) info: Value,
-    pub(crate) open_id: String,
-    pub(crate) union_id: String,
-    pub(crate) user_id: String,
-}
-
-impl fmt::Debug for UserGrant {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("UserGrant")
-            .field("open_id", &self.open_id)
-            .finish_non_exhaustive()
-    }
-}
-
-impl UserGrant {
-    pub(crate) fn access_token(&self) -> &str {
-        &self.access_token
-    }
-    pub(crate) fn refresh_token(&self) -> &str {
-        &self.refresh_token
-    }
-}
-
+/// Developer console operations through the saved web session.
 pub(crate) struct DeveloperConsole {
     transport: Arc<dyn Transport>,
     session: ConsoleSession,
@@ -429,18 +388,32 @@ impl DeveloperConsole {
         if let Some(body) = body {
             request = request.json(&body)?;
         }
-        self.send(request, operation).await
+        match self.send(request.clone(), operation).await {
+            Err(ClientError::Api { code: 9499, .. })
+            | Err(ClientError::HttpStatus { status: 400, .. }) => {
+                self.session = open_console(self.transport.as_ref(), &mut self.session.jar).await?;
+                let mut request = request;
+                request
+                    .headers
+                    .retain(|(k, _)| !k.eq_ignore_ascii_case("x-csrf-token"));
+                request
+                    .headers
+                    .push(("x-csrf-token".into(), self.session.csrf.clone()));
+                self.send(request, operation).await
+            }
+            result => result,
+        }
     }
 
     async fn send(&mut self, request: Request, operation: &str) -> Result<Value, ClientError> {
-        let (response, _) = fetch(
+        let (response, final_url) = fetch(
             self.transport.as_ref(),
             &mut self.session.jar,
             request,
             operation,
         )
         .await?;
-        if (300..400).contains(&response.status) {
+        if final_url.contains("accounts.feishu.cn") || (300..400).contains(&response.status) {
             // Console calls redirect to sign-in once the session has ended.
             return Err(ClientError::HttpStatus {
                 status: 401,
@@ -450,16 +423,57 @@ impl DeveloperConsole {
         passport_data(&response, operation)
     }
 
-    /// Confirms the session still signs in to the console.
-    pub(crate) async fn verify(&mut self) -> Result<(), ClientError> {
-        self.call(
-            Method::Get,
-            "app/list?Count=1&Cursor=0",
-            None,
-            "console_app_list",
-        )
-        .await
-        .map(|_| ())
+    pub(crate) async fn profile(&mut self) -> Result<Value, ClientError> {
+        let info = self
+            .send(
+                Request::new(Method::Get, format!("{OPEN}/napi/profile"))
+                    .header("User-Agent", USER_AGENT),
+                "console_profile",
+            )
+            .await?;
+        for key in ["id", "tenantId"] {
+            if info[key].as_str().is_none_or(|v| v.is_empty()) {
+                return Err(ClientError::HttpStatus {
+                    status: 401,
+                    operation: "console_profile".into(),
+                });
+            }
+        }
+        Ok(info)
+    }
+
+    pub(crate) async fn verify_creator(
+        &mut self,
+        app: &str,
+        profile: &Value,
+    ) -> Result<(), ClientError> {
+        let mut cursor = 0;
+        loop {
+            let list = self
+                .call(
+                    Method::Get,
+                    &format!("app/list?Count=100&Cursor={cursor}"),
+                    None,
+                    "console_app_list",
+                )
+                .await?;
+            let apps = list["apps"]
+                .as_array()
+                .ok_or_else(|| ClientError::MissingField {
+                    operation: "console_app_list".into(),
+                    field: "apps".into(),
+                })?;
+            if let Some(found) = apps.iter().find(|v| v["appID"] == app) {
+                if found["owner"]["userID"] == profile["id"] {
+                    return Ok(());
+                }
+                return Err(ClientError::InvalidInput("owner_identity".into()));
+            }
+            if apps.len() < 100 {
+                return Err(ClientError::InvalidInput("owner_identity".into()));
+            }
+            cursor += apps.len();
+        }
     }
 
     /// Creates an Agent App with the bot, permissions, events and icon Lankide
@@ -537,7 +551,7 @@ impl DeveloperConsole {
             "console_events",
         )
         .await?;
-        self.configure_authorization(app_id, true).await?;
+        self.configure_authorization(app_id).await?;
         let avatar = self.upload_icon().await?;
         self.call(
             Method::Post,
@@ -557,64 +571,7 @@ impl DeveloperConsole {
         Ok(app_secret)
     }
 
-    /// Upgrade only authorization settings; keep the selected App's identity,
-    /// branding, bot/event configuration and existing redirect URLs intact.
-    pub(crate) async fn repair_user_authorization(
-        &mut self,
-        app_id: &str,
-    ) -> Result<(), ClientError> {
-        self.configure_authorization(app_id, false).await?;
-        let versions = self
-            .call(
-                Method::Get,
-                &format!("app_version/list/{app_id}"),
-                None,
-                "console_version_list",
-            )
-            .await?;
-        let mut next = [1_u64, 0, 0];
-        for version in versions
-            .get("versions")
-            .and_then(Value::as_array)
-            .ok_or_else(|| ClientError::MissingField {
-                operation: "console_version_list".into(),
-                field: "versions".into(),
-            })?
-        {
-            let name = text_field(version, "appVersion", "console_version_list")?;
-            let parts = name
-                .split('.')
-                .map(str::parse::<u64>)
-                .collect::<Result<Vec<_>, _>>()
-                .ok()
-                .filter(|parts| parts.len() == 3)
-                .ok_or_else(|| ClientError::MissingField {
-                    operation: "console_version_list".into(),
-                    field: "numeric_app_version".into(),
-                })?;
-            let current = [parts[0], parts[1], parts[2]];
-            if current >= next {
-                next = [
-                    current[0],
-                    current[1],
-                    current[2]
-                        .checked_add(1)
-                        .ok_or_else(|| ClientError::MissingField {
-                            operation: "console_version_list".into(),
-                            field: "next_app_version".into(),
-                        })?,
-                ];
-            }
-        }
-        self.publish_authorization(app_id, &format!("{}.{}.{}", next[0], next[1], next[2]))
-            .await
-    }
-
-    async fn configure_authorization(
-        &mut self,
-        app_id: &str,
-        tenant_scopes: bool,
-    ) -> Result<(), ClientError> {
+    async fn configure_authorization(&mut self, app_id: &str) -> Result<(), ClientError> {
         let catalog = self
             .call(
                 Method::Get,
@@ -623,78 +580,20 @@ impl DeveloperConsole {
                 "console_scope_catalog",
             )
             .await?;
-        let tenant_scope_ids = if tenant_scopes {
-            scope_ids(&catalog, &STANDARD_BOT_TENANT_SCOPES)?
-        } else {
-            Vec::new()
-        };
-        let user_scope_ids = scope_ids(&catalog, &USER_TASKLIST_SCOPES)?;
+        let tenant_scope_ids = scope_ids(&catalog, &STANDARD_BOT_TENANT_SCOPES)?;
         self.call(
             Method::Post,
             &format!("scope/update/{app_id}"),
             Some(json!({
                 "clientId": app_id,
                 "appScopeIDs": tenant_scope_ids,
-                "userScopeIDs": user_scope_ids,
+                "userScopeIDs": [],
                 "scopeIds": [],
                 "operation": "add",
             })),
             "console_scopes",
         )
         .await?;
-        let settings = self
-            .call(
-                Method::Get,
-                &format!("safe_setting/{app_id}"),
-                None,
-                "console_safe_settings",
-            )
-            .await?;
-        let mut redirects = match settings.get("redirectURL") {
-            None | Some(Value::Null) => Vec::new(),
-            Some(Value::Array(urls)) => urls.clone(),
-            _ => {
-                return Err(ClientError::MissingField {
-                    operation: "console_safe_settings".into(),
-                    field: "redirectURL".into(),
-                });
-            }
-        };
-        if !redirects
-            .iter()
-            .any(|url| url.as_str() == Some(OAUTH_REDIRECT_URI))
-        {
-            redirects.push(json!(OAUTH_REDIRECT_URI));
-        }
-        self.call(
-            Method::Post,
-            &format!("safe_setting/update/{app_id}"),
-            Some(json!({"clientId": app_id, "redirectURL": redirects, "allowRefreshToken": true})),
-            "console_redirect_url",
-        )
-        .await?;
-        let settings = self
-            .call(
-                Method::Get,
-                &format!("safe_setting/{app_id}"),
-                None,
-                "console_safe_settings",
-            )
-            .await?;
-        if settings.get("allowRefreshToken").and_then(Value::as_bool) == Some(false)
-            || !settings
-                .get("redirectURL")
-                .and_then(Value::as_array)
-                .is_some_and(|urls| {
-                    urls.iter()
-                        .any(|url| url.as_str() == Some(OAUTH_REDIRECT_URI))
-                })
-        {
-            return Err(ClientError::MissingField {
-                operation: "console_safe_settings".into(),
-                field: "authorization_settings".into(),
-            });
-        }
         Ok(())
     }
 
@@ -736,81 +635,6 @@ impl DeveloperConsole {
         Ok(())
     }
 
-    /// Read back only allowlisted diagnostic fields. Never log console responses,
-    /// cookies, authorization URLs, or arbitrary redirect query/path contents.
-    pub(crate) async fn log_authorization_diagnostics(
-        &mut self,
-        app_id: &str,
-        logger: &dyn lankide_provider::ProviderLogger,
-    ) {
-        use sha2::{Digest, Sha256};
-        let fingerprint = |value: &str| {
-            Sha256::digest(value.as_bytes())
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-        };
-        let settings = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            self.call(
-                Method::Get,
-                &format!("safe_setting/{app_id}"),
-                None,
-                "console_safe_settings",
-            ),
-        )
-        .await
-        .ok()
-        .and_then(Result::ok);
-        let versions = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            self.call(
-                Method::Get,
-                &format!("app_version/list/{app_id}"),
-                None,
-                "console_version_list",
-            ),
-        )
-        .await
-        .ok()
-        .and_then(Result::ok);
-        let redirects = settings
-            .as_ref()
-            .and_then(|s| s["redirectURL"].as_array())
-            .map(|urls| {
-                urls.iter()
-                    .take(300)
-                    .map(|url| match url.as_str() {
-                        Some(OAUTH_REDIRECT_URI) => {
-                            json!({"url":OAUTH_REDIRECT_URI,"matches":true})
-                        }
-                        Some(url) => json!({"sha256":fingerprint(url),"matches":false}),
-                        None => json!({"invalid_type":true}),
-                    })
-                    .collect::<Vec<_>>()
-            });
-        let versions =
-            versions
-                .as_ref()
-                .and_then(|s| s["versions"].as_array())
-                .map(|versions| {
-                    versions.iter().take(20).map(|version| json!({
-                "version_status":version["versionStatus"].as_i64(),
-                "version_id_sha256":version["versionId"].as_str().map(fingerprint),
-                "version_name_sha256":version["appVersion"].as_str().map(fingerprint),
-            })).collect::<Vec<_>>()
-                });
-        logger.log(lankide_provider::LogLevel::Warn, &format!(
-            "Feishu OAuth diagnostic {}", json!({
-                "repaired_and_authorized_app_sha256":fingerprint(app_id),
-                "redirect_uri":OAUTH_REDIRECT_URI,
-                "redirects":redirects,
-                "allow_refresh_token":settings.as_ref().and_then(|s| s["allowRefreshToken"].as_bool()),
-                "versions_after_commit":versions,
-            })
-        ));
-    }
-
     async fn upload_icon(&mut self) -> Result<String, ClientError> {
         let boundary = format!("lankide{}", uuid::Uuid::new_v4().simple());
         let mut body = Vec::with_capacity(APP_ICON.len() + 512);
@@ -845,213 +669,6 @@ impl DeveloperConsole {
         let uploaded = self.send(request, "console_icon_upload").await?;
         text_field(&uploaded, "url", "console_icon_upload")
     }
-
-    /// Authorizes `app` as the signed-in user and returns the user's token.
-    /// The console session already identifies the user, so the consent the
-    /// authorization page would ask for is confirmed directly.
-    pub(crate) async fn authorize_user(
-        &mut self,
-        app: &str,
-        app_secret: &str,
-        base_url: &str,
-    ) -> Result<UserGrant, ClientError> {
-        let scope = USER_TASKLIST_SCOPES.join(" ");
-        let authorize = format!(
-            "{ACCOUNTS}/open-apis/authen/v1/authorize?client_id={}&response_type=code&redirect_uri={}&scope={}&state=lankide",
-            encode_query_component(app),
-            encode_query_component(OAUTH_REDIRECT_URI),
-            encode_query_component(&scope),
-        );
-        let (response, final_url) = fetch(
-            self.transport.as_ref(),
-            &mut self.session.jar,
-            Request::new(Method::Get, authorize.clone()).header("User-Agent", USER_AGENT),
-            "user_authorize",
-        )
-        .await?;
-        let redirect = if final_url.starts_with(OAUTH_REDIRECT_URI) {
-            final_url
-        } else {
-            crate::http::validate_success(&response, "user_authorize")?;
-            self.confirm_consent(app, &authorize, &response).await?
-        };
-        let code = url::Url::parse(&redirect)
-            .ok()
-            .and_then(|url| {
-                url.query_pairs()
-                    .find(|(key, _)| key == "code")
-                    .map(|(_, value)| value.into_owned())
-            })
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| ClientError::MissingField {
-                operation: "user_authorize".into(),
-                field: "code".into(),
-            })?;
-        self.exchange_code(app, app_secret, &code, base_url).await
-    }
-
-    async fn confirm_consent(
-        &mut self,
-        app: &str,
-        authorize_url: &str,
-        page: &Response,
-    ) -> Result<String, ClientError> {
-        let html = String::from_utf8_lossy(&page.body);
-        let marker = "window.serverInjectRes = ";
-        let injected = html
-            .find(marker)
-            .map(|start| &html[start + marker.len()..])
-            .and_then(|rest| {
-                serde_json::Deserializer::from_str(rest)
-                    .into_iter::<Value>()
-                    .next()?
-                    .ok()
-            })
-            .ok_or_else(|| ClientError::MissingField {
-                operation: "user_consent".into(),
-                field: "serverInjectRes".into(),
-            })?;
-        if let Some(code) = injected
-            .get("code")
-            .and_then(Value::as_i64)
-            .filter(|code| *code != 0)
-        {
-            return Err(ClientError::Api {
-                code,
-                message: String::new(),
-                operation: "user_consent".into(),
-            });
-        }
-        let user =
-            injected
-                .pointer("/data/current_user")
-                .ok_or_else(|| ClientError::MissingField {
-                    operation: "user_consent".into(),
-                    field: "current_user".into(),
-                })?;
-        let user_id = text_field(user, "user_id", "user_consent")?;
-        let scope = user
-            .get("all_scope_key_list")
-            .and_then(Value::as_array)
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            })
-            .unwrap_or_default();
-        let flow_key = injected
-            .get("X-Auth-Flow-Key")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned();
-        let csrf = self
-            .session
-            .jar
-            .value("open_csrf_token")
-            .unwrap_or_default()
-            .to_owned();
-        let request = Request::new(
-            Method::Post,
-            format!("{ACCOUNTS}/open-apis/authen/v1/confirm"),
-        )
-        .header("User-Agent", USER_AGENT)
-        .header("Referer", authorize_url)
-        .header("Origin", ACCOUNTS)
-        .header("open-csrf-token", csrf)
-        .header("X-Auth-Flow-Key", flow_key)
-        .json(&json!({"app_id": app, "user_id": user_id, "scope": scope}))?;
-        let confirmed = self.send(request, "user_consent").await?;
-        text_field(&confirmed, "redirect_uri", "user_consent")
-    }
-
-    async fn exchange_code(
-        &self,
-        app: &str,
-        app_secret: &str,
-        code: &str,
-        base_url: &str,
-    ) -> Result<UserGrant, ClientError> {
-        let request = Request::new(
-            Method::Post,
-            format!("{base_url}/open-apis/authen/v2/oauth/token"),
-        )
-        .json(&json!({
-            "grant_type": "authorization_code",
-            "client_id": app,
-            "client_secret": app_secret,
-            "code": code,
-            "redirect_uri": OAUTH_REDIRECT_URI,
-        }))?;
-        let token = exchange_token(self.transport.as_ref(), request).await?;
-        let access_token = text_field(&token, "access_token", "user_token")?;
-        let refresh_token = text_field(&token, "refresh_token", "user_token")?;
-        let request = Request::new(
-            Method::Get,
-            format!("{base_url}/open-apis/authen/v1/user_info"),
-        )
-        .header("Authorization", format!("Bearer {access_token}"));
-        let response = self.transport.execute(request).await?;
-        let info = passport_data(&response, "user_info")?;
-        Ok(UserGrant {
-            info: info.clone(),
-            open_id: text_field(&info, "open_id", "user_info")?,
-            union_id: info
-                .get("union_id")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            user_id: info
-                .get("user_id")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            access_token,
-            refresh_token,
-        })
-    }
-}
-
-/// OAuth errors include a useful JSON body even when the HTTP status is 400.
-async fn exchange_token(transport: &dyn Transport, request: Request) -> Result<Value, ClientError> {
-    let response = transport.execute(request).await?;
-    if let Ok(token) = response.json::<Value>() {
-        let code = token.get("code").and_then(Value::as_i64).unwrap_or(0);
-        if code != 0 {
-            return Err(ClientError::Api {
-                code,
-                message: token
-                    .get("error_description")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .into(),
-                operation: "user_token".into(),
-            });
-        }
-    }
-    crate::http::validate_success(&response, "user_token")?;
-    response.json()
-}
-
-pub(crate) async fn refresh_user_token(
-    transport: &dyn Transport,
-    base: &str,
-    app: &str,
-    secret: &str,
-    refresh: &str,
-) -> Result<(String, String), ClientError> {
-    let request = Request::new(
-        Method::Post,
-        format!("{base}/open-apis/authen/v2/oauth/token"),
-    )
-    .json(&json!({"grant_type":"refresh_token", "client_id":app,
-            "client_secret":secret, "refresh_token":refresh}))?;
-    let token = exchange_token(transport, request).await?;
-    Ok((
-        text_field(&token, "access_token", "user_token")?,
-        text_field(&token, "refresh_token", "user_token")?,
-    ))
 }
 
 fn text_field(value: &Value, field: &str, operation: &str) -> Result<String, ClientError> {
@@ -1137,10 +754,10 @@ pub(crate) async fn saved_session(
         return Ok(None);
     };
     let mut console = DeveloperConsole::new(transport, session);
-    match console.verify().await {
-        Ok(()) => Ok(Some(console.session)),
-        Err(error) if error.is_retryable() => Err(error.provider_error(false)),
-        Err(_) => Ok(None),
+    match console.profile().await {
+        Ok(_) => Ok(Some(console.session)),
+        Err(ClientError::HttpStatus { status: 401, .. }) => Ok(None),
+        Err(error) => Err(error.provider_error(false)),
     }
 }
 
@@ -1278,7 +895,7 @@ pub(crate) async fn switch_login(
         return Ok((candidate, Login::Required));
     }
     let login = match result {
-        // Keep the candidate valid until OAuth and profile preparation finish.
+        // Keep the candidate valid until profile preparation finishes.
         LoginPoll::Complete(session) => Login::Ready(session),
         LoginPoll::Expired => {
             finish_switch(writer).await?;

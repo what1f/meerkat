@@ -901,14 +901,6 @@ pub(crate) fn status(error: RuntimeError) -> Status {
         RuntimeError::InvalidExecutionToken => {
             Status::permission_denied("This action is no longer authorized.")
         }
-        RuntimeError::ProviderCall(lankide_provider::ProviderError::AuthorizationRequired) => {
-            Status::failed_precondition("Connect your account to continue.")
-                .with_detail(Some("authorization_required".into()))
-        }
-        RuntimeError::ProviderCall(lankide_provider::ProviderError::OwnerAppUnavailable) => {
-            Status::failed_precondition("An account connection is unavailable.")
-                .with_detail(Some("owner_app_unavailable".into()))
-        }
         RuntimeError::ProviderCall(lankide_provider::ProviderError::AppConfigurationFailed {
             ..
         }) => Status::failed_precondition("The connection could not be completed. Try again.")
