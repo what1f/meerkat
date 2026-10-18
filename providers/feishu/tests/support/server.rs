@@ -374,11 +374,53 @@ impl FeishuServer {
                 ("POST", "/open-apis/task/v2/tasklists") => {
                     let mut tasklist = request.json();
                     tasklist["guid"] = json!("tasklist_team");
+                    tasklist["owner"] = json!({"id":app,"type":"app"});
                     state.tasklist = Some(tasklist.clone());
                     json!({"tasklist":tasklist})
                 }
                 ("GET", "/open-apis/task/v2/tasklists/tasklist_team") => {
                     json!({"tasklist":state.tasklist})
+                }
+                ("POST", "/open-apis/task/v2/tasklists/tasklist_team/add_members") => {
+                    let body = request.json();
+                    let tasklist = state.tasklist.as_mut().expect("created tasklist");
+                    let members = tasklist["members"].as_array_mut().unwrap();
+                    for member in body["members"].as_array().unwrap() {
+                        assert_eq!(member["type"], "app");
+                        assert_eq!(member["role"], "editor");
+                        if let Some(existing) = members.iter_mut().find(|existing| {
+                            existing["id"] == member["id"] && existing["type"] == member["type"]
+                        }) {
+                            *existing = member.clone();
+                        } else {
+                            members.push(member.clone());
+                        }
+                    }
+                    json!({"tasklist":tasklist})
+                }
+                ("PATCH", "/open-apis/task/v2/tasklists/tasklist_team") => {
+                    let body = request.json();
+                    let tasklist = state.tasklist.as_mut().expect("created tasklist");
+                    assert_eq!(tasklist["owner"], json!({"id":app,"type":"app"}));
+                    assert_eq!(body["update_fields"], json!(["owner"]));
+                    assert_eq!(body["origin_owner_to_role"], "editor");
+                    assert_eq!(
+                        body["tasklist"]["owner"],
+                        json!({"id":"ou_alice","type":"user"})
+                    );
+                    let mut previous_owner = tasklist["owner"].clone();
+                    previous_owner["role"] = body["origin_owner_to_role"].clone();
+                    let members = tasklist["members"].as_array_mut().unwrap();
+                    if let Some(existing) = members.iter_mut().find(|member| {
+                        member["id"] == previous_owner["id"]
+                            && member["type"] == previous_owner["type"]
+                    }) {
+                        *existing = previous_owner;
+                    } else {
+                        members.push(previous_owner);
+                    }
+                    tasklist["owner"] = body["tasklist"]["owner"].clone();
+                    json!({"tasklist":tasklist})
                 }
                 ("POST", "/open-apis/task/v2/tasks") => {
                     let mut task = request.json();
