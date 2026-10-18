@@ -14,6 +14,7 @@
 }
 
 .root > [data-rail] {
+  position: relative;
   display: flex;
   flex: none;
 }

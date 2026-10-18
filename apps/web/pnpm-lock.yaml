@@ -14,6 +14,9 @@ importers:
       '@tanstack/react-query':
         specifier: 5.104.3
         version: 5.104.3(react@19.3.1)
+      '@tauri-apps/api':
+        specifier: 2.12.4
+        version: 2.12.4
       lucide-react:
         specifier: 1.59.0
         version: 1.59.0(@types/react@19.3.0)(react@19.3.1)
@@ -570,6 +573,9 @@ packages:
     resolution: {integrity: sha512-5Ts1ImwJKqoJgPkLxl9WrPQy1JEoEmti3MaaODCfBamHUGFk57IFrc+AIksPq+BAm10EsroX56qm398Z42LG7w==}
     peerDependencies:
       react: ^18 || ^19
+
+  '@tauri-apps/api@2.12.4':
+    resolution: {integrity: sha512-pVmfis+4zT8H0Qhp3xPZx9Ju7kpzvA6rr/PSJPyuwfvucTQ8sVt61NYU9KMkK703UFlYadFmjKA4HhybOtN0gg==}
 
   '@tybys/wasm-util@0.10.4':
     resolution: {integrity: sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A==}
@@ -2826,6 +2832,8 @@ snapshots:
     dependencies:
       '@tanstack/query-core': 5.104.3
       react: 19.3.1
+
+  '@tauri-apps/api@2.12.4': {}
 
   '@tybys/wasm-util@0.10.4':
     dependencies:

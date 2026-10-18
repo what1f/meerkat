@@ -21,7 +21,7 @@ export function AppShell({ sidebar, topBar, children, board, ...rest }: AppShell
   return (
     <div {...rest} className={css.root} data-board={board} data-desktop={desktop}>
       <div data-rail={rail}>
-        {desktop && <div aria-hidden="true" data-desktop-safe-area />}
+        {desktop && <div aria-hidden="true" data-desktop-safe-area data-tauri-drag-region />}
         <IconButton
           icon="sidebar"
           label={t('common.toggleSidebar')}

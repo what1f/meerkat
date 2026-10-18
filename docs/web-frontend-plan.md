@@ -40,7 +40,7 @@ HTTP JSON + WS，不经过 Tauri IPC。同一套前端也可以直接在本机�
  ┌───────────────────────────────┐             │
  │ 托管 lankided / lankide-machine│             │
  │ 启动页 → 导航到 Runtime URL   │             │
- │ WKWebView，不开放 IPC          │             │
+ │ WKWebView，仅开放窗口操作          │             │
  └──────────────┬────────────────┘             │
                 │      HTTP JSON + WS（同源）    │
                 ▼                               ▼
@@ -167,7 +167,7 @@ IM 式对话界面。选用 React，原因如下：
 前端只通过 User-Agent 后缀 `LankideDesktop/<version>` 判断自己是否运行在外壳里，
 不读 `window.__TAURI__`（`withGlobalTauri: false`）。在外壳中：
 
-- 侧栏顶部为红绿灯留出安全区，并标记为 `-webkit-app-region: drag`。
+- 侧栏顶部为红绿灯留出安全区，并标记为 `data-tauri-drag-region`。
 - 背景透明，露出窗口的 vibrancy 材质。
 
 ## 服务端静态资源
@@ -195,8 +195,9 @@ IM 式对话界面。选用 React，原因如下：
      例如“需要在登录项中允许后台运行”。
 - 窗口：1240×820，最小 960×660，`titleBarStyle: Overlay`，红绿灯位置 (16,17)，
   vibrancy 由 `window-vibrancy` 实现。
-- 不授予任何 capability。Tauri v2 默认不向远程 origin 暴露 IPC，启动页通过 URL hash
-  接收状态，也不需要 IPC。
+- 启动页仅授予窗口拖拽权限。启动成功后，仅向发现的 Runtime origin、main 窗口动态授予
+  拖拽与主题设置权限；不开放业务 IPC。每个外壳进程只授权一个 Runtime origin；重试发现不同
+  origin 时停止自有服务并重启外壳，避免动态授权累加。启动页仍通过 URL hash 接收状态。
 - 外链：拦截导航，非 Runtime origin 的链接交给系统浏览器打开（`tauri-plugin-opener`）。
 - `Info.plist` 增加 `NSAllowsLocalNetworking`，允许 WKWebView 加载 loopback 的 http 地址。
 - 菜单：保留“退出 Lankide”，新增“在浏览器中打开”。

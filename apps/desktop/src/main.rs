@@ -16,6 +16,7 @@ use tauri_plugin_opener::OpenerExt;
 struct ShellState {
     backend: Mutex<Option<DesktopBackend>>,
     runtime_url: Mutex<Option<Url>>,
+    authorized_runtime_origin: Mutex<Option<String>>,
     starting: AtomicBool,
 }
 
@@ -73,6 +74,35 @@ fn start_services(app: &tauri::AppHandle) {
         });
         let target = match result {
             Ok(url) => {
+                let origin = url.origin().ascii_serialization();
+                let mut authorized = state.authorized_runtime_origin.lock().unwrap();
+                if authorized
+                    .as_ref()
+                    .is_some_and(|previous| previous != &origin)
+                {
+                    // Dynamic capabilities accumulate and cannot revoke the old origin.
+                    // A fresh process must own the new origin's authorization.
+                    drop(authorized);
+                    if let Some(backend) = state.backend.lock().unwrap().as_ref() {
+                        backend.stop_local_services();
+                    }
+                    app.request_restart();
+                    return;
+                }
+                // Only the discovered local Runtime gets the two window operations.
+                if authorized.is_none() {
+                    let capability = serde_json::json!({
+                        "identifier": "runtime-window",
+                        "windows": ["main"],
+                        "local": false,
+                        "remote": { "urls": [format!("{origin}/*")] },
+                        "permissions": ["core:window:allow-start-dragging", "core:window:allow-set-theme"]
+                    });
+                    app.add_capability(capability.to_string())
+                        .expect("Runtime window capability");
+                    *authorized = Some(origin);
+                }
+                drop(authorized);
                 *state.runtime_url.lock().unwrap() = Some(url.clone());
                 if let Some(item) = app
                     .menu()
@@ -187,6 +217,14 @@ fn main() {
                 )?],
             )?;
             app.set_menu(menu)?;
+            app.add_capability(
+                serde_json::json!({
+                    "identifier": "boot-window",
+                    "windows": ["main"],
+                    "permissions": ["core:window:allow-start-dragging"]
+                })
+                .to_string(),
+            )?;
             let handle = app.handle().clone();
             let navigation_app = handle.clone();
             let new_window_app = handle.clone();

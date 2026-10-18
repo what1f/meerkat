@@ -1,5 +1,6 @@
 import { Button, Dashes, LinkButton } from '../../design';
 import { Board } from '../../scene';
+import { isDesktopShell } from '../../lib/desktopShell';
 import { useT } from '../../lib/i18n';
 import { useOnboarding } from './useOnboarding';
 import { WelcomeStep } from './WelcomeStep';
@@ -30,6 +31,7 @@ export function OnboardingFlow({
   const label = step === 3 ? 'create' : step === 4 ? 'finish' : 'next';
   return (
     <div className={css.root} data-testid="onboarding" data-step={step}>
+      {isDesktopShell() && <div aria-hidden="true" data-desktop-safe-area data-tauri-drag-region />}
       <Board layout="rails" holes={step === 0 || step === 4 ? 'fade' : 'on'}>
         <div className={css.column}>
           {step > 0 && <Dashes total={4} current={step - 1} />}

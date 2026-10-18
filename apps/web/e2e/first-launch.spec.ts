@@ -27,3 +27,14 @@ test('A first launch with no team opens onboarding and stays on it', async ({ pa
   await expect(page).toHaveURL(/#\/members$/);
   await expect(onboarding).toHaveCount(0);
 });
+
+test('First-launch text follows the system dark theme', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('/');
+  await expect(page.getByTestId('onboarding')).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.getByTestId('onboarding').locator('h1')).toHaveCSS(
+    'color',
+    'rgb(232, 233, 238)',
+  );
+});

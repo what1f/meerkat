@@ -1,3 +1,4 @@
+import { isDesktopShell } from '../lib/desktopShell';
 import type { ReactNode } from 'react';
 import type { UIProps } from '../design/index';
 import { LinkButton, Menu } from '../design';
@@ -8,7 +9,7 @@ export type TopBarProps = Omit<UIProps, 'className' | 'style'> & {
 };
 export function TopBar({ title, back, ...rest }: TopBarProps) {
   return (
-    <header {...rest} className={css.root}>
+    <header {...rest} className={css.root} data-tauri-drag-region={isDesktopShell() || undefined}>
       {back &&
         ('menu' in back ? (
           <Menu trigger={<LinkButton disclosure>{back.label}</LinkButton>}>{back.menu}</Menu>
