@@ -1,6 +1,6 @@
 import { expect, request, type Page } from '@playwright/test';
 import { test, rig } from './rig';
-import { api, bindOwner, signInFeishu } from './feishu';
+import { api, addFeishuMember, signInFeishu } from './feishu';
 
 const workspaceOf = (baseURL: string, workspace_id: string) =>
   api(baseURL, 'get_workspace', { workspace: { workspace_id } });
@@ -87,7 +87,7 @@ test('off shift members stop replying and answer again once back on', async ({ p
 test('the Feishu task list is read-only and can be turned off', async ({ page, baseURL }) => {
   const workspace = 'tasks_team';
   await signInFeishu(baseURL!, workspace);
-  await bindOwner(baseURL!, workspace);
+  await addFeishuMember(baseURL!, workspace);
   await turnTasksOn(baseURL!, workspace);
   await openTeam(page, workspace);
   const list = page.getByTestId('tasklist');
@@ -131,7 +131,7 @@ test('the task list name saves on Enter or blur and restores on failure or Escap
 }) => {
   const workspace = 'rename_tasks';
   await signInFeishu(baseURL!, workspace);
-  await bindOwner(baseURL!, workspace);
+  await addFeishuMember(baseURL!, workspace);
   await turnTasksOn(baseURL!, workspace);
   await openTeam(page, workspace);
   const title = page.getByTestId('tasklist').getByRole('textbox');
@@ -176,7 +176,7 @@ test('the task list name saves on Enter or blur and restores on failure or Escap
   await expect(title).toHaveValue('Launch tasks');
 });
 
-test('a task list turned on before the owner is bound can be retried or turned off', async ({
+test('a task list turned on before the team lead is bound can be retried or turned off', async ({
   page,
   baseURL,
 }) => {
@@ -237,8 +237,8 @@ test('a task list turned on before the owner is bound can be retried or turned o
   await expect(list).toContainText('任务清单暂时打不开');
   await expect(list).not.toContainText('添加成员');
   await page.screenshot({ path: test.info().outputPath('task-unavailable-zh.png') });
-  // Once the owner is bound the list comes back on its own.
-  await bindOwner(baseURL!, workspace);
+  // Once the team lead is bound the list comes back on its own.
+  await addFeishuMember(baseURL!, workspace);
   await rig({ op: 'feishu_task', workspace, text: 'Book the venue' });
   await expect(list.getByText('Book the venue')).toBeVisible();
 });
@@ -309,7 +309,7 @@ async function turnTasksOn(baseURL: string, workspace: string) {
     cover_resource_id: null,
     provider_secrets_json: null,
   });
-  await bindOwner(baseURL, workspace, 'beta');
+  await addFeishuMember(baseURL, workspace, 'beta');
   for (const text of ['Draft the launch notes', 'Book the venue with the long name for the team'])
     await rig({ op: 'feishu_task', workspace, text });
 }
@@ -320,7 +320,7 @@ test('a team with the task list on shows it as soon as the wall opens', async ({
 }) => {
   const workspace = 'listed_team';
   await signInFeishu(baseURL!, workspace);
-  await bindOwner(baseURL!, workspace);
+  await addFeishuMember(baseURL!, workspace);
   await turnTasksOn(baseURL!, workspace);
   // Feishu is slow to answer; the clipboard must hang on the wall before it does.
   let release = () => {};
@@ -352,7 +352,7 @@ test('dragging a piece leaves the wall texture and the board size alone', async 
 }) => {
   const workspace = 'steady_team';
   await signInFeishu(baseURL!, workspace);
-  await bindOwner(baseURL!, workspace);
+  await addFeishuMember(baseURL!, workspace);
   await turnTasksOn(baseURL!, workspace);
   // A list long enough that every new task makes the clipboard taller.
   for (let i = 0; i < 10; i++) await rig({ op: 'feishu_task', workspace, text: `Errand ${i}` });
@@ -396,7 +396,7 @@ test('with the task list off the rules hang in the middle of the board', async (
 }) => {
   const workspace = 'bare_team';
   await signInFeishu(baseURL!, workspace);
-  await bindOwner(baseURL!, workspace);
+  await addFeishuMember(baseURL!, workspace);
   await page.setViewportSize({ width: 1600, height: 1000 });
   await openTeam(page, workspace);
   const boxes = async () => {

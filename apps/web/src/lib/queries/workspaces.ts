@@ -63,42 +63,18 @@ export function useSetWorkspaceState(scope?: string) {
   });
 }
 
-type WorkspaceOwnerInput = { action: 'get' | 'refresh' };
-export type WorkspaceOwnerRequest = DTO.GetWorkspaceRequest & { provider: 'feishu' | 'telegram' };
-export type WorkspaceOwner = DTO.WorkspaceOwner;
-export function useWorkspaceOwner(input: WorkspaceOwnerRequest, enabled = true) {
+export function useHumanMembers(input: DTO.GetWorkspaceRequest) {
   return useQuery({
-    queryKey: [...keys.owners, { ...input, request_id: undefined }],
-    queryFn: async ({ signal }) => {
-      const response = await call(
-        'invoke_provider_interface',
-        {
-          request_id: input.request_id,
-          workspace: input.workspace,
-          interface_id: `${input.provider}.workspace.owner`,
-          input_json: JSON.stringify({ action: 'get' } satisfies WorkspaceOwnerInput),
-        },
-        signal,
-      );
-      return JSON.parse(response.output_json) as WorkspaceOwner;
-    },
-    enabled,
+    queryKey: [...keys.humans, { ...input, request_id: undefined }],
+    queryFn: ({ signal }) => call('list_human_members', input, signal),
   });
 }
-export function useRefreshWorkspaceOwner() {
+export function useUpdateHumanPosition() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (input: WorkspaceOwnerRequest) => {
-      const response = await call('invoke_provider_interface', {
-        request_id: input.request_id,
-        workspace: input.workspace,
-        interface_id: `${input.provider}.workspace.owner`,
-        input_json: JSON.stringify({ action: 'refresh' } satisfies WorkspaceOwnerInput),
-      });
-      return JSON.parse(response.output_json) as WorkspaceOwner;
-    },
+    mutationFn: (input: DTO.UpdateHumanPositionRequest) => call('update_human_position', input),
     onSuccess: async () => {
-      await client.invalidateQueries({ queryKey: keys.owners });
+      await client.invalidateQueries({ queryKey: keys.humans });
     },
   });
 }

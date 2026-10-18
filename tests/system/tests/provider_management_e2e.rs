@@ -12,10 +12,12 @@ use std::time::Duration;
 struct Http {
     url: String,
     client: reqwest::Client,
+    journals: std::path::PathBuf,
 }
 impl Http {
     fn new(rig: &SystemRig) -> Result<Self> {
         Ok(Self {
+            journals: rig.machine_home().to_owned(),
             url: std::fs::read_to_string(rig.runtime_home().join("run/management.url"))?,
             client: reqwest::Client::builder()
                 .no_proxy()
@@ -71,7 +73,7 @@ mod im_http;
 #[path = "support/telegram_web.rs"]
 mod telegram_web;
 #[tokio::test]
-async fn a4b_telegram_owner_and_first_reply_survive_restart() -> Result<()> {
+async fn telegram_human_and_first_reply_survive_restart() -> Result<()> {
     telegram_first_reply(false, false).await
 }
 #[tokio::test]
@@ -115,12 +117,10 @@ async fn telegram_first_reply(held: bool, cross: bool) -> Result<()> {
         for (key,name) in [("LANKIDE_SYSTEM_INPUTS","inputs.jsonl"),("LANKIDE_SYSTEM_CONTROLS","controls.jsonl"),("LANKIDE_SYSTEM_STEERS","steers.jsonl"),("LANKIDE_SYSTEM_RELEASE","release")] {env.push((key.into(),home.join(name).to_string_lossy().into()));}
         let request=lankide_protocol::CreateAgentRequest{request_id:"alpha".into(),agent:Some(lankide_protocol::AgentRef{workspace_id:"team".into(),agent_id:"alpha".into()}),name:"Alpha".into(),machine_id:machines["machines"][0]["machine_id"].as_str().unwrap().into(),harness_id:"pi".into(),model:"scripted".into(),thinking_level:"low".into(),cli_path:harness.to_string_lossy().into(),environment_variables:env.into_iter().map(|(key,value)|lankide_protocol::EnvironmentVariable{name:key,value}).collect(),provider_agent_config_json:"{\"mode\":\"new\",\"bot_username\":\"alpha_bot\"}".into(),provider_agent_secrets_json:"{}".into(),..Default::default()};
         http.post("create_agent",serde_json::to_value(request)?).await?;
-        let owner="telegram.workspace.owner";
-        assert_eq!(http.invoke(owner,"get",json!({})).await?["state"],"unbound");
+        assert!(http.post("list_human_members",json!({"request_id":"humans","workspace":{"workspace_id":"team"}})).await?.as_array().unwrap().is_empty());
         for action in ["start","poll"] {http.post("advance_agent_onboarding",json!({"request_id":action,"agent":{"workspace_id":"team","agent_id":"alpha"},"action":action,"field_values_json":"{}"})).await?;}
-        let card=http.invoke(owner,"get",json!({})).await?;assert_eq!(card["name"],"Alice");assert!(card["avatar"]["resource_id"].is_number());
-        web.state.lock().unwrap().name="Alice Updated".into();assert_eq!(http.invoke(owner,"refresh",json!({})).await?["name"],"Alice Updated");
-        web.state.lock().unwrap().expired=true;let expired=http.invoke(owner,"refresh",json!({})).await?;assert_eq!(expired["state"],"reauth_required");assert_eq!(expired["avatar"],http.invoke(owner,"get",json!({})).await?["avatar"]);web.state.lock().unwrap().expired=false;
+        let card = http.post("list_human_members",json!({"request_id":"humans","workspace":{"workspace_id":"team"}})).await?;
+        assert_eq!(card[0]["name"],"Alice"); assert_eq!(card[0]["team_role"],"lead"); assert_eq!(card[0]["position"],"Team Leader"); assert!(card[0]["avatar"]["resource_id"].is_number());
         let reply_request=json!({"request_id":"reply","agent":{"workspace_id":"team","agent_id":"alpha"}});
         assert_eq!(http.post("get_agent_first_reply",reply_request.clone()).await?["state"],"waiting");
         if cross {
@@ -212,7 +212,7 @@ async fn feishu_review_rig(enabled: bool) -> Result<(SystemRig, FeishuWeb, Http)
 }
 
 async fn feishu_review_member(http: &Http, id: &str) -> Result<()> {
-    feishu_member_flow(http, id, &["start", "start"]).await
+    feishu_member_flow(http, id, &["start", "poll", "start"]).await
 }
 
 async fn feishu_member_flow(http: &Http, id: &str, actions: &[&str]) -> Result<()> {
@@ -238,6 +238,36 @@ async fn feishu_member_flow(http: &Http, id: &str, actions: &[&str]) -> Result<(
         model: "scripted".into(),
         thinking_level: "low".into(),
         cli_path: harness.to_string_lossy().into(),
+        environment_variables: vec![
+            lankide_protocol::EnvironmentVariable {
+                name: "LANKIDE_SYSTEM_SCRIPT".into(),
+                value: serde_json::to_string(&lankide_system_e2e::Script::reply("Hello"))?,
+            },
+            lankide_protocol::EnvironmentVariable {
+                name: "LANKIDE_SYSTEM_INPUTS".into(),
+                value: http
+                    .journals
+                    .join(format!("inputs-{id}"))
+                    .to_string_lossy()
+                    .into(),
+            },
+            lankide_protocol::EnvironmentVariable {
+                name: "LANKIDE_SYSTEM_CONTROLS".into(),
+                value: http
+                    .journals
+                    .join(format!("controls-{id}"))
+                    .to_string_lossy()
+                    .into(),
+            },
+            lankide_protocol::EnvironmentVariable {
+                name: "LANKIDE_SYSTEM_STEERS".into(),
+                value: http
+                    .journals
+                    .join(format!("steers-{id}"))
+                    .to_string_lossy()
+                    .into(),
+            },
+        ],
         provider_agent_config_json: "{\"mode\":\"new\",\"domain\":\"feishu\"}".into(),
         provider_agent_secrets_json: "{}".into(),
         ..Default::default()
@@ -261,146 +291,6 @@ fn database(rig: &SystemRig) -> Result<rusqlite::Connection> {
         rig.runtime_home().join("runtime.db"),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )?)
-}
-
-#[tokio::test]
-async fn console_profile_multiple_apps_and_read_only_team_tasks() -> Result<()> {
-    let (rig, web, http) = feishu_review_rig(true).await?;
-    let scenario = async {
-        let owner = http.invoke("feishu.workspace.owner", "get", json!({})).await?;
-        assert_eq!(owner["name"], "Alice");
-        assert!(owner["avatar"]["resource_id"].is_number());
-        let person = owner["person_id"].as_str().ok_or("person")?;
-        feishu_review_member(&http, "beta").await?;
-        assert_eq!(http.invoke("feishu.workspace.owner", "get", json!({})).await?["person_id"], person);
-        let db = database(&rig)?;
-        let (external, role, identities): (String,String,String) = db.query_row("SELECT external_id,team_role,provider_identity_state_json FROM people WHERE person_id=?1", [person], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
-        assert_eq!((external.as_str(),role.as_str()), ("on_lead","lead"));
-        let identities: Value = serde_json::from_str(&identities)?;
-        for app in ["cli_console_1", "cli_console_2"] {
-            assert_eq!(identities["open_ids_by_app"][app], format!("ou_lead_{app}"));
-        }
-        {
-            let mut state = web.0.lock().unwrap();
-            assert_eq!(state.qr_codes,1);
-            assert_eq!(state.tasklist_creates.len(),1);
-            assert_eq!(state.tasklist_creates[0].0,"Bearer tenant-cli_console_1");
-            assert_eq!(state.tasklist_transfers.len(),1);
-            assert_eq!(state.tasklist.as_ref().unwrap()["owner"]["id"], "ou_lead_cli_console_1");
-            assert!(state.tasklist_member_adds.iter().any(|(_,body)|body["members"].as_array().unwrap().iter().any(|m|m["type"]=="app" && m["id"]=="cli_console_2")));
-            state.tasks.push(json!({"guid":"external","summary":"Remote task","completed_at":"0","tasklist_guid":"team_tasklist"}));
-        }
-        let tasks = "feishu.workspace.tasks";
-        assert_eq!(http.invoke(tasks,"list",json!({})).await?["items"][0]["text"], "Remote task");
-        assert_eq!(http.invoke(tasks,"rename",json!({"name":"Release checklist"})).await?["name"], "Release checklist");
-        assert_eq!(http.invoke(tasks,"list",json!({})).await?["name"], "Release checklist");
-        {
-            let state = web.0.lock().unwrap();
-            assert_eq!(state.tasklist_renames, vec![("Bearer tenant-cli_console_1".into(), json!({"tasklist":{"name":"Release checklist"},"update_fields":["name"]}))]);
-        }
-        assert!(http.invoke(tasks,"rename",json!({"name":"  "})).await.is_err());
-        web.0.lock().unwrap().tasklist_rename_error = true;
-        assert!(http.invoke(tasks,"rename",json!({"name":"Denied"})).await.is_err());
-        assert_eq!(http.invoke(tasks,"list",json!({})).await?["name"], "Release checklist");
-        web.0.lock().unwrap().tasklist_rename_error = false;
-        for action in ["create","set_completed"] { assert!(http.invoke(tasks,action,json!({"text":"No", "id":"external", "completed":true})).await.is_err()); }
-        web.0.lock().unwrap().expired=true;
-        assert_eq!(http.invoke(tasks,"list",json!({})).await?["items"][0]["text"], "Remote task");
-        let refreshed=http.invoke("feishu.workspace.owner","refresh",json!({})).await?;
-        assert_eq!(refreshed["person_id"],owner["person_id"]);
-        assert_eq!(refreshed["state"],"ready");
-        let state = web.0.lock().unwrap();
-        assert_eq!(state.console_calls.iter().filter(|v|v.starts_with("scope/update")).count(),2);
-        assert_eq!(state.console_calls.iter().filter(|v|v.starts_with("app_version/create")).count(),2);
-        assert!(!state.requests.iter().any(|v|v.contains("authen") || v.contains("safe_setting")));
-        let secrets:i64 = db.query_row("SELECT count(*) FROM workspace_named_secrets WHERE name LIKE 'feishu_owner_%'",[],|r|r.get(0))?;
-        assert_eq!(secrets,0);
-        Ok::<_,Box<dyn std::error::Error+Send+Sync>>(())
-    }.await;
-    let cleanup = rig.close().await;
-    scenario?;
-    cleanup
-}
-
-#[tokio::test]
-async fn console_session_expiry_network_csrf_and_paused_account_switch() -> Result<()> {
-    let (rig, web, http) = feishu_review_rig(false).await?;
-    let scenario=async {
-        let login="feishu.workspace.console_login";
-        let owner=http.invoke("feishu.workspace.owner","get",json!({})).await?;
-        for status in [429,500,503] {
-            web.0.lock().unwrap().profile_status=Some(status);
-            assert!(http.invoke(login,"start",json!({})).await.is_err());
-            let current=http.invoke("feishu.workspace.owner","get",json!({})).await?;
-        for key in ["person_id","name","state"] {assert_eq!(current[key],owner[key]);}
-            assert_eq!(web.0.lock().unwrap().qr_codes,1);
-        }
-        {let mut s=web.0.lock().unwrap();s.profile_status=None;s.profile_network_failure=true;}
-        assert!(http.invoke(login,"start",json!({})).await.is_err());
-        assert_eq!(web.0.lock().unwrap().qr_codes,1);
-        {let mut s=web.0.lock().unwrap();s.profile_network_failure=false;s.csrf_failure=true;}
-
-        feishu_review_member(&http,"beta").await?;
-        assert_eq!(web.0.lock().unwrap().qr_codes,1);
-        web.0.lock().unwrap().expired=true;
-        assert_eq!(http.invoke(login,"start",json!({})).await?["state"],"waiting");
-        web.0.lock().unwrap().expired=false;
-        assert_eq!(http.invoke(login,"poll",json!({})).await?["state"],"ready");
-        assert_eq!(http.invoke("feishu.workspace.owner","get",json!({})).await?["person_id"],owner["person_id"]);
-        web.0.lock().unwrap().profile_redirect=true;
-        assert_eq!(http.invoke(login,"start",json!({})).await?["state"],"waiting");
-        web.0.lock().unwrap().profile_redirect=false;
-        assert_eq!(http.invoke(login,"poll",json!({})).await?["state"],"ready");
-        http.post("set_workspace_state",json!({"request_id":"pause","workspace":{"workspace_id":"team"},"desired_state":"paused"})).await?;
-        let before=web.0.lock().unwrap().event_polls;
-        http.invoke(login,"switch_start",json!({})).await?;
-        http.invoke(login,"switch_cancel",json!({})).await?;
-        assert_eq!(http.invoke(login,"switch_poll",json!({})).await?["state"],"required");
-        http.invoke(login,"switch_start",json!({})).await?;
-        web.0.lock().unwrap().tenant="other-tenant".into();
-        assert!(http.invoke(login,"switch_poll",json!({})).await.is_err());
-        assert_eq!(http.invoke("feishu.workspace.owner","get",json!({})).await?["person_id"],owner["person_id"]);
-        web.0.lock().unwrap().tenant="tenant-a".into();
-        http.invoke(login,"switch_start",json!({})).await?;
-        assert_eq!(http.invoke(login,"switch_poll",json!({})).await?["state"],"ready");
-        assert!(web.0.lock().unwrap().event_polls <= before+1);
-        Ok::<_,Box<dyn std::error::Error+Send+Sync>>(())
-    }.await;
-    let cleanup = rig.close().await;
-    scenario?;
-    cleanup
-}
-
-#[tokio::test]
-async fn console_creator_mismatch_preserves_lead() -> Result<()> {
-    let (rig, web, http) = feishu_review_rig(false).await?;
-    let scenario = async {
-        let owner = http
-            .invoke("feishu.workspace.owner", "get", json!({}))
-            .await?;
-        web.0.lock().unwrap().creator_mismatch = true;
-        assert!(feishu_review_member(&http, "beta").await.is_err());
-        let current = http
-            .invoke("feishu.workspace.owner", "get", json!({}))
-            .await?;
-        for key in ["person_id", "name", "state"] {
-            assert_eq!(current[key], owner[key]);
-        }
-        let db = database(&rig)?;
-        assert_eq!(
-            db.query_row(
-                "SELECT count(*) FROM people WHERE team_role='lead'",
-                [],
-                |r| r.get::<_, i64>(0)
-            )?,
-            1
-        );
-        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
-    }
-    .await;
-    let cleanup = rig.close().await;
-    scenario?;
-    cleanup
 }
 
 async fn inbound(
@@ -492,17 +382,10 @@ async fn stranger_cannot_claim_lead_and_union_identity_survives_multiple_apps() 
         let login = "feishu.workspace.console_login";
         http.invoke(login, "start", json!({})).await?;
         http.invoke(login, "poll", json!({})).await?;
-        assert_eq!(
-            http.invoke("feishu.workspace.owner", "get", json!({}))
-                .await?["name"],
-            "Alice"
-        );
         feishu_review_member(&http, "alpha").await?;
         feishu_review_member(&http, "beta").await?;
-        let owner = http
-            .invoke("feishu.workspace.owner", "get", json!({}))
-            .await?;
-        assert_eq!(owner["person_id"], existing);
+        let roster = humans(&http).await?;
+        assert_eq!(roster[0]["person_id"], existing);
         for (app, id) in [
             ("cli_console_1", "alpha-message"),
             ("cli_console_2", "beta-message"),
@@ -517,83 +400,6 @@ async fn stranger_cannot_claim_lead_and_union_identity_survives_multiple_apps() 
                 |r| r.get::<_, String>(0)
             )?,
             "external"
-        );
-        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
-    }
-    .await;
-    let cleanup = rig.close().await;
-    scenario?;
-    cleanup
-}
-
-#[tokio::test]
-async fn same_tenant_account_switch_rebinds_and_cancelled_profile_does_not_commit() -> Result<()> {
-    let (rig, web, http) = feishu_review_rig(false).await?;
-    let scenario = async {
-        let login = "feishu.workspace.console_login";
-        let owner = http
-            .invoke("feishu.workspace.owner", "get", json!({}))
-            .await?;
-        http.invoke(login, "switch_start", json!({})).await?;
-        let (entered, release) = web.hold("/napi/profile");
-        let pending = {
-            let http = Http::new(&rig)?;
-            tokio::spawn(async move {
-                http.invoke("feishu.workspace.console_login", "switch_poll", json!({}))
-                    .await
-            })
-        };
-        tokio::time::timeout(Duration::from_secs(5), entered.notified()).await?;
-        http.invoke(login, "switch_cancel", json!({})).await?;
-        release.notify_one();
-        assert_eq!(pending.await??["state"], "required");
-        assert_eq!(
-            http.invoke("feishu.workspace.owner", "get", json!({}))
-                .await?,
-            owner
-        );
-        {
-            let mut state = web.0.lock().unwrap();
-            state.user = "other".into();
-            state.name = "Bob".into();
-            state
-                .app_owners
-                .insert("cli_console_1".into(), "other".into());
-        }
-        http.invoke(login, "switch_start", json!({})).await?;
-        assert_eq!(
-            http.invoke(login, "switch_poll", json!({})).await?["state"],
-            "ready"
-        );
-        let switched = http
-            .invoke("feishu.workspace.owner", "get", json!({}))
-            .await?;
-        assert_eq!(switched["name"], "Bob");
-        assert_ne!(switched["person_id"], owner["person_id"]);
-        let db = database(&rig)?;
-        let lead: String = db.query_row(
-            "SELECT external_id FROM people WHERE team_role='lead'",
-            [],
-            |r| r.get(0),
-        )?;
-        assert_eq!(lead, "on_other");
-        assert_eq!(
-            db.query_row(
-                "SELECT team_role FROM people WHERE person_id=?1",
-                [owner["person_id"].as_str().unwrap()],
-                |r| r.get::<_, String>(0)
-            )?,
-            "member"
-        );
-        assert_eq!(
-            web.0
-                .lock()
-                .unwrap()
-                .console_calls
-                .iter()
-                .filter(|v| v.starts_with("scope/update") || v.starts_with("app_version/create"))
-                .count(),
-            2
         );
         Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
     }
@@ -677,53 +483,91 @@ async fn a4b_review_task_callbacks_follow_enabled_state() -> Result<()> {
     cleanup
 }
 
+async fn humans(http: &Http) -> Result<Value> {
+    http.post(
+        "list_human_members",
+        json!({"request_id":"humans","workspace":{"workspace_id":"team"}}),
+    )
+    .await
+}
+
 #[tokio::test]
-async fn console_create_failure_keeps_registration_fallback() -> Result<()> {
-    let (rig, web, http) = feishu_unbound_rig(false).await?;
+async fn bot_creators_join_once_with_real_profiles_and_custom_positions() -> Result<()> {
+    let (rig, web, http) = feishu_unbound_rig(true).await?;
     let scenario = async {
-        http.invoke("feishu.workspace.console_login", "start", json!({}))
-            .await?;
-        http.invoke("feishu.workspace.console_login", "poll", json!({}))
-            .await?;
-        web.0.lock().unwrap().reject_app_create = true;
-        feishu_member_flow(&http, "alpha", &["start"]).await?;
-        let progress = http
-            .post(
-                "get_agent_onboarding",
-                json!({"request_id":"get","agent":{"workspace_id":"team","agent_id":"alpha"}}),
-            )
-            .await?;
-        assert_ne!(progress["status"], "ready");
-        let state = web.0.lock().unwrap();
-        assert!(state.apps.is_empty());
-        assert!(
-            state
-                .requests
-                .iter()
-                .any(|p| p.ends_with("/oauth/v1/app/registration"))
-        );
-        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
-    }
-    .await;
+        feishu_review_member(&http,"alpha").await?;
+        let first = humans(&http).await?;
+        assert_eq!(first[0]["name"], "Alice");
+        assert_eq!(first[0]["position"], "Team Leader");
+        assert_eq!(first[0]["team_role"], "lead");
+        assert!(first[0]["avatar"]["resource_id"].is_number());
+        {let mut state = web.0.lock().unwrap();state.user="bob".into();state.name="Bob".into();}
+        feishu_review_member(&http,"beta").await?;
+        let roster = humans(&http).await?;
+        assert_eq!(roster.as_array().unwrap().len(),2);
+        let bob = roster.as_array().unwrap().iter().find(|p|p["name"]=="Bob").unwrap();
+        assert_eq!(bob["team_role"],"member");assert_eq!(bob["position"],"");
+        let request=json!({"request_id":"position","workspace":{"workspace_id":"team"},"person_id":bob["person_id"],"position":"Team Leader"});
+        http.post("update_human_position",request).await?;
+        let roster=humans(&http).await?;
+        assert_eq!(roster.as_array().unwrap().iter().find(|p|p["person_id"]==bob["person_id"]).unwrap()["team_role"],"member");
+        inbound(&web,&rig,"cli_console_2","bob","position-prompt").await?;
+        let started=tokio::time::timeout(Duration::from_secs(10),async {loop {
+            if let Ok(contents)=std::fs::read_to_string(http.journals.join("controls-beta")) {
+                if let Some(first)=contents.lines().next() { if let Ok(value)=serde_json::from_str::<Value>(first) { break value; } }
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }}).await?;
+        let prompt = started["system_prompt"].as_str().ok_or("system prompt")?;
+        assert!(prompt.contains(&format!("Name: Bob；Role: Team Member；Custom position: Team Leader；ID: {}",bob["person_id"].as_str().unwrap())));
+        assert!(prompt.contains(&format!("Name: Alice；Role: Team Lead；Custom position: Team Leader；ID: {}", first[0]["person_id"].as_str().unwrap())));
+        feishu_review_member(&http,"gamma").await?;
+        assert_eq!(humans(&http).await?.as_array().unwrap().len(),2);
+        assert_eq!(web.0.lock().unwrap().qr_codes,3);
+        let db=database(&rig)?;
+        let secrets:i64=db.query_row("SELECT count(*) FROM workspace_named_secrets WHERE name LIKE '%console%'",[],|r|r.get(0))?;
+        assert_eq!(secrets,0);
+        let state:String=db.query_row("SELECT provider_state_json FROM workspaces WHERE workspace_id='team'",[],|r|r.get(0))?;
+        let state:Value=serde_json::from_str(&state)?;assert!(state.get("owner").is_none() && state.get("console_user_id").is_none() && state.get("console_tenant_id").is_none());
+        let requests=web.0.lock().unwrap().requests.clone();assert!(requests.iter().all(|url| !url.contains("/napi/profile") && !url.contains("oauth")));
+        Ok::<_,Box<dyn std::error::Error+Send+Sync>>(())
+    }.await;
     let cleanup = rig.close().await;
     scenario?;
     cleanup
 }
 
 #[tokio::test]
-async fn first_task_enable_initializes_with_app_and_deleting_app_keeps_owner() -> Result<()> {
+async fn enterprise_mismatch_rejects_and_missing_contact_still_joins() -> Result<()> {
     let (rig, web, http) = feishu_review_rig(false).await?;
-    let scenario=async {
-        assert!(web.0.lock().unwrap().tasklist.is_none());
-        let owner=http.invoke("feishu.workspace.owner","get",json!({})).await?;
-        http.post("update_workspace",json!({"request_id":"enable","workspace":{"workspace_id":"team"},"provider_config_json":"{\"domain\":\"feishu\",\"task_system_enabled\":true}"})).await?;
-        assert_eq!(http.invoke("feishu.workspace.tasks","list",json!({})).await?["enabled"],true);
-        {let state=web.0.lock().unwrap();assert_eq!(state.tasklist_creates.len(),1);assert_eq!(state.tasklist_creates[0].0,"Bearer tenant-cli_console_1");}
-        http.post("delete_agent",json!({"request_id":"delete","agent":{"workspace_id":"team","agent_id":"alpha"}})).await?;
-        let refreshed=http.invoke("feishu.workspace.owner","refresh",json!({})).await?;
-        assert_eq!(refreshed["person_id"],owner["person_id"]);assert_eq!(refreshed["state"],"ready");
-        Ok::<_,Box<dyn std::error::Error+Send+Sync>>(())
-    }.await;
+    let scenario = async {
+        {
+            let mut state = web.0.lock().unwrap();
+            state.user = "outside".into();
+            state.tenant = "other-enterprise".into();
+        }
+        assert!(feishu_review_member(&http, "outside").await.is_err());
+        assert_eq!(humans(&http).await?.as_array().unwrap().len(), 1);
+        {
+            let mut state = web.0.lock().unwrap();
+            state.user = "charlie".into();
+            state.tenant = "tenant-a".into();
+            state.contact_unavailable = true;
+        }
+        feishu_review_member(&http, "charlie").await?;
+        let roster = humans(&http).await?;
+        assert_eq!(roster.as_array().unwrap().len(), 2);
+        let fallback = roster
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["team_role"] == "member")
+            .unwrap();
+        assert!(fallback["name"].is_null());
+        assert!(fallback["avatar"].is_null());
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    }
+    .await;
     let cleanup = rig.close().await;
     scenario?;
     cleanup

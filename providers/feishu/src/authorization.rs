@@ -5,13 +5,14 @@ use serde::Serialize;
 use std::io::Write;
 use url::Url;
 
-pub const STANDARD_BOT_TENANT_SCOPES: [&str; 26] = [
+pub const STANDARD_BOT_TENANT_SCOPES: [&str; 27] = [
     "application:application:patch",
     "application:application:self_manage",
     "application:bot.basic_info:read",
     "cardkit:card:read",
     "cardkit:card:write",
     "contact:user.base:readonly",
+    "contact:contact.base:readonly",
     "im:chat.members:bot_access",
     "im:chat:read",
     "im:message.group_msg",

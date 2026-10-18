@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 import { test, rig } from './rig';
-import { bindOwner, signInFeishu } from './feishu';
+import { addFeishuMember, signInFeishu } from './feishu';
 
 // The smallest window the app ships in.
 test.use({ viewport: { width: 960, height: 660 } });
@@ -135,12 +135,13 @@ test('off duty every screen is off and no member looks broken', async ({ page })
     await expect(screen).toHaveAttribute('data-state', 'dark');
 });
 
-test('a team owner without a picture wears a built-in avatar', async ({ page }) => {
-  const workspace = 'min_owner';
-  await rig({ op: 'create_workspace', workspace, provider: 'feishu', owner_avatar: false });
-  await rig({ op: 'create_agent', workspace, agent: 'hal' });
+test('a human member without a picture wears a built-in avatar', async ({ page, baseURL }) => {
+  const workspace = 'min_human';
+  await rig({ op: 'create_workspace', workspace, provider: 'feishu', member_avatar: false });
+  await rig({ op: 'feishu_scan', workspace, state: 'complete' });
+  await addFeishuMember(baseURL!, workspace, 'hal');
   await open(page, workspace, 'members');
-  const avatar = page.getByTestId('lead-card').locator('article img:not([data-brand])');
+  const avatar = page.getByTestId(/^human-card-/).locator('article img:not([data-brand])');
   await expect(avatar).toHaveAttribute('src', /assets\/\d\d-.*\.jpg$/);
   await expect
     .poll(() => avatar.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0))
@@ -158,7 +159,7 @@ test('moving one piece on a narrow board leaves the others as they were hung', a
 }) => {
   const workspace = 'min_keep';
   await signInFeishu(baseURL!, workspace);
-  await bindOwner(baseURL!, workspace);
+  await addFeishuMember(baseURL!, workspace);
   await hang(page, workspace);
   await page.setViewportSize({ width: 1600, height: 900 });
   await open(page, workspace, 'team');
@@ -219,7 +220,7 @@ for (const { name, width, layout } of crowded) {
   test(`${name} never lets pieces cover each other`, async ({ page, baseURL }) => {
     const workspace = `min_clash_${width}_${layout.rules.y}`;
     await signInFeishu(baseURL!, workspace);
-    await bindOwner(baseURL!, workspace);
+    await addFeishuMember(baseURL!, workspace);
     await hang(page, workspace, layout);
     await page.setViewportSize({ width: 1600, height: 900 });
     await open(page, workspace, 'team');
@@ -265,7 +266,7 @@ for (const { name, layout } of grown) {
   test(`${name} keeps its pieces apart when the rules grow taller`, async ({ page, baseURL }) => {
     const workspace = `min_grow_${layout ? 'saved' : 'new'}`;
     await signInFeishu(baseURL!, workspace);
-    await bindOwner(baseURL!, workspace);
+    await addFeishuMember(baseURL!, workspace);
     if (layout) await hang(page, workspace, layout);
     await open(page, workspace, 'team');
     await page.getByTestId('tasklist').click();

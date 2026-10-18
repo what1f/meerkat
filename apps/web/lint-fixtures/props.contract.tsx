@@ -50,8 +50,6 @@ type PegOnly<T> = T extends { style?: infer P }
   : false;
 export type HangContract = Assert<PegOnly<Parameters<typeof S.Hang>[0]>>;
 export type BadgeContract = Assert<PegOnly<Parameters<typeof S.Badge>[0]>>;
-export type BadgeVersoContract = Assert<NoOverrides<Parameters<typeof S.BadgeVerso>[0]>>;
-export type FlipCardContract = Assert<NoOverrides<Parameters<typeof S.FlipCard>[0]>>;
 export type VacantSlotContract = Assert<PegOnly<Parameters<typeof S.VacantSlot>[0]>>;
 export type TagContract = Assert<PegOnly<Parameters<typeof S.Tag>[0]>>;
 export type QrTagContract = Assert<NoOverrides<Parameters<typeof S.QrTag>[0]>>;

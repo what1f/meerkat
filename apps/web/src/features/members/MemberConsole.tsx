@@ -47,7 +47,9 @@ export function MemberConsole({
         {t('members.scanToCreate')}
       </Callout>
     ) : creation.step === 'failed' ? (
-      <Callout tone="attention">{t('members.failed')}</Callout>
+      <Callout tone="attention">
+        {t(creation.enterprise ? 'members.enterpriseMismatch' : 'members.failed')}
+      </Callout>
     ) : creation.step === 'ready' ? (
       <Callout
         tone="quiet"

@@ -23,11 +23,19 @@ enum Command {
         #[serde(default)]
         provider: web_im::ImProvider,
         #[serde(default = "yes")]
-        owner_avatar: bool,
+        member_avatar: bool,
     },
     SetDuty {
         workspace: String,
         on: bool,
+    },
+    FeishuPerson {
+        workspace: String,
+        user: String,
+        name: String,
+        tenant: String,
+        #[serde(default)]
+        contact_unavailable: bool,
     },
     FeishuScan {
         workspace: String,
@@ -88,6 +96,13 @@ async fn control(
     match command {
         Command::FeishuTasklist { workspace, fail } => return Ok(im.tasklist(&workspace, fail)),
         Command::FeishuScan { workspace, state } => im.scan(&workspace, state),
+        Command::FeishuPerson {
+            workspace,
+            user,
+            name,
+            tenant,
+            contact_unavailable,
+        } => im.feishu_person(&workspace, user, name, tenant, contact_unavailable),
         Command::FeishuTask { workspace, text } => im.task(&workspace, &text),
         Command::PairMachine { command } => return machines.pair(rig, &command).await,
         Command::Dm {
@@ -100,9 +115,9 @@ async fn control(
         Command::CreateWorkspace {
             workspace,
             provider,
-            owner_avatar,
+            member_avatar,
         } => {
-            im.create_workspace(rig, &workspace, provider, owner_avatar)
+            im.create_workspace(rig, &workspace, provider, member_avatar)
                 .await?;
         }
         Command::SetDuty { workspace, on } => {

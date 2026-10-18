@@ -16,7 +16,6 @@ pub mod normalize;
 mod onboarding;
 mod person_profile;
 mod reactions;
-pub mod registration;
 pub mod tasks;
 pub mod ws;
 
@@ -45,15 +44,10 @@ pub use normalize::{
     NormalizedTaskEvent, ReactionAction, SenderKind, normalize_chat_update, normalize_event,
     normalize_message, normalize_reaction, normalize_task,
 };
-pub use onboarding::agent_onboarding;
-pub use registration::{
-    Registrar as FeishuRegistrar, Registration, RegistrationCredential, RegistrationPoll,
-};
 pub use tasks::{
     Comment as TaskCommentInput, CreateTask, ListRequest as TaskListRequest, MemberIdentity,
     TaskEventReason, TaskMemberInput, TaskPatch, TasklistMember,
 };
 pub use ws::{FeishuWebSocketSource, native_event_source_factory};
 
-mod workspace_owner;
 mod workspace_tasks;

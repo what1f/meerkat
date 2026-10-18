@@ -423,14 +423,6 @@ database_methods! {
         let workspace_id = workspace_id.to_owned();
     ] (&workspace_id);
     true ingest_event(event: IngestEvent) -> IngestResult [] (event);
-    true initialize_team_lead(
-        workspace_id: &WorkspaceId,
-        person_id: &PersonId,
-        now: i64,
-    ) -> PersonRecord [
-        let workspace_id = workspace_id.to_owned();
-        let person_id = person_id.to_owned();
-    ] (&workspace_id, &person_id, now);
     true insert_new_agent_record(
         record: AgentRecord,
         provider_secrets: &Value,
@@ -785,6 +777,30 @@ database_methods! {
         let agent_id = agent_id.to_owned();
         let content = content.to_owned();
     ] (&workspace_id, &agent_id, message_id, &content, now);
+    true join_human_team(
+        workspace_id: &WorkspaceId,
+        person_id: &PersonId,
+        tenant_id: Option<&str>,
+        name: Option<&str>,
+        avatar: Option<&lankide_core::ResourceRef>,
+        now: i64,
+    ) -> PersonRecord [
+        let workspace_id = workspace_id.to_owned();
+        let person_id = person_id.to_owned();
+        let tenant_id = tenant_id.map(str::to_owned);
+        let name = name.map(str::to_owned);
+        let avatar = avatar.cloned();
+    ] (&workspace_id, &person_id, tenant_id.as_deref(), name.as_deref(), avatar.as_ref(), now);
+    true update_human_position(
+        workspace_id: &WorkspaceId,
+        person_id: &PersonId,
+        position: &str,
+        now: i64,
+    ) -> () [
+        let workspace_id = workspace_id.to_owned();
+        let person_id = person_id.to_owned();
+        let position = position.to_owned();
+    ] (&workspace_id, &person_id, &position, now);
     true update_team_member(
         workspace_id: &WorkspaceId,
         actor: &PersonId,

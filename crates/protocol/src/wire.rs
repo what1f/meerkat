@@ -17,16 +17,16 @@ pub use crate::management::{
     FigureFrames, FigurePack, GetAgentAvatarRequest, GetAgentAvatarResponse,
     GetAgentOnboardingRequest, GetAgentRequest, GetExecutionDetailsRequest,
     GetProviderOnboardingRequest, GetWorkspaceRequest, HarnessCatalog, HarnessCatalogItem,
-    HarnessTestState, ImportFigurePackRequest, InvokeProviderInterfaceRequest,
+    HarnessTestState, HumanTeamMember, ImportFigurePackRequest, InvokeProviderInterfaceRequest,
     InvokeProviderInterfaceResponse, ListAgentsRequest, ListAgentsResponse, ListFigurePacksRequest,
     ListProviderInterfacesRequest, ListProviderInterfacesResponse, ListWorkspacesRequest,
     ListWorkspacesResponse, MachineCatalog, MachineCatalogItem, ManagementEvent,
     ManagementSubscription, ModelCatalogRequest, PairingCode, ProviderCatalog, ProviderCatalogItem,
     ProviderInterface, ProviderOnboardingState, ReactionCatalog, ReactionCatalogItem, RemoteAccess,
     RenameMachineRequest, RevokeMachineRequest, SetRemoteAccessRequest, SetWorkspaceStateRequest,
-    TestHarnessRequest, TestHarnessResponse, UpdateAgentRequest, UpdateWorkspaceRequest,
-    UploadWorkspaceImageRequest, UploadWorkspaceImageResponse, Workspace, WorkspaceImageRequest,
-    WorkspaceImageResponse, WorkspaceOwner, WorkspaceOwnerState,
+    TestHarnessRequest, TestHarnessResponse, UpdateAgentRequest, UpdateHumanPositionRequest,
+    UpdateWorkspaceRequest, UploadWorkspaceImageRequest, UploadWorkspaceImageResponse, Workspace,
+    WorkspaceImageRequest, WorkspaceImageResponse,
 };
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]

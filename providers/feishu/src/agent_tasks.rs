@@ -927,7 +927,6 @@ pub(crate) async fn initialize_tasklist(
     transport: Arc<dyn crate::http::Transport>,
     app: &str,
     secret: &str,
-    lead_open_id: &str,
     domain: crate::Domain,
 ) -> Result<(), ProviderError> {
     if !task_system_enabled(&context.workspace_config) {
@@ -964,40 +963,45 @@ pub(crate) async fn initialize_tasklist(
             transport,
             crate::Credentials::app(&app, secret.expose_secret()),
         )
-        .map_err(crate::workspace_owner::external)?
+        .map_err(|e| e.provider_error(false))?
         .with_domain(domain);
         (app, client)
     } else {
         (
             app.to_owned(),
             SharedClient::new(transport, crate::Credentials::app(app, secret))
-                .map_err(crate::workspace_owner::external)?
+                .map_err(|e| e.provider_error(false))?
                 .with_domain(domain),
         )
     };
-    let lead_open_id = if caller == app {
-        lead_open_id.to_owned()
-    } else {
-        let person_id = state["owner"]["person_id"]
-            .as_str()
-            .ok_or(ProviderError::NotFound {
-                entity: "team_lead",
-            })?;
-        let person_id =
-            lankide_core::PersonId::new(person_id).map_err(|_| ProviderError::InvalidInput {
-                field: "owner_identity",
-            })?;
-        let person = context.storage().person(&person_id).await?;
-        person.provider_state["open_ids_by_app"][&caller]
-            .as_str()
-            .ok_or(ProviderError::NotFound {
-                entity: "lead_open_id",
-            })?
-            .to_owned()
-    };
+    let client = Arc::new(client);
+    let lead_person = context
+        .storage()
+        .team_members()
+        .await?
+        .into_iter()
+        .find_map(|member| match member {
+            ProviderTeamMember::Human(person)
+                if person.team_role == lankide_provider::TeamRole::Lead =>
+            {
+                Some(person)
+            }
+            _ => None,
+        })
+        .ok_or(ProviderError::NotFound {
+            entity: "team_lead",
+        })?;
+    let lead_open_id = crate::identity::person_open_id(
+        context.storage(),
+        lead_person,
+        &caller,
+        client.clone(),
+        Auth::Tenant,
+    )
+    .await?;
     members.push(TasklistMember::editor(MemberIdentity::user(&lead_open_id)));
     let guid = ensure_tasklist(
-        Arc::new(client),
+        client,
         Auth::Tenant,
         state["tasklist_guid"].as_str(),
         tasklist_name(&context.workspace_config).as_deref(),

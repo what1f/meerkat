@@ -5,10 +5,10 @@ import { Button, EmptyState } from '../../design';
 import { useT } from '../../lib/i18n';
 import { useAgents } from '../../lib/queries/agents';
 import { useMachines } from '../../lib/queries/machines';
-import { useWorkspace } from '../../lib/queries/workspaces';
+import { useHumanMembers, useWorkspace } from '../../lib/queries/workspaces';
 import { readStorage, writeStorage } from '../../lib/storage';
 import { MemberCard } from './MemberCard';
-import { LeadCard } from './LeadCard';
+import { HumanCard, HumanBench } from './HumanCard';
 import { MemberBench, type TopBarConfig } from './MemberBench';
 import { broken } from './draft';
 
@@ -21,6 +21,16 @@ export type MembersPageProps = {
 
 export function MembersPage({ workspaceId: workspace, page, navigate, frame }: MembersPageProps) {
   if (!workspace) return frame({}, null);
+  if (page.kind === 'member' && page.id?.startsWith('human:'))
+    return (
+      <HumanBench
+        key={`${workspace}/${page.id}`}
+        workspace={workspace}
+        id={page.id.slice(6)}
+        onBack={() => navigate({ kind: 'members' })}
+        frame={frame}
+      />
+    );
   if (page.kind === 'member' && page.id)
     return (
       <MemberBench
@@ -73,11 +83,10 @@ function MemberBoard({
     setOrder(next);
     writeStorage(key, next);
   });
-  const provider = team.data?.provider_id;
-  const lead = provider === 'feishu' || provider === 'telegram' ? provider : null;
+  const humans = useHumanMembers({ request_id: 'members', workspace: ref });
   const add = () => onOpen('new');
 
-  const failed = [agents, team, machines].filter(broken);
+  const failed = [agents, team, machines, humans].filter(broken);
   if (failed.length)
     return frame(
       {},
@@ -105,7 +114,7 @@ function MemberBoard({
       </Board>,
       'wall',
     );
-  if (!list.length && !lead)
+  if (!list.length && !humans.data?.length)
     return frame(
       {},
       <EmptyState
@@ -120,7 +129,14 @@ function MemberBoard({
   return frame(
     {},
     <Board layout="rails">
-      {lead && <LeadCard workspace={workspace} provider={lead} />}
+      {humans.data?.map((person) => (
+        <HumanCard
+          key={person.person_id}
+          workspace={workspace}
+          person={person}
+          onOpen={() => onOpen(`human:${person.person_id}`)}
+        />
+      ))}
       {list.map((agent) => (
         <MemberCard
           key={agent.agent!.agent_id}

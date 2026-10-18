@@ -747,7 +747,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
         .map_err(err)?;
     restarted
         .storage()
-        .initialize_team_lead(&workspace_a, &lead.person_id, 90)
+        .join_human_team(&workspace_a, &lead.person_id, None, None, None, 90)
         .map_err(err)?;
     let member = restarted
         .storage()

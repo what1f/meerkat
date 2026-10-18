@@ -38,7 +38,7 @@ fn main() {
         .append(true)
         .open(&controls_path)
         .expect("control journal");
-    writeln!(controls, "{}", json!({"op": first["op"], "native_session_id": first["request"]["native_session_id"], "pid": std::process::id(), "argv": std::env::args().skip(1).collect::<Vec<_>>(), "config": first["request"]["config"], "directory": std::env::current_dir().expect("cwd"), "tools": first["request"]["tools"]})).expect("record session start");
+    writeln!(controls, "{}", json!({"op": first["op"], "native_session_id": first["request"]["native_session_id"], "pid": std::process::id(), "argv": std::env::args().skip(1).collect::<Vec<_>>(), "config": first["request"]["config"], "system_prompt": first["request"]["system_prompt"], "directory": std::env::current_dir().expect("cwd"), "tools": first["request"]["tools"]})).expect("record session start");
     let script: Script =
         serde_json::from_str(&std::env::var("LANKIDE_SYSTEM_SCRIPT").expect("Agent script"))
             .expect("script JSON");

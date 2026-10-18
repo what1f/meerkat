@@ -3,7 +3,6 @@ import { Badge, Hang, QrTag, SoulSlot } from '../../scene';
 import { useT } from '../../lib/i18n';
 import { useState } from 'react';
 import type { Flow } from './useOnboarding';
-import { OwnerBadge } from './OwnerBadge';
 import css from './steps.module.css';
 
 // A blank badge beside yours. Without a kept sign-in, the chat app asks you to
@@ -18,7 +17,6 @@ export function FirstMemberStep({ flow }: { flow: Flow }) {
     <div className={css.step}>
       <StepHeading>{t('onboarding.firstMember')}</StepHeading>
       <div className={css.hero}>
-        <OwnerBadge workspace={flow.workspace} provider={provider} />
         <Hang>
           <Badge
             size="intro"

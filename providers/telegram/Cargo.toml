@@ -25,7 +25,7 @@ tempfile.workspace = true
 
 [package.metadata.lankide.e2e]
 command = "LANKIDE_E2E_LIVE=1 cargo test -p lankide-provider-telegram --test e2e telegram_e2e:: -- --ignored --nocapture"
-scenario = "Run one complete Telegram Provider scenario covering public mention, normalization, and acknowledgement contracts together with real Manager/Agent verification, update reads, send, reply, attachment, reaction, and recall in an isolated test chat. Resolve the receiving Agent from the receiving bot for private messages and reactions. Preserve the receiving bot identity on group messages for per-Agent conversation access. Additional Provider owner, task invalidation and first-reply behavior is covered by system-provider-management."
+scenario = "Run one complete Telegram Provider scenario covering public mention, normalization, and acknowledgement contracts together with real Manager/Agent verification, update reads, send, reply, attachment, reaction, and recall in an isolated test chat. Resolve the receiving Agent from the receiving bot for private messages and reactions. Preserve the receiving bot identity on group messages for per-Agent conversation access. Additional human team enrollment, task invalidation and first-reply behavior is covered by system-provider-management."
 prerequisites = "Existing Manager and Agent Bots; explicitly configured isolated test chat; exclusive access to the test account"
 classification = "live"
 unattended = "yes after live opt-in and preflight"

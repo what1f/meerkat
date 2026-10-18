@@ -65,7 +65,7 @@ apps/web/
       *.module.css         一个组件对应一个样式文件，同名
       index.ts             唯一出口
     scene/
-      Board.tsx  Hang.tsx  Badge.tsx  BadgeVerso.tsx  FlipCard.tsx  VacantSlot.tsx
+      Board.tsx  Hang.tsx  Badge.tsx  VacantSlot.tsx
       Tag.tsx  QrTag.tsx  TokenTag.tsx  PaperLabel.tsx  ShiftSign.tsx
       Clipboard.tsx  ChecklistRow.tsx
       Console.tsx  ConsoleScreen.tsx  ScreenReadout.tsx  ConsoleKey.tsx  SoulSlot.tsx  Lever.tsx
@@ -206,8 +206,6 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 | `Board`         | `layout: 'rails' \| 'free' \| 'open'; holes?: 'on' \| 'fade'; lead?: ReactNode; children`                                                                                                                                                                                                      | 洞洞板画布。孔网格自动对齐到第一个挂钉；`free` 模式下由子项自行定位，孔坐标从 `lead` 之下算起；`open` 不排布子项，用于成员详情。板面铺在透明顶栏之下（`AppShell` 的 `board`），`rails`、`free` 顶部留出顶栏和 4px，`free` 左右各 32px                                                                                                                                                                                                                                                                                                       |
 | `Hang`          | `ref?: Ref<HTMLDivElement>; style?: { left?: number; top?: number }; lanyard?: 'member' \| 'lead'; motion?: 'enter' \| 'leave' \| 'turn-in'; swingOnHover?; swingKey?: number; faded?; muted?; onClick?; children`                                                                                     | 挂钉、挂绳、夹子，以挂钉为支点。传 `onClick` 时整张是可打开的卡片：`role="button"`、可聚焦，Enter 和 Space 也能打开。`faded` 让它退到背景（透明度 0.35），用于阅读性格时的 stage；`Badge` 的 `dimmed` 是暂停状态，两者不同。`muted` 让挂绳和夹子褪成灰色，用于授权失效的工卡，配合 `onClick` 时悬停会微微上抬。`swingKey` 的值每变化一次就晃一下，用于保存、换头像、落位之后。`turn-in` 表示原地翻入，例如二维码吊牌翻成工卡。FLIP 期间的层级由 `useFlip` 通过 data 属性处理，不放进 props。`ref` 和 `style` 用来直接接 `useHoleDrag` 和 `useSortable` 返回的 handle，不需要再包一层 div；`style` 只允许挂钉位置 `left`、`top` |
 | `Badge`         | `ref?: Ref<HTMLElement>; style?: { left?: number; top?: number }; avatar: { src?; fallback?: string; status?: Status; statusTip?; creating?; onEdit?; editLabel? }; name: ReactNode; role?: ReactNode; bio?: ReactNode; foot?: ReactNode; size: 'card' \| 'stage' \| 'intro'; dimmed?; ghost?` | 白色工卡。头像由 Badge 内部渲染，并按工卡比例确定尺寸；`avatar.fallback` 与 `Avatar` 的失败回退一致，`src` 加载失败时改用它。`name`、`role`、`bio` 可以传纯文字，也可以传 `InlineText`。`intro` 是引导页的尺寸。`ghost` 是骨架状态的空白卡。`ref` 和 `style` 的用途同 `Hang`，用于不挂在挂绳上直接拖动的工卡                                                                                                                                                                                                                                |
-| `BadgeVerso`    | `mark: ReactNode; actions: { label; onClick; busy? }[]`                                                                                                                                                                                                                                        | 你自己工卡的背面：品牌标志加撕页按钮。`busy` 时显示转圈的刷新图标                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `FlipCard`      | `flipped; front; back; onFlip`                                                                                                                                                                                                                                                                 | 翻面容器，单击在原地翻转；面上的按钮、输入框保留自己的点击。也可以聚焦后按 Enter 或 Space                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `VacantSlot`    | `ref?: Ref<HTMLButtonElement>; style?: { left?: number; top?: number }; label; onClick; shape: 'badge' \| 'clipboard'`                                                                                                                                                                         | 虚线空位，例如添加成员、任务清单停用后的位置。两种形状都带挂钉：`badge` 和 rails 里的工卡对齐，`clipboard` 和 `Clipboard` 对齐。`ref`、`style` 的用途同 `Hang`                                                                                                                                                                                                                                                                                                                                                                              |
 | `Tag`           | `ref?: Ref<HTMLElement>; style?: { left?: number; top?: number }; children; tone?: 'paper'`                                                                                                                                                                                                    | 挂在绳上的吊牌（带孔眼），规约、二维码、Token 都用它。`ref`、`style` 的用途同 `Hang`                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `QrTag`         | `state: 'loading' \| 'wait' \| 'scanned' \| 'expired' \| 'error'; errorLabel?: string; value: string; brand: 'feishu' \| 'telegram'; scannerAvatar?: string; onRefresh; refreshLabel; onClose?; closeLabel?`                                                                                                                                          | 二维码吊牌：扫码后变暗，并显示扫码人的头像；过期时刷新按钮就在码上；`loading` 时显示骨架；`error` 时用本地化 `errorLabel` 和重新开始按钮替换二维码。登录成功后翻成工卡，由 `Hang motion="turn-in"` 完成。传 `onClose` 时孔眼旁出现关闭按钮                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -262,9 +260,9 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 
 | 文件                                                         | 内容                                                                                                          |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `MembersPage.tsx`                                            | 成员板：用 `Board` 的 rails 布局，加 `useSortable`。你自己的工卡排第一位，最后是添加用的空位                  |
+| `MembersPage.tsx`                                            | 成员板：用 `Board` 的 rails 布局，加 `useSortable`。所有人类工卡排在 Agent 工卡前，最后是添加用的空位                  |
 | `MemberCard.tsx`                                             | 板上的一张工卡：`Hang` 加 `Badge`，状态点和工卡底部的模型显示                                                 |
-| `LeadCard.tsx`                                               | 你自己的工卡：使用 `FlipCard`，背面是 `BadgeVerso`，提供同步资料和切换账号；飞书授权失效（`needs_sign_in`）时改为置灰的 `Hang muted`，点击直接进入扫码                                    |
+| `HumanCard.tsx` | 人类成员的小工卡与详情工卡。统一读取人类名册，姓名头像只读，岗位输入支持 Enter/失焦保存和 Esc 撤销，无卡背、介绍、状态点或模型脚注。 |
 | `MemberBench.tsx`                                            | 打开成员后的页面：左边是 `Console`，右边挂着大工卡，直接在卡上编辑                                            |
 | `MemberConsole.tsx`                                          | 组合操控台：形象、表情贴纸、屏幕、性格卡、按键、高级抽屉                                                      |
 | `BrainPicker.tsx`                                            | 屏幕点开后的四列选择器：工区、AI、模型、思考。由 `Popover`、`SearchField`、`OptionColumn` 和 `Lever` 组合而成 |
@@ -281,12 +279,11 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 
 数据：`useAgents`、`useAgent`、`useAgentAvatar`、`useMachines`、`useHarnessCatalog`、`useModelCatalog`、
 `useReactionCatalog`、`useFigurePacks`、`useImportFigurePack`、`useWorkspace`、
-`useWorkspaceOwner`、`useRefreshWorkspaceOwner`、`useCreateAgent`、`useUpdateAgent`、`useDeleteAgent`、
+`useHumanMembers`、`useUpdateHumanPosition`、`useCreateAgent`、`useUpdateAgent`、`useDeleteAgent`、
 `useResumeAgent`、`useStartAgentOnboarding`、`useAgentOnboardingProgress`（飞书团队创建成员）、
-`useFeishuAccountSwitch`、`useStartFeishuAccountSwitch`、`useCancelFeishuAccountSwitch`（LeadCard 切换账号）。
 `lib/assets.ts` 的 `resourceUrl`、`packFrames`（形象包帧）和 `figureId`（`builtin:<id>` 转裸 id）。
 
-testid：`member-card-{id}`、`lead-card`、`add-member`、`member-name`、`member-save`、`member-create`、
+testid：`member-card-{id}`、`human-card-{person_id}`、`human-position`、`add-member`、`member-name`、`member-save`、`member-create`、
 `member-create-qr`（`data-state` 为 `wait` 或 `scanned`）、`member-pause`、`member-delete`、`member-test`、
 `confirm-delete-member`、`brain-picker`、`reaction-picker`、`avatar-picker`、`figure-picker`。
 
@@ -345,17 +342,16 @@ testid：`settings-language`、`settings-theme-{system|light|dark}`。
 | `useOnboarding.ts`                                                                               | 步骤状态机和跳过规则                                                        |
 | `WelcomeStep.tsx`、`ConnectStep.tsx`、`ChooseAiStep.tsx`、`FirstMemberStep.tsx`、`ReadyStep.tsx` | 每个步骤一个文件，只组合 scene 组件和 design 组件                           |
 | `ChatPreview.tsx`                                                                                | 用 `Message` 组成一段飞书对话                                               |
-| `OwnerBadge.tsx`                                                                                 | 负责人自己的工卡：飞书扫码登录后显示，Telegram 在确认第一位成员之前保持空白 |
 | `useAiPick.ts`                                                                                   | 进入选 AI 这一步后，测试最近选的（或第一个可用的）AI，并给出每行的测试结果  |
 | `messages.ts`                                                                                    |                                                                             |
 
 数据：`useCreateWorkspace`、`useFeishuConsoleLogin`、`useStartFeishuConsoleLogin`、`useMachines`、
 `useHarnessTrials`、`useCreateAgent`、`useStartAgentOnboarding`、`useAgentOnboardingProgress`、
-`useAgentFirstReply`、`useAgent`、`useWorkspaceOwner`。
+`useAgentFirstReply`、`useAgent`、`useHumanMembers`。
 
 testid：`onboarding`（`data-step` 为当前步骤 0–4）、`onboarding-next`、`onboarding-later`、
-`onboarding-provider`、`onboarding-qr`（`data-state` 为 `loading`、`wait`、`scanned`、`expired`；扫码完成后二维码移除，`onboarding-owner` 出现）、
-`onboarding-token`、`onboarding-owner`（`data-state` 为 `ready`、`unknown`）、`harness-{id}`（`data-test` 为 `run`、`ok`、`fail`）、
+`onboarding-provider`、`onboarding-qr`（`data-state` 为 `loading`、`wait`、`scanned`、`expired`；扫码完成后二维码移除）、
+`onboarding-token`、`harness-{id}`（`data-test` 为 `run`、`ok`、`fail`）、
 `onboarding-member-name`、`onboarding-confirm`、`onboarding-chat`、`onboarding-open`、`onboarding-retry`。
 
 ### 外壳（app）的 testid
@@ -373,8 +369,7 @@ testid：`onboarding`（`data-step` 为当前步骤 0–4）、`onboarding-next`
 | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `renderSide`、`nav`、侧栏拖拽 IIFE                | `Sidebar`、`SidebarGrip`、`NavItem`、`TeamSwitcher`、`useSidebarLayout`                                                            |
 | `renderBar`                                       | `TopBar`                                                                                                                           |
-| `badge()`                                         | `Hang`、`Badge`、`Avatar`、`StatusDot`，以及 feature 里的 `MemberCard` 和 `LeadCard`                                               |
-| `leadBack`                                        | `BadgeVerso` 和 `FlipCard`                                                                                                         |
+| `badge()`                                         | `Hang`、`Badge`、`Avatar`、`StatusDot`，以及 feature 里的 `MemberCard` 和 `HumanCard`                                               |
 | `pageMembers`                                     | `MembersPage`、`VacantSlot`、`useSortable`                                                                                         |
 | `pageMember`                                      | `MemberBench`、`MemberConsole`、`Console`、`ConsoleScreen`、`ScreenReadout`、`ConsoleKey`、`SoulSlot`、`Callout`、`AdvancedDrawer` |
 | `brainMenu`、`leverHTML`、`bindLever`             | `BrainPicker`、`Popover`、`SearchField`、`OptionColumn`、`Lever`                                                                   |
@@ -410,3 +405,5 @@ testid：`onboarding`（`data-step` 为当前步骤 0–4）、`onboarding-next`
 | `--z-bar`  | 30  | 顶栏内的按钮（返回键、菜单触发器），高于板面内容                                       |
 
 新增会伸进顶栏高度的可交互板面内容时用 `--z-live`，不要自己加数字。弹层仍在 `--z-popup` 以上。
+
+人类成员：`members/HumanCard.tsx` 导出 HumanCard 和 HumanBench，统一使用人类名册接口。小卡与大卡都用品牌挂绳，姓名头像只读，只编辑岗位；没有卡背、介绍、状态或模型脚注。`human-card-<person_id>`、`human-position` 为测试入口。

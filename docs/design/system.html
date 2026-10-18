@@ -557,22 +557,7 @@ svg.i { display: block; flex: none; }
 /* You wear the brand lanyard; members wear black. */
 .hang.me { --cord: #6c78d2; }
 [data-theme="dark"] .hang.me { --cord: #6470c4; }
-.turn { position: relative; transform-style: preserve-3d; transition: transform .7s var(--ease-pop); }
-.hang.flipped .turn { transform: perspective(900px) rotateY(180deg); }
-.turn > .badge { backface-visibility: hidden; }
-.badge.verso { position: absolute; inset: 0; transform: rotateY(180deg); padding-top: calc(70 * var(--u)); }
-.badge.verso .org { width: calc(64 * var(--u)); height: calc(64 * var(--u)); border-radius: calc(14 * var(--u)); background: var(--field); display: flex; align-items: center; justify-content: center; }
-.badge.verso .org img { width: calc(34 * var(--u)); height: calc(34 * var(--u)); }
-.badge.verso .n { font-size: calc(16 * var(--u)); }
-.badge.verso .tear { margin-top: auto; width: 100%; display: flex; flex-direction: column; }
-.badge.verso .tear button {
-  display: flex; align-items: center; justify-content: center; gap: 6px; height: calc(40 * var(--u)); border: 0; border-top: 1px dashed var(--line-strong);
-  background: none; font: inherit; font-size: calc(12.5 * var(--u)); color: var(--ink-2); cursor: pointer; transition: background var(--d-fast), color var(--d-fast);
-}
-.badge.verso .tear button:hover { background: var(--hover); color: var(--ink); }
-.badge.verso .tear .i { display: none; color: var(--ink-3); }
-.badge.verso .tear .busy .i { display: block; }
-.badge.verso .tear .busy .i { animation: spin .8s linear infinite; }
+
 .badge .slot {
   position: absolute; left: 50%; top: calc(9 * var(--u)); width: calc(26 * var(--u)); height: calc(6 * var(--u)); margin-left: calc(-13 * var(--u));
   border-radius: 99px; background: var(--board); box-shadow: inset 0 1px 2px rgba(0,0,0,.25);
@@ -1657,17 +1642,13 @@ function alignBoard(root) {
   const mod = v => ((v - 12) % 24 + 24) % 24 + 'px';
   root.style.setProperty('--bx', mod(x)); root.style.setProperty('--by', mod(y));
 }
-const openMember = () => S.page === 'members' && (S.open === 'new' ? S.draft : list().find(x => x.id === S.open));
+const openMember = () => S.page === 'members' && (S.open === 'new' ? S.draft : [team().lead, ...list()].find(x => x && x.id === S.open));
 
 function badgeFoot(m) {
   if (statusOf(m) === 'creating') return `<span class="skel" style="width:40%;height:9px"></span>`;
   return `<img src="${ENGINES[m.engine].icon}" alt="">${m.model.split('/').pop()}`;
 }
 
-// Your own badge has nothing to edit; its back holds the chat account.
-const leadBack = () => `<div class="badge verso"><span class="slot"></span>
-  <span class="org"><img src="${ASSET}${team().provider}.svg" alt=""></span>
-  <span class="tear"><button data-lead="sync">${icon('refresh', 13)}同步资料</button><button data-lead="relogin">切换账号</button></span></div>`;
 function badge(m, big = false) {
   const st = statusOf(m);
   const dot = m.human || st === 'creating' || st === 'draft' ? '' : `<span class="dot ${st}" ${m.paused ? `data-tip="${m.paused}"` : ''}></span>`;
@@ -1677,11 +1658,11 @@ function badge(m, big = false) {
   const text = big
     ? `${m.human ? `<span class="n">${m.name}</span>` : `<input class="bare n" value="${m.name}" placeholder="名字" data-field="name" spellcheck="false" autocomplete="off">`}
        <input class="bare r" value="${m.role || ''}" placeholder="岗位" data-field="role" spellcheck="false">
-       <textarea class="bare b" rows="2" placeholder="一句话介绍" data-field="bio" spellcheck="false">${m.bio || ''}</textarea>`
+       ${m.human ? '' : `<textarea class="bare b" rows="2" placeholder="一句话介绍" data-field="bio" spellcheck="false">${m.bio || ''}</textarea>`}`
     : `<span class="n">${m.name}</span><span class="r">${m.role || ''}</span>${m.bio ? `<span class="b">${m.bio}</span>` : ''}`;
   return `<div class="hang ${m.human ? 'me' : ''} ${m.justAdded ? 'enter' : ''}" ${big ? '' : `data-card="${m.id}"`}>
     <span class="peg"></span><span class="cord"></span><span class="clip"></span>
-    ${m.human && !big ? '<div class="turn">' : ''}<div class="badge ${m.paused ? 'paused' : ''}"><span class="slot"></span>${avatar}${text}${m.human ? '' : `<span class="foot">${badgeFoot(m)}</span>`}</div>${m.human && !big ? leadBack() + '</div>' : ''}</div>`;
+    <div class="badge ${m.paused ? 'paused' : ''}"><span class="slot"></span>${avatar}${text}${m.human ? '' : `<span class="foot">${badgeFoot(m)}</span>`}</div></div>`;
 }
 
 /* Team wall. Positions are hole coordinates of each peg; items keep their hole until moved. */
@@ -1701,6 +1682,7 @@ function pageMembers() {
 }
 
 function pageMember(m) {
+  if (m.human) return `<div class="bench">${badge(m, true)}</div>`;
   const notice = m.paused
     ? `<div class="callout quiet">${icon('pause', 14)}<span class="grow">${m.paused}</span><button class="btn sm primary" data-act="resume">继续</button></div>`
     : m.attention
@@ -2232,16 +2214,7 @@ document.addEventListener('click', e => {
   if (navBtn) { S.page = navBtn.dataset.nav; S.open = null; closeMenu(); render(); return; }
 
   const c = t.closest('[data-card]');
-  if (c && c.dataset.card === 'lead') {
-    const l = t.closest('[data-lead]');
-    if (!l) { c.classList.toggle('flipped'); return; }
-    if (l.dataset.lead === 'relogin') { c.classList.remove('flipped'); return; }
-    l.classList.add('busy');
-    setTimeout(() => { l.classList.remove('busy'); c.classList.remove('flipped'); setTimeout(() => swing(c), 500); }, 1000);
-    return;
-  }
-  document.querySelectorAll('.hang.flipped').forEach(h => h.classList.remove('flipped'));
-  if (c) { enterMember(+c.dataset.card, c); return; }
+  if (c) { enterMember(c.dataset.card === 'lead' ? 'lead' : +c.dataset.card, c); return; }
 
 
   if (t.closest('[data-close]')) { closeDialog(); return; }

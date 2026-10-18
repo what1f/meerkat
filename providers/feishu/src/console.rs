@@ -7,8 +7,7 @@
 
 use crate::authorization::{STANDARD_BOT_EVENTS, STANDARD_BOT_TENANT_SCOPES};
 use crate::http::{ClientError, Method, Request, Response, Transport, encode_query_component};
-use lankide_provider::{ProviderError, SecretReader, SecretValue, SecretWriter};
-use serde::{Deserialize, Serialize};
+use lankide_provider::ProviderError;
 use serde_json::{Value, json};
 use std::fmt;
 use std::sync::Arc;
@@ -26,12 +25,12 @@ pub(crate) const LOGIN_QR_LIFETIME_MS: u64 = 150_000;
 pub(crate) const LOGIN_POLL_INTERVAL_SECONDS: u32 = 2;
 const APP_ICON: &[u8] = include_bytes!("../assets/app-icon.png");
 
-#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub(crate) struct CookieJar {
     cookies: Vec<Cookie>,
 }
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 struct Cookie {
     domain: String,
     name: String,
@@ -151,7 +150,7 @@ async fn fetch(
 }
 
 /// Sign-in that has shown a QR code and waits for the user's scan.
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default)]
 pub(crate) struct PendingLogin {
     jar: CookieJar,
     flow_key: String,
@@ -184,7 +183,7 @@ pub(crate) enum LoginPoll {
 }
 
 /// Signed-in developer console session.
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default)]
 pub(crate) struct ConsoleSession {
     jar: CookieJar,
     csrf: String,
@@ -368,10 +367,6 @@ impl DeveloperConsole {
         Self { transport, session }
     }
 
-    pub(crate) fn into_session(self) -> ConsoleSession {
-        self.session
-    }
-
     async fn call(
         &mut self,
         method: Method,
@@ -388,21 +383,7 @@ impl DeveloperConsole {
         if let Some(body) = body {
             request = request.json(&body)?;
         }
-        match self.send(request.clone(), operation).await {
-            Err(ClientError::Api { code: 9499, .. })
-            | Err(ClientError::HttpStatus { status: 400, .. }) => {
-                self.session = open_console(self.transport.as_ref(), &mut self.session.jar).await?;
-                let mut request = request;
-                request
-                    .headers
-                    .retain(|(k, _)| !k.eq_ignore_ascii_case("x-csrf-token"));
-                request
-                    .headers
-                    .push(("x-csrf-token".into(), self.session.csrf.clone()));
-                self.send(request, operation).await
-            }
-            result => result,
-        }
+        self.send(request, operation).await
     }
 
     async fn send(&mut self, request: Request, operation: &str) -> Result<Value, ClientError> {
@@ -423,57 +404,20 @@ impl DeveloperConsole {
         passport_data(&response, operation)
     }
 
-    pub(crate) async fn profile(&mut self) -> Result<Value, ClientError> {
-        let info = self
-            .send(
-                Request::new(Method::Get, format!("{OPEN}/napi/profile"))
-                    .header("User-Agent", USER_AGENT),
-                "console_profile",
-            )
-            .await?;
-        for key in ["id", "tenantId"] {
-            if info[key].as_str().is_none_or(|v| v.is_empty()) {
-                return Err(ClientError::HttpStatus {
-                    status: 401,
-                    operation: "console_profile".into(),
-                });
-            }
-        }
-        Ok(info)
-    }
-
-    pub(crate) async fn verify_creator(
-        &mut self,
-        app: &str,
-        profile: &Value,
-    ) -> Result<(), ClientError> {
-        let mut cursor = 0;
-        loop {
-            let list = self
-                .call(
-                    Method::Get,
-                    &format!("app/list?Count=100&Cursor={cursor}"),
-                    None,
-                    "console_app_list",
-                )
-                .await?;
-            let apps = list["apps"]
-                .as_array()
-                .ok_or_else(|| ClientError::MissingField {
-                    operation: "console_app_list".into(),
-                    field: "apps".into(),
-                })?;
-            if let Some(found) = apps.iter().find(|v| v["appID"] == app) {
-                if found["owner"]["userID"] == profile["id"] {
-                    return Ok(());
-                }
-                return Err(ClientError::InvalidInput("owner_identity".into()));
-            }
-            if apps.len() < 100 {
-                return Err(ClientError::InvalidInput("owner_identity".into()));
-            }
-            cursor += apps.len();
-        }
+    pub(crate) async fn tenant_id(&mut self) -> Result<String, ClientError> {
+        self.send(
+            Request::new(Method::Get, format!("{OPEN}/napi/check/login"))
+                .header("User-Agent", USER_AGENT),
+            "console_tenant",
+        )
+        .await?["tenantId"]
+            .as_str()
+            .filter(|v| !v.is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| ClientError::MissingField {
+                operation: "console_tenant".into(),
+                field: "tenantId".into(),
+            })
     }
 
     /// Creates an Agent App with the bot, permissions, events and icon Lankide
@@ -711,203 +655,70 @@ fn scope_ids(catalog: &Value, names: &[&str]) -> Result<Vec<String>, ClientError
         .collect()
 }
 
-const SESSION_SECRET: &str = "feishu_console_session";
-const PENDING_LOGIN_SECRET: &str = "feishu_console_login";
-
-/// Developer console sign-in as the user sees it.
+/// QR cookies and the one-use onboarding handoff exist only in memory.
+#[derive(Default)]
+pub(crate) struct LoginFlow {
+    pending: Option<PendingLogin>,
+    ready: Option<ConsoleSession>,
+}
 #[derive(Debug)]
 pub(crate) enum Login {
     Ready(ConsoleSession),
-    Required,
     Waiting { qr_code: String, scanned: bool },
 }
-
-async fn read_secret<T: serde::de::DeserializeOwned>(
-    reader: &dyn SecretReader,
-    name: &str,
-) -> Result<Option<T>, ProviderError> {
-    match reader.read(name).await {
-        Ok(value) => Ok(serde_json::from_str(value.expose_secret()).ok()),
-        Err(ProviderError::SecretAccessDenied) => Ok(None),
-        Err(error) => Err(error),
-    }
-}
-
-async fn write_secret<T: Serialize>(
-    writer: &dyn SecretWriter,
-    name: &str,
-    value: &T,
-) -> Result<(), ProviderError> {
-    let encoded = serde_json::to_string(value).map_err(|_| ProviderError::External {
-        operation: "feishu_console_state",
-        retryable: false,
-    })?;
-    writer.write(name, SecretValue::new(encoded)).await
-}
-
-/// The saved console session, when it still signs in.
-pub(crate) async fn saved_session(
-    transport: Arc<dyn Transport>,
-    reader: &dyn SecretReader,
-) -> Result<Option<ConsoleSession>, ProviderError> {
-    let Some(session) = read_secret::<ConsoleSession>(reader, SESSION_SECRET).await? else {
-        return Ok(None);
-    };
-    let mut console = DeveloperConsole::new(transport, session);
-    match console.profile().await {
-        Ok(_) => Ok(Some(console.session)),
-        Err(ClientError::HttpStatus { status: 401, .. }) => Ok(None),
-        Err(error) => Err(error.provider_error(false)),
-    }
-}
-
-pub(crate) async fn save_session(
-    writer: &dyn SecretWriter,
-    session: &ConsoleSession,
-) -> Result<(), ProviderError> {
-    write_secret(writer, SESSION_SECRET, session).await
-}
-
-/// Advances the sign-in: `start` shows a new QR code, `poll` checks the scan
-/// and replaces a code before it expires, anything else only reports state.
-pub(crate) async fn login(
-    transport: Arc<dyn Transport>,
-    reader: &dyn SecretReader,
-    writer: &dyn SecretWriter,
-    action: &str,
-) -> Result<Login, ProviderError> {
-    if let Some(session) = saved_session(transport.clone(), reader).await? {
-        return Ok(Login::Ready(session));
-    }
-    let pending = read_secret::<PendingLogin>(reader, PENDING_LOGIN_SECRET)
-        .await?
-        .filter(|pending| !pending.expired());
-    let mut pending = match (action, pending) {
-        ("poll", Some(pending)) => pending,
-        ("start" | "poll", _) => {
-            let pending = start_login(transport.as_ref())
-                .await
-                .map_err(|error| error.provider_error(false))?;
-            write_secret(writer, PENDING_LOGIN_SECRET, &pending).await?;
-            return Ok(Login::Waiting {
-                qr_code: pending.qr_code,
-                scanned: false,
-            });
-        }
-        _ => return Ok(Login::Required),
-    };
-    let polled = poll_login(transport.as_ref(), &mut pending)
-        .await
-        .map_err(|error| error.provider_error(false))?;
-    let scanned = match polled {
-        LoginPoll::Complete(session) => {
-            save_session(writer, &session).await?;
-            write_secret(writer, PENDING_LOGIN_SECRET, &PendingLogin::default()).await?;
+impl LoginFlow {
+    pub(crate) async fn advance(
+        &mut self,
+        transport: &dyn Transport,
+        action: &str,
+    ) -> Result<Login, ProviderError> {
+        if action != "start"
+            && let Some(session) = self.ready.take()
+        {
             return Ok(Login::Ready(session));
         }
-        LoginPoll::Expired => {
-            let pending = start_login(transport.as_ref())
-                .await
-                .map_err(|error| error.provider_error(false))?;
-            write_secret(writer, PENDING_LOGIN_SECRET, &pending).await?;
+        if action == "start" || self.pending.as_ref().is_none_or(PendingLogin::expired) {
+            self.ready = None;
+            self.pending = Some(
+                start_login(transport)
+                    .await
+                    .map_err(|e| e.provider_error(false))?,
+            );
             return Ok(Login::Waiting {
-                qr_code: pending.qr_code,
+                qr_code: self.pending.as_ref().unwrap().qr_code.clone(),
                 scanned: false,
             });
         }
-        LoginPoll::Waiting => false,
-        LoginPoll::Scanned => true,
-    };
-    write_secret(writer, PENDING_LOGIN_SECRET, &pending).await?;
-    Ok(Login::Waiting {
-        qr_code: pending.qr_code,
-        scanned,
-    })
-}
-
-/// A candidate session never replaces the current binding while QR login is pending.
-const SWITCH_CANDIDATE: &str = "feishu_console_switch_candidate";
-const SWITCH_PENDING: &str = "feishu_console_switch_pending";
-
-pub(crate) async fn switch_is_current(
-    reader: &dyn SecretReader,
-    candidate: &str,
-) -> Result<bool, ProviderError> {
-    Ok(!candidate.is_empty()
-        && read_secret::<String>(reader, SWITCH_CANDIDATE)
-            .await?
-            .as_deref()
-            == Some(candidate))
-}
-pub(crate) async fn finish_switch(writer: &dyn SecretWriter) -> Result<(), ProviderError> {
-    write_secret(writer, SWITCH_CANDIDATE, &String::new()).await?;
-    write_secret(writer, SWITCH_PENDING, &PendingLogin::default()).await
-}
-
-pub(crate) async fn switch_login(
-    transport: Arc<dyn Transport>,
-    reader: &dyn SecretReader,
-    writer: &dyn SecretWriter,
-    action: &str,
-    lock: &tokio::sync::Mutex<()>,
-) -> Result<(String, Login), ProviderError> {
-    let guard = lock.lock().await;
-    if action == "switch_cancel" {
-        finish_switch(writer).await?;
-        return Ok((String::new(), Login::Required));
-    }
-    if action == "switch_start" {
-        let candidate = uuid::Uuid::new_v4().to_string();
-        write_secret(writer, SWITCH_CANDIDATE, &candidate).await?;
-        write_secret(writer, SWITCH_PENDING, &PendingLogin::default()).await?;
-        drop(guard);
-        let pending = start_login(transport.as_ref())
+        let pending = self.pending.as_mut().unwrap();
+        match poll_login(transport, pending)
             .await
-            .map_err(|e| e.provider_error(false))?;
-        let _guard = lock.lock().await;
-        if !switch_is_current(reader, &candidate).await? {
-            return Ok((candidate, Login::Required));
-        }
-        write_secret(writer, SWITCH_PENDING, &pending).await?;
-        return Ok((
-            candidate,
-            Login::Waiting {
-                qr_code: pending.qr_code,
+            .map_err(|e| e.provider_error(false))?
+        {
+            LoginPoll::Complete(session) => {
+                self.pending = None;
+                Ok(Login::Ready(session))
+            }
+            LoginPoll::Waiting => Ok(Login::Waiting {
+                qr_code: pending.qr_code.clone(),
                 scanned: false,
-            },
-        ));
-    }
-    let candidate = read_secret::<String>(reader, SWITCH_CANDIDATE)
-        .await?
-        .unwrap_or_default();
-    let pending = read_secret::<PendingLogin>(reader, SWITCH_PENDING)
-        .await?
-        .filter(|p| !p.expired());
-    let Some(mut pending) = pending.filter(|_| !candidate.is_empty()) else {
-        return Ok((candidate, Login::Required));
-    };
-    drop(guard);
-    let result = poll_login(transport.as_ref(), &mut pending)
-        .await
-        .map_err(|e| e.provider_error(false))?;
-    let _guard = lock.lock().await;
-    if !switch_is_current(reader, &candidate).await? {
-        return Ok((candidate, Login::Required));
-    }
-    let login = match result {
-        // Keep the candidate valid until profile preparation finishes.
-        LoginPoll::Complete(session) => Login::Ready(session),
-        LoginPoll::Expired => {
-            finish_switch(writer).await?;
-            Login::Required
-        }
-        LoginPoll::Waiting | LoginPoll::Scanned => {
-            write_secret(writer, SWITCH_PENDING, &pending).await?;
-            Login::Waiting {
-                qr_code: pending.qr_code,
-                scanned: matches!(result, LoginPoll::Scanned),
+            }),
+            LoginPoll::Scanned => Ok(Login::Waiting {
+                qr_code: pending.qr_code.clone(),
+                scanned: true,
+            }),
+            LoginPoll::Expired => {
+                self.pending = None;
+                Ok(Login::Waiting {
+                    qr_code: String::new(),
+                    scanned: false,
+                })
             }
         }
-    };
-    Ok((candidate, login))
+    }
+    pub(crate) fn hold(&mut self, session: ConsoleSession) {
+        self.ready = Some(session);
+    }
+    pub(crate) fn take(&mut self) -> Option<ConsoleSession> {
+        self.ready.take()
+    }
 }

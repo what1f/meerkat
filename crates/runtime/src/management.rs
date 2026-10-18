@@ -161,6 +161,52 @@ impl RuntimeApplication {
         workspace_dto(self.runtime()?.database(), record).await
     }
 
+    pub async fn list_human_members(
+        &self,
+        request: GetWorkspaceRequest,
+    ) -> Result<Vec<lankide_protocol::HumanTeamMember>, RuntimeError> {
+        let workspace_id = workspace_id(request.workspace.clone())?;
+        self.runtime()?.database().workspace(&workspace_id).await?;
+        Ok(self
+            .runtime()?
+            .database()
+            .list_human_team_member_views(&workspace_id)
+            .await?
+            .into_iter()
+            .map(|p| lankide_protocol::HumanTeamMember {
+                person_id: p.person_id.to_string(),
+                team_role: p.team_role.as_str().into(),
+                name: p.name,
+                avatar: p.avatar.map(Into::into),
+                position: p.position,
+            })
+            .collect())
+    }
+
+    pub async fn update_human_position(
+        &self,
+        request: lankide_protocol::UpdateHumanPositionRequest,
+    ) -> Result<Vec<lankide_protocol::HumanTeamMember>, RuntimeError> {
+        let workspace_id = workspace_id(request.workspace.clone())?;
+        let person = PersonId::new(request.person_id)
+            .map_err(|e| RuntimeError::InvalidCore(e.to_string()))?;
+        self.runtime()?
+            .database()
+            .update_human_position(&workspace_id, &person, &request.position, now_millis())
+            .await?;
+        self.emit_management(
+            ManagementEventKind::WorkspaceUpdated,
+            &workspace_id,
+            None,
+            now_millis(),
+        );
+        self.list_human_members(GetWorkspaceRequest {
+            request_id: request.request_id,
+            workspace: request.workspace,
+        })
+        .await
+    }
+
     pub async fn list_agents(
         &self,
         request: ListAgentsRequest,
@@ -577,21 +623,6 @@ impl RuntimeApplication {
                 .database()
                 .update_agent_record_with_secrets(agent, &serde_json::json!({}))
                 .await?;
-            if let Some(person_id) = agent
-                .provider_agent_config
-                .get("creator_person_id")
-                .and_then(serde_json::Value::as_str)
-                .and_then(|value| lankide_core::PersonId::new(value.to_owned()).ok())
-            {
-                match runtime
-                    .database()
-                    .initialize_team_lead(&workspace_id, &person_id, now_millis())
-                    .await
-                {
-                    Ok(_) | Err(StorageError::Conflict(_)) => {}
-                    Err(error) => return Err(error.into()),
-                }
-            }
             let host = runtime.host(&workspace_id).await?;
             host.create_agent(agent_id.clone(), provider_agent_spec(&agent))
                 .await?;

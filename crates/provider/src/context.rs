@@ -120,6 +120,20 @@ pub trait ProviderStorage: Send + Sync {
             })
         })
     }
+    /// Add an authenticated bot creator. Runtime owns membership and profile storage.
+    fn join_human_team<'a>(
+        &'a self,
+        _: &'a PersonId,
+        _: Option<&'a str>,
+        _: Option<&'a str>,
+        _: Option<&'a ResourceRef>,
+    ) -> ProviderFuture<'a, ProviderPersonIdentity> {
+        Box::pin(async {
+            Err(ProviderError::Unsupported {
+                operation: "join_human_team",
+            })
+        })
+    }
     fn person<'a>(&'a self, _: &'a PersonId) -> ProviderFuture<'a, ProviderPersonIdentity> {
         Box::pin(async {
             Err(ProviderError::Unsupported {

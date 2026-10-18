@@ -192,11 +192,21 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
             .is_err()
     );
     let person = storage
-        .initialize_team_lead(&workspace_a, &person.person_id, 1_014)
+        .join_human_team(&workspace_a, &person.person_id, None, None, None, 1_014)
         .unwrap();
     assert_eq!(person.team_role, TeamRole::Lead);
     let teammate = storage
         .get_or_create_person(&workspace_a, &provider, "telegram-user-84", 1_015)
+        .unwrap();
+    storage
+        .join_human_team(
+            &workspace_a,
+            &teammate.person_id,
+            None,
+            Some("Contact User"),
+            None,
+            1_015,
+        )
         .unwrap();
     let teammate = storage
         .update_team_member(
@@ -521,7 +531,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     assert!(member_views.iter().any(|value| {
         value.person_id == teammate.person_id
             && value.team_role == TeamRole::Lead
-            && value.name.as_deref() == Some("Example User")
+            && value.name.as_deref() == Some("Contact User")
     }));
     assert_eq!(
         storage.inbox_items(&workspace_a, &agent_id).unwrap().len(),

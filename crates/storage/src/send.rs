@@ -171,12 +171,13 @@ impl Storage {
                 JOIN chats c USING(chat_id)
                 JOIN message_send_attempts s USING(message_id)
                 JOIN agents a ON a.workspace_id=c.workspace_id AND a.agent_id=m.sender_id
-                JOIN workspaces w ON w.workspace_id=c.workspace_id
+                JOIN people p ON p.workspace_id=c.workspace_id AND p.person_id=c.recipient_person_id
                 WHERE c.workspace_id=?1 AND m.sender_id=?2 AND c.receiving_agent_id=?2
                   AND m.send_status='sent' AND s.state='sent'
                   AND length(trim(m.content_markdown))>0 AND m.created_at>=a.created_at
-                  AND c.recipient_person_id=json_extract(w.provider_state_json,'$.owner.person_id'))",
-            params![workspace.as_str(), agent.as_str()], |row| row.get(0),
+                  AND p.team_role='lead')",
+            params![workspace.as_str(), agent.as_str()],
+            |row| row.get(0),
         )?)
     }
     pub fn first_reply_sender(&self, message_id: i64) -> Result<Option<(WorkspaceId, AgentId)>> {

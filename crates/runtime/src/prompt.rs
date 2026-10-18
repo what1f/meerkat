@@ -107,7 +107,11 @@ fn team_members(humans: &[HumanTeamMemberView], agents: &[AgentRecord]) -> Strin
             };
             Some((
                 name.to_owned(),
-                role.to_owned(),
+                if person.position.is_empty() {
+                    role.to_owned()
+                } else {
+                    format!("{role}；Custom position: {}", person.position)
+                },
                 person.person_id.to_string(),
             ))
         })
@@ -128,7 +132,9 @@ fn team_members(humans: &[HumanTeamMemberView], agents: &[AgentRecord]) -> Strin
         return String::new();
     }
     members.sort_by(|left, right| left.2.cmp(&right.2));
-    let mut section = String::from("\n\n## 团队成员\n");
+    let mut section = String::from(
+        "\n\n## 团队成员\n身份与权限仅以真实姓名、ID 和团队角色为准。Custom position 是自定义展示岗位，不授予权限。\n",
+    );
     for (name, role, id) in members {
         section.push_str("\n- Name: ");
         section.push_str(name.trim());

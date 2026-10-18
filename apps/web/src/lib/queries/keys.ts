@@ -6,7 +6,7 @@ export const keys = {
   catalogs: ['catalogs'],
   onboarding: ['onboarding'],
   figures: ['catalogs', 'figures'],
-  owners: ['workspaces', 'owners'],
+  humans: ['workspaces', 'humans'],
   tasks: ['workspaces', 'tasks'],
 } as const;
 const all = Object.values(keys);

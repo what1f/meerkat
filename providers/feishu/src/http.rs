@@ -342,7 +342,6 @@ impl ClientError {
             "user_consent" => "user_consent",
             "user_token" => "user_token",
             "user_info" => "user_info",
-            "owner_avatar" => "owner_avatar",
             "transport" => "transport",
             "decode" => "decode",
             "request" => "request",

@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 import { test, rig } from './rig';
-import { api, bindOwner, signInFeishu } from './feishu';
+import { api, addFeishuMember, signInFeishu } from './feishu';
 
 const open = async (page: Page, workspace: string, hash = 'members') => {
   await page.addInitScript((ws) => {
@@ -305,54 +305,6 @@ test('B3a.10: opening a new member waits for its avatar and cannot be repeated',
   expect(uploads).toBe(1);
 });
 
-test('a profile picture that failed once loads again when it comes back', async ({ page }) => {
-  const workspace = 'members_avatar_back';
-  await rig({ op: 'create_workspace', workspace, provider: 'feishu' });
-  let refreshed = 0;
-  let reads = 0;
-  let firstRequests = 0;
-  await page.route('**/api/v1/invoke_provider_interface', async (route) => {
-    const input = route.request().postDataJSON();
-    if (input.interface_id !== 'feishu.workspace.owner') return route.continue();
-    if (JSON.parse(input.input_json).action === 'refresh') refreshed += 1;
-    else reads += 1;
-    await route.fulfill({
-      json: {
-        output_json: JSON.stringify({
-          state: 'ready',
-          name: 'Owner',
-          avatar: { resource_id: refreshed === 1 ? 99102 : 99101 },
-        }),
-      },
-    });
-  });
-  await page.route('**/api/v1/resources/9910*', async (route) => {
-    if (new URL(route.request().url()).pathname.endsWith('/99101') && ++firstRequests === 1)
-      return route.abort('failed');
-    return route.fulfill({ contentType: 'image/png', body: png });
-  });
-  await open(page, workspace);
-  const card = page.getByTestId('lead-card');
-  const avatar = card.locator('article img:not([data-brand])');
-  const decoded = () =>
-    avatar.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0);
-  await expect.poll(() => firstRequests).toBe(1);
-  // The picture that cannot load gives way to a built-in avatar.
-  await expect(avatar).toHaveAttribute('src', /assets\/\d\d-.*\.jpg$/);
-  await expect.poll(decoded).toBe(true);
-  await card.locator('[data-flipped]').press('Enter');
-  const sync = card.getByRole('button', { name: /Sync|同步/ });
-  await sync.click();
-  await expect(avatar).toHaveAttribute('src', /resources\/99102/);
-  await expect.poll(decoded).toBe(true);
-  const before = reads;
-  await sync.click();
-  await expect.poll(() => reads).toBeGreaterThan(before);
-  await expect(avatar).toHaveAttribute('src', /resources\/99101/);
-  await expect.poll(decoded).toBe(true);
-  expect(firstRequests).toBe(2);
-});
-
 test('B3a.9: the advanced drawer edits variables, arguments and command path, then saves them', async ({
   page,
 }) => {
@@ -390,34 +342,177 @@ test('B3a.9: the advanced drawer edits variables, arguments and command path, th
   await expect(path).toHaveValue('/usr/local/bin/codex');
 });
 
-test('the lead card shows console profile data before any App is created', async ({
+test('human badges show contact profiles and save positions without changing identity', async ({
   page,
   baseURL,
 }) => {
-  const workspace = 'console_profile_card';
+  const workspace = 'human_badges';
   await signInFeishu(baseURL!, workspace);
+  await addFeishuMember(baseURL!, workspace);
+  await rig({ op: 'feishu_person', workspace, user: 'bob', name: 'Bob', tenant: 'tenant-a' });
+  await addFeishuMember(baseURL!, workspace, 'beta');
   await open(page, workspace);
-  const lead = page.getByTestId('lead-card');
-  await expect(lead).toContainText('Alice');
-  await expect(lead).not.toHaveAttribute('data-muted', 'true');
+  const cards = page.getByTestId(/^human-card-/);
+  await expect(cards).toHaveCount(2);
+  const alice = cards.filter({ hasText: 'Alice' });
+  const bob = cards.filter({ hasText: 'Bob' });
+  await expect(alice).toContainText('Team Leader');
+  await expect(alice.locator('footer')).toHaveCount(0);
+  await expect(alice.locator('[data-status]')).toHaveCount(0);
   await expect
     .poll(() =>
-      lead
+      alice
         .locator('img')
-        .first()
-        .evaluate((image: HTMLImageElement) => image.naturalWidth),
+        .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
     )
-    .toBeGreaterThan(0);
-  await bindOwner(baseURL!, workspace);
-  await bindOwner(baseURL!, workspace, 'beta');
-  await expect(lead).toContainText('Alice');
-  await page.screenshot({ path: test.info().outputPath('console-profile-front.png') });
-  await lead.click();
-  await expect(lead.getByRole('button', { name: 'Sync profile' })).toBeVisible();
-  await expect(lead.getByRole('button', { name: 'Switch account' })).toBeVisible();
-  await expect(lead.getByRole('button', { name: 'Sign in again' })).toHaveCount(0);
+    .toBe(true);
+  await page.screenshot({ path: '/tmp/lankide-web/team-humans-board.png', animations: 'disabled' });
+  await bob.click();
+  const position = page.getByTestId('human-position');
+  await expect(position).toHaveValue('');
+  await expect(page.getByTestId('human-profile').locator('textarea')).toHaveCount(0);
+  await position.fill('Draft');
+  await position.press('Escape');
+  await expect(position).toHaveValue('');
+  await position.fill('Designer');
+  await position.press('Enter');
+  await expect
+    .poll(
+      async () =>
+        (
+          await api(baseURL!, 'list_human_members', { workspace: { workspace_id: workspace } })
+        ).find((p: { name: string }) => p.name === 'Bob').position,
+    )
+    .toBe('Designer');
+  await position.fill('Team Leader');
+  await position.press('Tab');
+  await expect
+    .poll(
+      async () =>
+        (
+          await api(baseURL!, 'list_human_members', { workspace: { workspace_id: workspace } })
+        ).find((p: { name: string }) => p.name === 'Bob').position,
+    )
+    .toBe('Team Leader');
+  await page.reload();
+  await expect(position).toHaveValue('Team Leader');
+  const roster = await api(baseURL!, 'list_human_members', {
+    workspace: { workspace_id: workspace },
+  });
+  expect(roster.find((p: { name: string }) => p.name === 'Bob').team_role).toBe('member');
+  await position.fill('x'.repeat(121));
+  await position.press('Enter');
+  await expect(position).toHaveValue('Team Leader');
   await page.screenshot({
-    path: test.info().outputPath('console-profile-card.png'),
+    path: '/tmp/lankide-web/team-humans-profile.png',
     animations: 'disabled',
   });
+  await page.goto('/#/members');
+  await expect(cards).toHaveCount(2);
+});
+
+test('a creator without contact access still gets a human badge', async ({ page, baseURL }) => {
+  const workspace = 'human_fallback';
+  await signInFeishu(baseURL!, workspace);
+  await rig({
+    op: 'feishu_person',
+    workspace,
+    user: 'fallback',
+    name: 'Hidden',
+    tenant: 'tenant-a',
+    contact_unavailable: true,
+  });
+  await addFeishuMember(baseURL!, workspace);
+  await open(page, workspace);
+  const card = page.getByTestId(/^human-card-/);
+  await expect(card).toHaveCount(1);
+  await expect(card).not.toContainText('Hidden');
+  await expect
+    .poll(() =>
+      card.locator('img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
+    )
+    .toBe(true);
+});
+
+for (const language of ['en', 'zh']) {
+  test(`a creator from another organization is refused in ${language}`, async ({
+    page,
+    baseURL,
+  }) => {
+    const workspace = `human_enterprise_${language}`;
+    await signInFeishu(baseURL!, workspace);
+    await addFeishuMember(baseURL!, workspace);
+    await rig({
+      op: 'feishu_person',
+      workspace,
+      user: 'outsider',
+      name: 'Outsider',
+      tenant: 'other',
+    });
+    await rig({ op: 'feishu_scan', workspace, state: 'waiting' });
+    await page.addInitScript((lang) => {
+      localStorage.setItem('lankide.language', JSON.stringify(lang));
+    }, language);
+    await open(page, workspace, 'member/new');
+    await page.getByTestId('member-name').fill('Second');
+    await page.getByTestId('member-create').click();
+    await expect(page.getByTestId('member-create-qr')).toHaveAttribute('data-state', 'wait');
+    await rig({ op: 'feishu_scan', workspace, state: 'complete' });
+    await expect(
+      page.getByText(
+        language === 'en'
+          ? 'This person belongs to another organization.'
+          : '这位成员来自其他企业，无法加入',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    const people = await api(baseURL!, 'list_human_members', {
+      workspace: { workspace_id: workspace },
+    });
+    expect(people).toHaveLength(1);
+    expect(people[0].name).toBe('Alice');
+  });
+}
+
+test('rapid human position saves keep their order and preserve a newer draft', async ({
+  page,
+  baseURL,
+}) => {
+  const workspace = 'human_rapid_saves';
+  await signInFeishu(baseURL!, workspace);
+  await addFeishuMember(baseURL!, workspace);
+  await open(page, workspace);
+  await page.getByTestId(/^human-card-/).click();
+  const position = page.getByTestId('human-position');
+  const edits = async (values: string[]) => {
+    // Dispatch normal input/focus/blur events in one browser turn. The real
+    // management requests remain in flight while the next edit is made.
+    await position.evaluate((input: HTMLInputElement, values) => {
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+      values.forEach((value, i) => {
+        input.focus();
+        set.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        if (i < values.length - 1) input.blur();
+      });
+    }, values);
+  };
+  const saved = async () =>
+    (
+      await api(baseURL!, 'list_human_members', {
+        workspace: { workspace_id: workspace },
+      })
+    )[0].position;
+  await edits(['Designer', 'Team Leader', 'Staff Engineer']);
+  await expect.poll(saved).toBe('Team Leader');
+  await expect(position).toHaveValue('Staff Engineer');
+  await position.press('Tab');
+  await expect.poll(saved).toBe('Staff Engineer');
+  await edits(['x'.repeat(121), 'Researcher', 'Newest draft']);
+  await expect.poll(saved).toBe('Researcher');
+  await expect(position).toHaveValue('Newest draft');
+  await position.press('Escape');
+  await expect(position).toHaveValue('Researcher');
+  await page.reload();
+  await expect(position).toHaveValue('Researcher');
 });

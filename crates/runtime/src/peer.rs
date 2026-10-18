@@ -517,6 +517,25 @@ impl RuntimePeer for RuntimePeerAdapter {
             .await
             .map_err(status)
     }
+    async fn list_human_members(
+        &self,
+        request: GetWorkspaceRequest,
+    ) -> Result<Vec<lankide_protocol::HumanTeamMember>, Status> {
+        self.application
+            .list_human_members(request)
+            .await
+            .map_err(status)
+    }
+    async fn update_human_position(
+        &self,
+        request: lankide_protocol::UpdateHumanPositionRequest,
+    ) -> Result<Vec<lankide_protocol::HumanTeamMember>, Status> {
+        self.application
+            .update_human_position(request)
+            .await
+            .map_err(status)
+    }
+
     async fn list_agents(&self, request: ListAgentsRequest) -> Result<ListAgentsResponse, Status> {
         self.application.list_agents(request).await.map_err(status)
     }
@@ -909,6 +928,10 @@ pub(crate) fn status(error: RuntimeError) -> Status {
         | RuntimeError::ProviderCall(lankide_provider::ProviderError::UnknownRegistration {
             ..
         }) => Status::not_found("The provider interface was not found."),
+        RuntimeError::ProviderCall(lankide_provider::ProviderError::InvalidInput {
+            field: "team_enterprise",
+        }) => Status::failed_precondition("This person belongs to another organization.")
+            .with_detail(Some("team_enterprise".into())),
         RuntimeError::ProviderCall(lankide_provider::ProviderError::InvalidInput { .. })
         | RuntimeError::ProviderCall(lankide_provider::ProviderError::InvalidSchema { .. })
         | RuntimeError::ProviderCall(lankide_provider::ProviderError::SchemaMismatch { .. }) => {

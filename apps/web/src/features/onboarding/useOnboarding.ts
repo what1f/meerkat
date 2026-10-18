@@ -26,7 +26,7 @@ export function useOnboarding(onFinish: (workspace?: string) => void) {
   const toast = useToast();
   const [raw, setStep] = useState<Step>(0);
   const [provider, setProviderState] = useState<Provider>('feishu');
-  // A late answer must not move on a flow the owner has left.
+  // A late answer must not move on a flow the team lead has left.
   const current = useRef<Provider>('feishu');
   const [teams, setTeams] = useState<Partial<Record<Provider, string>>>({});
   const [offline, setOffline] = useState(false);

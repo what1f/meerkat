@@ -46,9 +46,9 @@ export function useAdvanceAgentOnboarding() {
   });
 }
 // Both flows share console sign-in; `start` always shows a new code.
-type ConsoleLoginAction = 'start' | 'poll' | 'switch_start' | 'switch_poll' | 'switch_cancel';
-type ConsoleLoginFlow = 'feishu_account_switch' | 'feishu_console_login';
-export type FeishuAccountSwitch = {
+type ConsoleLoginAction = 'start' | 'poll';
+type ConsoleLoginFlow = 'feishu_console_login';
+export type FeishuConsoleLogin = {
   state: 'required' | 'ready' | 'waiting' | 'scanned';
   qr_code?: string;
   poll_interval_seconds?: number;
@@ -72,7 +72,7 @@ async function consoleLogin(
     },
     signal,
   );
-  return JSON.parse(response.output_json) as FeishuAccountSwitch;
+  return JSON.parse(response.output_json) as FeishuConsoleLogin;
 }
 function useConsoleLogin(
   flow: ConsoleLoginFlow,
@@ -89,15 +89,11 @@ function useConsoleLogin(
     },
   });
   const poll = usePoll();
-  const stopOnError = flow === 'feishu_account_switch';
   return useQuery({
     queryKey: objectKey(flow, input),
     queryFn: ({ signal }) => consoleLogin(input, action, signal),
-    enabled: (q) => enabled && pending === 0 && !(stopOnError && q.state.error),
-    retry: stopOnError ? false : undefined,
-    refetchOnWindowFocus: stopOnError ? false : undefined,
-    refetchOnReconnect: stopOnError ? false : undefined,
-    refetchInterval: (q) => (stopOnError && q.state.error ? false : poll(q)),
+    enabled: enabled && pending === 0,
+    refetchInterval: (q) => poll(q),
   });
 }
 function useConsoleLoginAction(flow: ConsoleLoginFlow, action: ConsoleLoginAction) {
@@ -113,15 +109,6 @@ function useConsoleLoginAction(flow: ConsoleLoginFlow, action: ConsoleLoginActio
       client.setQueryData(objectKey(flow, input), state);
     },
   });
-}
-export function useFeishuAccountSwitch(input: DTO.GetWorkspaceRequest, enabled = true) {
-  return useConsoleLogin('feishu_account_switch', 'switch_poll', input, enabled);
-}
-export function useStartFeishuAccountSwitch() {
-  return useConsoleLoginAction('feishu_account_switch', 'switch_start');
-}
-export function useCancelFeishuAccountSwitch() {
-  return useConsoleLoginAction('feishu_account_switch', 'switch_cancel');
 }
 export function useFeishuConsoleLogin(input: DTO.GetWorkspaceRequest, enabled = true) {
   return useConsoleLogin('feishu_console_login', 'poll', input, enabled);

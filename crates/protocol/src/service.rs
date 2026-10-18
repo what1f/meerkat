@@ -303,6 +303,29 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
         ))
     }
 
+    pub async fn list_human_members(
+        &self,
+        request: Request<GetWorkspaceRequest>,
+    ) -> Result<Response<Vec<HumanTeamMember>>, Status> {
+        validate_request_id(&request.get_ref().request_id)?;
+        validate_workspace_ref(request.get_ref().workspace.as_ref())?;
+        Ok(Response::new(
+            self.peer.list_human_members(request.into_inner()).await?,
+        ))
+    }
+    pub async fn update_human_position(
+        &self,
+        request: Request<UpdateHumanPositionRequest>,
+    ) -> Result<Response<Vec<HumanTeamMember>>, Status> {
+        validate_request_id(&request.get_ref().request_id)?;
+        validate_workspace_ref(request.get_ref().workspace.as_ref())?;
+        Ok(Response::new(
+            self.peer
+                .update_human_position(request.into_inner())
+                .await?,
+        ))
+    }
+
     pub async fn list_agents(
         &self,
         request: Request<ListAgentsRequest>,

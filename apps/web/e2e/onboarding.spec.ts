@@ -60,7 +60,7 @@ async function chooseAiAndCreate(page: Page) {
   await page.getByTestId('onboarding-member-name').fill('Alpha');
   await next(page).click();
 }
-// The owner says hello in the chat app; onboarding ends on the member's first reply.
+// The team lead says hello in the chat app; onboarding ends on the member's first reply.
 async function firstReply(page: Page, baseURL: string, workspace: string) {
   await step(page, 4);
   const chat = page.getByTestId('onboarding-chat');
@@ -81,7 +81,7 @@ async function firstReply(page: Page, baseURL: string, workspace: string) {
   await expect(page.getByText('Alpha')).toBeVisible();
 }
 
-test('Feishu: scan through every code state, then the first member answers the owner', async ({
+test('Feishu: scan through every code state, then the first member answers the team lead', async ({
   page,
   baseURL,
 }) => {
@@ -100,7 +100,7 @@ test('Feishu: scan through every code state, then the first member answers the o
   await expect(qr).toHaveAttribute('data-state', 'wait');
   await expect.poll(() => qr.locator('svg').innerHTML()).not.toBe(first);
   await rig({ op: 'feishu_scan', workspace, state: 'complete' });
-  await expect(page.getByTestId('onboarding-owner')).toBeVisible();
+  await expect(next(page)).toBeEnabled();
   await expect(qr).toHaveCount(0);
   await next(page).click();
   await chooseAiAndCreate(page);

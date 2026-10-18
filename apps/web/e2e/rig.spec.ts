@@ -112,11 +112,17 @@ test('timeout teardown kills independent Harness groups before deleting every ho
   }
 });
 
-async function advance(baseURL: string, workspace: string, agent: string, action: string) {
+async function advance(
+  baseURL: string,
+  workspace: string,
+  agent: string,
+  action: string,
+  payload = '{}',
+) {
   return api(baseURL, 'advance_agent_onboarding', {
     agent: { workspace_id: workspace, agent_id: agent },
     action,
-    field_values_json: '{}',
+    field_values_json: payload,
   });
 }
 async function consoleLogin(baseURL: string, workspace: string, action: string) {
@@ -140,8 +146,12 @@ test('Feishu scan mock drives waiting, scanned, expiry and completion through th
   await rig({ op: 'feishu_scan', workspace: member.workspace, state: 'scanned' });
   expect((await consoleLogin(baseURL!, member.workspace, 'poll')).state).toBe('scanned');
   await rig({ op: 'feishu_scan', workspace: member.workspace, state: 'expired' });
+  const expired = await consoleLogin(baseURL!, member.workspace, 'poll');
+  expect(expired.state).toBe('waiting');
+  expect(expired.qr_code).toBe('');
   const replacement = await consoleLogin(baseURL!, member.workspace, 'poll');
   expect(replacement.state).toBe('waiting');
+  expect(replacement.qr_code).toBeTruthy();
   expect(replacement.qr_code).not.toBe(waiting.qr_code);
   await rig({ op: 'feishu_scan', workspace: member.workspace, state: 'complete' });
   expect((await consoleLogin(baseURL!, member.workspace, 'poll')).state).toBe('ready');
@@ -161,6 +171,20 @@ test('Feishu scan mock drives waiting, scanned, expiry and completion through th
     agent: { workspace_id: member.workspace, agent_id: member.agent },
   });
   expect(reply.state).toBe('replied');
+  // The first App consumed this scan. Another App must show a new QR code.
+  await rig({ op: 'create_agent', workspace: member.workspace, agent: 'beta' });
+  const next = await advance(baseURL!, member.workspace, 'beta', 'start');
+  expect(next.status).toBe('action_required');
+  expect(JSON.parse(next.payload_json).qr_code).toBeTruthy();
+  await rig({ op: 'feishu_scan', workspace: member.workspace, state: 'complete' });
+  const created = await advance(baseURL!, member.workspace, 'beta', 'poll', next.payload_json);
+  expect(
+    (await advance(baseURL!, member.workspace, 'beta', 'poll', created.payload_json)).status,
+  ).toBe('ready');
+  const humans = await api(baseURL!, 'list_human_members', {
+    workspace: { workspace_id: member.workspace },
+  });
+  expect(humans).toHaveLength(1);
 });
 
 test('Telegram Token completes real onboarding and owner DM records the first private reply', async ({

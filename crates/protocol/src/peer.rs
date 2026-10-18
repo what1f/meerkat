@@ -89,6 +89,19 @@ pub trait RuntimePeer: Send + Sync + 'static {
         Err(Status::unimplemented("set_workspace_state"))
     }
 
+    async fn list_human_members(
+        &self,
+        _request: GetWorkspaceRequest,
+    ) -> Result<Vec<HumanTeamMember>, Status> {
+        Err(Status::unimplemented("list_human_members"))
+    }
+    async fn update_human_position(
+        &self,
+        _request: UpdateHumanPositionRequest,
+    ) -> Result<Vec<HumanTeamMember>, Status> {
+        Err(Status::unimplemented("update_human_position"))
+    }
+
     async fn list_agents(&self, _request: ListAgentsRequest) -> Result<ListAgentsResponse, Status> {
         Err(Status::unimplemented("list_agents"))
     }

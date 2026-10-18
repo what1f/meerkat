@@ -102,6 +102,16 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
             json::Workspace,
             set_workspace_state
         ),
+        "list_human_members" => call!(
+            json::GetWorkspaceRequest,
+            Vec<json::HumanTeamMember>,
+            list_human_members
+        ),
+        "update_human_position" => call!(
+            json::UpdateHumanPositionRequest,
+            Vec<json::HumanTeamMember>,
+            update_human_position
+        ),
         "list_agents" => call!(
             json::ListAgentsRequest,
             json::ListAgentsResponse,

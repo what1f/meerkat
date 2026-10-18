@@ -19,27 +19,24 @@ pub struct AgentFirstReply {
     pub state: AgentFirstReplyState,
 }
 
-/// Existing `<provider>.workspace.owner` interface output. Feishu uses
-/// ready/unbound; reauth_required remains a Telegram state.
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum WorkspaceOwnerState {
-    Ready,
-    Unbound,
-    ReauthRequired,
+pub struct HumanTeamMember {
+    pub person_id: String,
+    pub team_role: String,
+    pub name: Option<String>,
+    pub avatar: Option<ResourceRef>,
+    pub position: String,
 }
 
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct WorkspaceOwner {
-    pub state: WorkspaceOwnerState,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub person_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub avatar: Option<ResourceRef>,
+#[serde(deny_unknown_fields)]
+pub struct UpdateHumanPositionRequest {
+    pub request_id: String,
+    pub workspace: Option<WorkspaceRef>,
+    pub person_id: String,
+    pub position: String,
 }
 
 /// Input for the Feishu workspace task-list management interface.

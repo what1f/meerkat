@@ -176,55 +176,12 @@ impl Runtime {
         interface_id: String,
         input: serde_json::Value,
     ) -> Result<serde_json::Value, RuntimeError> {
-        let paused_management = matches!(
-            (interface_id.as_str(), input["action"].as_str()),
-            ("feishu.workspace.owner", Some("get"))
-                | (
-                    "feishu.workspace.console_login",
-                    Some("switch_start" | "switch_poll" | "switch_cancel")
-                )
-        );
-        let host = if paused_management && !self.is_workspace_active(workspace_id)? {
-            self.management_host(workspace_id).await?
-        } else {
-            self.require_active(workspace_id)?;
-            self.host(workspace_id).await?
-        };
-        let switching =
-            interface_id == "feishu.workspace.console_login" && input["action"] == "switch_poll";
-        let previous = if switching {
-            Some(self.storage.workspace_provider_state(workspace_id).await?)
-        } else {
-            None
-        };
-        let result = host.invoke_interface(interface_id, input).await;
-        if switching && result.as_ref().is_ok_and(|v| v["state"] == "ready") {
-            let state = self.storage.workspace_provider_state(workspace_id).await?;
-            if let Some(target) = state["owner"]["person_id"].as_str() {
-                let target = PersonId::new(target.to_owned())
-                    .map_err(|e| RuntimeError::InvalidCore(e.to_string()))?;
-                if let Some(actor) = previous
-                    .as_ref()
-                    .and_then(|v| v["owner"]["person_id"].as_str())
-                {
-                    let actor = PersonId::new(actor.to_owned())
-                        .map_err(|e| RuntimeError::InvalidCore(e.to_string()))?;
-                    self.storage
-                        .update_team_member(
-                            workspace_id,
-                            &actor,
-                            &target,
-                            lankide_core::TeamRole::Lead,
-                            now_millis(),
-                        )
-                        .await?;
-                } else {
-                    self.storage
-                        .initialize_team_lead(workspace_id, &target, now_millis())
-                        .await?;
-                }
-            }
-        }
+        self.require_active(workspace_id)?;
+        let result = self
+            .host(workspace_id)
+            .await?
+            .invoke_interface(interface_id, input)
+            .await;
         if let Err(error) = &result {
             // Never log interface input or upstream error text: either can contain secrets.
             if let Some((step, code, status)) = error.upstream_diagnostic() {

@@ -1072,6 +1072,38 @@ impl ProviderStorage for WorkspaceServices {
                 .map_err(provider_storage_error)
         })
     }
+    fn join_human_team<'a>(
+        &'a self,
+        person_id: &'a PersonId,
+        tenant_id: Option<&'a str>,
+        name: Option<&'a str>,
+        avatar: Option<&'a lankide_core::ResourceRef>,
+    ) -> SdkFuture<'a, ProviderPersonIdentity> {
+        Box::pin(async move {
+            let person = self
+                .storage
+                .join_human_team(
+                    &self.workspace_id,
+                    person_id,
+                    tenant_id,
+                    name,
+                    avatar,
+                    now_millis(),
+                )
+                .await
+                .map_err(|error| {
+                    if matches!(&error, StorageError::Conflict(v) if v == "team_enterprise") {
+                        ProviderError::InvalidInput {
+                            field: "team_enterprise",
+                        }
+                    } else {
+                        provider_storage_error(error)
+                    }
+                })?;
+            self.management_changed().await?;
+            Ok(person_identity(person))
+        })
+    }
     fn person<'a>(&'a self, person_id: &'a PersonId) -> SdkFuture<'a, ProviderPersonIdentity> {
         Box::pin(async move {
             self.storage

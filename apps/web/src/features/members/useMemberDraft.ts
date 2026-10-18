@@ -94,7 +94,7 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
   const creation: Creation = pending
     ? start.isPending
       ? { step: 'creating' }
-      : creationOf(pending, onboarding.data ?? undefined, onboarding.isError || start.isError)
+      : creationOf(pending, onboarding.data ?? undefined, onboarding.error || start.error)
     : create.isPending
       ? { step: 'creating' }
       : { step: 'idle' };

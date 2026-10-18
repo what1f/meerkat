@@ -131,7 +131,7 @@ impl Im {
         rig: &SystemRig,
         workspace: &str,
         provider: ImProvider,
-        owner_avatar: bool,
+        member_avatar: bool,
     ) -> Result<()> {
         let (id, config, secrets) = match provider {
             ImProvider::SystemIm => {
@@ -139,7 +139,7 @@ impl Im {
                 return Ok(());
             }
             ImProvider::Feishu => {
-                self.feishu(workspace).0.lock().unwrap().no_owner_avatar = !owner_avatar;
+                self.feishu(workspace).0.lock().unwrap().no_member_avatar = !member_avatar;
                 (
                     "feishu",
                     json!({"domain":"feishu","task_system_enabled":false}),
@@ -163,6 +163,21 @@ impl Im {
             })
             .await?;
         Ok(())
+    }
+    pub fn feishu_person(
+        &self,
+        workspace: &str,
+        user: String,
+        name: String,
+        tenant: String,
+        contact_unavailable: bool,
+    ) {
+        let mock = self.feishu(workspace);
+        let mut state = mock.0.lock().unwrap();
+        state.user = user;
+        state.name = name;
+        state.tenant = tenant;
+        state.contact_unavailable = contact_unavailable;
     }
     pub fn scan(&self, workspace: &str, scan: Scan) {
         let web = self.feishu(workspace);

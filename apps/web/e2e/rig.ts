@@ -9,7 +9,7 @@ export type Command =
       op: 'create_workspace';
       workspace: string;
       provider?: 'system_im' | 'feishu' | 'telegram';
-      owner_avatar?: boolean;
+      member_avatar?: boolean;
     }
   | { op: 'set_duty'; workspace: string; on: boolean }
   | ({ op: 'create_agent' | 'hold_next_run' | 'release_run' | 'wait_running' } & Member)
@@ -18,6 +18,14 @@ export type Command =
   | { op: 'feishu_scan'; workspace: string; state: 'waiting' | 'scanned' | 'expired' | 'complete' }
   | ({ op: 'dm'; text: string } & Member)
   | { op: 'feishu_tasklist'; workspace: string; fail: boolean }
+  | {
+      op: 'feishu_person';
+      workspace: string;
+      user: string;
+      name: string;
+      tenant: string;
+      contact_unavailable?: boolean;
+    }
   | { op: 'feishu_task'; workspace: string; text: string }
   | { op: 'settle' };
 

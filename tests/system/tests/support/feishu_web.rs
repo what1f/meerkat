@@ -16,14 +16,9 @@ pub struct Feishu {
     pub name: String,
     pub user: String,
     pub tenant: String,
-    pub expired: bool,
-    pub profile_status: Option<u16>,
-    pub profile_network_failure: bool,
-    pub profile_redirect: bool,
-    pub creator_mismatch: bool,
-    pub csrf_failure: bool,
+    pub contact_unavailable: bool,
     pub requests: Vec<String>,
-    pub app_owners: std::collections::BTreeMap<String, String>,
+    pub app_creators: std::collections::BTreeMap<String, String>,
     pub tasklist_transfers: Vec<Value>,
     pub tasklist_renames: Vec<(String, Value)>,
     pub tasklist_rename_error: bool,
@@ -33,9 +28,8 @@ pub struct Feishu {
     pub acknowledgements: usize,
     pub denied_tasks: Vec<String>,
     pub events: std::collections::VecDeque<lankide_provider_feishu::events::RawEvent>,
-    pub reject_app_create: bool,
-    /// The owner has no profile picture.
-    pub no_owner_avatar: bool,
+    /// Contact profile has no picture.
+    pub no_member_avatar: bool,
     pub apps: Vec<String>,
     pub console_calls: Vec<String>,
     pub configuration_error: Option<i64>,
@@ -55,24 +49,7 @@ pub struct AppAuthorization {
 }
 
 #[derive(Clone, Default)]
-pub struct FeishuWeb(pub Arc<Mutex<Feishu>>, Arc<Mutex<Option<Hold>>>);
-struct Hold {
-    suffix: String,
-    entered: Arc<tokio::sync::Notify>,
-    release: Arc<tokio::sync::Notify>,
-}
-impl FeishuWeb {
-    pub fn hold(&self, suffix: &str) -> (Arc<tokio::sync::Notify>, Arc<tokio::sync::Notify>) {
-        let entered = Arc::new(tokio::sync::Notify::new());
-        let release = Arc::new(tokio::sync::Notify::new());
-        *self.1.lock().unwrap() = Some(Hold {
-            suffix: suffix.into(),
-            entered: entered.clone(),
-            release: release.clone(),
-        });
-        (entered, release)
-    }
-}
+pub struct FeishuWeb(pub Arc<Mutex<Feishu>>);
 
 fn header<'a>(request: &'a Request, name: &str) -> &'a str {
     request
@@ -105,18 +82,6 @@ impl Transport for FeishuWeb {
     fn execute(&self, request: Request) -> lankide_provider_feishu::http::TransportFuture<'_> {
         Box::pin(async move {
             let url = request.path.clone();
-            let hold = {
-                let mut gate = self.1.lock().unwrap();
-                if gate.as_ref().is_some_and(|h| url.ends_with(&h.suffix)) {
-                    gate.take()
-                } else {
-                    None
-                }
-            };
-            if let Some(hold) = hold {
-                hold.entered.notify_one();
-                hold.release.notified().await;
-            }
             let body: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
             let cookie = header(&request, "cookie").to_owned();
             let mut feishu = self.0.lock().unwrap();
@@ -125,42 +90,10 @@ impl Transport for FeishuWeb {
                 !url.contains("/authen/v1/authorize") && !url.contains("/authen/v2/oauth/token")
             );
             assert!(!url.contains("safe_setting"));
-            if url == "https://open.feishu.cn/napi/profile" {
-                if feishu.profile_network_failure {
-                    return Err(TransportError::Failed("network unavailable".into()));
-                }
-                if feishu.profile_redirect {
-                    return Ok(Response {
-                        status: 302,
-                        headers: vec![(
-                            "location".into(),
-                            "https://accounts.feishu.cn/accounts/page/login?app_id=7".into(),
-                        )],
-                        body: vec![],
-                    });
-                }
-                if let Some(status) = feishu.profile_status {
-                    return Ok(Response {
-                        status,
-                        headers: vec![],
-                        body: vec![],
-                    });
-                }
-                if feishu.expired || !cookie.contains("session=") {
-                    return data(json!({}));
-                }
-                let user = cookie
-                    .split("session=")
-                    .nth(1)
-                    .unwrap()
-                    .split(';')
-                    .next()
-                    .unwrap();
-                let mut info = json!({"id":format!("console-{user}"), "tenantId":feishu.tenant,"name":feishu.name});
-                if !feishu.no_owner_avatar {
-                    info["avatar"] = json!("https://avatar/owner.jpg");
-                }
-                return data(info);
+            assert!(!url.contains("/napi/profile") && !url.contains("/oauth/"));
+            if url == "https://open.feishu.cn/napi/check/login" {
+                assert!(cookie.contains("session="));
+                return data(json!({"tenantId":feishu.tenant}));
             }
             if url.starts_with("https://accounts.feishu.cn/accounts/page/login") {
                 return reply(
@@ -216,10 +149,6 @@ impl Transport for FeishuWeb {
                 }
                 let call = call.split('?').next().unwrap_or_default().to_owned();
                 feishu.console_calls.push(call.clone());
-                if feishu.csrf_failure {
-                    feishu.csrf_failure = false;
-                    return reply(json!({"code":9499}), &[]);
-                }
                 if call.starts_with("scope/update")
                     && let Some(code) = feishu.configuration_error
                 {
@@ -230,13 +159,7 @@ impl Transport for FeishuWeb {
                 }
                 let app = format!("cli_console_{}", feishu.apps.len());
                 return match call.split('/').next().unwrap_or_default() {
-                    "app" if call == "app/list" => data(
-                        json!({"apps": feishu.app_owners.iter().map(|(app,user)| json!({"appID":app,"owner":{"userID":if feishu.creator_mismatch {"console-stranger".to_owned()} else {format!("console-{user}")}}})).collect::<Vec<_>>()}),
-                    ),
                     "app" if call == "app/create" => {
-                        if feishu.reject_app_create {
-                            return reply(json!({"code": 10013, "msg": "denied"}), &[]);
-                        }
                         let app = format!("cli_console_{}", feishu.apps.len() + 1);
                         let user = cookie
                             .split("session=")
@@ -246,7 +169,7 @@ impl Transport for FeishuWeb {
                             .next()
                             .unwrap()
                             .to_owned();
-                        feishu.app_owners.insert(app.clone(), user);
+                        feishu.app_creators.insert(app.clone(), user);
                         feishu.apps.push(body["name"].as_str().unwrap().to_owned());
                         data(json!({"ClientID": app}))
                     }
@@ -300,24 +223,6 @@ impl Transport for FeishuWeb {
                     _ => panic!("unexpected console call {call}"),
                 };
             }
-            if url.ends_with("/oauth/v1/app/registration") {
-                if request.body.starts_with(b"action=poll") {
-                    return reply(
-                        json!({"client_id":"cli_registered", "client_secret":"registered-secret",
-                        "user_info":{"open_id":"ou_lead"}}),
-                        &[],
-                    );
-                }
-                return reply(
-                    json!({
-                        "device_code": "device",
-                        "verification_uri_complete": "https://open.feishu.cn/page/cli?code=device",
-                        "interval": 5,
-                        "expires_in": 600,
-                    }),
-                    &[],
-                );
-            }
             if url.ends_with("/auth/v3/tenant_access_token/internal") {
                 return reply(
                     json!({"code": 0, "tenant_access_token": format!("tenant-{}",body["app_id"].as_str().unwrap()), "expire": 7200}),
@@ -329,7 +234,7 @@ impl Transport for FeishuWeb {
                     .strip_prefix("Bearer tenant-")
                     .unwrap();
                 let user = feishu
-                    .app_owners
+                    .app_creators
                     .get(app)
                     .map(String::as_str)
                     .unwrap_or("lead");
@@ -376,9 +281,21 @@ impl Transport for FeishuWeb {
                 }]}));
             }
             if url.contains("/open-apis/contact/v3/users/") {
-                return data(
-                    json!({"user":{"open_id":"ou_lead","union_id":"on_lead","name":"Alice"}}),
-                );
+                assert!(header(&request, "authorization").starts_with("Bearer tenant-"));
+                if feishu.contact_unavailable {
+                    return reply(json!({"code":99991672,"msg":"no contact access"}), &[]);
+                }
+                let app = header(&request, "authorization").trim_start_matches("Bearer tenant-");
+                let id = url.rsplit('/').next().unwrap();
+                let user_id = id
+                    .strip_prefix("on_")
+                    .or_else(|| id.strip_prefix("ou_").map(|s| s.split('_').next().unwrap()))
+                    .unwrap_or("lead");
+                let mut user = json!({"open_id":format!("ou_{user_id}_{app}"),"union_id":format!("on_{user_id}"),"name":feishu.name});
+                if !feishu.no_member_avatar {
+                    user["avatar"] = json!({"avatar_origin":"https://avatar/member.jpg"});
+                }
+                return data(json!({"user":user}));
             }
             if url.contains("/open-apis/im/v1/messages") && request.method == Method::Post {
                 let original = url
@@ -419,7 +336,7 @@ impl Transport for FeishuWeb {
                     &[],
                 );
             }
-            if url == "https://avatar/owner.jpg" {
+            if url == "https://avatar/member.jpg" {
                 return Ok(Response {
                     status: 200,
                     headers: vec![("content-type".into(), "image/png".into())],

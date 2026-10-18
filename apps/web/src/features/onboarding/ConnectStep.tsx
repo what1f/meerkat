@@ -2,7 +2,6 @@ import { BrandMark, LinkButton, Segmented, Spinner, StepHeading } from '../../de
 import { QrTag, TokenTag } from '../../scene';
 import { useT } from '../../lib/i18n';
 import type { Flow, Provider } from './useOnboarding';
-import { OwnerBadge } from './OwnerBadge';
 import css from './steps.module.css';
 
 const botFather = 'https://t.me/BotFather';
@@ -40,7 +39,7 @@ export function ConnectStep({ flow }: { flow: Flow }) {
             invalid={flow.tokenInvalid}
           />
         ) : qr.state === 'done' ? (
-          <OwnerBadge workspace={flow.workspace} provider="feishu" />
+          <BrandMark brand="feishu" />
         ) : (
           <QrTag
             data-testid="onboarding-qr"

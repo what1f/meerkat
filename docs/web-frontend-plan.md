@@ -373,13 +373,12 @@ IM 式对话界面。选用 React，原因如下：
 **A4b Provider 能力**（`crates/provider`、`providers/feishu`、`providers/telegram`、`crates/runtime`、`crates/storage`、
 `crates/protocol`、`tests/system`）
 
-- **管理失效信号**：Provider contract 增加一个窄接口，“这个 workspace 的管理数据变了”，由 Runtime 发出 `WorkspaceUpdated`。owner 和任务清单都使用它。
-- **你自己的工卡**：
-  - 新增 `<provider>.workspace.owner` interface，通过 `InvokeProviderInterface` 调用。`get` 和 `refresh` 返回
-    `{ state: unbound | ready | reauth_required, person_id?, name?, avatar?: ResourceRef }`。头像存入 workspace 资源。
-  - 飞书：console 扫码后通过 `/napi/profile` 获取资料；各 Agent App 用自身 tenant token 查询 applications/me，以 union_id 绑定负责人并记录 per-App open_id。
-    切换账号扩展 `console_login`，增加 `switch_start` 和 `switch_poll`。跨租户的切换直接拒绝；失败时保留旧账号。
-  - Telegram：资料取自 `ManagedBotUpdated.user`，头像通过 getUserProfilePhotos 获取。这一版不做切换账号，工卡背面只有「同步资料」。
+- **管理失效信号**：Provider contract 增加一个窄接口，“这个 workspace 的管理数据变了”，由 Runtime 发出 `WorkspaceUpdated`。人类成员和任务清单都使用它。
+- **人类成员工卡**：统一 `list_human_members` / `update_human_position` 管理接口，与 Provider 无关。
+  - 每次新建飞书 App 使用一次性内存扫码会话；创建者身份来自 App 自己的 applications/me，姓名头像来自官方通讯录，失败走空资料兜底。
+  - 每个创建者入团，只有首个人类成员成为 lead，默认岗位 Team Leader；后续成员岗位默认空，岗位编辑不会改变身份。
+  - Telegram 沿用首次配对的负责人规则，资料写入同一人类成员结构。
+  - 小卡、大卡无背面和翻转；姓名头像只读，只开放岗位输入，不展示介绍、状态点或引擎模型。
 - **任务清单（只做飞书）**：
   - 新增 `feishu.workspace.tasks` interface，只提供读取操作：
     - `list` 返回 `{ enabled, name?, items: [{ id, text, completed, assignee?: { agent_id?, name?, avatar? } }] }`
@@ -387,7 +386,7 @@ IM 式对话界面。选用 React，原因如下：
   - 外部任务回调通过管理失效信号刷新界面。
 - **第一条回复**：
   - 新增 `get_agent_first_reply { agent }` 返回 `{ state: waiting | replied }`。
-  - replied 的条件是：成员创建之后，在与当前 owner 的私聊中，成功发出了一条非空回复。
+  - replied 的条件是：成员创建之后，在与当前 lead 的私聊中，成功发出了一条非空回复。
   - 满足条件的发送提交之后，发 `AgentUpdated`。
 
 **A4c AI 测试**（`crates/protocol`、`crates/runtime`、`crates/machine-core`、`crates/harness`、`harnesses/*`、`tests/system`）
