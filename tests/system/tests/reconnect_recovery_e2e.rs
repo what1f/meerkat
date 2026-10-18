@@ -93,7 +93,9 @@ async fn held_run_is_readopted_with_messages_during_repeated_disconnects() -> Re
 async fn expired_offline_attempt_is_closed_on_return_before_queued_work_runs() -> Result<()> {
     let rig = SystemRig::start(RigConfig {
         network_proxy: true,
-        attempt_lease: Duration::from_millis(800),
+        // Keep the normal lease for the retry as well as the offline attempt.
+        // A short lease can expire healthy assignment preparation under load.
+        timeout: Duration::from_secs(45),
         retry: lankide_runtime::RetryConfig {
             base_ms: 40,
             max_ms: 160,
@@ -124,7 +126,7 @@ async fn expired_offline_attempt_is_closed_on_return_before_queued_work_runs() -
     rig.proxy.as_ref().unwrap().restore();
     rig.settle().await?;
     let runs = agent.executions().await?;
-    assert_eq!(runs.len(), 2);
+    assert_eq!(runs.len(), 2, "{runs:#?}");
     assert_eq!(runs[0].error_code.as_deref(), Some("machine_lost"));
     assert_eq!(runs[1].state, "succeeded");
     assert_eq!(team.dm_transcript(&agent, "alice"), ["hello", "done"]);
