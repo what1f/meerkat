@@ -18,6 +18,12 @@ fn error(e: crate::ClientError) -> ProviderError {
         retryable: e.is_retryable(),
     }
 }
+fn authorization_error(error: ProviderError) -> ProviderError {
+    match error {
+        ProviderError::SecretAccessDenied => ProviderError::AuthorizationRequired,
+        other => other,
+    }
+}
 fn text<'a>(v: &'a Value, k: &'static str) -> Result<&'a str, ProviderError> {
     v.get(k)
         .and_then(Value::as_str)
@@ -67,18 +73,27 @@ impl InvocationHandler for TasksHandler {
                 });
             }
             let state = self.context.storage().workspace_state().await?;
+            // A saved tasklist alone does not grant access to the owner's tasks.
+            // Do not treat an unconnected account as a malformed list request.
+            for field in ["owner_app_id", "owner_api_base"] {
+                if text(&state, field).is_err() {
+                    return Err(ProviderError::AuthorizationRequired);
+                }
+            }
             let directory = crate::identity::IdentityDirectory::from_workspace_state(&state)?;
             let app_id = text(&state, "owner_app_id")?;
             let secret = self
                 .context
                 .secret_reader()
                 .read("feishu_owner_app_secret")
-                .await?;
+                .await
+                .map_err(authorization_error)?;
             let token = self
                 .context
                 .secret_reader()
                 .read("feishu_owner_access_token")
-                .await?;
+                .await
+                .map_err(authorization_error)?;
             let domain = crate::client::Domain::Custom(text(&state, "owner_api_base")?.into());
             let client = Client::new(
                 self.transport.clone(),

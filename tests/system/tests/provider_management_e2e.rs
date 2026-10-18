@@ -232,7 +232,7 @@ async fn telegram_first_reply(held: bool, cross: bool) -> Result<()> {
     cleanup
 }
 
-async fn feishu_review_rig(enabled: bool) -> Result<(SystemRig, FeishuWeb, Http)> {
+async fn feishu_unbound_rig(enabled: bool) -> Result<(SystemRig, FeishuWeb, Http)> {
     let web = FeishuWeb::default();
     {
         let mut state = web.0.lock().unwrap();
@@ -266,6 +266,11 @@ async fn feishu_review_rig(enabled: bool) -> Result<(SystemRig, FeishuWeb, Http)
     let rig = SystemRig::start_with_providers(config, factories).await?;
     let http = Http::new(&rig)?;
     http.post("create_workspace",json!({"request_id":"create","workspace_id":"team","name":"Team","rules":"","provider_id":"feishu","provider_config_json":json!({"domain":"feishu","task_system_enabled":enabled}).to_string(),"provider_secrets_json":"{}"})).await?;
+    Ok((rig, web, http))
+}
+
+async fn feishu_review_rig(enabled: bool) -> Result<(SystemRig, FeishuWeb, Http)> {
+    let (rig, web, http) = feishu_unbound_rig(enabled).await?;
     http.invoke("feishu.workspace.console_login", "start", json!({}))
         .await?;
     http.invoke("feishu.workspace.console_login", "poll", json!({}))
@@ -279,6 +284,67 @@ async fn feishu_review_rig(enabled: bool) -> Result<(SystemRig, FeishuWeb, Http)
     event(&mut binding_events, "workspace_updated").await?;
     drop(binding_events);
     Ok((rig, web, http))
+}
+
+#[tokio::test]
+async fn tasks_without_owner_authorization_fail_promptly_log_once_and_recover() -> Result<()> {
+    // The daemon logger is process-wide. Run this complete business scenario in its own
+    // process so concurrent rigs neither capture its diagnostics nor share its log file.
+    const CHILD: &str = "LANKIDE_TASKS_LOG_SCENARIO";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "provider_management_e2e::tasks_without_owner_authorization_fail_promptly_log_once_and_recover",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return Ok(());
+    }
+    let (rig, web, http) = feishu_unbound_rig(true).await?;
+    lankide_daemon_runtime::init_logging(rig.runtime_home(), "lankided")?;
+    let scenario = async {
+        let started = std::time::Instant::now();
+        let response = http.client.post(format!("{}/api/v1/invoke_provider_interface", http.url))
+            .json(&json!({"request_id":"tasks","workspace":{"workspace_id":"team"},"interface_id":"feishu.workspace.tasks","input_json":json!({"action":"list","text":"task-secret-canary"}).to_string()}))
+            .send().await?;
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(!response.status().is_success());
+        let body: Value = response.json().await?;
+        assert_eq!(body, json!({"code":"failed_precondition","message":"Connect your account to continue.","detail":"authorization_required"}));
+        assert_eq!(http.invoke("feishu.workspace.owner", "get", json!({})).await?["state"], "unbound");
+        {
+            let state = web.0.lock().unwrap();
+            assert!(state.tasklist.is_none());
+            assert_eq!(state.task_subscriptions, 0);
+        }
+        let log = std::fs::read_to_string(rig.runtime_home().join("logs/lankided.log"))?;
+        let failures: Vec<_> = log.lines().filter(|line| line.contains("provider interface failed")).collect();
+        assert_eq!(failures.len(), 1, "{log}");
+        assert!(failures[0].contains("workspace=team category=authorization_required"));
+        assert!(!log.contains("task-secret-canary"));
+        assert!(!log.contains("Bearer"));
+        // Use the actual supported account-grant flow, then retry the same list.
+        http.invoke("feishu.workspace.console_login", "start", json!({})).await?;
+        http.invoke("feishu.workspace.console_login", "poll", json!({})).await?;
+        feishu_review_member(&http, "alpha").await?;
+        let tasks = "feishu.workspace.tasks";
+        assert_eq!(http.invoke(tasks, "list", json!({})).await?["enabled"], true);
+        let task = http.invoke(tasks, "create", json!({"text":"Recovered task list"})).await?;
+        assert_eq!(http.invoke(tasks, "set_completed", json!({"id":task["id"],"completed":true})).await?["completed"], true);
+        assert_eq!(http.invoke(tasks, "list", json!({})).await?["items"][0]["id"], task["id"]);
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    }.await;
+    let cleanup = rig.close().await;
+    scenario?;
+    cleanup
 }
 
 #[tokio::test]

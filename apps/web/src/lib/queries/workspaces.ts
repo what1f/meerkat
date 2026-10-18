@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type * as DTO from '../api/generated';
-import { call } from '../api/client';
+import { ApiError, call } from '../api/client';
 import { keys } from './keys';
 export function useWorkspaces(input: DTO.ListWorkspacesRequest, enabled = true) {
   return useQuery({
@@ -127,6 +127,12 @@ export type SetWorkspaceTaskCompletedRequest = DTO.GetWorkspaceRequest & {
 export function useWorkspaceTasks(input: DTO.GetWorkspaceRequest, enabled = true) {
   return useQuery({
     queryKey: [...keys.tasks, { ...input, request_id: undefined }],
+    retry: (count, error) =>
+      count < 3 &&
+      !(
+        error instanceof ApiError &&
+        (error.detail === 'authorization_required' || error.code === 'invalid_argument')
+      ),
     queryFn: async ({ signal }) => {
       const response = await call(
         'invoke_provider_interface',

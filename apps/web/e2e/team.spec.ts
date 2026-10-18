@@ -125,17 +125,32 @@ test('a task list turned on before the owner is bound can be retried or turned o
   page,
   baseURL,
 }) => {
-  // Each failed read is retried a few times before the list gives up.
-  test.setTimeout(90_000);
   const workspace = 'unbound_team';
   await signInFeishu(baseURL!, workspace);
-  await openTeam(page, workspace);
   const list = page.getByTestId('tasklist');
   const retry = list.getByRole('button', { name: 'Try again' });
+  const hint = 'The task list can’t be opened right now';
+  let reads = 0;
+  page.on('request', (request) => {
+    if (request.url().endsWith('/api/v1/invoke_provider_interface')) {
+      const body = request.postDataJSON() as { interface_id: string };
+      if (body.interface_id === 'feishu.workspace.tasks') reads++;
+    }
+  });
+  const taskRead = () =>
+    page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/v1/invoke_provider_interface') &&
+        (response.request().postDataJSON() as { interface_id: string }).interface_id ===
+          'feishu.workspace.tasks',
+    );
+  const initialRead = taskRead();
+  await openTeam(page, workspace);
+  await initialRead;
 
   await list.click();
   await expect.poll(() => tasksEnabled(baseURL!, workspace)).toBe(true);
-  await expect(list).toContainText('The task list can’t be opened right now');
+  await expect(list).toContainText(hint, { timeout: 2_000 });
   await expect(retry).toBeVisible();
   await list.getByRole('button', { name: 'More' }).click();
   await page.getByRole('menuitem', { name: 'Turn off' }).click();
@@ -146,13 +161,27 @@ test('a task list turned on before the owner is bound can be retried or turned o
   await list.click();
   await expect(retry).toBeVisible();
   // After a reload nothing was ever read; retrying keeps the clipboard and its way to turn off.
+  const beforeReload = reads;
   await page.reload();
-  await expect(retry).toBeVisible();
+  await expect(retry).toBeVisible({ timeout: 2_000 });
+  expect(reads).toBe(beforeReload + 1); // One read, without automatic retries.
+  const beforeRetry = reads;
+  const retried = taskRead();
   await retry.click();
-  await expect(retry).toHaveAttribute('aria-busy', 'true');
+  await retried;
   await expect(list.getByRole('button', { name: 'More' })).toBeVisible();
   await expect(retry).toHaveAttribute('aria-busy', 'false');
-  await expect(list).toContainText('The task list can’t be opened right now');
+  await expect(list).toContainText(hint);
+  expect(reads).toBe(beforeRetry + 1);
+  await expect(list).not.toContainText('Add member');
+  await page.screenshot({ path: test.info().outputPath('task-unavailable.png') });
+  await page.getByTestId('nav-settings').click();
+  await page.getByTestId('settings-language').click();
+  await page.getByRole('option', { name: '简体中文' }).click();
+  await page.getByTestId('nav-team').click();
+  await expect(list).toContainText('任务清单暂时打不开');
+  await expect(list).not.toContainText('添加成员');
+  await page.screenshot({ path: test.info().outputPath('task-unavailable-zh.png') });
   // Once the owner is bound the list comes back on its own.
   await bindOwner(baseURL!, workspace);
   const input = list.getByRole('textbox');

@@ -12,6 +12,7 @@ pub enum ProviderError {
         entity: &'static str,
     },
     SecretAccessDenied,
+    AuthorizationRequired,
     EventSinkClosed,
     DuplicateRegistration {
         id: String,
@@ -41,6 +42,7 @@ impl ProviderError {
             Self::InvalidInput { .. } => "invalid_input",
             Self::NotFound { .. } => "not_found",
             Self::SecretAccessDenied => "secret_access_denied",
+            Self::AuthorizationRequired => "authorization_required",
             Self::EventSinkClosed => "event_sink_closed",
             Self::DuplicateRegistration { .. } => "duplicate_registration",
             Self::UnknownRegistration { .. } => "unknown_registration",
