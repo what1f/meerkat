@@ -22,6 +22,7 @@ def source_snapshot():
         files.extend(path for path in (ROOT / folder).rglob("*")
                      if path.is_file()
                      and not path.is_relative_to(ROOT / "apps/desktop/gen")
+                     and not path.is_relative_to(ROOT / "apps/web/dist")
                      and not {"target", "node_modules", "__pycache__"}.intersection(path.relative_to(ROOT).parts))
     return {str(path.relative_to(ROOT)): digest(path) for path in sorted(files)}
 
