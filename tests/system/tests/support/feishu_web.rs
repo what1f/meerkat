@@ -40,6 +40,9 @@ pub struct Feishu {
     pub console_calls: Vec<String>,
     pub configuration_error: Option<i64>,
     pub user_authorizations: usize,
+    pub authorization_error: Option<i64>,
+    pub version_status: Option<i64>,
+    pub event_polls: usize,
     pub app_authorization: std::collections::BTreeMap<String, AppAuthorization>,
     pub tasklist: Option<Value>,
     tasklist_creates: Vec<(String, Value)>,
@@ -240,10 +243,11 @@ impl Transport for FeishuWeb {
                     }
                     "app_version" => {
                         let app = call.split('/').nth(2).unwrap();
+                        let status = feishu.version_status;
                         let config = feishu.app_authorization.entry(app.into()).or_default();
                         if call.starts_with("app_version/list") {
                             return data(
-                                json!({"versions":config.versions.iter().map(|version| json!({"appVersion":version})).collect::<Vec<_>>()}),
+                                json!({"versions":config.versions.iter().enumerate().map(|(i, version)| json!({"appVersion":version,"versionId":format!("v{}",i+1),"versionStatus":status.unwrap_or(if config.published { 2 } else { 1 })})).collect::<Vec<_>>()}),
                             );
                         }
                         let name = body["appVersion"].as_str().unwrap().to_owned();
@@ -271,6 +275,12 @@ impl Transport for FeishuWeb {
             if url.starts_with("https://accounts.feishu.cn/open-apis/authen/v1/authorize") {
                 assert!(cookie.contains("session="));
                 let parsed = reqwest::Url::parse(&url).unwrap();
+                assert!(
+                    parsed
+                        .query_pairs()
+                        .any(|(key, value)| key == "redirect_uri"
+                            && value == "http://127.0.0.1/lankide/feishu-oauth")
+                );
                 let app = parsed
                     .query_pairs()
                     .find(|(key, _)| key == "client_id")
@@ -278,6 +288,9 @@ impl Transport for FeishuWeb {
                     .1
                     .into_owned();
                 feishu.user_authorizations += 1;
+                if let Some(code) = feishu.authorization_error {
+                    return Ok(Response { status: 200, headers: vec![], body: format!("<script>window.serverInjectRes = {{\"code\":{code},\"msg\":\"sensitive-token\"}};</script>").into_bytes() });
+                }
                 if !feishu
                     .app_authorization
                     .get(&app)
@@ -594,7 +607,11 @@ impl lankide_provider_feishu::events::EventSource for Source {
     > {
         Box::pin(async move {
             loop {
-                let raw = self.0.0.lock().unwrap().events.pop_front();
+                let raw = {
+                    let mut state = self.0.0.lock().unwrap();
+                    state.event_polls += 1;
+                    state.events.pop_front()
+                };
                 if let Some(raw) = raw {
                     return Ok(Some(raw));
                 }

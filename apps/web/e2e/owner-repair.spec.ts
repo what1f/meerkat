@@ -3,7 +3,7 @@ import { test, rig } from './rig';
 import { api, bindOwner, signInFeishu } from './feishu';
 
 for (const language of ['en', 'zh'] as const) {
-  test(`owner re-login repairs an old App and exposes recoverable failures (${language})`, async ({
+  test(`paused owner re-login repairs an old App and exposes recoverable failures (${language})`, async ({
     page,
     baseURL,
   }, testInfo) => {
@@ -31,6 +31,7 @@ for (const language of ['en', 'zh'] as const) {
       },
     });
     expect((await lapsed.json()).detail).toBe('authorization_required');
+    await rig({ op: 'set_duty', workspace, on: false });
     await rig({ op: 'feishu_app_configuration', workspace, denied: true });
     await rig({ op: 'feishu_scan', workspace, state: 'waiting' });
     await page.addInitScript(
@@ -42,6 +43,12 @@ for (const language of ['en', 'zh'] as const) {
     );
     await page.goto('/#/members');
     const card = page.getByTestId('lead-card');
+    await expect(card).toHaveAttribute('data-muted', 'true');
+    await expect(card).toHaveAttribute(
+      'aria-label',
+      language === 'en' ? 'Sign in again' : '重新登录',
+    );
+    await page.screenshot({ path: testInfo.outputPath('paused-owner-needs-sign-in.png') });
     await card.click();
     const qr = card.locator('section[data-state]');
     await expect(qr).toHaveAttribute('data-state', 'wait');
@@ -80,3 +87,26 @@ for (const language of ['en', 'zh'] as const) {
     await expect(qr).toHaveCount(0);
   });
 }
+
+test('paused owner without a cached profile still shows the sign-in card', async ({
+  page,
+}, testInfo) => {
+  const workspace = 'paused_owner_no_profile';
+  await rig({ op: 'create_workspace', workspace, provider: 'feishu' });
+  await rig({ op: 'set_duty', workspace, on: false });
+  await page.addInitScript((workspace) => {
+    localStorage.setItem('lankide.workspace', JSON.stringify(workspace));
+    localStorage.setItem('lankide.language', JSON.stringify('en'));
+  }, workspace);
+  await page.goto('/#/members');
+  const card = page.getByTestId('lead-card');
+  await expect(card).toHaveAttribute('data-muted', 'true');
+  await expect(card).toHaveAttribute('aria-label', 'Sign in again');
+  await expect(card.locator('img')).toBeVisible();
+  await expect
+    .poll(() => card.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth))
+    .toBeGreaterThan(0);
+  await card.hover();
+  await expect(card.getByRole('button', { name: /Sync|Switch account/ })).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('paused-owner-no-profile.png') });
+});

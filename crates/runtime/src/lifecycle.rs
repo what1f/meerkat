@@ -364,6 +364,35 @@ impl Runtime {
         })?;
         Ok((host, true))
     }
+
+    /// Register management interfaces without creating Agents or their receivers.
+    /// Retain the host so concurrent sign-in polls and cancellation share locks.
+    pub(super) async fn management_host(
+        &self,
+        workspace_id: &WorkspaceId,
+    ) -> Result<Arc<dyn ProviderHostInstance>, RuntimeError> {
+        let provider = self.provider(workspace_id)?;
+        let mut current = provider.host.lock().await;
+        if let Some(host) = current.as_ref() {
+            return Ok(host.clone());
+        }
+        let host = (provider.factory)()?;
+        let expected = self.storage.workspace(workspace_id).await?.provider_id;
+        if host.provider_id() != expected {
+            return Err(RuntimeError::ProviderMismatch {
+                workspace_id: workspace_id.clone(),
+                expected,
+                actual: host.provider_id(),
+            });
+        }
+        *current = Some(host.clone());
+        if let Err(error) = host.init().await {
+            *current = None;
+            let _ = host.shutdown().await;
+            return Err(error.into());
+        }
+        Ok(host)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

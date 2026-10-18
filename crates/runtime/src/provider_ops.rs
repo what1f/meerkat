@@ -176,12 +176,21 @@ impl Runtime {
         interface_id: String,
         input: serde_json::Value,
     ) -> Result<serde_json::Value, RuntimeError> {
-        self.require_active(workspace_id)?;
-        let result = self
-            .host(workspace_id)
-            .await?
-            .invoke_interface(interface_id, input)
-            .await;
+        let paused_management = matches!(
+            (interface_id.as_str(), input["action"].as_str()),
+            ("feishu.workspace.owner", Some("get"))
+                | (
+                    "feishu.workspace.console_login",
+                    Some("switch_start" | "switch_poll" | "switch_cancel")
+                )
+        );
+        let host = if paused_management && !self.is_workspace_active(workspace_id)? {
+            self.management_host(workspace_id).await?
+        } else {
+            self.require_active(workspace_id)?;
+            self.host(workspace_id).await?
+        };
+        let result = host.invoke_interface(interface_id, input).await;
         if let Err(error) = &result {
             // Never log interface input or upstream error text: either can contain secrets.
             if let Some((step, code, status)) = error.upstream_diagnostic() {

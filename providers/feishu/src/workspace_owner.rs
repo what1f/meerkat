@@ -398,10 +398,18 @@ pub(crate) async fn switch_account(
             if !console::switch_is_current(context.secret_reader(), &candidate).await? {
                 return Ok(json!({"state":"required"}));
             }
-            let grant = console
+            let authorization = console
                 .authorize_user(&binding.app, binding.secret.expose_secret(), &binding.base)
-                .await
-                .map_err(|error| {
+                .await;
+            if matches!(
+                &authorization,
+                Err(crate::ClientError::Api { code: 20029, .. })
+            ) {
+                console
+                    .log_authorization_diagnostics(&binding.app, context.logger())
+                    .await;
+            }
+            let grant = authorization.map_err(|error| {
                     let configuration = matches!(&error, crate::ClientError::MissingField { operation, field }
                         if operation == "user_token" && field == "refresh_token");
                     error.provider_error(configuration)

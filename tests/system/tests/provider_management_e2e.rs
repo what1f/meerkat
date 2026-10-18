@@ -1027,6 +1027,12 @@ async fn owner_sign_in_repairs_the_existing_legacy_app_before_authorizing() -> R
             http.invoke(owner, "refresh", json!({})).await?["state"],
             "needs_sign_in"
         );
+        http.post("set_workspace_state", json!({"request_id":"pause","workspace":{"workspace_id":"team"},"desired_state":"paused"})).await?;
+        assert_eq!(http.invoke(owner, "get", json!({})).await?["state"], "needs_sign_in");
+        let paused_polls = web.0.lock().unwrap().event_polls;
+        for (id, action) in [(owner, "refresh"), (login, "start"), (login, "poll"), ("feishu.workspace.tasks", "list")] {
+            assert_eq!(invoke_error(&http, id, action).await?["code"], "failed_precondition");
+        }
         {
             let mut mock = web.0.lock().unwrap();
             mock.expired = false;
@@ -1056,8 +1062,12 @@ async fn owner_sign_in_repairs_the_existing_legacy_app_before_authorizing() -> R
                     .contains(&json!("https://existing.example/callback"))
             );
             assert_eq!(app.versions, ["1.0.0", "1.0.1"]);
+            assert_eq!(mock.event_polls, paused_polls, "paused sign-in must not poll IM");
             mock.expired_access_tokens = mock.tokens.keys().cloned().collect();
         }
+        http.invoke(login, "switch_cancel", json!({})).await?;
+        assert_eq!(http.invoke(login, "switch_poll", json!({})).await?["state"], "required");
+        http.post("set_workspace_state", json!({"request_id":"resume","workspace":{"workspace_id":"team"},"desired_state":"running"})).await?;
         assert_eq!(
             http.invoke("feishu.workspace.tasks", "list", json!({}))
                 .await?["enabled"],
@@ -1136,6 +1146,66 @@ async fn owner_app_repair_failure_is_categorized_sanitized_and_restartable() -> 
         Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
     }
     .await;
+    let cleanup = rig.close().await;
+    scenario?;
+    cleanup
+}
+
+#[tokio::test]
+async fn owner_redirect_rejection_logs_safe_readback_and_can_retry_while_paused() -> Result<()> {
+    const CHILD: &str = "LANKIDE_OWNER_REDIRECT_LOG_SCENARIO";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe()?)
+            .args(["--exact", "provider_management_e2e::owner_redirect_rejection_logs_safe_readback_and_can_retry_while_paused", "--nocapture"])
+            .env(CHILD, "1").output()?;
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return Ok(());
+    }
+    let (rig, web, http) = feishu_review_rig(true).await?;
+    let scenario = async {
+        let owner = "feishu.workspace.owner";
+        let login = "feishu.workspace.console_login";
+        web.0.lock().unwrap().expired = true;
+        let previous = http.invoke(owner, "refresh", json!({})).await?;
+        assert_eq!(previous["state"], "needs_sign_in");
+        http.post("set_workspace_state", json!({"request_id":"pause","workspace":{"workspace_id":"team"},"desired_state":"paused"})).await?;
+        lankide_daemon_runtime::init_logging(rig.runtime_home(), "lankided")?;
+        {
+            let mut mock = web.0.lock().unwrap();
+            mock.expired = false;
+            mock.authorization_error = Some(20029);
+            mock.version_status = Some(1); // commit accepted, but still under review.
+            mock.app_authorization.get_mut("cli_console_1").unwrap().redirects.push(json!("https://user:sensitive-secret@example.com/sensitive-path?token=sensitive-token#sensitive-fragment"));
+        }
+        http.invoke(login, "switch_start", json!({})).await?;
+        let error = invoke_error(&http, login, "switch_poll").await?;
+        assert_eq!(error["code"], "failed_precondition");
+        let current = http.invoke(owner, "get", json!({})).await?;
+        assert_eq!(current["state"], "needs_sign_in");
+        assert_eq!(current["person_id"], previous["person_id"]);
+        let logs = std::fs::read_to_string(rig.runtime_home().join("logs/lankided.log"))?;
+        assert!(logs.contains("step=user_consent upstream_code=Some(20029)"), "{logs}");
+        assert!(logs.contains("Feishu OAuth diagnostic"), "{logs}");
+        assert!(logs.contains("\"matches\":true"));
+        assert!(logs.contains("\"matches\":false"));
+        assert!(logs.contains("\"version_status\":1"));
+        assert!(logs.contains("\"versions_after_commit\":["));
+        for sensitive in ["sensitive-cookie", "sensitive-secret", "sensitive-token", "sensitive-path", "sensitive-fragment", "console-csrf", "cli_console_1-secret"] {
+            assert!(!logs.contains(sensitive), "leaked {sensitive}");
+        }
+        http.invoke(login, "switch_cancel", json!({})).await?;
+        web.0.lock().unwrap().authorization_error = None;
+        web.0.lock().unwrap().version_status = None;
+        http.invoke(login, "switch_start", json!({})).await?;
+        assert_eq!(http.invoke(login, "switch_poll", json!({})).await?["state"], "ready");
+        assert_eq!(http.invoke(owner, "get", json!({})).await?["state"], "ready");
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    }.await;
     let cleanup = rig.close().await;
     scenario?;
     cleanup

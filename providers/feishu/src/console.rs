@@ -736,6 +736,81 @@ impl DeveloperConsole {
         Ok(())
     }
 
+    /// Read back only allowlisted diagnostic fields. Never log console responses,
+    /// cookies, authorization URLs, or arbitrary redirect query/path contents.
+    pub(crate) async fn log_authorization_diagnostics(
+        &mut self,
+        app_id: &str,
+        logger: &dyn lankide_provider::ProviderLogger,
+    ) {
+        use sha2::{Digest, Sha256};
+        let fingerprint = |value: &str| {
+            Sha256::digest(value.as_bytes())
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        };
+        let settings = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            self.call(
+                Method::Get,
+                &format!("safe_setting/{app_id}"),
+                None,
+                "console_safe_settings",
+            ),
+        )
+        .await
+        .ok()
+        .and_then(Result::ok);
+        let versions = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            self.call(
+                Method::Get,
+                &format!("app_version/list/{app_id}"),
+                None,
+                "console_version_list",
+            ),
+        )
+        .await
+        .ok()
+        .and_then(Result::ok);
+        let redirects = settings
+            .as_ref()
+            .and_then(|s| s["redirectURL"].as_array())
+            .map(|urls| {
+                urls.iter()
+                    .take(300)
+                    .map(|url| match url.as_str() {
+                        Some(OAUTH_REDIRECT_URI) => {
+                            json!({"url":OAUTH_REDIRECT_URI,"matches":true})
+                        }
+                        Some(url) => json!({"sha256":fingerprint(url),"matches":false}),
+                        None => json!({"invalid_type":true}),
+                    })
+                    .collect::<Vec<_>>()
+            });
+        let versions =
+            versions
+                .as_ref()
+                .and_then(|s| s["versions"].as_array())
+                .map(|versions| {
+                    versions.iter().take(20).map(|version| json!({
+                "version_status":version["versionStatus"].as_i64(),
+                "version_id_sha256":version["versionId"].as_str().map(fingerprint),
+                "version_name_sha256":version["appVersion"].as_str().map(fingerprint),
+            })).collect::<Vec<_>>()
+                });
+        logger.log(lankide_provider::LogLevel::Warn, &format!(
+            "Feishu OAuth diagnostic {}", json!({
+                "repaired_and_authorized_app_sha256":fingerprint(app_id),
+                "redirect_uri":OAUTH_REDIRECT_URI,
+                "redirects":redirects,
+                "allow_refresh_token":settings.as_ref().and_then(|s| s["allowRefreshToken"].as_bool()),
+                "versions_after_commit":versions,
+            })
+        ));
+    }
+
     async fn upload_icon(&mut self) -> Result<String, ClientError> {
         let boundary = format!("lankide{}", uuid::Uuid::new_v4().simple());
         let mut body = Vec::with_capacity(APP_ICON.len() + 512);
