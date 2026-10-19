@@ -20,6 +20,7 @@ pub struct Feishu {
     pub user: String,
     pub tenant: String,
     pub contact_unavailable: bool,
+    pub contact_responses: Vec<Value>,
     pub sync_clock_offset: i64,
     pub contact_delay_ms: u64,
     pub contact_gate: Option<Arc<tokio::sync::Semaphore>>,
@@ -210,6 +211,9 @@ impl Transport for FeishuWeb {
                         header(&request, "authorization") == format!("Bearer tenant-{app}")
                     })
                 {
+                    feishu
+                        .contact_responses
+                        .push(json!({"url":url,"code":99991672}));
                     return reply(json!({"code":99991672,"msg":"no contact access"}), &[]);
                 }
                 let app = header(&request, "authorization").trim_start_matches("Bearer tenant-");
@@ -222,6 +226,7 @@ impl Transport for FeishuWeb {
                 if !feishu.no_member_avatar {
                     user["avatar"] = json!({"avatar_origin":"https://avatar/member.jpg"});
                 }
+                feishu.contact_responses.push(json!({"url":url,"code":0}));
                 return data(json!({"user":user}));
             }
             if url.contains("/open-apis/im/v1/messages") && request.method == Method::Post {
@@ -243,7 +248,7 @@ impl Transport for FeishuWeb {
                     .ok_or_else(|| TransportError::Failed("unknown mock chat type".into()))?;
                 feishu
                     .sends
-                    .push(json!({"chat":chat,"content":content,"channel_type":channel_type}));
+                    .push(json!({"chat":chat,"content":content,"channel_type":channel_type,"reply_to":original}));
                 return data(
                     json!({"message_id":format!("web-reply-{}",feishu.sends.len()),"chat_id":chat}),
                 );

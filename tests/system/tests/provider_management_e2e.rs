@@ -651,12 +651,12 @@ async fn human_profiles_sync_in_background_with_shared_throttle_and_manual_overr
             state.member_avatar = Some(b"new photo".to_vec());
             state.contact_gate = Some(gate.clone());
         }
-        inbound(&web,&rig,"cli_registered_1","lead","sync-first").await?;
+        human_sync_message(&web,&rig,"cli_registered_1","lead","sync-first").await?;
         // The contact request is still held while the real Harness replies over IM.
         tokio::time::timeout(Duration::from_secs(10), async { loop {
-            if !web.0.lock().unwrap().sends.is_empty() && contacts() == start + 1 { break; }
+            if contacts() == start + 1 { break; }
             tokio::time::sleep(Duration::from_millis(10)).await;
-        }}).await?;
+        }}).await.map_err(|error| format!("sync-first: waiting for held contact request: {error}; contacts={}", contacts()))?;
         assert_eq!(humans(&http).await?[0], original);
         let sender_name:String=database(&rig)?.query_row("SELECT sender_name FROM messages WHERE provider_message_id='sync-first'",[],|r|r.get(0))?;
         assert_eq!(sender_name,"Alice");
@@ -667,11 +667,11 @@ async fn human_profiles_sync_in_background_with_shared_throttle_and_manual_overr
         assert_ne!(updated["avatar"],original["avatar"]);
         let stored: i64 = database(&rig)?.query_row("SELECT last_profile_sync_at FROM people WHERE person_id=?1",[person],|r|r.get(0))?;
         assert_eq!(stored,1_900_000_000_000);
-        inbound(&web,&rig,"cli_registered_2","lead","sync-second-app").await?;
-        inbound(&web,&rig,"cli_registered_1","lead","sync-repeat").await?;
+        human_sync_message(&web,&rig,"cli_registered_2","lead","sync-second-app").await?;
+        human_sync_message(&web,&rig,"cli_registered_1","lead","sync-repeat").await?;
         assert_eq!(contacts(), start+1);
         web.0.lock().unwrap().sync_clock_offset = 3_599_999;
-        inbound(&web,&rig,"cli_registered_2","lead","sync-before-hour").await?;
+        human_sync_message(&web,&rig,"cli_registered_2","lead","sync-before-hour").await?;
         assert_eq!(contacts(), start+1);
         // Manual refresh works inside the hour; unchanged picture keeps the resource.
         web.0.lock().unwrap().name = "Manual Alice".into();
@@ -690,23 +690,31 @@ async fn human_profiles_sync_in_background_with_shared_throttle_and_manual_overr
         assert_eq!(humans(&http).await?[0],before_failure);
         let before_retry = contacts();
         web.0.lock().unwrap().sync_clock_offset += 3_600_000;
-        let sends_before_failure=web.0.lock().unwrap().sends.len();
-        inbound(&web,&rig,"cli_registered_2","lead","sync-failed").await?;
-        tokio::time::timeout(Duration::from_secs(10),async {loop {
-            if web.0.lock().unwrap().sends.len()>sends_before_failure {break;}
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }}).await?;
+        let failure_gate = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
+        let responses_before_failure = web.0.lock().unwrap().contact_responses.len();
+        web.0.lock().unwrap().contact_gate = Some(failure_gate.clone());
+        human_sync_message(&web,&rig,"cli_registered_2","lead","sync-failed").await?;
         tokio::time::timeout(Duration::from_secs(5),async {loop {
             if contacts() == before_retry+1 {break;}
             tokio::time::sleep(Duration::from_millis(10)).await;
-        }}).await?;
+        }}).await.map_err(|error| format!("sync-failed: waiting for contact request: {error}; expected={}, actual={}", before_retry+1, contacts()))?;
+        // A reply must arrive even while the failing contact response is held.
+        assert_eq!(humans(&http).await?[0],before_failure);
+        assert_eq!(web.0.lock().unwrap().contact_responses.len(), responses_before_failure);
+        web.0.lock().unwrap().contact_gate = None;
+        failure_gate.add_permits(1);
+        tokio::time::timeout(Duration::from_secs(5), async { loop {
+            if web.0.lock().unwrap().contact_responses.len() > responses_before_failure { break; }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }}).await.map_err(|error| format!("sync-failed: waiting for contact failure response: {error}"))?;
+        assert_eq!(web.0.lock().unwrap().contact_responses.last().unwrap()["code"], 99991672);
         assert_eq!(humans(&http).await?[0],before_failure);
         web.0.lock().unwrap().contact_unavailable = false;
         web.0.lock().unwrap().name = "After Hour".into();
-        inbound(&web,&rig,"cli_registered_2","lead","sync-failure-throttled").await?;
+        human_sync_message(&web,&rig,"cli_registered_2","lead","sync-failure-throttled").await?;
         assert_eq!(contacts(),before_retry+1);
         web.0.lock().unwrap().sync_clock_offset += 3_600_000;
-        inbound(&web,&rig,"cli_registered_2","lead","sync-after-hour").await?;
+        human_sync_message(&web,&rig,"cli_registered_2","lead","sync-after-hour").await?;
         wait_human_name(&http, "After Hour").await?;
         assert_eq!(contacts(),before_retry+2);
         // Missing fields retain the previous values. Team role and custom position survive.
@@ -715,7 +723,7 @@ async fn human_profiles_sync_in_background_with_shared_throttle_and_manual_overr
         assert_eq!(missing["name"],"After Hour");
         assert_eq!(missing["avatar"],updated["avatar"]);
         assert_eq!(missing["position"],"Team Leader");
-        let external=inbound(&web,&rig,"cli_registered_2","stranger","sync-external").await?;
+        let external=human_sync_message(&web,&rig,"cli_registered_2","stranger","sync-external").await?;
         let sync_time:Option<i64>=database(&rig)?.query_row("SELECT last_profile_sync_at FROM people WHERE person_id=?1",[&external],|r|r.get(0))?;
         assert_eq!(sync_time,None);
         assert_eq!(humans(&http).await?.as_array().unwrap().len(),1);
@@ -726,6 +734,44 @@ async fn human_profiles_sync_in_background_with_shared_throttle_and_manual_overr
     scenario?;
     cleanup
 }
+// Message persistence acknowledges ingestion, not execution. Observe the reply to
+// this message and the terminal business state before changing the next fixture.
+async fn human_sync_message(
+    web: &FeishuWeb,
+    rig: &SystemRig,
+    app: &str,
+    user: &str,
+    id: &str,
+) -> Result<String> {
+    let person = inbound(web, rig, app, user, id).await?;
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if web
+                .0
+                .lock()
+                .unwrap()
+                .sends
+                .iter()
+                .any(|send| send["reply_to"] == id)
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .map_err(|error| {
+        format!(
+            "human sync {id}: waiting for its IM reply: {error}; sends={:?}",
+            web.0.lock().unwrap().sends
+        )
+    })?;
+    rig.settle()
+        .await
+        .map_err(|error| format!("human sync {id}: {error}"))?;
+    Ok(person)
+}
+
 async fn wait_human_name(http: &Http, name: &str) -> Result<()> {
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
@@ -735,6 +781,7 @@ async fn wait_human_name(http: &Http, name: &str) -> Result<()> {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
-    .await??;
+    .await
+    .map_err(|error| format!("wait_human_name {name}: {error}"))??;
     Ok(())
 }
