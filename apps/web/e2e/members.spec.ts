@@ -580,6 +580,7 @@ for (const language of ['en', 'zh']) {
       op: 'feishu_profile',
       workspace,
       name: 'Updated Alice',
+      signature: 'Keep it simple',
       avatar_changed: true,
       delay_ms: 500,
     });
@@ -588,6 +589,7 @@ for (const language of ['en', 'zh']) {
     await sync.click({ force: true });
     await expect(flip).toHaveAttribute('data-flipped', 'false');
     await expect(card).toContainText('Updated Alice');
+    await expect(card.getByTestId('badge-bio')).toHaveText('Keep it simple');
     const newPicture = await card.locator('img:not([data-brand])').getAttribute('src');
     expect(newPicture).not.toBe(oldPicture);
     await expect
@@ -599,10 +601,17 @@ for (const language of ['en', 'zh']) {
       .toBe(true);
     // A second successful manual sync is inside the automatic throttle window.
     await card.locator('article').click();
-    await rig({ op: 'feishu_profile', workspace, name: 'Manual Alice', avatar_changed: true });
+    await rig({
+      op: 'feishu_profile',
+      workspace,
+      name: 'Manual Alice',
+      signature: 'Manual signature',
+      avatar_changed: true,
+    });
     await sync.click();
     await expect(flip).toHaveAttribute('data-flipped', 'false');
     await expect(card).toContainText('Manual Alice');
+    await expect(card.getByTestId('badge-bio')).toHaveText('Manual signature');
     await expect(card.locator('img:not([data-brand])')).toHaveAttribute('src', newPicture!);
     await card.locator('article').click();
     await rig({ op: 'feishu_profile', workspace, name: 'Failed Alice', unavailable: true });
@@ -623,7 +632,17 @@ for (const language of ['en', 'zh']) {
     });
     await role.click();
     await expect(page.getByTestId('human-position')).toBeVisible();
-    await expect(page.getByTestId('human-profile')).toContainText('Manual Alice');
+    const profile = page.getByTestId('human-profile');
+    await expect(profile).toContainText('Manual Alice');
+    const signature = profile.getByTestId('badge-bio');
+    await expect(signature).toHaveText('Manual signature');
+    await signature.click();
+    await expect(signature.locator('input, textarea, [contenteditable="true"]')).toHaveCount(0);
+    await expect(profile.getByRole('textbox')).toHaveCount(1);
+    await page.reload();
+    await expect(page.getByTestId('human-profile').getByTestId('badge-bio')).toHaveText(
+      'Manual signature',
+    );
   });
 }
 
@@ -635,9 +654,16 @@ test('a message refreshes the human badge while the bot replies', async ({ page,
   const card = page.getByTestId(/^human-card-/);
   await expect(card).toContainText('Alice');
   const picture = await card.locator('img:not([data-brand])').getAttribute('src');
-  await rig({ op: 'feishu_profile', workspace, name: 'Message Alice', avatar_changed: true });
+  await rig({
+    op: 'feishu_profile',
+    workspace,
+    name: 'Message Alice',
+    signature: 'Message signature',
+    avatar_changed: true,
+  });
   await rig({ op: 'dm', workspace, agent: 'alpha', text: 'hello' });
   await expect(card).toContainText('Message Alice');
+  await expect(card.getByTestId('badge-bio')).toHaveText('Message signature');
   await expect(card.locator('img:not([data-brand])')).not.toHaveAttribute('src', picture!);
   await expect
     .poll(
@@ -646,4 +672,69 @@ test('a message refreshes the human badge while the bot replies', async ({ page,
         0,
     )
     .toBeGreaterThan(0);
+  await rig({
+    op: 'feishu_profile',
+    workspace,
+    name: 'Missing signature Alice',
+    advance_hour: true,
+  });
+  await rig({ op: 'dm', workspace, agent: 'alpha', text: 'keep the missing signature' });
+  await expect(card).toContainText('Missing signature Alice');
+  await rig({ op: 'settle' });
+  await expect(card.getByTestId('badge-bio')).toHaveText('Message signature');
+  await rig({
+    op: 'feishu_profile',
+    workspace,
+    name: 'Cleared after message',
+    signature: '',
+    advance_hour: true,
+  });
+  await rig({ op: 'dm', workspace, agent: 'alpha', text: 'clear the signature' });
+  await expect(card).toContainText('Cleared after message');
+  await expect(card.getByTestId('badge-bio')).toHaveCount(0);
+});
+
+test('human signatures preserve missing fields and clear on an empty value', async ({
+  page,
+  baseURL,
+}) => {
+  const workspace = 'human_signature_presence';
+  await createFeishuTeam(workspace);
+  await rig({
+    op: 'feishu_profile',
+    workspace,
+    name: 'Alice',
+    signature: 'Created with a signature',
+  });
+  await addFeishuMember(baseURL!, workspace);
+  await open(page, workspace);
+  const card = page.getByTestId(/^human-card-/);
+  await expect(card.getByTestId('badge-bio')).toHaveText('Created with a signature');
+  const sync = async () => {
+    await card.locator('article').click();
+    await card.getByRole('button', { name: /同步资料|Sync profile/ }).click();
+    await expect(card.locator('[data-flipped]')).toHaveAttribute('data-flipped', 'false');
+  };
+  // A missing field and a denied field both preserve the last known signature.
+  await rig({ op: 'feishu_profile', workspace, name: 'Missing field' });
+  await sync();
+  await expect(card).toContainText('Missing field');
+  await expect(card.getByTestId('badge-bio')).toHaveText('Created with a signature');
+  await rig({
+    op: 'feishu_profile',
+    workspace,
+    name: 'Permission pending',
+    signature: 'Unavailable',
+    signature_unavailable: true,
+  });
+  await sync();
+  await expect(card).toContainText('Permission pending');
+  await expect(card.getByTestId('badge-bio')).toHaveText('Created with a signature');
+  await rig({ op: 'feishu_profile', workspace, name: 'Cleared signature', signature: '' });
+  await sync();
+  await expect(card).toContainText('Cleared signature');
+  await expect(card.getByTestId('badge-bio')).toHaveCount(0);
+  await card.locator('article').click();
+  await card.getByRole('button', { name: /编辑岗位|Edit role/ }).click();
+  await expect(page.getByTestId('human-profile').getByTestId('badge-bio')).toHaveCount(0);
 });

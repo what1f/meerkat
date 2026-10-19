@@ -27,6 +27,7 @@ pub struct HumanTeamMember {
     pub name: Option<String>,
     pub avatar: Option<ResourceRef>,
     pub position: String,
+    pub signature: String,
 }
 
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]

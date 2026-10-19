@@ -28,6 +28,7 @@ pub struct HumanTeamMemberView {
     pub team_role: TeamRole,
     pub avatar: Option<lankide_core::ResourceRef>,
     pub position: String,
+    pub signature: String,
 }
 
 fn person_id(s: String) -> rusqlite::Result<PersonId> {
@@ -157,7 +158,7 @@ impl Storage {
         workspace_id: &WorkspaceId,
     ) -> Result<Vec<HumanTeamMemberView>> {
         let connection = self.read_conn()?;
-        let mut statement = connection.prepare("SELECT person_id,team_role,name,avatar_json,position FROM people WHERE workspace_id=?1 AND team_role IN('member','lead') ORDER BY created_at,person_id")?;
+        let mut statement = connection.prepare("SELECT person_id,team_role,name,avatar_json,position,signature FROM people WHERE workspace_id=?1 AND team_role IN('member','lead') ORDER BY created_at,person_id")?;
         Ok(statement
             .query_map([workspace_id.as_str()], |row| {
                 let role: String = row.get(1)?;
@@ -179,6 +180,7 @@ impl Storage {
                         })
                         .transpose()?,
                     position: row.get(4)?,
+                    signature: row.get(5)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?)
@@ -235,10 +237,11 @@ impl Storage {
         person_id: &PersonId,
         name: Option<&str>,
         avatar: Option<&lankide_core::ResourceRef>,
+        signature: Option<&str>,
         now: i64,
     ) -> Result<bool> {
         let connection = self.conn()?;
-        let changed = connection.execute("UPDATE people SET name=COALESCE(?3,name),avatar_json=COALESCE(?4,avatar_json),updated_at=?5 WHERE workspace_id=?1 AND person_id=?2 AND team_role IN('member','lead') AND ((?3 IS NOT NULL AND name IS NOT ?3) OR (?4 IS NOT NULL AND avatar_json IS NOT ?4))", params![workspace_id.as_str(),person_id.as_str(),name,avatar.map(serde_json::to_string).transpose()?,now])?;
+        let changed = connection.execute("UPDATE people SET name=COALESCE(?3,name),avatar_json=COALESCE(?4,avatar_json),signature=COALESCE(?5,signature),updated_at=?6 WHERE workspace_id=?1 AND person_id=?2 AND team_role IN('member','lead') AND ((?3 IS NOT NULL AND name IS NOT ?3) OR (?4 IS NOT NULL AND avatar_json IS NOT ?4) OR (?5 IS NOT NULL AND signature IS NOT ?5))", params![workspace_id.as_str(),person_id.as_str(),name,avatar.map(serde_json::to_string).transpose()?,signature,now])?;
         if changed == 0 {
             let exists: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM people WHERE workspace_id=?1 AND person_id=?2 AND team_role IN('member','lead'))", params![workspace_id.as_str(),person_id.as_str()], |r| r.get(0))?;
             if !exists {

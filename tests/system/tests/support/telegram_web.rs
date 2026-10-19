@@ -8,6 +8,7 @@ use std::{
 #[derive(Default)]
 pub struct State {
     pub name: String,
+    pub bio: Option<String>,
     pub avatar: Option<Vec<u8>>,
     pub expired: bool,
     pub fail_send: bool,
@@ -56,7 +57,13 @@ impl TelegramWeb {
                     json!({"total_count":1,"photos":[[{"file_id":"photo","width":64,"height":64}]]})
                 }
                 "getFile" => json!({"file_id":"photo","file_path":"owner.jpg","file_size":6}),
-                "getChat" => json!({"id":300,"type":"private","first_name":state.name}),
+                "getChat" => {
+                    let mut chat = json!({"id":300,"type":"private","first_name":state.name});
+                    if let Some(bio) = &state.bio {
+                        chat["bio"] = json!(bio);
+                    }
+                    chat
+                }
                 "setMyName" | "setMyDescription" | "setMessageReaction" => json!(true),
                 "getUpdates" => {
                     if r.path.contains("100:manager") {

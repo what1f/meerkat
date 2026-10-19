@@ -176,6 +176,7 @@ pub trait ProviderStorage: Send + Sync {
         _: &'a PersonId,
         _: Option<&'a str>,
         _: Option<&'a ResourceRef>,
+        _: Option<&'a str>,
     ) -> ProviderFuture<'a, ()> {
         Box::pin(async {
             Err(ProviderError::Unsupported {

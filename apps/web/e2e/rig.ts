@@ -34,6 +34,9 @@ export type Command =
       op: 'feishu_profile';
       workspace: string;
       name: string;
+      signature?: string;
+      signature_unavailable?: boolean;
+      advance_hour?: boolean;
       avatar_changed?: boolean;
       unavailable?: boolean;
       delay_ms?: number;

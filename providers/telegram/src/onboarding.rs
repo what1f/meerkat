@@ -324,6 +324,12 @@ pub(crate) async fn agent_onboarding_with_transport(
                 avatar.as_ref(),
             )
             .await?;
+        if let Ok(chat) = manager.get_chat(credential.creator.id).await {
+            context
+                .storage()
+                .update_human_profile(&person.person_id, None, None, chat.bio.as_deref())
+                .await?;
+        }
         context
             .write_agent_secret("bot_token", SecretValue::new(credential.token()))
             .await?;

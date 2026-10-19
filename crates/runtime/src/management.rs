@@ -179,6 +179,7 @@ impl RuntimeApplication {
                 name: p.name,
                 avatar: p.avatar.map(Into::into),
                 position: p.position,
+                signature: p.signature,
             })
             .collect())
     }

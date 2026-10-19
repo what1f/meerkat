@@ -33,6 +33,12 @@ enum Command {
         workspace: String,
         name: String,
         #[serde(default)]
+        signature: Option<String>,
+        #[serde(default)]
+        signature_unavailable: bool,
+        #[serde(default)]
+        advance_hour: bool,
+        #[serde(default)]
         avatar_changed: bool,
         #[serde(default)]
         unavailable: bool,
@@ -109,10 +115,22 @@ async fn control(
         Command::FeishuProfile {
             workspace,
             name,
+            signature,
+            signature_unavailable,
+            advance_hour,
             avatar_changed,
             unavailable,
             delay_ms,
-        } => im.feishu_profile(&workspace, name, avatar_changed, unavailable, delay_ms),
+        } => im.feishu_profile(
+            &workspace,
+            name,
+            signature,
+            signature_unavailable,
+            advance_hour,
+            avatar_changed,
+            unavailable,
+            delay_ms,
+        ),
         Command::FeishuPerson {
             workspace,
             user,

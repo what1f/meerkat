@@ -53,7 +53,11 @@ export function Badge({
       </div>
       <header className={css.name}>{name}</header>
       <div className={css.role}>{role}</div>
-      <div className={css.bio}>{bio}</div>
+      {bio != null && (
+        <div className={css.bio} data-testid="badge-bio">
+          {bio}
+        </div>
+      )}
       {foot !== undefined && <footer className={css.foot}>{foot}</footer>}
     </article>
   );

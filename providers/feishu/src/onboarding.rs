@@ -239,7 +239,12 @@ async fn poll_permissions(
                 .storage()
                 .compare_and_set_person_state(&person.person_id, person.state_revision, identity)
                 .await?;
-            let profile = client.get_user(&creator_open_id, Auth::Tenant).await.ok();
+            let (profile, signature) = tokio::join!(
+                client.get_user(creator_open_id, Auth::Tenant),
+                client.human_signature(creator_open_id, "open_id"),
+            );
+            let profile = profile.ok();
+            let signature = signature.ok().flatten();
             let name = profile
                 .as_ref()
                 .map(|p| p.name.as_str())
@@ -274,6 +279,10 @@ async fn poll_permissions(
             context
                 .storage()
                 .join_human_team(&person.person_id, Some(&tenant), name, avatar.as_ref())
+                .await?;
+            context
+                .storage()
+                .update_human_profile(&person.person_id, None, None, signature.as_deref())
                 .await?;
             let creator_person_id = Some(person.person_id.to_string());
             if !creator_open_id.is_empty() {

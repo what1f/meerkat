@@ -64,6 +64,7 @@ export function HumanCard({
             }}
             name={person.name || t('members.human')}
             role={person.position}
+            bio={person.signature || undefined}
           />
         }
       />
@@ -161,6 +162,7 @@ function HumanProfile({ workspace, person }: { workspace: string; person: HumanT
           fallback,
         }}
         name={person.name || t('members.human')}
+        bio={person.signature || undefined}
         role={
           <InlineText
             mode="live"

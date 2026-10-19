@@ -5,20 +5,16 @@ use serde::Serialize;
 use std::io::Write;
 use url::Url;
 
-pub const STANDARD_BOT_TENANT_SCOPES: [&str; 28] = [
+pub const STANDARD_BOT_TENANT_SCOPES: [&str; 20] = [
     "application:application:patch",
     "application:application:self_manage",
     "application:bot.basic_info:read",
-    "cardkit:card:read",
-    "cardkit:card:write",
     "contact:user.base:readonly",
     "contact:contact.base:readonly",
-    "im:chat.members:bot_access",
+    "directory:employee:read",
+    "directory:employee.base.description:read",
     "im:chat:read",
-    "im:message.group_msg",
     "im:message.group_msg.include_bot:read",
-    "im:message.group_at_msg.include_bot:readonly",
-    "im:message.group_at_msg:readonly",
     "im:message.p2p_msg:readonly",
     "im:message.reactions:read",
     "im:message.reactions:write_only",
@@ -28,11 +24,7 @@ pub const STANDARD_BOT_TENANT_SCOPES: [&str; 28] = [
     "im:resource",
     "tenant:tenant:readonly",
     "task:comment",
-    "task:comment:read",
-    "task:comment:write",
-    "task:task:read",
     "task:task:write",
-    "task:tasklist:read",
     "task:tasklist:write",
 ];
 

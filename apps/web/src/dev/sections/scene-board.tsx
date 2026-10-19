@@ -61,7 +61,15 @@ export function SceneBoard() {
           <S.FlipCard
             flipped={flipped}
             onFlip={() => setFlipped(!flipped)}
-            front={badge('Alice')}
+            front={
+              <S.Badge
+                avatar={{ src: avatar }}
+                name="Alice"
+                role="Team Leader"
+                bio="Keep it simple"
+                size="card"
+              />
+            }
             back={
               <S.BadgeVerso
                 mark={<D.BrandMark brand="feishu" />}

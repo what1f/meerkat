@@ -1133,11 +1133,19 @@ impl ProviderStorage for WorkspaceServices {
         person_id: &'a PersonId,
         name: Option<&'a str>,
         avatar: Option<&'a lankide_core::ResourceRef>,
+        signature: Option<&'a str>,
     ) -> SdkFuture<'a, ()> {
         Box::pin(async move {
             let changed = self
                 .storage
-                .update_human_profile(&self.workspace_id, person_id, name, avatar, now_millis())
+                .update_human_profile(
+                    &self.workspace_id,
+                    person_id,
+                    name,
+                    avatar,
+                    signature,
+                    now_millis(),
+                )
                 .await
                 .map_err(provider_storage_error)?;
             if changed {

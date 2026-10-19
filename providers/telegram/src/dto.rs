@@ -48,7 +48,7 @@ pub struct Chat {
     #[serde(default)]
     pub last_name: String,
     #[serde(default)]
-    pub bio: String,
+    pub bio: Option<String>,
     #[serde(default)]
     pub photo: Option<ChatPhoto>,
 }

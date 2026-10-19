@@ -11,6 +11,7 @@ pub struct Feishu {
     pub registration_denied: bool,
     pub permissions_approved: bool,
     pub inspection_denied: bool,
+    pub signature_scope_missing: bool,
     pub app_tenants: std::collections::BTreeMap<String, String>,
     pub sends: Vec<Value>,
     pub message_chats: std::collections::BTreeMap<String, String>,
@@ -20,6 +21,9 @@ pub struct Feishu {
     pub user: String,
     pub tenant: String,
     pub contact_unavailable: bool,
+    pub signature: Option<String>,
+    pub signature_unavailable: bool,
+    pub signature_requests: Vec<Value>,
     pub contact_responses: Vec<Value>,
     pub sync_clock_offset: i64,
     pub contact_delay_ms: u64,
@@ -196,6 +200,7 @@ impl Transport for FeishuWeb {
                     "publish_time": "1700000000",
                     "scopes": STANDARD_BOT_TENANT_SCOPES
                         .iter()
+                        .filter(|scope| !feishu.signature_scope_missing || **scope != "directory:employee.base.description:read")
                         .map(|scope| json!({"scope": scope, "token_types": ["tenant"]}))
                         .collect::<Vec<_>>(),
                     "event_infos": STANDARD_BOT_EVENTS
@@ -203,6 +208,28 @@ impl Transport for FeishuWeb {
                         .map(|event| json!({"event_type": event}))
                         .collect::<Vec<_>>(),
                 }]}));
+            }
+            if url.ends_with("/open-apis/directory/v1/employees/mget") {
+                assert_eq!(request.method, Method::Post);
+                assert!(header(&request, "authorization").starts_with("Bearer tenant-"));
+                assert_eq!(body["required_fields"], json!(["base_info.description"]));
+                assert_eq!(body["employee_ids"].as_array().unwrap().len(), 1);
+                assert!(
+                    request
+                        .query
+                        .iter()
+                        .any(|(key, value)| key == "employee_id_type"
+                            && matches!(value.as_str(), "union_id" | "open_id"))
+                );
+                feishu.signature_requests.push(body.clone());
+                if feishu.signature_unavailable {
+                    return reply(json!({"code":99991672,"msg":"no signature access"}), &[]);
+                }
+                let mut base = json!({});
+                if let Some(signature) = &feishu.signature {
+                    base["description"] = json!(signature);
+                }
+                return data(json!({"employees":[{"base_info":base}]}));
             }
             if url.contains("/open-apis/contact/v3/users/") {
                 assert!(header(&request, "authorization").starts_with("Bearer tenant-"));

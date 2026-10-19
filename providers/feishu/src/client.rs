@@ -922,6 +922,33 @@ impl<T: Transport> Client<T> {
             })
     }
 
+    /// Read only the creator's signature through the official directory API.
+    /// Missing fields remain None; an explicit empty string clears the signature.
+    pub(crate) async fn human_signature(
+        &self,
+        user_id: &str,
+        id_type: &str,
+    ) -> Result<Option<String>, ClientError> {
+        let response: ApiResponse<Value> = self
+            .json_request(
+                Method::Post,
+                "/open-apis/directory/v1/employees/mget",
+                &[("employee_id_type".into(), id_type.into())],
+                Some(&serde_json::json!({
+                    "employee_ids": [user_id],
+                    "required_fields": ["base_info.description"],
+                })),
+                Auth::Tenant,
+                "human_signature",
+            )
+            .await?;
+        Ok(response.data.and_then(|data| {
+            data["employees"].as_array()?.first()?["base_info"]["description"]
+                .as_str()
+                .map(str::to_owned)
+        }))
+    }
+
     pub async fn get_user(&self, open_id: &str, auth: Auth) -> Result<UserRecord, ClientError> {
         self.get_user_by_id(open_id, "open_id", auth).await
     }

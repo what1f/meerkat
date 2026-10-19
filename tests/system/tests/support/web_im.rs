@@ -98,6 +98,7 @@ impl Im {
                 ProviderHost::new(
                     lankide_provider_feishu::FeishuProvider::new()
                         .with_transport(transport.clone())
+                        .with_clock(Arc::new(transport.clone()))
                         .with_event_source_factory(move |_, credentials, _, _| {
                             let source =
                                 feishu_web::Source(transport.clone(), credentials.app_id.clone());
@@ -169,6 +170,9 @@ impl Im {
         &self,
         workspace: &str,
         name: String,
+        signature: Option<String>,
+        signature_unavailable: bool,
+        advance_hour: bool,
         avatar_changed: bool,
         unavailable: bool,
         delay_ms: u64,
@@ -176,6 +180,11 @@ impl Im {
         let mock = self.feishu(workspace);
         let mut state = mock.0.lock().unwrap();
         state.name = name;
+        state.signature = signature;
+        state.signature_unavailable = signature_unavailable;
+        if advance_hour {
+            state.sync_clock_offset += 3_600_000;
+        }
         state.contact_unavailable = unavailable;
         state.contact_delay_ms = delay_ms;
         state.member_avatar = avatar_changed

@@ -1553,6 +1553,7 @@ async fn sync_human_profile(
             person_id,
             (!name.is_empty()).then_some(name.as_str()),
             avatar.as_ref(),
+            chat.bio.as_deref(),
         )
         .await
 }

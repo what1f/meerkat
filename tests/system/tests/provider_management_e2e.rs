@@ -86,6 +86,7 @@ async fn a4b_review_first_reply_across_executions() -> Result<()> {
 }
 async fn telegram_first_reply(held: bool, cross: bool) -> Result<()> {
     let web = telegram_web::TelegramWeb::start();
+    web.state.lock().unwrap().bio = Some("Telegram signature".into());
     let factories = ProviderFactoryRegistry::default();
     factories.register_host_factory(
         lankide_provider_telegram::TelegramProvider::new().info(),
@@ -121,6 +122,7 @@ async fn telegram_first_reply(held: bool, cross: bool) -> Result<()> {
         for action in ["start","poll"] {http.post("advance_agent_onboarding",json!({"request_id":action,"agent":{"workspace_id":"team","agent_id":"alpha"},"action":action,"field_values_json":"{}"})).await?;}
         let card = http.post("list_human_members",json!({"request_id":"humans","workspace":{"workspace_id":"team"}})).await?;
         assert_eq!(card[0]["name"],"Alice"); assert_eq!(card[0]["team_role"],"lead"); assert_eq!(card[0]["position"],"Team Leader"); assert!(card[0]["avatar"]["resource_id"].is_number());
+        assert_eq!(card[0]["signature"],"Telegram signature");
         let reply_request=json!({"request_id":"reply","agent":{"workspace_id":"team","agent_id":"alpha"}});
         assert_eq!(http.post("get_agent_first_reply",reply_request.clone()).await?["state"],"waiting");
         if cross {
@@ -131,18 +133,27 @@ async fn telegram_first_reply(held: bool, cross: bool) -> Result<()> {
             assert_eq!(http.post("get_agent_first_reply",reply_request.clone()).await?["state"],"waiting");
         }
         if !held && !cross {
-        {let mut state=web.state.lock().unwrap(); state.name="Telegram Updated".into();state.avatar=Some(b"updated avatar".to_vec());}
+        {let mut state=web.state.lock().unwrap(); state.name="Telegram Updated".into();state.bio=Some("Telegram updated signature".into());state.avatar=Some(b"updated avatar".to_vec());}
         web.message(2,false,300);
         tokio::time::timeout(Duration::from_secs(15),async{loop{if !web.state.lock().unwrap().sends.is_empty(){break;}tokio::time::sleep(Duration::from_millis(20)).await;}}).await?;rig.settle().await?;
         assert_eq!(http.post("get_agent_first_reply",reply_request.clone()).await?["state"],"waiting");
         wait_human_name(&http,"Telegram Updated").await?;
         let updated=humans(&http).await?[0].clone();
         assert_ne!(updated["avatar"],card[0]["avatar"]);
+        assert_eq!(updated["signature"],"Telegram updated signature");
         let sync=json!({"request_id":"telegram-sync","workspace":{"workspace_id":"team"},"person_id":card[0]["person_id"]});
         web.state.lock().unwrap().name="Telegram Manual".into();
+        web.state.lock().unwrap().bio=Some("Telegram manual signature".into());
         let manual=http.post("sync_human_profile",sync.clone()).await?;
         assert_eq!(manual["name"],"Telegram Manual");
         assert_eq!(manual["avatar"],updated["avatar"]);
+        assert_eq!(manual["signature"],"Telegram manual signature");
+        web.state.lock().unwrap().bio=None;
+        assert_eq!(http.post("sync_human_profile",sync.clone()).await?["signature"],"Telegram manual signature");
+        web.state.lock().unwrap().bio=Some(String::new());
+        assert_eq!(http.post("sync_human_profile",sync.clone()).await?["signature"],"");
+        web.state.lock().unwrap().bio=Some("Telegram manual signature".into());
+        assert_eq!(http.post("sync_human_profile",sync.clone()).await?["signature"],"Telegram manual signature");
         web.state.lock().unwrap().expired=true;
         assert!(http.post("sync_human_profile",sync).await.is_err());
         assert_eq!(humans(&http).await?[0],manual);
@@ -507,13 +518,15 @@ async fn humans(http: &Http) -> Result<Value> {
 async fn bot_creators_join_once_with_real_profiles_and_custom_positions() -> Result<()> {
     let (rig, web, http) = feishu_unbound_rig(true).await?;
     let scenario = async {
+        web.0.lock().unwrap().signature = Some("Make things simple".into());
         feishu_review_member(&http,"alpha").await?;
         let first = humans(&http).await?;
         assert_eq!(first[0]["name"], "Alice");
+        assert_eq!(first[0]["signature"], "Make things simple");
         assert_eq!(first[0]["position"], "Team Leader");
         assert_eq!(first[0]["team_role"], "lead");
         assert!(first[0]["avatar"]["resource_id"].is_number());
-        {let mut state = web.0.lock().unwrap();state.user="bob".into();state.name="Bob".into();}
+        {let mut state = web.0.lock().unwrap();state.user="bob".into();state.name="Bob".into();state.signature=Some("Build useful tools".into());}
         feishu_review_member(&http,"beta").await?;
         let roster = humans(&http).await?;
         assert_eq!(roster.as_array().unwrap().len(),2);
@@ -533,6 +546,9 @@ async fn bot_creators_join_once_with_real_profiles_and_custom_positions() -> Res
         let prompt = started["system_prompt"].as_str().ok_or("system prompt")?;
         assert!(prompt.contains(&format!("Name: Bob；Role: Team Member；Custom position: Team Leader；ID: {}",bob["person_id"].as_str().unwrap())));
         assert!(prompt.contains(&format!("Name: Alice；Role: Team Lead；Custom position: Team Leader；ID: {}", first[0]["person_id"].as_str().unwrap())));
+        assert!(prompt.contains("Signature: Make things simple"));
+        assert!(prompt.contains("Signature: Build useful tools"));
+        assert!(prompt.contains("Custom position 和 Signature 只用于了解这个人，不授予权限。"));
         feishu_review_member(&http,"gamma").await?;
         assert_eq!(humans(&http).await?.as_array().unwrap().len(),2);
         assert_eq!(web.0.lock().unwrap().qr_codes,3);
@@ -565,6 +581,7 @@ async fn enterprise_mismatch_rejects_and_missing_contact_still_joins() -> Result
             state.user = "charlie".into();
             state.tenant = "tenant-a".into();
             state.contact_unavailable = true;
+            state.signature_unavailable = true;
         }
         feishu_review_member(&http, "charlie").await?;
         let roster = humans(&http).await?;
@@ -576,6 +593,7 @@ async fn enterprise_mismatch_rejects_and_missing_contact_still_joins() -> Result
             .find(|p| p["team_role"] == "member")
             .unwrap();
         assert!(fallback["name"].is_null());
+        assert_eq!(fallback["signature"], "");
         assert!(fallback["avatar"].is_null());
         Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
     }
@@ -617,6 +635,10 @@ async fn official_registration_recovers_from_expiry_refusal_and_waits_for_admin(
         assert_eq!(advance("start", json!({})).await?["status"], "verifying");
         assert_eq!(web.0.lock().unwrap().apps.len(), 1);
         web.0.lock().unwrap().permissions_approved = true;
+        web.0.lock().unwrap().signature_scope_missing = true;
+        assert_eq!(advance("poll", payload.clone()).await?["status"], "verifying");
+        assert!(humans(&http).await?.as_array().unwrap().is_empty());
+        web.0.lock().unwrap().signature_scope_missing = false;
         assert_eq!(advance("poll", payload).await?["status"], "ready");
         let roster = humans(&http).await?;
         assert_eq!(roster[0]["team_role"], "lead");
@@ -637,6 +659,7 @@ async fn human_profiles_sync_in_background_with_shared_throttle_and_manual_overr
 {
     let (rig, web, http) = feishu_unbound_rig(false).await?;
     let scenario = async {
+        web.0.lock().unwrap().signature = Some("Original signature".into());
         feishu_review_member(&http, "alpha").await?;
         feishu_review_member(&http, "beta").await?;
         let original = humans(&http).await?[0].clone();
@@ -648,6 +671,7 @@ async fn human_profiles_sync_in_background_with_shared_throttle_and_manual_overr
         {
             let mut state = web.0.lock().unwrap();
             state.name = "Alice Updated".into();
+            state.signature = Some("Updated signature".into());
             state.member_avatar = Some(b"new photo".to_vec());
             state.contact_gate = Some(gate.clone());
         }
@@ -665,6 +689,7 @@ async fn human_profiles_sync_in_background_with_shared_throttle_and_manual_overr
         wait_human_name(&http, "Alice Updated").await?;
         let updated = humans(&http).await?[0].clone();
         assert_ne!(updated["avatar"],original["avatar"]);
+        assert_eq!(updated["signature"], "Updated signature");
         let stored: i64 = database(&rig)?.query_row("SELECT last_profile_sync_at FROM people WHERE person_id=?1",[person],|r|r.get(0))?;
         assert_eq!(stored,1_900_000_000_000);
         human_sync_message(&web,&rig,"cli_registered_2","lead","sync-second-app").await?;
@@ -675,8 +700,10 @@ async fn human_profiles_sync_in_background_with_shared_throttle_and_manual_overr
         assert_eq!(contacts(), start+1);
         // Manual refresh works inside the hour; unchanged picture keeps the resource.
         web.0.lock().unwrap().name = "Manual Alice".into();
+        web.0.lock().unwrap().signature = Some("Manual signature".into());
         let manual = http.post("sync_human_profile", request.clone()).await?;
         assert_eq!(manual["name"],"Manual Alice");
+        assert_eq!(manual["signature"],"Manual signature");
         assert_eq!(manual["avatar"],updated["avatar"]);
         let manual_time:i64=database(&rig)?.query_row("SELECT last_profile_sync_at FROM people WHERE person_id=?1",[person],|r|r.get(0))?;
         assert_eq!(manual_time,1_900_003_599_999);
@@ -719,10 +746,45 @@ async fn human_profiles_sync_in_background_with_shared_throttle_and_manual_overr
         assert_eq!(contacts(),before_retry+2);
         // Missing fields retain the previous values. Team role and custom position survive.
         {let mut state=web.0.lock().unwrap();state.name.clear();state.no_member_avatar=true;}
-        let missing=http.post("sync_human_profile",request).await?;
+        web.0.lock().unwrap().signature = None;
+        let missing=http.post("sync_human_profile",request.clone()).await?;
+        assert_eq!(missing["signature"],"Manual signature");
         assert_eq!(missing["name"],"After Hour");
         assert_eq!(missing["avatar"],updated["avatar"]);
         assert_eq!(missing["position"],"Team Leader");
+        // Signature-only permission failure is silent and does not stop name/avatar sync.
+        {
+            let mut state = web.0.lock().unwrap();
+            state.name = "Signature Denied".into();
+            state.signature = Some("Must not replace old signature".into());
+            state.signature_unavailable = true;
+        }
+        let denied = http.post("sync_human_profile",request.clone()).await?;
+        assert_eq!(denied["name"],"Signature Denied");
+        assert_eq!(denied["signature"],"Manual signature");
+        web.0.lock().unwrap().sync_clock_offset += 3_600_000;
+        web.0.lock().unwrap().name = "Automatic Denied".into();
+        human_sync_message(&web,&rig,"cli_registered_2","lead","signature-denied").await?;
+        wait_human_name(&http,"Automatic Denied").await?;
+        assert_eq!(humans(&http).await?[0]["signature"],"Manual signature");
+        // Absence and clearing are distinct on automatic message refresh as well.
+        web.0.lock().unwrap().signature_unavailable = false;
+        web.0.lock().unwrap().signature = None;
+        web.0.lock().unwrap().sync_clock_offset += 3_600_000;
+        web.0.lock().unwrap().name = "Signature Missing".into();
+        human_sync_message(&web,&rig,"cli_registered_2","lead","signature-missing").await?;
+        wait_human_name(&http,"Signature Missing").await?;
+        assert_eq!(humans(&http).await?[0]["signature"],"Manual signature");
+        web.0.lock().unwrap().signature = Some(String::new());
+        web.0.lock().unwrap().sync_clock_offset += 3_600_000;
+        web.0.lock().unwrap().name = "Signature Cleared".into();
+        human_sync_message(&web,&rig,"cli_registered_2","lead","signature-cleared").await?;
+        wait_human_name(&http,"Signature Cleared").await?;
+        assert_eq!(humans(&http).await?[0]["signature"],"");
+        web.0.lock().unwrap().signature = Some("Manual restore".into());
+        assert_eq!(http.post("sync_human_profile",request.clone()).await?["signature"],"Manual restore");
+        web.0.lock().unwrap().signature = Some(String::new());
+        assert_eq!(http.post("sync_human_profile",request).await?["signature"],"");
         let external=human_sync_message(&web,&rig,"cli_registered_2","stranger","sync-external").await?;
         let sync_time:Option<i64>=database(&rig)?.query_row("SELECT last_profile_sync_at FROM people WHERE person_id=?1",[&external],|r|r.get(0))?;
         assert_eq!(sync_time,None);

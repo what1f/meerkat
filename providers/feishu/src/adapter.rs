@@ -1990,21 +1990,41 @@ async fn sync_human_profile(
         return Err(ProviderError::InvalidInput { field: "person_id" });
     }
     let open_id = person.provider_state["open_ids_by_app"][app_id].as_str();
-    let profile = match open_id {
-        Some(id) => client.get_user(id, Auth::Tenant).await,
-        None => {
-            client
-                .get_user_by_id(
-                    &person.external_id,
-                    person.provider_state["external_id_type"]
-                        .as_str()
-                        .unwrap_or("union_id"),
-                    Auth::Tenant,
-                )
-                .await
+    let (signature_id, signature_id_type) = match open_id {
+        Some(id) => (id, "open_id"),
+        None => (person.external_id.as_str(), "union_id"),
+    };
+    let (profile, signature) = tokio::join!(
+        async {
+            match open_id {
+                Some(id) => client.get_user(id, Auth::Tenant).await,
+                None => {
+                    client
+                        .get_user_by_id(
+                            &person.external_id,
+                            person.provider_state["external_id_type"]
+                                .as_str()
+                                .unwrap_or("union_id"),
+                            Auth::Tenant,
+                        )
+                        .await
+                }
+            }
+        },
+        client.human_signature(signature_id, signature_id_type)
+    );
+    // Signature permissions can lag behind the rest of the bot's permissions.
+    let signature = signature.ok().flatten();
+    let profile = match profile {
+        Ok(profile) => profile,
+        Err(error) => {
+            context
+                .storage()
+                .update_human_profile(person_id, None, None, signature.as_deref())
+                .await?;
+            return Err(error.provider_error(false));
         }
-    }
-    .map_err(|e| e.provider_error(false))?;
+    };
     let mut avatar = None;
     if !profile.avatar.avatar_origin.is_empty() {
         // Missing or unreadable picture must preserve the last good picture.
@@ -2043,6 +2063,6 @@ async fn sync_human_profile(
     let name = (!profile.name.trim().is_empty()).then_some(profile.name.as_str());
     context
         .storage()
-        .update_human_profile(person_id, name, avatar.as_ref())
+        .update_human_profile(person_id, name, avatar.as_ref(), signature.as_deref())
         .await
 }
