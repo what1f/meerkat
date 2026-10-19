@@ -8,14 +8,15 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{MainThreadMarker, NSNotification, NSNotificationCenter, NSObject, NSPoint};
 
-// system.html: painted circles are 12pt, at (18, 18), with an 8pt gap.
-// Their centers are (24, 24), (44, 24), (64, 24); the 32pt toggle starts at (82, 8).
+// The buttons center on the 48pt top bar, inset from the left by the same 24pt.
+// AppKit's own spacing between them is kept (23pt on macOS 26), so the toggle
+// sits 32pt after the last button's center: system.html places it at (86, 8).
 const CENTER: f64 = 24.0;
-const PITCH: f64 = 20.0;
 static LAYOUT_KEY: u8 = 0;
 
 struct LayoutState {
     window: Weak<NSWindow>,
+    pitch: f64,
     applying: Cell<bool>,
 }
 
@@ -85,7 +86,7 @@ impl TrafficLightLayout {
             };
             let center = parent.convertPoint_fromView(
                 NSPoint::new(
-                    CENTER + index as f64 * PITCH,
+                    CENTER + index as f64 * self.ivars().pitch,
                     content.bounds().size.height - CENTER,
                 ),
                 Some(&content),
@@ -107,8 +108,22 @@ pub fn install(window: &tauri::WebviewWindow) -> tauri::Result<()> {
     // SAFETY: Tauri returns this window's NSWindow; setup and notifications run on main.
     unsafe {
         let native = &*window.ns_window()?.cast::<NSWindow>();
+        // Read the spacing before the first layout pass moves the buttons.
+        let origin = |kind| {
+            native
+                .standardWindowButton(kind)
+                .map(|button| button.frame().origin.x)
+        };
+        let pitch = match (
+            origin(NSWindowButton::CloseButton),
+            origin(NSWindowButton::MiniaturizeButton),
+        ) {
+            (Some(close), Some(miniaturize)) if miniaturize > close => miniaturize - close,
+            _ => 23.0,
+        };
         let observer = TrafficLightLayout::alloc(mtm).set_ivars(LayoutState {
             window: Weak::from(native),
+            pitch,
             applying: Cell::new(false),
         });
         let observer: objc2::rc::Retained<TrafficLightLayout> = msg_send![super(observer), init];

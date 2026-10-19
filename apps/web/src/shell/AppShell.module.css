@@ -61,7 +61,7 @@
 .root[data-desktop='true'] > [data-rail] > button {
   /* Design center line: 8px + half the 32px IconButton = 24px. */
   top: 8px;
-  left: 82px;
+  left: 86px;
 }
 
 .root > div:last-child {
@@ -138,11 +138,11 @@
 /* The toggle stays beside the native buttons when the sidebar becomes an icon rail. */
 .root[data-desktop='true']:has(aside[data-rail='true']) > div:last-child > header {
   /* Header buttons have a -10px leading margin: 56 + 68 - 10 = 114px. */
-  padding-left: calc(124px - var(--rail));
+  padding-left: calc(128px - var(--rail));
 }
 
 .root[data-desktop='true']:has(aside[hidden]) > div:last-child > header {
-  padding-left: 124px;
+  padding-left: 128px;
 }
 
 .root[data-desktop='true'] > div:last-child > header > * {

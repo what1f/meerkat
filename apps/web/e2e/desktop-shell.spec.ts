@@ -23,7 +23,7 @@ test('Desktop keeps a compact rail and moves its sidebar toggle inside the sideb
           // Normal windows share the native y=24 line; fullscreen puts the toggle in the sidebar.
           return { x: box.x, center: box.y + box.height / 2 };
         })
-        .toEqual({ x: fullscreen ? 12 : 82, center: 24 });
+        .toEqual({ x: fullscreen ? 12 : 86, center: 24 });
       await expect
         .poll(() =>
           toggle.evaluate((button) => {
