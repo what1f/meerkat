@@ -91,6 +91,21 @@ test('B3a.2: a renamed member keeps its name and model after a reload', async ({
   await expect(card).toContainText('cobol-2');
 });
 
+test('a model shows its catalog display name on the board badge and the detail readout', async ({
+  page,
+}) => {
+  const member = { workspace: 'members_model_name', agent: 'ada' };
+  await rig({ op: 'create_workspace', workspace: member.workspace });
+  await rig({ op: 'create_agent', ...member });
+  await open(page, member.workspace, 'members');
+  const card = page.getByTestId(`member-card-${member.agent}`);
+  await expect(card).toContainText('Scripted');
+  await expect(card).not.toContainText('scripted');
+  await open(page, member.workspace, `member/${member.agent}`);
+  await expect(page.getByTestId('brain-picker')).toContainText('Scripted');
+  await expect(page.getByTestId('brain-picker')).not.toContainText('scripted');
+});
+
 test('B3a.3: a member paused by a failed run can be resumed', async ({ page }) => {
   const member = { workspace: 'members_pause', agent: 'linus' };
   await rig({ op: 'create_workspace', workspace: member.workspace });

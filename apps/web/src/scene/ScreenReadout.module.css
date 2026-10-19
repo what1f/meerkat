@@ -14,16 +14,22 @@
   color: var(--screen-ink-2);
 }
 
-.ai > img {
+.ai > img,
+.model > img {
+  flex: none;
   width: 18px;
   height: 18px;
 }
 
-.ai > img[data-brand='pi'] {
+.ai > img[data-brand='pi'],
+.model > img[data-brand='pi'] {
   filter: var(--screen-mark);
 }
 
 .model {
+  display: flex;
+  gap: 8px;
+  align-items: center;
   overflow: hidden;
   font-family: var(--font-mono);
   font-size: var(--t-model);
@@ -31,6 +37,11 @@
   text-overflow: ellipsis;
   letter-spacing: -0.01em;
   white-space: nowrap;
+}
+
+.model > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .where {

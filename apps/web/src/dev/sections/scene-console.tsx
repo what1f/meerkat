@@ -25,7 +25,7 @@ export function SceneConsole() {
                   <S.ConsoleScreen variant="readout">
                     <S.ScreenReadout
                       ai={{ mark: <D.BrandMark brand="codex" />, label: 'Codex' }}
-                      model="gpt-6.1-sol"
+                      model={{ mark: <D.BrandMark brand="openai" />, label: 'gpt-6.1-sol' }}
                       place={{ label: 'MacBook Pro', status: 'ok' }}
                       level={{ index: level, total: 3, label: levels[level] ?? '' }}
                     />

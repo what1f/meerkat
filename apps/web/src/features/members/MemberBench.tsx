@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { BrandMark, InlineText, Menu, useToast } from '../../design';
+import { InlineText, Menu, useToast } from '../../design';
 import { Badge, Bench, Board, Hang, QrTag } from '../../scene';
 import { useT } from '../../lib/i18n';
 import { agentStatus, useDeleteAgent, useResumeAgent } from '../../lib/queries/agents';
@@ -9,7 +9,7 @@ import { MemberConsole } from './MemberConsole';
 import { AvatarPicker } from './AvatarPicker';
 import { DeleteMemberDialog } from './DeleteMemberDialog';
 import { MemberUnread } from './MemberUnread';
-import { isBrand, modelLabel } from './MemberCard';
+import { useModelFace } from './MemberCard';
 import css from './MemberBench.module.css';
 
 export type TopBarConfig = {
@@ -34,6 +34,7 @@ export function MemberBench({
   const toast = useToast();
   const team = useWorkspace({ request_id: 'member', workspace: { workspace_id: workspace } });
   const m = useMemberDraft(workspace, id, team.data?.provider_id);
+  const face = useModelFace(workspace, m.draft.machine_id, m.draft.harness_id, m.draft.model);
   const resume = useResumeAgent();
   const remove = useDeleteAgent();
   const [reading, setReading] = useState(false);
@@ -118,8 +119,8 @@ export function MemberBench({
                   dimmed={!!m.agent?.pause_reason}
                   foot={
                     <>
-                      {isBrand(m.draft.harness_id) && <BrandMark brand={m.draft.harness_id} />}
-                      {m.draft.model ? modelLabel(m.draft.model) : t('members.defaultModel')}
+                      {face.mark}
+                      {face.label}
                     </>
                   }
                   avatar={{

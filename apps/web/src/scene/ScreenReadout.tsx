@@ -4,7 +4,7 @@ import { StatusDot } from '../design';
 import css from './ScreenReadout.module.css';
 export type ScreenReadoutProps = Omit<UIProps, 'className' | 'style'> & {
   ai: { mark: ReactNode; label: string };
-  model: string;
+  model: { mark: ReactNode; label: string };
   place: { label: string; status: Status };
   level: { index: number; total: number; label: string };
 };
@@ -15,7 +15,10 @@ export function ScreenReadout({ ai, model, place, level, ...rest }: ScreenReadou
         {ai.mark}
         {ai.label}
       </div>
-      <div className={css.model}>{model}</div>
+      <div className={css.model}>
+        {model.mark}
+        <span>{model.label}</span>
+      </div>
       <div className={css.where}>
         <StatusDot status={place.status} />
         {place.label}

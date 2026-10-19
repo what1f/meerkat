@@ -11,7 +11,7 @@ import {
 import { ConsoleScreen, Lever, ScreenReadout } from '../../scene';
 import { t as translate, useT, type MessageKey } from '../../lib/i18n';
 import type { MemberDraftState } from './MemberConsole';
-import { isBrand, modelLabel } from './MemberCard';
+import { isBrand, useModelFace } from './MemberCard';
 import css from './MemberBench.module.css';
 
 export const levelLabel = (level: string) => {
@@ -26,6 +26,7 @@ export const levelLabel = (level: string) => {
 // Office, AI, model and thinking: each column narrows the next.
 export function BrainPicker({
   m,
+  workspace,
   status,
 }: {
   m: MemberDraftState;
@@ -42,6 +43,7 @@ export function BrainPicker({
   const onMachine = machine?.harnesses.length ? machine.harnesses : m.harnesses;
   const harness = harnessOf(draft.harness_id);
   const model = m.models.find((x) => x.model_id === draft.model);
+  const face = useModelFace(workspace, draft.machine_id, draft.harness_id, draft.model);
   const levels = model?.supported_thinking_levels.length
     ? model.supported_thinking_levels
     : (harness?.supported_thinking_levels ?? []);
@@ -86,11 +88,7 @@ export function BrainPicker({
               mark: isBrand(draft.harness_id) ? <BrandMark brand={draft.harness_id} /> : null,
               label: harness?.display_name ?? draft.harness_id,
             }}
-            model={
-              draft.model
-                ? modelLabel(model?.display_name || draft.model)
-                : t('members.defaultModel')
-            }
+            model={face}
             place={{ label: machine?.display_name ?? '', status: place }}
             level={{
               index: level,
