@@ -6,7 +6,6 @@ export type SidebarLayout = { width: number; rail: boolean; hidden: boolean };
 export const SIDEBAR_MIN = 180;
 export const SIDEBAR_MAX = 320;
 export const SIDEBAR_FOLD = 132;
-export const SIDEBAR_RAIL = 84;
 const SETTLE_MS = 400;
 const defaults: SidebarLayout = { width: 220, rail: false, hidden: false };
 function valid(value: unknown): value is SidebarLayout {
@@ -92,7 +91,10 @@ export function useSidebarGrip() {
     },
     onPointerDown: (e) => {
       if (e.button !== 0) return;
-      drag.current = { x: e.clientX, width: rail ? SIDEBAR_RAIL : width };
+      drag.current = {
+        x: e.clientX,
+        width: e.currentTarget.parentElement!.getBoundingClientRect().width,
+      };
       e.currentTarget.setPointerCapture(e.pointerId);
       setResizing(true);
     },

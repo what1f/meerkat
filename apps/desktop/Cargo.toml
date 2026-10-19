@@ -25,6 +25,7 @@ window-vibrancy.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSWindow", "NSView", "NSButton", "NSControl", "NSResponder"] }
 objc2-web-kit = { version = "0.3.2", features = ["WKWebViewConfiguration"] }
 objc2-foundation = "0.3.2"
 objc2-service-management = { version = "0.3.2", default-features = false, features = ["std", "SMAppService", "objc2", "objc2-foundation"] }
@@ -39,7 +40,7 @@ path = "src/main.rs"
 
 [package.metadata.lankide.e2e]
 command = "./apps/desktop/shell-e2e.sh"
-scenario = "Start the shipped headless Tauri Desktop entrypoint with real local services, record the intended navigation to the discovered Runtime origin, reuse healthy owners, replace old helpers through a cold Harness probe on the first launch, report failed helpers, and clean up only owned processes. Window appearance and external-link acceptance belong to C2."
+scenario = "Start the shipped headless Tauri Desktop entrypoint with real local services, record the intended navigation to the discovered Runtime origin, reuse healthy owners, replace old helpers through a cold Harness probe on the first launch, report failed helpers, and clean up only owned processes. Window appearance and external-link acceptance belong to C2, including native traffic-light alignment after focus, theme, resize and fullscreen changes."
 prerequisites = "Four product binaries in the selected binary directory (target/debug by default); macOS"
 classification = "hermetic"
 unattended = "yes"

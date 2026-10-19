@@ -91,13 +91,21 @@ test('the sidebar edge resizes, folds to icons, restores on double click and per
   // Dragged below the fold: icons only, and the icons still navigate.
   await drag(40);
   await expect(side).toHaveAttribute('data-rail', 'true');
-  await expect.poll(width).toBe(84);
+  await expect.poll(width).toBe(56);
   await page.getByTestId('nav-settings').click();
   await expect(page).toHaveURL(/#\/settings$/);
   await expect(page.getByTestId('nav-settings')).toHaveAttribute('aria-current', 'page');
   await page.reload();
   await expect(side).toHaveAttribute('data-rail', 'true');
-  expect(await width()).toBe(84);
+  expect(await width()).toBe(56);
+  // Dragging out starts from the rendered rail width, including after a reload.
+  const start = (await grip.boundingBox())!;
+  const draggedWidth = Math.round(56 + 200 - (start.x + start.width / 2));
+  await drag(200);
+  await expect(side).toHaveAttribute('data-rail', 'false');
+  await expect.poll(width).toBe(draggedWidth);
+  await grip.dblclick();
+  await expect.poll(width).toBe(56);
   // Double click on the edge brings the full sidebar back, and it stays open after a reload.
   await grip.dblclick();
   await expect(side).toHaveAttribute('data-rail', 'false');

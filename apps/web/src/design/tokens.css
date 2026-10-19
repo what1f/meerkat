@@ -23,7 +23,7 @@
 
   /* the top bar the board runs under; 0 when the page has none over it */
   --bar-h: 0px;
-  --rail: 84px;
+  --rail: 56px;
   --column: 560px;
   --hole-pitch: 24px;
   --chevron-line: 1.5px solid currentcolor;

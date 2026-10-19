@@ -45,7 +45,7 @@
 }
 
 .root > [data-rail='true'] > button {
-  left: 26px;
+  left: calc((var(--rail) - 32px) / 2);
 }
 
 .root > [data-rail] > button:hover {
@@ -59,12 +59,9 @@
 }
 
 .root[data-desktop='true'] > [data-rail] > button {
+  /* Design center line: 8px + half the 32px IconButton = 24px. */
+  top: 8px;
   left: 82px;
-}
-
-.root[data-desktop='true'] > [data-rail='true'] > button {
-  top: 44px;
-  left: 26px;
 }
 
 .root > div:last-child {
@@ -138,6 +135,12 @@
   padding-left: 56px;
 }
 
+/* The toggle stays beside the native buttons when the sidebar becomes an icon rail. */
+.root[data-desktop='true']:has(aside[data-rail='true']) > div:last-child > header {
+  /* Header buttons have a -10px leading margin: 56 + 68 - 10 = 114px. */
+  padding-left: calc(124px - var(--rail));
+}
+
 .root[data-desktop='true']:has(aside[hidden]) > div:last-child > header {
   padding-left: 124px;
 }
@@ -148,4 +151,26 @@
 
 .root[data-board='wall'] > div:last-child > main {
   --bar-h: var(--safe-area);
+}
+
+/* Native fullscreen is published by the host; :fullscreen also handles Web fullscreen. */
+:root:is([data-window-fullscreen='true'], :fullscreen)
+  .root[data-desktop='true']
+  > [data-rail]
+  > button {
+  left: 12px;
+}
+
+:root:is([data-window-fullscreen='true'], :fullscreen)
+  .root[data-desktop='true']:has(aside[data-rail='true'])
+  > div:last-child
+  > header {
+  padding-left: 24px;
+}
+
+:root:is([data-window-fullscreen='true'], :fullscreen)
+  .root[data-desktop='true']:has(aside[hidden])
+  > div:last-child
+  > header {
+  padding-left: 56px;
 }

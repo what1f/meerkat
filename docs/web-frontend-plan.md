@@ -193,8 +193,10 @@ IM 式对话界面。选用 React，原因如下：
   3. 成功后，把窗口导航到 `management.url`。
   4. 失败时，导航到 `boot.html#<error-code>`，由启动页显示本地化的错误状态，
      例如“需要在登录项中允许后台运行”。
-- 窗口：1240×820，最小 960×660，`titleBarStyle: Overlay`，红绿灯位置 (16,17)，
-  vibrancy 由 `window-vibrancy` 实现。
+- 窗口：1240×820，最小 960×660，`titleBarStyle: Overlay`，红绿灯中心为 (24,24)、(44,24)、(64,24)，侧栏按钮中心为 (98,24)，
+  vibrancy 由 `window-vibrancy` 实现。macOS 原生布局在窗口更新、外观变化和退出全屏后恢复红绿灯位置；全屏自动隐藏标题栏由 AppKit 管理。
+  图标栏宽 56px（36px 点击区，左右各 10px）。正常窗口保留上述中心位置，控件越过图标栏是预期行为；顶栏返回/标题避开侧栏按钮右边缘 114px。
+  全屏时侧栏按钮位于侧栏顶部 (12,8)，图标栏下水平居中；展开时也放在侧栏内。Tauri 在窗口缩放/聚焦事件与页面加载完成时读取真实 `is_fullscreen`，同步根元素 `data-window-fullscreen`，不按窗口尺寸猜测，也不新增前端窗口权限；退出后恢复正常窗口位置。Web Fullscreen API 使用同一布局。
 - 启动页仅授予窗口拖拽权限。启动成功后，仅向发现的 Runtime origin、main 窗口动态授予
   拖拽与主题设置权限；不开放业务 IPC。每个外壳进程只授权一个 Runtime origin；重试发现不同
   origin 时停止自有服务并重启外壳，避免动态授权累加。启动页仍通过 URL hash 接收状态。

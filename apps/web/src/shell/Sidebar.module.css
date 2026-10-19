@@ -35,11 +35,7 @@
   width: var(--rail);
   overflow: visible;
   align-items: center;
-  padding: 52px 12px 10px;
-}
-
-[data-desktop='true'] .root[data-rail='true'] {
-  padding-top: 88px;
+  padding: 52px 10px 10px;
 }
 
 .root[data-rail='true'] > header {

@@ -1,5 +1,7 @@
 mod backend;
 mod background_services;
+#[cfg(target_os = "macos")]
+mod traffic_lights;
 
 use backend::DesktopBackend;
 use std::sync::{
@@ -26,6 +28,19 @@ fn boot_url() -> Url {
     #[cfg(not(target_os = "windows"))]
     let base = "tauri://localhost/boot.html";
     Url::parse(base).expect("embedded boot URL")
+}
+
+fn sync_window_fullscreen(window: &tauri::WebviewWindow) {
+    match window.is_fullscreen() {
+        Ok(fullscreen) => {
+            if let Err(error) = window.eval(format!(
+                "document.documentElement.dataset.windowFullscreen = '{fullscreen}';"
+            )) {
+                eprintln!("lankide-desktop: could not sync window layout: {error}");
+            }
+        }
+        Err(error) => eprintln!("lankide-desktop: could not read window state: {error}"),
+    }
 }
 
 fn is_boot(url: &Url) -> bool {
@@ -234,6 +249,11 @@ fn main() {
                     .inner_size(1240.0, 820.0)
                     .min_inner_size(960.0, 660.0)
                     .transparent(true)
+                    .on_page_load(|window, payload| {
+                        if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                            sync_window_fullscreen(&window);
+                        }
+                    })
                     .on_navigation(move |url| allow_navigation(&navigation_app, url))
                     .on_new_window(move |url, _| {
                         let internal = is_boot(&url)
@@ -274,7 +294,6 @@ fn main() {
                     .with_webview_configuration(configuration)
                     .title_bar_style(tauri::TitleBarStyle::Overlay)
                     .hidden_title(true)
-                    .traffic_light_position(tauri::LogicalPosition::new(16.0, 17.0))
             };
             let window = builder.build()?;
             #[cfg(target_os = "macos")]
@@ -284,8 +303,19 @@ fn main() {
                 None,
                 None,
             )?;
+            #[cfg(target_os = "macos")]
+            traffic_lights::install(&window)?;
             start_services(&handle);
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if matches!(
+                event,
+                tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Focused(_)
+            ) && let Some(webview) = window.app_handle().get_webview_window(window.label())
+            {
+                sync_window_fullscreen(&webview);
+            }
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
             "quit" => app.exit(0),
