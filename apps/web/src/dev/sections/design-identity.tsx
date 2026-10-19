@@ -52,7 +52,6 @@ export function DesignIdentity() {
             'pi',
             'deepseek',
             'claude',
-            'anthropic',
             'openai',
             'gemini',
             'qwen',
@@ -60,6 +59,8 @@ export function DesignIdentity() {
             'moonshot',
             'meta',
             'grok',
+            'zhipu',
+            'minimax',
           ] as const
         ).map((brand) => (
           <State key={brand} label={brand}>

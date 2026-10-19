@@ -10,7 +10,8 @@ included only to identify the corresponding integrations.
 The LobeHub variants intentionally match the earlier registry:
 
 - Agent harnesses: Pi `Mono`, Claude Code `Color`, Codex `Color`.
-- Models: Anthropic/Grok/Moonshot/OpenAI `Mono`; Claude/DeepSeek/Gemini/Meta/Mistral/Qwen `Color`.
+- Models: Grok/Moonshot/OpenAI `Mono`; Claude/DeepSeek/Gemini/Meta/Mistral/Qwen `Color`.
+- `lobehub/zhipu.svg`, `lobehub/minimax.svg`: `@lobehub/icons-static-svg@1.95.1` `Color`, sized to 24.
 
 Do not replace these files with the current `latest` CDN output without an explicit visual migration.
 - `lucide/monitor.svg`: `lucide-static@1.57.0`, normalized to the same single-line form.
