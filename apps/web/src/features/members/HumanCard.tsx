@@ -68,6 +68,7 @@ export function HumanBench({
         )}
       </Bench>
     </Board>,
+    'open',
   );
 }
 
