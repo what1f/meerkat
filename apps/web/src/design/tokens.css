@@ -3,8 +3,11 @@
   /* type */
   --font:
     -apple-system, blinkmacsystemfont, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', sans-serif;
-  --font-display: 'Songti SC', 'STSong', 'Noto Serif SC', 'Source Han Serif SC', georgia, serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, menlo, monospace;
+  /* stylelint-disable value-keyword-case -- Canonical system font names from the design. */
+  --font-display:
+    ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  /* stylelint-enable value-keyword-case */
   --t-caption: 11px;
   --t-small: 12px;
   --t-body: 13px;
@@ -19,11 +22,11 @@
   --h-lg: 40px;
   --row: 40px;
   --row-lg: 56px;
-  --safe-area: 52px;
+  --safe-area: 48px;
+  --dock-clearance: 104px;
 
   /* the top bar the board runs under; 0 when the page has none over it */
   --bar-h: 0px;
-  --rail: 56px;
   --column: 560px;
   --hole-pitch: 24px;
   --chevron-line: 1.5px solid currentcolor;
@@ -74,7 +77,7 @@
 
   /* component radius */
   --r-menu: 10px;
-  --r-nav: 7px;
+  --r-dock-item: 11px;
   --r-input-lg: 10px;
   --r-toast: 19px;
   --r-bubble: 16px 16px 16px 6px;
@@ -193,6 +196,7 @@
   --edge-line: 1px solid var(--edge);
   --edge-left: -1px 0 0 var(--line);
   --rule-line: 1px solid var(--rule);
+  --dock-shadow: 0 0 0 0.5px var(--edge), var(--shadow-2);
   --edge-ring: 0 0 0 0.5px var(--edge);
   --inset-line: inset 0 0 0 1px var(--line);
   --editing-line: 0 1.5px 0 var(--accent);
@@ -223,7 +227,17 @@
   --card-shadow: 0 0 0 0.5px var(--edge), var(--hang-shadow);
   --card-shadow-focus: var(--card-shadow), 0 0 0 3px var(--accent-soft);
   --card-rear: linear-gradient(var(--field), var(--field)), var(--card);
-  --slot-shadow: inset 0 1px 2px rgb(0 0 0 / 25%);
+  --slot-face: color-mix(in srgb, var(--board), #000 22%);
+  --slot-shadow:
+    inset 0 1.5px 1.5px rgb(0 0 0 / 40%), inset 0 -0.5px 0 rgb(0 0 0 / 15%),
+    0 0.5px 0 var(--slot-lip);
+  --clip-ring-shadow: drop-shadow(0 1.2px 0.6px rgb(0 0 0 / 28%));
+  --mask-ink: #000;
+  --mask-fade: rgb(0 0 0 / 25%);
+  --sleeve-face: linear-gradient(155deg, var(--sleeve-a), var(--sleeve-b) 45%, var(--sleeve-a));
+  --sleeve-shadow-focus: var(--sleeve-shadow), var(--ring-focus);
+  --sleeve-shadow:
+    inset 0 0 0 1px var(--sleeve-edge), inset 0 1px 0 var(--sleeve-edge), var(--hang-shadow);
   --punch-shadow: inset 0 1px 1px rgb(0 0 0 / 30%);
   --eyelet: radial-gradient(
     circle,
@@ -297,6 +311,11 @@
 }
 
 [data-theme='light'] {
+  --glass: rgb(246 246 249 / 78%);
+  --slot-lip: rgb(255 255 255 / 90%);
+  --sleeve-a: rgb(255 255 255 / 62%);
+  --sleeve-b: rgb(255 255 255 / 30%);
+  --sleeve-edge: rgb(27 29 38 / 10%);
   --canvas: #f1f2f6;
   --surface: #fff;
   --elevated: #fff;
@@ -371,6 +390,11 @@
 }
 
 [data-theme='dark'] {
+  --glass: rgb(44 46 52 / 72%);
+  --slot-lip: rgb(255 255 255 / 8%);
+  --sleeve-a: rgb(255 255 255 / 7%);
+  --sleeve-b: rgb(255 255 255 / 2%);
+  --sleeve-edge: rgb(255 255 255 / 10%);
   --canvas: #101115;
   --surface: #17181d;
   --elevated: #202128;

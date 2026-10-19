@@ -1,6 +1,7 @@
-/* An empty hook: add something here. It keeps its peg, like the things it stands in for. */
+/* A clear plastic sleeve on a lanyard, waiting for a card. */
 .root {
-  --r-vacant: calc(16 * var(--u, 0.9px));
+  --u: 0.9px;
+  --r-vacant: calc(14 * var(--u));
 
   position: relative;
   display: flex;
@@ -15,20 +16,22 @@
   outline-style: none;
 }
 
-/* Hangs in the rails like a badge: the outline starts where a badge would. */
+/* The sleeve starts exactly where a badge would. */
 .root[data-shape='badge'] {
   width: 192px;
   padding-top: 60px;
+  color: var(--ink-2);
 }
 
 .outline {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
   align-items: center;
   justify-content: center;
-  width: calc(196 * var(--u, 0.9px));
-  height: calc(276 * var(--u, 0.9px));
+  width: calc(196 * var(--u));
+  height: calc(276 * var(--u));
   border: var(--dashed-strong);
   border-radius: var(--r-vacant);
   transition:
@@ -68,4 +71,32 @@
 .root:hover .plus {
   background: var(--active);
   transform: rotate(90deg);
+}
+
+.root[data-shape='badge'] .outline {
+  background: var(--sleeve-face);
+  border-style: none;
+  box-shadow: var(--sleeve-shadow);
+  transition: color var(--d-base);
+}
+
+.slot {
+  position: absolute;
+  top: calc(9 * var(--u));
+  left: 50%;
+  width: calc(26 * var(--u));
+  height: calc(6 * var(--u));
+  margin-left: calc(-13 * var(--u));
+  background: var(--slot-face);
+  border-radius: var(--r-pill);
+  box-shadow: var(--slot-shadow);
+}
+
+.root[data-shape='badge'] .plus {
+  color: var(--ink);
+  background: var(--active);
+}
+
+.root[data-shape='badge']:focus-visible .outline {
+  box-shadow: var(--sleeve-shadow-focus);
 }

@@ -72,6 +72,7 @@
   margin-left: auto;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-family: var(--font-mono);
   font-size: var(--t-caption);
   color: var(--ink-3);
 }

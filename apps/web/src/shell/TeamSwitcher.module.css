@@ -1,18 +1,19 @@
-/* The team name reads as the sidebar's title. */
+/* The team leads the dock. */
 .root {
   display: flex;
-  gap: 9px;
+  gap: 6px;
   align-items: center;
-  width: 100%;
-  height: 36px;
-  padding: 0 8px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px 0 12px;
+  font-family: var(--font-display);
   font-size: var(--t-body);
   font-weight: 600;
   color: var(--ink);
   text-align: left;
   background: var(--clear);
   border-style: none;
-  border-radius: var(--r-md);
+  border-radius: var(--r-dock-item);
   outline-style: none;
   transition:
     background-color var(--d-fast),
@@ -34,7 +35,6 @@
 }
 
 .name {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

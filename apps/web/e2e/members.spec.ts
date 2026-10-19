@@ -106,6 +106,42 @@ test('a model shows its catalog display name on the board badge and the detail r
   await expect(page.getByTestId('brain-picker')).not.toContainText('scripted');
 });
 
+test('saved badge names and roles keep their language-specific hierarchy', async ({ page }) => {
+  const workspace = 'badge_typography';
+  await rig({ op: 'create_workspace', workspace });
+  await rig({ op: 'create_agent', workspace, agent: 'ada' });
+  await open(page, workspace, 'member/ada');
+  await page.getByTestId('member-name').fill('Alice Chen');
+  for (const role of ['Product Designer', '产品经理']) {
+    const roleField = page.getByPlaceholder(/^(Role|岗位)$/);
+    await roleField.fill(role);
+    await expect(roleField).toHaveCSS('font-weight', '600');
+    await expect(roleField).toHaveCSS('text-transform', role === '产品经理' ? 'none' : 'uppercase');
+    await expect(page.getByTestId('member-name')).toHaveCSS('font-size', '24.15px');
+    await save(page);
+    await page.goto('/#/members');
+    const card = page.getByTestId('member-card-ada');
+    await expect(card.locator('article header')).toHaveText('Alice Chen');
+    await expect(card.locator('article header')).toHaveCSS('font-weight', '700');
+    await expect(card.locator('article header')).toHaveCSS('font-family', /ui-rounded/);
+    const line = card.locator('[data-latin]');
+    await expect(line).toHaveText(role);
+    await expect(line).toHaveCSS('font-weight', '600');
+    await expect(line).toHaveCSS('text-transform', role === '产品经理' ? 'none' : 'uppercase');
+    if (role === '产品经理') await expect(line).toHaveCSS('letter-spacing', 'normal');
+    else
+      expect(
+        parseFloat(await line.evaluate((el) => getComputedStyle(el).letterSpacing)),
+      ).toBeGreaterThan(1);
+    await expect(card.locator('footer')).toHaveCSS('font-family', /ui-monospace/);
+    await card.click();
+    await expect(page.getByTestId('brain-picker').locator('[class*="model"]')).toHaveCSS(
+      'font-family',
+      /ui-monospace/,
+    );
+  }
+});
+
 test('B3a.3: a member paused by a failed run can be resumed', async ({ page }) => {
   const member = { workspace: 'members_pause', agent: 'linus' };
   await rig({ op: 'create_workspace', workspace: member.workspace });

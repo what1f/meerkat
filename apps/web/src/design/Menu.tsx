@@ -7,18 +7,19 @@ import css from './Menu.module.css';
 export type MenuProps = Omit<UIProps, 'className' | 'style'> & {
   trigger: ReactElement;
   align?: 'start' | 'end';
+  side?: 'top' | 'bottom';
   children: ReactNode;
 };
 // Set by an item that hands focus on, e.g. to an editor it opens in place.
 const KeepFocus = createContext<RefObject<boolean> | null>(null);
-export function Menu({ trigger, align = 'start', children, ...rest }: MenuProps) {
+export function Menu({ trigger, align = 'start', side = 'bottom', children, ...rest }: MenuProps) {
   const keep = useRef(false);
   return (
     <KeepFocus value={keep}>
       <BaseMenu.Root>
         <BaseMenu.Trigger {...rest} className={css.root} render={trigger} />
         <BaseMenu.Portal>
-          <BaseMenu.Positioner className={css.positioner} align={align} sideOffset={4}>
+          <BaseMenu.Positioner className={css.positioner} align={align} side={side} sideOffset={4}>
             <BaseMenu.Popup
               className={css.popup}
               finalFocus={() => {

@@ -13,7 +13,7 @@ test('B4.1: navigate and receive a new workspace without a page reload', async (
   const events = await eventsReady;
   // A received frame proves the subscription is active before the mutation.
   const frame = events.waitForEvent('framereceived');
-  for (const name of ['members', 'team', 'office', 'settings', 'members']) {
+  for (const name of ['members', 'team', 'office', 'members']) {
     const item = page.getByTestId(`nav-${name}`);
     await item.click();
     await expect(page).toHaveURL(new RegExp(`#/${name}$`));
@@ -61,57 +61,60 @@ test('mock group mentions run on the Machine and held runs can be released twice
   }
 });
 
-test('the sidebar edge resizes, folds to icons, restores on double click and persists', async ({
+test('an empty team shows one centered sleeve and opens member creation', async ({ page }) => {
+  await rig({ op: 'create_workspace', workspace: 'empty_sleeve' });
+  await page.addInitScript(() =>
+    localStorage.setItem('lankide.workspace', JSON.stringify('empty_sleeve')),
+  );
+  await page.goto('/#/members');
+  const board = page.locator('main [data-layout="rails"]');
+  const sleeve = page.getByTestId('add-member');
+  await expect(sleeve).toBeVisible();
+  await expect(board.locator('article')).toHaveCount(0);
+  await expect(board.getByRole('button')).toHaveCount(1);
+  await expect(board.locator('[data-peg]')).toHaveCount(1);
+  const box = (await sleeve.boundingBox())!;
+  expect(box.x + box.width / 2).toBeCloseTo(
+    (await page.locator('main').boundingBox())!.width / 2,
+    1,
+  );
+  await sleeve.click();
+  await expect(page).toHaveURL(/#\/member\/new$/);
+  await expect(page.getByTestId('member-name')).toBeVisible();
+});
+
+test('the team menu opens settings and the dock uses localized icon navigation', async ({
   page,
 }) => {
-  await rig({ op: 'create_workspace', workspace: 'sidebar_team' });
-  await page.addInitScript(() => localStorage.setItem('lankide.language', JSON.stringify('en')));
+  await rig({ op: 'create_workspace', workspace: 'dock_menu' });
+  for (let i = 0; i < 30; i++) await rig({ op: 'create_workspace', workspace: `menu_team_${i}` });
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('lankide.language'))
+      localStorage.setItem('lankide.language', JSON.stringify('en'));
+  });
   await page.goto('/#/members');
-  const side = page.locator('aside');
-  const grip = page.getByRole('separator');
-  const width = async () => Math.round((await side.boundingBox())!.width);
-  const drag = async (to: number) => {
-    const box = (await grip.boundingBox())!;
-    const y = box.y + box.height / 2;
-    const x = box.x + box.width / 2;
-    await page.mouse.move(x, y);
-    await page.mouse.down();
-    await page.mouse.move(to, y, { steps: 6 });
-    await page.mouse.up();
-  };
-  expect(await width()).toBe(220);
-  // Wider, but never past the maximum.
-  await drag(280);
-  await expect.poll(width).toBeGreaterThan(260);
-  await drag(900);
-  await expect.poll(width).toBe(320);
-  await drag(200);
-  await expect.poll(width).toBeLessThanOrEqual(220);
-  expect(await width()).toBeGreaterThanOrEqual(180);
-  // Dragged below the fold: icons only, and the icons still navigate.
-  await drag(40);
-  await expect(side).toHaveAttribute('data-rail', 'true');
-  await expect.poll(width).toBe(56);
-  await page.getByTestId('nav-settings').click();
+  for (const [id, label] of [
+    ['members', 'Members'],
+    ['team', 'Team'],
+    ['office', 'Office'],
+  ]) {
+    const item = page.getByTestId(`nav-${id}`);
+    await expect(item).toHaveAccessibleName(label);
+    await expect(item).toHaveText('');
+    await item.hover();
+    await expect(page.getByRole('tooltip', { name: label, exact: true })).toBeVisible();
+  }
+  await page.getByTestId('team-switcher').click();
+  await expect(page.getByRole('menuitem', { name: 'New team', exact: true })).toBeVisible();
+  await expect(page.getByTestId('team-settings')).toHaveText('Settings');
+  await page.getByTestId('team-settings').click();
   await expect(page).toHaveURL(/#\/settings$/);
-  await expect(page.getByTestId('nav-settings')).toHaveAttribute('aria-current', 'page');
+  await page.getByTestId('settings-language').click();
+  await page.getByRole('option', { name: '简体中文' }).click();
+  await page.getByTestId('team-switcher').click();
+  await expect(page.getByTestId('team-settings')).toHaveText('设置');
+  await expect(page.getByRole('menuitem', { name: '新建团队', exact: true })).toBeVisible();
+  await page.getByTestId('team-settings').click();
   await page.reload();
-  await expect(side).toHaveAttribute('data-rail', 'true');
-  expect(await width()).toBe(56);
-  // Dragging out starts from the rendered rail width, including after a reload.
-  const start = (await grip.boundingBox())!;
-  const draggedWidth = Math.round(56 + 200 - (start.x + start.width / 2));
-  await drag(200);
-  await expect(side).toHaveAttribute('data-rail', 'false');
-  await expect.poll(width).toBe(draggedWidth);
-  await grip.dblclick();
-  await expect.poll(width).toBe(56);
-  // Double click on the edge brings the full sidebar back, and it stays open after a reload.
-  await grip.dblclick();
-  await expect(side).toHaveAttribute('data-rail', 'false');
-  await expect.poll(width).toBeGreaterThanOrEqual(180);
-  const open = await width();
-  await page.reload();
-  await expect(side).toHaveAttribute('data-rail', 'false');
-  expect(await width()).toBe(open);
+  await expect(page.getByTestId('settings-language')).toHaveText('简体中文');
 });

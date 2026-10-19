@@ -4,6 +4,7 @@ import { Icon } from '../design';
 import type { PegPosition } from './Hang';
 import peg from './peg.module.css';
 import css from './VacantSlot.module.css';
+import hang from './Hang.module.css';
 export type VacantSlotProps = Omit<UIProps, 'className' | 'style'> & {
   ref?: Ref<HTMLButtonElement>;
   /** Where the peg sits on a free board. */
@@ -12,7 +13,7 @@ export type VacantSlotProps = Omit<UIProps, 'className' | 'style'> & {
   onClick: () => void;
   shape: 'badge' | 'clipboard';
 };
-// Both shapes keep their peg, so a slot lines up with the badges or the clipboard beside it.
+// A sleeve waits for a badge; a clipboard keeps its dashed placeholder.
 export function VacantSlot({ label, onClick, shape, ref, style, ...rest }: VacantSlotProps) {
   return (
     <button
@@ -25,7 +26,10 @@ export function VacantSlot({ label, onClick, shape, ref, style, ...rest }: Vacan
       data-shape={shape}
     >
       <span className={peg.peg} data-peg="" />
+      {shape === 'badge' && <span className={hang.cord} />}
+      {shape === 'badge' && <span className={hang.clip} />}
       <span className={css.outline}>
+        {shape === 'badge' && <span className={css.slot} />}
         <span className={css.plus}>
           <Icon name="plus" size={20} />
         </span>

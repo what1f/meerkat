@@ -142,6 +142,7 @@ export function MemberBench({
                       data-testid="member-name"
                     />
                   }
+                  roleText={m.draft.role}
                   role={
                     <InlineText
                       mode="live"

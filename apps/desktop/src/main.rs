@@ -119,12 +119,13 @@ fn start_services(app: &tauri::AppHandle) {
                 }
                 drop(authorized);
                 *state.runtime_url.lock().unwrap() = Some(url.clone());
-                if let Some(item) = app
-                    .menu()
-                    .and_then(|menu| menu.get("lankide"))
-                    .and_then(|item| item.as_submenu().and_then(|menu| menu.get("open-browser")))
-                {
-                    if let Some(item) = item.as_menuitem() {
+                for id in ["open-browser", "settings"] {
+                    if let Some(item) = app
+                        .menu()
+                        .and_then(|menu| menu.get("lankide"))
+                        .and_then(|item| item.as_submenu().and_then(|menu| menu.get(id)))
+                        .and_then(|item| item.as_menuitem().cloned())
+                    {
                         let _ = item.set_enabled(true);
                     }
                 }
@@ -210,6 +211,13 @@ fn main() {
                 false,
                 None::<&str>,
             )?;
+            let settings = MenuItem::with_id(
+                app,
+                "settings",
+                if chinese { "设置…" } else { "Settings…" },
+                false,
+                Some("CmdOrCtrl+,"),
+            )?;
             let quit = MenuItem::with_id(
                 app,
                 "quit",
@@ -228,7 +236,7 @@ fn main() {
                     "lankide",
                     "Lankide",
                     true,
-                    &[&open, &quit],
+                    &[&settings, &open, &quit],
                 )?],
             )?;
             app.set_menu(menu)?;
@@ -319,6 +327,19 @@ fn main() {
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
             "quit" => app.exit(0),
+            "settings" => {
+                if app
+                    .state::<ShellState>()
+                    .runtime_url
+                    .lock()
+                    .unwrap()
+                    .is_some()
+                    && let Some(window) = app.get_webview_window("main")
+                    && let Err(error) = window.eval("window.location.hash = '#/settings';")
+                {
+                    eprintln!("lankide-desktop: could not open settings: {error}");
+                }
+            }
             "open-browser" => {
                 if let Some(url) = app
                     .state::<ShellState>()

@@ -17,6 +17,7 @@ export type BadgeProps = Omit<UIProps, 'className' | 'style'> & {
   };
   name: ReactNode;
   role?: ReactNode;
+  roleText?: string;
   bio?: ReactNode;
   foot?: ReactNode;
   size: 'card' | 'stage' | 'intro';
@@ -30,6 +31,7 @@ export function Badge({
   avatar,
   name,
   role,
+  roleText,
   bio,
   foot,
   size,
@@ -52,7 +54,12 @@ export function Badge({
         <Avatar {...avatar} size="fill" dimmed={dimmed} />
       </div>
       <header className={css.name}>{name}</header>
-      <div className={css.role}>{role}</div>
+      <div
+        className={css.role}
+        data-latin={/^[\x00-\x7f]+$/.test(typeof role === 'string' ? role : (roleText ?? ''))}
+      >
+        {role}
+      </div>
       {bio != null && (
         <div className={css.bio} data-testid="badge-bio">
           {bio}

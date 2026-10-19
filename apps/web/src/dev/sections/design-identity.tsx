@@ -5,7 +5,6 @@ const icons: D.IconName[] = [
   'chat',
   'monitor',
   'settings',
-  'sidebar',
   'search',
   'updown',
   'chev',

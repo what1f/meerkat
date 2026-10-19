@@ -2,179 +2,97 @@ import { readFile } from 'node:fs/promises';
 import { expect, type Browser, type Page } from '@playwright/test';
 import { test, rig } from './rig';
 
-test('Desktop keeps a compact rail and moves its sidebar toggle inside the sidebar in fullscreen', async ({
-  browser,
-  baseURL,
-}) => {
-  await rig({ op: 'create_workspace', workspace: 'desktop_controls' });
-  const context = await browser.newContext({
+// The Runtime and all business data are real; only the host User-Agent differs.
+for (const desktop of [false, true]) {
+  test(`${desktop ? 'Desktop' : 'Browser'}: dock navigation, title clearance and last-row access`, async ({
+    browser,
     baseURL,
-    userAgent: 'Mozilla/5.0 LankideDesktop/0.1.0',
-  });
-  const page = await context.newPage();
-  try {
-    await page.goto('/#/settings');
-    const toggle = page.getByRole('button', { name: /切换侧栏|Toggle sidebar/ });
-    const side = page.locator('aside');
-    const aligned = async (fullscreen = false) => {
-      await expect
-        .poll(async () => {
-          const box = (await toggle.boundingBox())!;
-          // Normal windows share the native y=24 line; fullscreen puts the toggle in the sidebar.
-          return { x: box.x, center: box.y + box.height / 2 };
-        })
-        .toEqual({ x: fullscreen ? 12 : 86, center: 24 });
-      await expect
-        .poll(() =>
-          toggle.evaluate((button) => {
-            const box = button.getBoundingClientRect();
-            return button.contains(
-              document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2),
-            );
-          }),
-        )
-        .toBe(true);
-    };
-    const compactRail = async () => {
-      await expect(side).toHaveAttribute('data-rail', 'true');
-      await expect.poll(async () => (await side.boundingBox())!.width).toBe(56);
-      const nav = (await page.getByTestId('nav-members').boundingBox())!;
-      expect({ x: nav.x, width: nav.width, height: nav.height }).toEqual({
-        x: 10,
-        width: 36,
-        height: 36,
-      });
-    };
-    for (const viewport of [
-      { width: 1240, height: 820 },
-      { width: 960, height: 660 },
-    ]) {
-      await page.setViewportSize(viewport);
-      await aligned();
-      await toggle.click();
-      await expect(page.locator('aside')).toBeHidden();
-      await aligned();
-      await toggle.click();
-      await page.getByRole('separator').dblclick();
-      await compactRail();
-      await aligned();
-      for (const theme of ['light', 'dark']) {
-        await page.getByTestId(`settings-theme-${theme}`).click();
-        await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-        await aligned();
-      }
-      await page.getByTestId('nav-members').click();
-      await page.getByTestId('add-member').click();
-      const back = page.locator('header').getByRole('button', { name: /^(成员|Members)$/ });
-      await expect(back).toBeVisible();
-      await expect.poll(async () => (await back.boundingBox())!.x).toBeGreaterThanOrEqual(114);
-      // Use the real browser Fullscreen API, not a mocked host state or injected attribute.
-      // Native macOS enter/exit and the host-published state have a separate actual-window gate.
-      await page.evaluate(() => document.documentElement.requestFullscreen());
-      await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(true);
-      await aligned(true);
-      await compactRail();
-      await expect.poll(async () => (await back.boundingBox())!.x).toBeGreaterThanOrEqual(56);
-      await toggle.click();
-      await expect(side).toBeHidden();
-      await aligned(true);
-      await expect.poll(async () => (await back.boundingBox())!.x).toBeGreaterThanOrEqual(44);
-      await toggle.click();
-      await page.getByRole('separator').dblclick();
-      await expect(side).toHaveAttribute('data-rail', 'false');
-      await aligned(true);
-      const expanded = (await side.boundingBox())!;
-      expect((await toggle.boundingBox())!.x + 32).toBeLessThanOrEqual(expanded.width);
-      await page.evaluate(() => document.exitFullscreen());
-      await aligned();
-      await page.evaluate(() => document.documentElement.requestFullscreen());
-      await aligned(true);
-      await page.getByRole('separator').dblclick();
-      await compactRail();
-      await page.evaluate(() => document.exitFullscreen());
-      await aligned();
-      await expect.poll(async () => (await back.boundingBox())!.x).toBeGreaterThanOrEqual(114);
-      await back.click();
-      await page.getByTestId('nav-settings').click();
-      await toggle.click();
-      await aligned();
-      await toggle.click();
-      await page.reload();
-      await expect(page.locator('aside')).toHaveAttribute('data-rail', 'true');
-      await aligned();
-      await page.getByRole('separator').dblclick();
-      await expect(page.locator('aside')).toHaveAttribute('data-rail', 'false');
-      await aligned();
+  }) => {
+    const workspace = desktop ? 'desktop_dock' : 'browser_dock';
+    await rig({ op: 'create_workspace', workspace });
+    for (let i = 0; i < 11; i++) {
+      await rig({ op: 'create_agent', workspace, agent: `desk${i}` });
     }
-  } finally {
-    await context.close();
-  }
-});
-
-// Only the User-Agent changes. The UI still talks to the real Runtime.
-test('Desktop reserves an unobstructed title strip and keeps controls clickable', async ({
-  browser,
-  baseURL,
-}) => {
-  await rig({ op: 'create_workspace', workspace: 'desktop_shell' });
-  await rig({ op: 'create_workspace', workspace: 'desktop_wall' });
-  await rig({ op: 'create_agent', workspace: 'desktop_wall', agent: 'wall' });
-  const context = await browser.newContext({
-    baseURL,
-    userAgent: 'Mozilla/5.0 LankideDesktop/0.1.0',
+    const context = await browser.newContext({
+      baseURL,
+      reducedMotion: 'reduce',
+      ...(desktop ? { userAgent: 'Mozilla/5.0 LankideDesktop/0.1.0' } : {}),
+    });
+    const page = await context.newPage();
+    try {
+      await page.addInitScript(
+        (id) => localStorage.setItem('lankide.workspace', JSON.stringify(id)),
+        workspace,
+      );
+      for (const viewport of [
+        { width: 1240, height: 820 },
+        { width: 960, height: 660 },
+      ]) {
+        await page.setViewportSize(viewport);
+        await page.goto('/#/settings');
+        const bar = page.locator('header').filter({ has: page.locator('h1') });
+        await expect(bar.locator('h1')).toBeVisible();
+        expect((await bar.boundingBox())!.height).toBe(48);
+        expect((await bar.locator('h1').boundingBox())!.x).toBe(desktop ? 92 : 24);
+        const centeredDock = async () => {
+          const dock = (await page.getByTestId('dock').boundingBox())!;
+          const size = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+          expect(dock.x + dock.width / 2).toBeCloseTo(size.width / 2, 1);
+          expect(size.height - dock.y - dock.height).toBe(18);
+          expect(dock.height).toBe(44);
+        };
+        for (const theme of ['light', 'dark']) {
+          await page.getByTestId(`settings-theme-${theme}`).click();
+          await centeredDock();
+        }
+        // Real browser fullscreen enters the same layout as the host-published native state.
+        await page.evaluate(() => document.documentElement.requestFullscreen());
+        await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(true);
+        await expect.poll(async () => (await bar.locator('h1').boundingBox())!.x).toBe(24);
+        await centeredDock();
+        await page.evaluate(() => document.exitFullscreen());
+        await expect
+          .poll(async () => (await bar.locator('h1').boundingBox())!.x)
+          .toBe(desktop ? 92 : 24);
+        for (const name of ['team', 'office', 'members']) {
+          await page.getByTestId(`nav-${name}`).click();
+          await expect(page).toHaveURL(new RegExp(`#/${name}$`));
+          await expect(page.getByTestId(`nav-${name}`)).toHaveAttribute('aria-current', 'page');
+          await centeredDock();
+        }
+        const last = page.getByTestId('member-card-desk10');
+        await expect(last).toBeVisible();
+        await page.locator('main').evaluate((main) => {
+          main.scrollTop = main.scrollHeight;
+        });
+        const dock = (await page.getByTestId('dock').boundingBox())!;
+        const card = (await last.locator('article').boundingBox())!;
+        expect(card.y + card.height).toBeLessThan(dock.y);
+        await last.click();
+        await expect(page.getByTestId('member-name')).toBeVisible();
+        const back = page.locator('header').getByRole('button', { name: /^(成员|Members)$/ });
+        expect((await back.boundingBox())!.x).toBe(desktop ? 92 : 24);
+        await back.click();
+        if (desktop) {
+          const drag = await page.locator('header[data-tauri-drag-region]').evaluate((header) => {
+            const r = header.getBoundingClientRect();
+            return document.elementFromPoint(r.right - 80, r.y + r.height / 2) === header;
+          });
+          expect(drag).toBe(true);
+        }
+        await page.getByTestId('team-switcher').click();
+        const menu = (await page.getByRole('menu').boundingBox())!;
+        const trigger = (await page.getByTestId('team-switcher').boundingBox())!;
+        expect(menu.y + menu.height).toBeLessThanOrEqual(trigger.y);
+        await page.getByTestId('team-settings').click();
+        await expect(page).toHaveURL(/#\/settings$/);
+        await expect(page.getByTestId('settings-language')).toBeVisible();
+      }
+    } finally {
+      await context.close();
+    }
   });
-  const page = await context.newPage();
-  try {
-    await page.goto('/#/settings');
-    const strip = page.locator('[data-desktop-safe-area]');
-    await expect(strip).toHaveAttribute('data-tauri-drag-region', 'true');
-    expect(
-      await strip.evaluate((element) => {
-        const { x, y, width } = element.getBoundingClientRect();
-        // Clear of the sidebar toggle beside the traffic lights.
-        return document.elementFromPoint(x + width - 16, y + 20) === element;
-      }),
-    ).toBe(true);
-    await page.getByTestId('nav-members').click();
-    await expect(page).toHaveURL(/#\/members$/);
-    await page.getByTestId('add-member').click();
-    await page
-      .locator('header')
-      .getByRole('button', { name: /Members|成员/, exact: true })
-      .click();
-    await expect(page).toHaveURL(/#\/members$/);
-    // The empty bar stays a drag handle on the wall and the open board, above no content.
-    const bar = () =>
-      page.locator('header[data-tauri-drag-region]').evaluate((header) => {
-        const { x, y, width, height } = header.getBoundingClientRect();
-        const hit = document.elementFromPoint(x + width - 80, y + height / 2);
-        return { drag: hit?.closest('[data-tauri-drag-region]') === hit, bottom: y + height };
-      });
-    await page.addInitScript((id) => {
-      localStorage.setItem('lankide.workspace', JSON.stringify(id));
-    }, 'desktop_wall');
-    await page.goto('/#/members');
-    await page.reload();
-    await expect(page.locator('div[data-desktop]')).toHaveAttribute('data-board', 'wall');
-    await expect(page.locator('main [data-layout="rails"]')).toBeVisible();
-    await expect(page.getByTestId('member-card-wall')).toBeVisible();
-    expect((await bar()).drag).toBe(true);
-    await page.getByTestId('add-member').click();
-    await expect(page.getByTestId('member-name')).toBeVisible();
-    await expect(page.locator('div[data-desktop]')).toHaveAttribute('data-board', 'open');
-    expect((await bar()).drag).toBe(true);
-    await page.goto('/#/team');
-    const name = page.getByTestId('team-name');
-    await expect(name).toBeVisible();
-    const { drag, bottom } = await bar();
-    expect(drag).toBe(true);
-    expect((await name.boundingBox())!.y).toBeGreaterThanOrEqual(bottom);
-    await page.goto('/#/onboarding');
-    await expect(strip).toHaveAttribute('data-tauri-drag-region', 'true');
-  } finally {
-    await context.close();
-  }
-});
+}
 
 for (const locale of ['en-US', 'zh-CN']) {
   for (const colorScheme of ['light', 'dark'] as const) {

@@ -11,27 +11,25 @@ const team = (
     onSelect={() => {}}
     onCreate={() => {}}
     createLabel="New team"
+    settingsLabel="Settings"
+    onSettings={() => {}}
   />
 );
-const nav = (
-  <>
-    <H.NavItem icon="users" label="Members" active onClick={() => {}} testId="nav-members" />
-    <H.NavItem icon="monitor" label="Computers" active={false} onClick={() => {}} testId="nav-pc" />
-    <H.NavItem icon="chat" label="Chats" active={false} onClick={() => {}} testId="nav-chat" />
-  </>
-);
-const settings = (
-  <H.NavItem icon="settings" label="Settings" active={false} onClick={() => {}} testId="nav-set" />
+const dock = (
+  <H.Dock
+    team={team}
+    items={[
+      { id: 'members', icon: 'users', label: 'Members', active: true, onClick: () => {} },
+      { id: 'team', icon: 'chat', label: 'Team', active: false, onClick: () => {} },
+      { id: 'office', icon: 'monitor', label: 'Office', active: false, onClick: () => {} },
+    ]}
+  />
 );
 export function ShellSection() {
   return (
     <>
       <Spec name="AppShell" frame>
-        <H.AppShell
-          sidebar={<H.Sidebar header={team} nav={nav} footer={settings} />}
-          topBar={<H.TopBar title="Members" />}
-          board="wall"
-        >
+        <H.AppShell dock={dock} topBar={<H.TopBar title="Members" />} board="wall">
           {null}
         </H.AppShell>
       </Spec>
@@ -56,9 +54,10 @@ export function ShellSection() {
           />
         </State>
       </Spec>
-      <Spec name="NavItem and TeamSwitcher">
-        <State label="team">{team}</State>
-        <State label="nav">{nav}</State>
+      <Spec name="Dock" frame>
+        <H.AppShell dock={dock} topBar={<H.TopBar />}>
+          {null}
+        </H.AppShell>
       </Spec>
     </>
   );

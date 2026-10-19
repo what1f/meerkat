@@ -167,7 +167,7 @@ IM 式对话界面。选用 React，原因如下：
 前端只通过 User-Agent 后缀 `LankideDesktop/<version>` 判断自己是否运行在外壳里，
 不读 `window.__TAURI__`（`withGlobalTauri: false`）。在外壳中：
 
-- 侧栏顶部为红绿灯留出安全区，并标记为 `data-tauri-drag-region`。
+- 透明顶栏在桌面非全屏时从 x=92 开始，避开红绿灯，并标记为 `data-tauri-drag-region`。导航在底部 dock。
 - 背景透明，露出窗口的 vibrancy 材质。
 
 ## 服务端静态资源
@@ -193,16 +193,18 @@ IM 式对话界面。选用 React，原因如下：
   3. 成功后，把窗口导航到 `management.url`。
   4. 失败时，导航到 `boot.html#<error-code>`，由启动页显示本地化的错误状态，
      例如“需要在登录项中允许后台运行”。
-- 窗口：1240×820，最小 960×660，`titleBarStyle: Overlay`，红绿灯保持系统原生间距，中心为 (24,24) 起（macOS 26 为 (24,24)、(47,24)、(70,24)），侧栏按钮中心为 (102,24)，
+- 窗口：1240×820，最小 960×660，`titleBarStyle: Overlay`，红绿灯保持系统原生间距，中心为 (24,24) 起（macOS 26 为 (24,24)、(47,24)、(70,24)），
   vibrancy 由 `window-vibrancy` 实现。macOS 原生布局在窗口更新、外观变化和退出全屏后恢复红绿灯位置；全屏自动隐藏标题栏由 AppKit 管理。
-  图标栏宽 56px（36px 点击区，左右各 10px）。正常窗口保留上述中心位置，控件越过图标栏是预期行为；顶栏返回/标题避开侧栏按钮右边缘 114px。
-  全屏时侧栏按钮位于侧栏顶部 (12,8)，图标栏下水平居中；展开时也放在侧栏内。Tauri 在窗口缩放/聚焦事件与页面加载完成时读取真实 `is_fullscreen`，同步根元素 `data-window-fullscreen`，不按窗口尺寸猜测，也不新增前端窗口权限；退出后恢复正常窗口位置。Web Fullscreen API 使用同一布局。
+  没有侧栏和侧栏按钮。团队切换和成员、团队、工区三个图标放在底部居中的玻璃 dock。
+  红绿灯直接落在板上，顶栏不画横带或分隔线；非全屏桌面窗口的顶栏从 x=92 开始，浏览器和全屏用 24px 普通内边距。
+  Tauri 在窗口缩放/聚焦事件与页面加载完成时读取真实 `is_fullscreen`，同步根元素 `data-window-fullscreen`，不按窗口尺寸猜测，也不新增前端窗口权限。Web Fullscreen API 使用同一布局。
+  所有滚动内容底部留出 104px，toast 位于 dock 上方。
 - 启动页仅授予窗口拖拽权限。启动成功后，仅向发现的 Runtime origin、main 窗口动态授予
   拖拽与主题设置权限；不开放业务 IPC。每个外壳进程只授权一个 Runtime origin；重试发现不同
   origin 时停止自有服务并重启外壳，避免动态授权累加。启动页仍通过 URL hash 接收状态。
 - 外链：拦截导航，非 Runtime origin 的链接交给系统浏览器打开（`tauri-plugin-opener`）。
 - `Info.plist` 增加 `NSAllowsLocalNetworking`，允许 WKWebView 加载 loopback 的 http 地址。
-- 菜单：保留“退出 Lankide”，新增“在浏览器中打开”。
+- 菜单：保留“退出 Lankide”和“在浏览器中打开”；“设置…”用 `CmdOrCtrl+,` 打开同一设置页。团队切换菜单底部也提供设置入口。
 
 ## 测试与验收
 
@@ -439,7 +441,7 @@ IM 式对话界面。选用 React，原因如下：
   query key 的映射，覆盖 `ManagementEventKind` 的每个值。
 - `events.ts`：建立连接后，以及每次重连后，都失效全部 query。
 - `agentStatus()`，把成员状态映射到状态点和工位屏幕。
-- `AppShell` 和 `Sidebar` 接入导航和团队切换，`useSidebarLayout` 负责持久化。在 Tauri 外壳中运行时，留出红绿灯安全区。
+- `AppShell` 和 `Dock` 接入三个图标导航及团队切换。团队菜单向上打开，并提供新建团队和设置入口。在 Tauri 外壳非全屏时，顶栏从 x=92 开始。
 
 #### B4：Playwright rig
 
@@ -452,7 +454,7 @@ IM 式对话界面。选用 React，原因如下：
 
 验收：
 
-- B4.1 打开首页，侧栏的三个导航可以切换；通过 rig 创建工作区后，界面在不刷新页面的情况下出现这个工作区（验证事件驱动）。
+- B4.1 打开首页，dock 的三个导航可以切换，团队菜单能进入设置；通过 rig 创建工作区后，界面在不刷新页面的情况下出现这个工作区（验证事件驱动）。
 
 #### B3：页面
 

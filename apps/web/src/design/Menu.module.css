@@ -5,6 +5,8 @@
 
 .popup {
   min-width: 184px;
+  max-height: var(--available-height);
+  overflow: auto;
   padding: 4px;
   outline-style: none;
   background: var(--elevated);

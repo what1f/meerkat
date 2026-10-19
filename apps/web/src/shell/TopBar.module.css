@@ -3,18 +3,15 @@
   flex: none;
   gap: 8px;
   align-items: center;
-  height: 52px;
+  height: var(--safe-area);
   padding: 0 52px 0 24px;
-}
-
-[data-settle] .root {
-  transition: padding var(--d-slow) var(--ease-pop);
 }
 
 .root > h1 {
   flex: 1;
   margin: 0;
   overflow: hidden;
+  font-family: var(--font-display);
   font-size: var(--t-label);
   font-weight: 600;
   text-overflow: ellipsis;
@@ -25,7 +22,7 @@
 .root > button:first-child:is(*, :hover) {
   height: 28px;
   padding: 0 10px;
-  margin-left: -10px;
+  margin-left: 0;
   font-size: var(--t-label);
   font-weight: 600;
   color: var(--ink);

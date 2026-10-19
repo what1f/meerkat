@@ -150,7 +150,7 @@ export function BrainPicker({
               return (
                 <OptionColumn.Item
                   key={x.model_id}
-                  mono
+                  mono={!x.display_name}
                   leading={brand ? <BrandMark brand={brand} size={16} /> : null}
                   selected={x.model_id === draft.model}
                   dimmed={!x.available}

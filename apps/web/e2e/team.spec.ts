@@ -37,15 +37,13 @@ test('rules typed on the tag are saved when the field loses focus', async ({ pag
   );
 });
 
-test('the team name is renamed in place and the sidebar follows', async ({ page, baseURL }) => {
+test('the team name is renamed in place and the dock follows', async ({ page, baseURL }) => {
   await rig({ op: 'create_workspace', workspace: 'rename_team' });
   await openTeam(page, 'rename_team');
   await page.getByTestId('team-name').getByRole('button').click();
   await page.getByTestId('team-name').getByRole('textbox').fill('Night Desk');
   await page.keyboard.press('Enter');
-  await expect(
-    page.getByRole('complementary').getByRole('button', { name: 'Night Desk' }),
-  ).toBeVisible();
+  await expect(page.getByTestId('team-switcher')).toBeVisible();
   expect((await workspaceOf(baseURL!, 'rename_team')).name).toBe('Night Desk');
 });
 
@@ -230,7 +228,8 @@ test('a task list turned on before the team lead is bound can be retried or turn
   expect(reads).toBe(beforeRetry + 1);
   await expect(list).not.toContainText('Add member');
   await page.screenshot({ path: test.info().outputPath('task-unavailable.png') });
-  await page.getByTestId('nav-settings').click();
+  await page.getByTestId('team-switcher').click();
+  await page.getByTestId('team-settings').click();
   await page.getByTestId('settings-language').click();
   await page.getByRole('option', { name: '简体中文' }).click();
   await page.getByTestId('nav-team').click();
@@ -262,7 +261,7 @@ test('pieces moved on the wall stay where they were hung, per team', async ({ pa
   expect(Math.abs(after.x - moved.x)).toBeLessThan(2);
   expect(Math.abs(after.y - moved.y)).toBeLessThan(2);
 
-  await page.getByRole('complementary').getByRole('button', { name: 'wall_team' }).click();
+  await page.getByTestId('team-switcher').click();
   await page.getByRole('menuitemcheckbox', { name: 'wall_other' }).click();
   await page.getByTestId('nav-team').click();
   await expect(page.getByTestId('team-name')).toContainText('wall_other');
@@ -390,7 +389,7 @@ test('dragging a piece leaves the wall texture and the board size alone', async 
   await page.mouse.up();
 });
 
-test('with the task list off the rules hang in the middle of the board', async ({
+test('with the task list off the rules hang on the middle hole of the board', async ({
   page,
   baseURL,
 }) => {
@@ -409,12 +408,21 @@ test('with the task list off the rules hang in the middle of the board', async (
   const apart = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
     a.x >= b.x + b.width || b.x >= a.x + a.width || a.y >= b.y + b.height || b.y >= a.y + a.height;
   await expect(page.getByTestId('tasklist')).toBeVisible();
+  // The full-width board can have an even number of 24px holes. Its two middle
+  // pegs then sit 12px from the center; the rules must hang on one of those pegs.
   await expect
     .poll(async () => {
       const { board, rules } = await boxes();
       return Math.abs(rules.x + rules.width / 2 - (board.x + board.width / 2));
     })
-    .toBeLessThan(3);
+    .toBeLessThanOrEqual(12);
+  const peg = (await page
+    .getByTestId('team-rules')
+    .locator('xpath=ancestor::section[1]')
+    .locator('[data-peg]')
+    .boundingBox())!;
+  const centeredRules = (await boxes()).rules;
+  expect(peg.x + peg.width / 2).toBeCloseTo(centeredRules.x + centeredRules.width / 2, 1);
   const bare = await boxes();
   expect(apart(bare.rules, bare.list)).toBe(true);
   expect(apart(bare.rules, bare.shift)).toBe(true);

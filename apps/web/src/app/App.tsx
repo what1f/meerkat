@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '../design';
 import { I18nProvider, useT } from '../lib/i18n';
 import { ThemeProvider } from '../lib/theme';
-import { AppShell, Sidebar, NavItem, TeamSwitcher, TopBar, type TopBarProps } from '../shell';
+import { AppShell, Dock, TeamSwitcher, TopBar, type TopBarProps } from '../shell';
 import { useWorkspaces } from '../lib/queries/workspaces';
 import { useManagementEvents } from '../lib/events';
 import { readStorage, writeStorage } from '../lib/storage';
@@ -70,9 +70,9 @@ function WorkspaceShell() {
   const frame = (bar: TopBarProps, body: ReactNode, board?: 'wall' | 'open') => (
     <AppShell
       board={board}
-      sidebar={
-        <Sidebar
-          header={
+      dock={
+        <Dock
+          team={
             <TeamSwitcher
               data-testid="team-switcher"
               teams={teams}
@@ -82,30 +82,18 @@ function WorkspaceShell() {
                 navigate({ kind: 'members' });
               }}
               onCreate={() => navigate({ kind: 'onboarding' })}
-              createLabel={t('common.create')}
+              createLabel={t('common.newTeam')}
+              onSettings={() => navigate({ kind: 'settings' })}
+              settingsLabel={t('common.settings')}
             />
           }
-          nav={pages
-            .filter((kind) => kind !== 'settings')
-            .map((kind) => (
-              <NavItem
-                key={kind}
-                icon={kind === 'members' ? 'users' : kind === 'team' ? 'chat' : 'monitor'}
-                label={t(`common.${kind}`)}
-                active={active === kind}
-                onClick={() => navigate({ kind })}
-                testId={`nav-${kind}`}
-              />
-            ))}
-          footer={
-            <NavItem
-              icon="settings"
-              label={t('common.settings')}
-              active={active === 'settings'}
-              onClick={() => navigate({ kind: 'settings' })}
-              testId="nav-settings"
-            />
-          }
+          items={(['members', 'team', 'office'] as const).map((kind) => ({
+            id: kind,
+            icon: kind === 'members' ? 'users' : kind === 'team' ? 'chat' : 'monitor',
+            label: t(`common.${kind}`),
+            active: active === kind,
+            onClick: () => navigate({ kind }),
+          }))}
         />
       }
       topBar={<TopBar {...bar} />}

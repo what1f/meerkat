@@ -7,19 +7,24 @@ export type TeamSwitcherProps = Omit<UIProps, 'className' | 'style'> & {
   onSelect: (id: string) => void;
   onCreate: () => void;
   createLabel: string;
+  onSettings: () => void;
+  settingsLabel: string;
 };
-// The current team is the sidebar's title; switching and creating live in its menu.
+// The dock keeps team actions and settings in one upward menu.
 export function TeamSwitcher({
   teams,
   current,
   onSelect,
   onCreate,
   createLabel,
+  onSettings,
+  settingsLabel,
   ...rest
 }: TeamSwitcherProps) {
   const name = teams.find((team) => team.id === current)?.name;
   return (
     <Menu
+      side="top"
       trigger={
         // eslint-disable-next-line no-restricted-syntax -- The team title is a shell-only control with no design counterpart.
         <button {...rest} className={css.root} type="button">
@@ -40,6 +45,14 @@ export function TeamSwitcher({
       <Menu.Separator />
       <Menu.Item leading={<Icon name="plus" size={14} />} onSelect={onCreate}>
         {createLabel}
+      </Menu.Item>
+      <Menu.Separator />
+      <Menu.Item
+        data-testid="team-settings"
+        leading={<Icon name="settings" size={14} />}
+        onSelect={onSettings}
+      >
+        {settingsLabel}
       </Menu.Item>
     </Menu>
   );

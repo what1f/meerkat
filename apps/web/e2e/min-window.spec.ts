@@ -109,6 +109,8 @@ test('the model picker stays in the window, shows levels and tells twin names ap
   expect(await twin.locator('[data-hint]').evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(
     true,
   );
+  await expect(twin.locator('[data-label]')).toHaveCSS('font-family', /-apple-system/);
+  await expect(twin.locator('[data-hint]')).toHaveCSS('font-family', /ui-monospace/);
   // The chosen model brings its own thinking levels.
   await options.filter({ hasText: /Name\s*north$/ }).click();
   const lever = page.getByRole('slider');

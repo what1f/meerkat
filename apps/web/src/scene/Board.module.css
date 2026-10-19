@@ -15,6 +15,7 @@
 }
 
 .root[data-layout='free'] {
+  padding-bottom: var(--dock-clearance);
   padding-inline: var(--sp-xl);
 }
 
@@ -47,8 +48,14 @@
 
   /* Four across at most; a narrower board wraps to the columns that fit. */
   width: min(100%, 840px);
-  padding: 0 0 36px;
+  padding: 0 0 var(--dock-clearance);
   margin: 0 auto;
+}
+
+/* One sleeve on an empty board, at the design's optical center. */
+.root[data-layout='rails'] .items:has(> :only-child[data-shape='badge']) {
+  grid-template-columns: 192px;
+  padding-top: 72px;
 }
 
 /* Free board: every item hangs on a hole by its peg and can move to another. */

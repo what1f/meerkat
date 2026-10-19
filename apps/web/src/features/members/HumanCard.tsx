@@ -163,6 +163,7 @@ function HumanProfile({ workspace, person }: { workspace: string; person: HumanT
         }}
         name={person.name || t('members.human')}
         bio={person.signature || undefined}
+        roleText={position}
         role={
           <InlineText
             mode="live"

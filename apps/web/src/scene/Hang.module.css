@@ -78,14 +78,22 @@
   box-shadow: var(--clip-shadow);
 }
 
-/* Split ring through the punched slot. */
+/* The ring fades into the slot, where its lower half passes behind the card. */
 .clip::after {
+  --cut: calc(7px + 12 * var(--u));
+
+  filter: var(--clip-ring-shadow);
+  mask: linear-gradient(
+    var(--mask-ink) calc(var(--cut) - 3.5 * var(--u)),
+    var(--mask-fade) var(--cut),
+    transparent 0
+  );
   position: absolute;
   top: 7px;
   left: 50%;
   box-sizing: border-box;
   width: 12px;
-  height: calc(8px + 10 * var(--u));
+  height: calc(14px + 16 * var(--u));
   margin-left: -6px;
   content: '';
   border-color: var(--peg-edge);

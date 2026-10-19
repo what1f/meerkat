@@ -9,8 +9,8 @@ use objc2_app_kit::{
 use objc2_foundation::{MainThreadMarker, NSNotification, NSNotificationCenter, NSObject, NSPoint};
 
 // The buttons center on the 48pt top bar, inset from the left by the same 24pt.
-// AppKit's own spacing between them is kept (23pt on macOS 26), so the toggle
-// sits 32pt after the last button's center: system.html places it at (86, 8).
+// AppKit's own spacing between them is kept (23pt on macOS 26).
+// The web title bar starts at x=92; the native buttons sit directly on the board.
 const CENTER: f64 = 24.0;
 static LAYOUT_KEY: u8 = 0;
 

@@ -1,8 +1,8 @@
 .root {
   --r-card: calc(14 * var(--u));
   --u: 0.9px;
-  --t-name: calc(20 * var(--u));
-  --t-role: calc(12 * var(--u));
+  --t-name: calc(23 * var(--u));
+  --t-role: calc(10.5 * var(--u));
   --t-bio: calc(11.5 * var(--u));
   --t-foot: calc(11 * var(--u));
 
@@ -34,7 +34,7 @@
   width: calc(26 * var(--u));
   height: calc(6 * var(--u));
   margin-left: calc(-13 * var(--u));
-  background: var(--board);
+  background: var(--slot-face);
   border-radius: var(--r-pill);
   box-shadow: var(--slot-shadow);
 }
@@ -53,20 +53,26 @@
   overflow: hidden;
   font-family: var(--font-display);
   font-size: var(--t-name);
-  font-weight: 600;
-  line-height: 1.3;
+  font-weight: 700;
+  line-height: 1.2;
   text-overflow: ellipsis;
-  letter-spacing: 0.02em;
+  letter-spacing: -0.01em;
   white-space: nowrap;
 }
 
 .role {
   max-width: 84%;
   min-height: 1.5em;
-  margin-top: calc(2 * var(--u));
+  margin-top: calc(6 * var(--u));
   font-size: var(--t-role);
+  font-weight: 600;
   line-height: 1.5;
   color: var(--ink-2);
+}
+
+.role[data-latin='true'] {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
 }
 
 .bio {
@@ -84,11 +90,13 @@
 }
 
 /* Fields on the stage badge are written in place. */
-.root :is(input, textarea) {
+.root :is(input, textarea)[data-text-style] {
   width: 100%;
   font-family: inherit;
   font-size: var(--inherit);
+  font-weight: inherit;
   text-align: center;
+  text-transform: inherit;
 }
 
 .root[data-size='stage'] .bio,

@@ -35,6 +35,7 @@ export function FirstMemberStep({ flow }: { flow: Flow }) {
                 }}
               />
             }
+            roleText={draft.role}
             role={
               <InlineText
                 mode="live"

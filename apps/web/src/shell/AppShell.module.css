@@ -1,111 +1,44 @@
 .root {
   position: relative;
   display: flex;
+  flex-direction: column;
   height: 100%;
   overflow: hidden;
   color: var(--ink);
   user-select: none;
-  background: var(--canvas);
-}
-
-/* Inside the Mac app the window material shows through the sidebar. */
-.root[data-desktop='true'] {
-  background: var(--clear);
-}
-
-.root > [data-rail] {
-  position: relative;
-  display: flex;
-  flex: none;
-}
-
-/* Keeps the sidebar toggle beside the traffic lights. */
-[data-desktop-safe-area] {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 4;
-  width: 100%;
-  height: var(--safe-area);
-  -webkit-app-region: drag;
-}
-
-.root > [data-rail] > button {
-  position: absolute;
-  top: 10px;
-  left: 12px;
-  z-index: 6;
-  color: var(--ink-3);
-  -webkit-app-region: no-drag;
-}
-
-.root[data-resizing],
-.root[data-resizing] * {
-  cursor: col-resize !important;
-}
-
-.root > [data-rail='true'] > button {
-  left: calc((var(--rail) - 32px) / 2);
-}
-
-.root > [data-rail] > button:hover {
-  color: var(--ink);
-}
-
-.root[data-settle] > [data-rail] > button {
-  transition:
-    left var(--d-slow) var(--ease-pop),
-    top var(--d-slow) var(--ease-pop);
-}
-
-.root[data-desktop='true'] > [data-rail] > button {
-  /* Design center line: 8px + half the 32px IconButton = 24px. */
-  top: 8px;
-  left: 86px;
-}
-
-.root > div:last-child {
-  position: relative;
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-  overflow: hidden;
   background: var(--surface);
-  box-shadow: var(--edge-left);
 }
 
-.root[data-board] > div:last-child {
+.root[data-board] {
   background: var(--board);
 }
 
-.root:has(aside[hidden]) > div:last-child {
-  box-shadow: var(--none);
-}
-
-.root > div:last-child > main {
+.root > main {
   position: relative;
   flex: 1;
+  min-height: 0;
   overflow: auto;
   user-select: text;
-
-  /* A scrollbar that takes width would shift the top bar whenever the page grows. */
   scrollbar-width: none;
 }
 
-.root > div:last-child > main::-webkit-scrollbar {
+.root > main::-webkit-scrollbar {
   display: none;
 }
 
-/* On the wall the pegboard runs under a transparent top bar. The bar makes no stacking context of
-   its own: a drag layer, the live board content and the bar controls share one order. */
-.root[data-board] > div:last-child > header {
+/* Ordinary pages leave the same clearance as the rails and free board. */
+.root:not([data-board]) > main > * {
+  padding-bottom: var(--dock-clearance);
+}
+
+/* The transparent bar adds no stacking context. Live board controls keep their hit area. */
+.root[data-board] > header {
   position: absolute;
   inset: 0 0 auto;
   pointer-events: none;
 }
 
-.root[data-board] > div:last-child > header::before {
+.root[data-board] > header::before {
   position: absolute;
   inset: 0;
   z-index: var(--z-drag);
@@ -113,64 +46,32 @@
   content: '';
 }
 
-.root[data-board][data-desktop='true'] > div:last-child > header::before {
+.root[data-board][data-desktop='true'] > header::before {
   pointer-events: auto;
 }
 
-.root[data-board] > div:last-child > header > * {
+.root[data-board] > header > * {
   pointer-events: auto;
 }
 
-.root[data-board] > div:last-child > header > button {
+.root[data-board] > header > button {
   position: relative;
   z-index: var(--z-bar);
 }
 
-.root[data-desktop='true'] > div:last-child > header {
+.root[data-desktop='true'] > header {
+  padding-left: 92px;
   -webkit-app-region: drag;
 }
 
-/* With the sidebar hidden the title bar slides under the toggle. */
-.root:has(aside[hidden]) > div:last-child > header {
-  padding-left: 56px;
-}
-
-/* The toggle stays beside the native buttons when the sidebar becomes an icon rail. */
-.root[data-desktop='true']:has(aside[data-rail='true']) > div:last-child > header {
-  /* Header buttons have a -10px leading margin: 56 + 68 - 10 = 114px. */
-  padding-left: calc(128px - var(--rail));
-}
-
-.root[data-desktop='true']:has(aside[hidden]) > div:last-child > header {
-  padding-left: 128px;
-}
-
-.root[data-desktop='true'] > div:last-child > header > * {
+.root[data-desktop='true'] > header > * {
   -webkit-app-region: no-drag;
 }
 
-.root[data-board='wall'] > div:last-child > main {
+.root[data-board='wall'] > main {
   --bar-h: var(--safe-area);
 }
 
-/* Native fullscreen is published by the host; :fullscreen also handles Web fullscreen. */
-:root:is([data-window-fullscreen='true'], :fullscreen)
-  .root[data-desktop='true']
-  > [data-rail]
-  > button {
-  left: 12px;
-}
-
-:root:is([data-window-fullscreen='true'], :fullscreen)
-  .root[data-desktop='true']:has(aside[data-rail='true'])
-  > div:last-child
-  > header {
+:root:is([data-window-fullscreen='true'], :fullscreen) .root[data-desktop='true'] > header {
   padding-left: 24px;
-}
-
-:root:is([data-window-fullscreen='true'], :fullscreen)
-  .root[data-desktop='true']:has(aside[hidden])
-  > div:last-child
-  > header {
-  padding-left: 56px;
 }

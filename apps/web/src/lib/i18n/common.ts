@@ -12,8 +12,7 @@ export const common = {
     office: 'Office',
     settings: 'Settings',
     theme: 'Appearance',
-    resizeSidebar: 'Resize sidebar',
-    toggleSidebar: 'Toggle sidebar',
+    newTeam: 'New team',
   },
   zh: {
     cancel: '取消',
@@ -28,7 +27,6 @@ export const common = {
     office: '工区',
     settings: '设置',
     theme: '外观',
-    resizeSidebar: '调整侧栏宽度',
-    toggleSidebar: '切换侧栏',
+    newTeam: '新建团队',
   },
 };
