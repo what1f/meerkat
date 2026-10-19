@@ -20,6 +20,11 @@ pub struct Feishu {
     pub user: String,
     pub tenant: String,
     pub contact_unavailable: bool,
+    pub sync_clock_offset: i64,
+    pub contact_delay_ms: u64,
+    pub contact_gate: Option<Arc<tokio::sync::Semaphore>>,
+    pub member_avatar: Option<Vec<u8>>,
+    pub unreadable_apps: Vec<String>,
     pub requests: Vec<String>,
     pub app_creators: std::collections::BTreeMap<String, String>,
     pub tasklist_transfers: Vec<Value>,
@@ -75,8 +80,16 @@ impl Transport for FeishuWeb {
         Box::pin(async move {
             let url = request.path.clone();
             let body: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
+            self.0.lock().unwrap().requests.push(url.clone());
+            if url.contains("/open-apis/contact/v3/users/") {
+                let delay = self.0.lock().unwrap().contact_delay_ms;
+                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                let gate = self.0.lock().unwrap().contact_gate.clone();
+                if let Some(gate) = gate {
+                    let _ = gate.acquire_owned().await.unwrap();
+                }
+            }
             let mut feishu = self.0.lock().unwrap();
-            feishu.requests.push(url.clone());
             assert!(!url.contains("/napi/") && !url.contains("/developers/v1/"));
             assert!(!url.contains("/authen/"));
             assert!(
@@ -192,7 +205,11 @@ impl Transport for FeishuWeb {
             }
             if url.contains("/open-apis/contact/v3/users/") {
                 assert!(header(&request, "authorization").starts_with("Bearer tenant-"));
-                if feishu.contact_unavailable {
+                if feishu.contact_unavailable
+                    || feishu.unreadable_apps.iter().any(|app| {
+                        header(&request, "authorization") == format!("Bearer tenant-{app}")
+                    })
+                {
                     return reply(json!({"code":99991672,"msg":"no contact access"}), &[]);
                 }
                 let app = header(&request, "authorization").trim_start_matches("Bearer tenant-");
@@ -250,8 +267,9 @@ impl Transport for FeishuWeb {
                 return Ok(Response {
                     status: 200,
                     headers: vec![("content-type".into(), "image/png".into())],
-                    body: include_bytes!("../../../../providers/feishu/assets/app-icon.png")
-                        .to_vec(),
+                    body: feishu.member_avatar.clone().unwrap_or_else(|| {
+                        include_bytes!("../../../../providers/feishu/assets/app-icon.png").to_vec()
+                    }),
                 });
             }
             if url.contains("/open-apis/task/") {
@@ -409,5 +427,11 @@ impl lankide_provider_feishu::events::EventSource for Source {
     }
     fn close(&mut self) -> lankide_provider_feishu::events::EventFuture<'_, ()> {
         Box::pin(async {})
+    }
+}
+
+impl lankide_provider::Clock for FeishuWeb {
+    fn now_millis(&self) -> i64 {
+        1_900_000_000_000 + self.0.lock().unwrap().sync_clock_offset
     }
 }

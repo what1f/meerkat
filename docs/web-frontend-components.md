@@ -65,7 +65,7 @@ apps/web/
       *.module.css         一个组件对应一个样式文件，同名
       index.ts             唯一出口
     scene/
-      Board.tsx  Hang.tsx  Badge.tsx  VacantSlot.tsx
+      Board.tsx  Hang.tsx  Badge.tsx  BadgeVerso.tsx  FlipCard.tsx  VacantSlot.tsx
       Tag.tsx  QrTag.tsx  TokenTag.tsx  PaperLabel.tsx  ShiftSign.tsx
       Clipboard.tsx  ChecklistRow.tsx
       Console.tsx  ConsoleScreen.tsx  ScreenReadout.tsx  ConsoleKey.tsx  SoulSlot.tsx  Lever.tsx
@@ -241,6 +241,9 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 | `useCarry`    | `(onDrop(id, rowKey))` 返回 `{ seatHandle(id), rowProps(rowKey) }`                                                          | 拎起成员，换到另一个工区                                                                                                                                                                                                                                                   |
 | `useFlip`     | `() => (from: DOMRect, el: HTMLElement) => void`                                                                            | 工卡从板上飞到详情页，或从详情页飞回板上                                                                                                                                                                                                                                   |
 
+`FlipCard`：`flipped; front; back; onFlip`，点工卡原地翻面，背面控件独立响应点击。
+`BadgeVerso`：`mark; actions: {label; onClick; busy?}[]`，品牌标与动作。两者从 9a60f2c 原样恢复。
+
 ## shell/
 
 | 组件           | Props                                                                     | 说明                                                                                                                                                                              |
@@ -262,7 +265,7 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
 | `MembersPage.tsx`                                            | 成员板：用 `Board` 的 rails 布局，加 `useSortable`。所有人类工卡排在 Agent 工卡前，最后是添加用的空位                  |
 | `MemberCard.tsx`                                             | 板上的一张工卡：`Hang` 加 `Badge`，状态点和工卡底部的模型显示                                                 |
-| `HumanCard.tsx` | 人类成员的小工卡与详情工卡。统一读取人类名册，姓名头像只读，岗位输入支持 Enter/失焦保存和 Esc 撤销，无卡背、介绍、状态点或模型脚注。 |
+| `HumanCard.tsx` | 人类成员的小工卡与详情工卡。统一读取人类名册，姓名头像只读，岗位输入支持 Enter/失焦保存和 Esc 撤销，小卡可翻面，背面提供同步资料和编辑岗位；无介绍、状态点或模型脚注。 |
 | `MemberBench.tsx`                                            | 打开成员后的页面：左边是 `Console`，右边挂着大工卡，直接在卡上编辑                                            |
 | `MemberConsole.tsx`                                          | 组合操控台：形象、表情贴纸、屏幕、性格卡、按键、高级抽屉                                                      |
 | `BrainPicker.tsx`                                            | 屏幕点开后的四列选择器：工区、AI、模型、思考。由 `Popover`、`SearchField`、`OptionColumn` 和 `Lever` 组合而成 |
@@ -279,7 +282,7 @@ scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写�
 
 数据：`useAgents`、`useAgent`、`useAgentAvatar`、`useMachines`、`useHarnessCatalog`、`useModelCatalog`、
 `useReactionCatalog`、`useFigurePacks`、`useImportFigurePack`、`useWorkspace`、
-`useHumanMembers`、`useUpdateHumanPosition`、`useCreateAgent`、`useUpdateAgent`、`useDeleteAgent`、
+`useHumanMembers`、`useSyncHumanProfile`、`useUpdateHumanPosition`、`useCreateAgent`、`useUpdateAgent`、`useDeleteAgent`、
 `useResumeAgent`、`useStartAgentOnboarding`、`useAgentOnboardingProgress`（飞书团队创建成员）、
 `lib/assets.ts` 的 `resourceUrl`、`packFrames`（形象包帧）和 `figureId`（`builtin:<id>` 转裸 id）。
 
@@ -406,6 +409,6 @@ testid：`onboarding`（`data-step` 为当前步骤 0–4）、`onboarding-next`
 
 新增会伸进顶栏高度的可交互板面内容时用 `--z-live`，不要自己加数字。弹层仍在 `--z-popup` 以上。
 
-人类成员：`members/HumanCard.tsx` 导出 HumanCard 和 HumanBench，统一使用人类名册接口。小卡与大卡都用品牌挂绳，姓名头像只读，只编辑岗位；没有卡背、介绍、状态或模型脚注。`human-card-<person_id>`、`human-position` 为测试入口。
+人类成员：`members/HumanCard.tsx` 导出 HumanCard 和 HumanBench，统一使用人类名册接口。小卡与大卡都用品牌挂绳，姓名头像只读，只编辑岗位；小卡背面提供同步资料和编辑岗位，编辑岗位才打开详情；没有介绍、状态或模型脚注。`human-card-<person_id>`、`human-position` 为测试入口。
 
 飞书引导的连接步骤只选择平台；创建第一位成员时显示官方注册二维码，随后使用 LinkButton 确认权限并等待审批。后续成员使用相同流程与现有 Callout、Button、QrTag。

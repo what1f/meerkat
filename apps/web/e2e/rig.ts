@@ -30,6 +30,14 @@ export type Command =
       tenant: string;
       contact_unavailable?: boolean;
     }
+  | {
+      op: 'feishu_profile';
+      workspace: string;
+      name: string;
+      avatar_changed?: boolean;
+      unavailable?: boolean;
+      delay_ms?: number;
+    }
   | { op: 'feishu_task'; workspace: string; text: string }
   | { op: 'settle' };
 

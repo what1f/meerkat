@@ -375,12 +375,13 @@ test('human badges show contact profiles and save positions without changing ide
   await expect
     .poll(() =>
       alice
-        .locator('img')
+        .locator('img:not([data-brand])')
         .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
     )
     .toBe(true);
   await page.screenshot({ path: '/tmp/lankide-web/team-humans-board.png', animations: 'disabled' });
   await bob.click();
+  await bob.getByRole('button', { name: /编辑岗位|Edit role/ }).click();
   const position = page.getByTestId('human-position');
   await expect(position).toHaveValue('');
   await expect(page.getByTestId('human-profile').locator('textarea')).toHaveCount(0);
@@ -442,7 +443,9 @@ test('a creator without contact access still gets a human badge', async ({ page,
   await expect(card).not.toContainText('Hidden');
   await expect
     .poll(() =>
-      card.locator('img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
+      card
+        .locator('img:not([data-brand])')
+        .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
     )
     .toBe(true);
 });
@@ -496,6 +499,7 @@ test('rapid human position saves keep their order and preserve a newer draft', a
   await addFeishuMember(baseURL!, workspace);
   await open(page, workspace);
   await page.getByTestId(/^human-card-/).click();
+  await page.getByRole('button', { name: /编辑岗位|Edit role/ }).click();
   const position = page.getByTestId('human-position');
   const edits = async (values: string[]) => {
     // Dispatch normal input/focus/blur events in one browser turn. The real
@@ -528,4 +532,103 @@ test('rapid human position saves keep their order and preserve a newer draft', a
   await expect(position).toHaveValue('Researcher');
   await page.reload();
   await expect(position).toHaveValue('Researcher');
+});
+
+for (const language of ['en', 'zh']) {
+  test(`human badge flips, syncs profiles and preserves failed profiles in ${language}`, async ({
+    page,
+    baseURL,
+  }) => {
+    const workspace = `human_sync_${language}`;
+    await createFeishuTeam(workspace);
+    await addFeishuMember(baseURL!, workspace);
+    await page.addInitScript(
+      (lang) => localStorage.setItem('lankide.language', JSON.stringify(lang)),
+      language,
+    );
+    await open(page, workspace);
+    const card = page.getByTestId(/^human-card-/);
+    const flip = card.locator('[data-flipped]');
+    const sync = card.getByRole('button', { name: /同步资料|Sync profile/ });
+    const role = card.getByRole('button', { name: /编辑岗位|Edit role/ });
+    const oldPicture = await card.locator('img:not([data-brand])').getAttribute('src');
+    await card.locator('article').click();
+    await expect(flip).toHaveAttribute('data-flipped', 'true');
+    await expect(page).toHaveURL(/#\/members$/);
+    await expect(card.locator('[data-brand="feishu"]')).toBeVisible();
+    await flip.focus();
+    await page.keyboard.press('Enter');
+    await expect(flip).toHaveAttribute('data-flipped', 'false');
+    await page.keyboard.press('Space');
+    await expect(flip).toHaveAttribute('data-flipped', 'true');
+    await rig({
+      op: 'feishu_profile',
+      workspace,
+      name: 'Updated Alice',
+      avatar_changed: true,
+      delay_ms: 500,
+    });
+    await sync.click();
+    await expect(sync).toHaveAttribute('aria-busy', 'true');
+    await sync.click({ force: true });
+    await expect(flip).toHaveAttribute('data-flipped', 'false');
+    await expect(card).toContainText('Updated Alice');
+    const newPicture = await card.locator('img:not([data-brand])').getAttribute('src');
+    expect(newPicture).not.toBe(oldPicture);
+    await expect
+      .poll(() =>
+        card
+          .locator('img:not([data-brand])')
+          .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
+      )
+      .toBe(true);
+    // A second successful manual sync is inside the automatic throttle window.
+    await card.locator('article').click();
+    await rig({ op: 'feishu_profile', workspace, name: 'Manual Alice', avatar_changed: true });
+    await sync.click();
+    await expect(flip).toHaveAttribute('data-flipped', 'false');
+    await expect(card).toContainText('Manual Alice');
+    await expect(card.locator('img:not([data-brand])')).toHaveAttribute('src', newPicture!);
+    await card.locator('article').click();
+    await rig({ op: 'feishu_profile', workspace, name: 'Failed Alice', unavailable: true });
+    await sync.click();
+    await expect(
+      page.getByText(language === 'en' ? 'Something went wrong. Try again.' : '没有成功，请重试', {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(flip).toHaveAttribute('data-flipped', 'true');
+    const roster = await api(baseURL!, 'list_human_members', {
+      workspace: { workspace_id: workspace },
+    });
+    expect(roster[0].name).toBe('Manual Alice');
+    await page.screenshot({
+      path: `/tmp/lankide-web/human-sync-back-${language}.png`,
+      animations: 'disabled',
+    });
+    await role.click();
+    await expect(page.getByTestId('human-position')).toBeVisible();
+    await expect(page.getByTestId('human-profile')).toContainText('Manual Alice');
+  });
+}
+
+test('a message refreshes the human badge while the bot replies', async ({ page, baseURL }) => {
+  const workspace = 'human_sync_inbound';
+  await createFeishuTeam(workspace);
+  await addFeishuMember(baseURL!, workspace);
+  await open(page, workspace);
+  const card = page.getByTestId(/^human-card-/);
+  await expect(card).toContainText('Alice');
+  const picture = await card.locator('img:not([data-brand])').getAttribute('src');
+  await rig({ op: 'feishu_profile', workspace, name: 'Message Alice', avatar_changed: true });
+  await rig({ op: 'dm', workspace, agent: 'alpha', text: 'hello' });
+  await expect(card).toContainText('Message Alice');
+  await expect(card.locator('img:not([data-brand])')).not.toHaveAttribute('src', picture!);
+  await expect
+    .poll(
+      async () =>
+        (await rig({ op: 'settle' })).outbound?.filter((v) => v.workspace === workspace).length ??
+        0,
+    )
+    .toBeGreaterThan(0);
 });

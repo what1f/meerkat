@@ -131,9 +131,22 @@ async fn telegram_first_reply(held: bool, cross: bool) -> Result<()> {
             assert_eq!(http.post("get_agent_first_reply",reply_request.clone()).await?["state"],"waiting");
         }
         if !held && !cross {
+        {let mut state=web.state.lock().unwrap(); state.name="Telegram Updated".into();state.avatar=Some(b"updated avatar".to_vec());}
         web.message(2,false,300);
         tokio::time::timeout(Duration::from_secs(15),async{loop{if !web.state.lock().unwrap().sends.is_empty(){break;}tokio::time::sleep(Duration::from_millis(20)).await;}}).await?;rig.settle().await?;
         assert_eq!(http.post("get_agent_first_reply",reply_request.clone()).await?["state"],"waiting");
+        wait_human_name(&http,"Telegram Updated").await?;
+        let updated=humans(&http).await?[0].clone();
+        assert_ne!(updated["avatar"],card[0]["avatar"]);
+        let sync=json!({"request_id":"telegram-sync","workspace":{"workspace_id":"team"},"person_id":card[0]["person_id"]});
+        web.state.lock().unwrap().name="Telegram Manual".into();
+        let manual=http.post("sync_human_profile",sync.clone()).await?;
+        assert_eq!(manual["name"],"Telegram Manual");
+        assert_eq!(manual["avatar"],updated["avatar"]);
+        web.state.lock().unwrap().expired=true;
+        assert!(http.post("sync_human_profile",sync).await.is_err());
+        assert_eq!(humans(&http).await?[0],manual);
+        web.state.lock().unwrap().expired=false;
         web.state.lock().unwrap().fail_send=true;web.message(3,true,300);
         tokio::time::timeout(Duration::from_secs(20),async{loop{if !http.post("get_agent",reply_request.clone()).await?["pause_reason"].is_null(){break Ok::<_,Box<dyn std::error::Error+Send+Sync>>(());}tokio::time::sleep(Duration::from_millis(20)).await;}}).await??;
         assert_eq!(http.post("get_agent_first_reply",reply_request.clone()).await?["state"],"waiting");
@@ -172,6 +185,7 @@ async fn feishu_unbound_rig(enabled: bool) -> Result<(SystemRig, FeishuWeb, Http
         ProviderHost::new(
             FeishuProvider::new()
                 .with_transport(transport.clone())
+                .with_clock(std::sync::Arc::new(transport.clone()))
                 .with_event_source_factory({
                     let transport = transport.clone();
                     move |_, credentials, _, _| {
@@ -616,4 +630,111 @@ async fn official_registration_recovers_from_expiry_refusal_and_waits_for_admin(
     let cleanup = rig.close().await;
     scenario?;
     cleanup
+}
+
+#[tokio::test]
+async fn human_profiles_sync_in_background_with_shared_throttle_and_manual_override() -> Result<()>
+{
+    let (rig, web, http) = feishu_unbound_rig(false).await?;
+    let scenario = async {
+        feishu_review_member(&http, "alpha").await?;
+        feishu_review_member(&http, "beta").await?;
+        let original = humans(&http).await?[0].clone();
+        let person = original["person_id"].as_str().unwrap();
+        let request = json!({"request_id":"sync","workspace":{"workspace_id":"team"},"person_id":person});
+        let contacts = || web.0.lock().unwrap().requests.iter().filter(|u|u.contains("/contact/v3/users/")).count();
+        let start = contacts();
+        let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
+        {
+            let mut state = web.0.lock().unwrap();
+            state.name = "Alice Updated".into();
+            state.member_avatar = Some(b"new photo".to_vec());
+            state.contact_gate = Some(gate.clone());
+        }
+        inbound(&web,&rig,"cli_registered_1","lead","sync-first").await?;
+        // The contact request is still held while the real Harness replies over IM.
+        tokio::time::timeout(Duration::from_secs(10), async { loop {
+            if !web.0.lock().unwrap().sends.is_empty() && contacts() == start + 1 { break; }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }}).await?;
+        assert_eq!(humans(&http).await?[0], original);
+        let sender_name:String=database(&rig)?.query_row("SELECT sender_name FROM messages WHERE provider_message_id='sync-first'",[],|r|r.get(0))?;
+        assert_eq!(sender_name,"Alice");
+        web.0.lock().unwrap().contact_gate = None;
+        gate.add_permits(1);
+        wait_human_name(&http, "Alice Updated").await?;
+        let updated = humans(&http).await?[0].clone();
+        assert_ne!(updated["avatar"],original["avatar"]);
+        let stored: i64 = database(&rig)?.query_row("SELECT last_profile_sync_at FROM people WHERE person_id=?1",[person],|r|r.get(0))?;
+        assert_eq!(stored,1_900_000_000_000);
+        inbound(&web,&rig,"cli_registered_2","lead","sync-second-app").await?;
+        inbound(&web,&rig,"cli_registered_1","lead","sync-repeat").await?;
+        assert_eq!(contacts(), start+1);
+        web.0.lock().unwrap().sync_clock_offset = 3_599_999;
+        inbound(&web,&rig,"cli_registered_2","lead","sync-before-hour").await?;
+        assert_eq!(contacts(), start+1);
+        // Manual refresh works inside the hour; unchanged picture keeps the resource.
+        web.0.lock().unwrap().name = "Manual Alice".into();
+        let manual = http.post("sync_human_profile", request.clone()).await?;
+        assert_eq!(manual["name"],"Manual Alice");
+        assert_eq!(manual["avatar"],updated["avatar"]);
+        let manual_time:i64=database(&rig)?.query_row("SELECT last_profile_sync_at FROM people WHERE person_id=?1",[person],|r|r.get(0))?;
+        assert_eq!(manual_time,1_900_003_599_999);
+        // A bot without contact access must not prevent another bot from succeeding.
+        web.0.lock().unwrap().unreadable_apps = vec!["cli_registered_1".into()];
+        web.0.lock().unwrap().name = "Other App Alice".into();
+        assert_eq!(http.post("sync_human_profile", request.clone()).await?["name"],"Other App Alice");
+        let before_failure = humans(&http).await?[0].clone();
+        web.0.lock().unwrap().contact_unavailable = true;
+        assert!(http.post("sync_human_profile",request.clone()).await.is_err());
+        assert_eq!(humans(&http).await?[0],before_failure);
+        let before_retry = contacts();
+        web.0.lock().unwrap().sync_clock_offset += 3_600_000;
+        let sends_before_failure=web.0.lock().unwrap().sends.len();
+        inbound(&web,&rig,"cli_registered_2","lead","sync-failed").await?;
+        tokio::time::timeout(Duration::from_secs(10),async {loop {
+            if web.0.lock().unwrap().sends.len()>sends_before_failure {break;}
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }}).await?;
+        tokio::time::timeout(Duration::from_secs(5),async {loop {
+            if contacts() == before_retry+1 {break;}
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }}).await?;
+        assert_eq!(humans(&http).await?[0],before_failure);
+        web.0.lock().unwrap().contact_unavailable = false;
+        web.0.lock().unwrap().name = "After Hour".into();
+        inbound(&web,&rig,"cli_registered_2","lead","sync-failure-throttled").await?;
+        assert_eq!(contacts(),before_retry+1);
+        web.0.lock().unwrap().sync_clock_offset += 3_600_000;
+        inbound(&web,&rig,"cli_registered_2","lead","sync-after-hour").await?;
+        wait_human_name(&http, "After Hour").await?;
+        assert_eq!(contacts(),before_retry+2);
+        // Missing fields retain the previous values. Team role and custom position survive.
+        {let mut state=web.0.lock().unwrap();state.name.clear();state.no_member_avatar=true;}
+        let missing=http.post("sync_human_profile",request).await?;
+        assert_eq!(missing["name"],"After Hour");
+        assert_eq!(missing["avatar"],updated["avatar"]);
+        assert_eq!(missing["position"],"Team Leader");
+        let external=inbound(&web,&rig,"cli_registered_2","stranger","sync-external").await?;
+        let sync_time:Option<i64>=database(&rig)?.query_row("SELECT last_profile_sync_at FROM people WHERE person_id=?1",[&external],|r|r.get(0))?;
+        assert_eq!(sync_time,None);
+        assert_eq!(humans(&http).await?.as_array().unwrap().len(),1);
+        assert!(http.post("sync_human_profile",json!({"request_id":"external","workspace":{"workspace_id":"team"},"person_id":external})).await.is_err());
+        Ok::<_,Box<dyn std::error::Error+Send+Sync>>(())
+    }.await;
+    let cleanup = rig.close().await;
+    scenario?;
+    cleanup
+}
+async fn wait_human_name(http: &Http, name: &str) -> Result<()> {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if humans(http).await?[0]["name"] == name {
+                break Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await??;
+    Ok(())
 }

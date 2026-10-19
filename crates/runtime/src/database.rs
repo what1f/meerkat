@@ -791,6 +791,26 @@ database_methods! {
         let name = name.map(str::to_owned);
         let avatar = avatar.cloned();
     ] (&workspace_id, &person_id, tenant_id.as_deref(), name.as_deref(), avatar.as_ref(), now);
+    true claim_human_profile_sync(
+        workspace_id: &WorkspaceId, person_id: &PersonId, force: bool, now: i64,
+    ) -> bool [
+        let workspace_id = workspace_id.to_owned();
+        let person_id = person_id.to_owned();
+    ] (&workspace_id, &person_id, force, now);
+    false human_profile(
+        workspace_id: &WorkspaceId, person_id: &PersonId,
+    ) -> (Option<String>, Option<lankide_core::ResourceRef>) [
+        let workspace_id = workspace_id.to_owned();
+        let person_id = person_id.to_owned();
+    ] (&workspace_id, &person_id);
+    true update_human_profile(
+        workspace_id: &WorkspaceId, person_id: &PersonId, name: Option<&str>, avatar: Option<&lankide_core::ResourceRef>, now: i64,
+    ) -> bool [
+        let workspace_id = workspace_id.to_owned();
+        let person_id = person_id.to_owned();
+        let name = name.map(str::to_owned);
+        let avatar = avatar.cloned();
+    ] (&workspace_id, &person_id, name.as_deref(), avatar.as_ref(), now);
     true update_human_position(
         workspace_id: &WorkspaceId,
         person_id: &PersonId,

@@ -313,6 +313,16 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
             self.peer.list_human_members(request.into_inner()).await?,
         ))
     }
+    pub async fn sync_human_profile(
+        &self,
+        request: Request<SyncHumanProfileRequest>,
+    ) -> Result<Response<HumanTeamMember>, Status> {
+        validate_request_id(&request.get_ref().request_id)?;
+        validate_workspace_ref(request.get_ref().workspace.as_ref())?;
+        Ok(Response::new(
+            self.peer.sync_human_profile(request.into_inner()).await?,
+        ))
+    }
     pub async fn update_human_position(
         &self,
         request: Request<UpdateHumanPositionRequest>,

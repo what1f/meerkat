@@ -1104,6 +1104,48 @@ impl ProviderStorage for WorkspaceServices {
             Ok(person_identity(person))
         })
     }
+    fn claim_human_profile_sync<'a>(
+        &'a self,
+        person_id: &'a PersonId,
+        force: bool,
+        now: i64,
+    ) -> SdkFuture<'a, bool> {
+        Box::pin(async move {
+            self.storage
+                .claim_human_profile_sync(&self.workspace_id, person_id, force, now)
+                .await
+                .map_err(provider_storage_error)
+        })
+    }
+    fn human_profile<'a>(
+        &'a self,
+        person_id: &'a PersonId,
+    ) -> SdkFuture<'a, (Option<String>, Option<lankide_core::ResourceRef>)> {
+        Box::pin(async move {
+            self.storage
+                .human_profile(&self.workspace_id, person_id)
+                .await
+                .map_err(provider_storage_error)
+        })
+    }
+    fn update_human_profile<'a>(
+        &'a self,
+        person_id: &'a PersonId,
+        name: Option<&'a str>,
+        avatar: Option<&'a lankide_core::ResourceRef>,
+    ) -> SdkFuture<'a, ()> {
+        Box::pin(async move {
+            let changed = self
+                .storage
+                .update_human_profile(&self.workspace_id, person_id, name, avatar, now_millis())
+                .await
+                .map_err(provider_storage_error)?;
+            if changed {
+                self.management_changed().await?;
+            }
+            Ok(())
+        })
+    }
     fn person<'a>(&'a self, person_id: &'a PersonId) -> SdkFuture<'a, ProviderPersonIdentity> {
         Box::pin(async move {
             self.storage

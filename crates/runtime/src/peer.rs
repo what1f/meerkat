@@ -526,6 +526,15 @@ impl RuntimePeer for RuntimePeerAdapter {
             .await
             .map_err(status)
     }
+    async fn sync_human_profile(
+        &self,
+        request: lankide_protocol::SyncHumanProfileRequest,
+    ) -> Result<lankide_protocol::HumanTeamMember, Status> {
+        self.application
+            .sync_human_profile(request)
+            .await
+            .map_err(status)
+    }
     async fn update_human_position(
         &self,
         request: lankide_protocol::UpdateHumanPositionRequest,

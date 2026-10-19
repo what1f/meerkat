@@ -152,6 +152,7 @@ impl ManagedBotCredential {
     }
 }
 
+#[derive(Clone)]
 pub struct Client<T> {
     transport: T,
     domain: String,

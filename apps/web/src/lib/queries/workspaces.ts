@@ -69,6 +69,15 @@ export function useHumanMembers(input: DTO.GetWorkspaceRequest) {
     queryFn: ({ signal }) => call('list_human_members', input, signal),
   });
 }
+export function useSyncHumanProfile() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: DTO.SyncHumanProfileRequest) => call('sync_human_profile', input),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: keys.humans });
+    },
+  });
+}
 export function useUpdateHumanPosition() {
   const client = useQueryClient();
   return useMutation({

@@ -134,6 +134,7 @@ function MemberBoard({
           key={person.person_id}
           workspace={workspace}
           person={person}
+          provider={team.data?.provider_id === 'telegram' ? 'telegram' : 'feishu'}
           onOpen={() => onOpen(`human:${person.person_id}`)}
         />
       ))}

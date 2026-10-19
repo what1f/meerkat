@@ -95,6 +95,12 @@ pub trait RuntimePeer: Send + Sync + 'static {
     ) -> Result<Vec<HumanTeamMember>, Status> {
         Err(Status::unimplemented("list_human_members"))
     }
+    async fn sync_human_profile(
+        &self,
+        _request: SyncHumanProfileRequest,
+    ) -> Result<HumanTeamMember, Status> {
+        Err(Status::unimplemented("sync_human_profile"))
+    }
     async fn update_human_position(
         &self,
         _request: UpdateHumanPositionRequest,

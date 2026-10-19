@@ -18,6 +18,7 @@ const badge = (name: string, size: 'card' | 'stage' | 'intro' = 'card') => (
 export function SceneBoard() {
   const [replay, setReplay] = useState(0);
   const [reading, setReading] = useState(false);
+  const [flipped, setFlipped] = useState(false);
   return (
     <>
       <Spec name="Board rails, drag to reorder" surface="board">
@@ -54,6 +55,24 @@ export function SceneBoard() {
         <State label="ghost">
           <S.Badge avatar={{}} name={null} size="card" ghost />
         </State>
+      </Spec>
+      <Spec name="FlipCard / BadgeVerso" surface="board">
+        <S.Hang lanyard="lead">
+          <S.FlipCard
+            flipped={flipped}
+            onFlip={() => setFlipped(!flipped)}
+            front={badge('Alice')}
+            back={
+              <S.BadgeVerso
+                mark={<D.BrandMark brand="feishu" />}
+                actions={[
+                  { label: 'Sync profile', busy: true, onClick: () => {} },
+                  { label: 'Edit role', onClick: () => {} },
+                ]}
+              />
+            }
+          />
+        </S.Hang>
       </Spec>
       <Spec name="VacantSlot">
         {(['badge', 'clipboard'] as const).map((shape) => (

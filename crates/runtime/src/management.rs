@@ -183,6 +183,39 @@ impl RuntimeApplication {
             .collect())
     }
 
+    pub async fn sync_human_profile(
+        &self,
+        request: lankide_protocol::SyncHumanProfileRequest,
+    ) -> Result<lankide_protocol::HumanTeamMember, RuntimeError> {
+        let workspace = workspace_id(request.workspace.clone())?;
+        let person_id = PersonId::new(request.person_id.clone())
+            .map_err(|e| RuntimeError::InvalidCore(e.to_string()))?;
+        let runtime = self.runtime()?;
+        let person = runtime
+            .database()
+            .person(&workspace, &person_id)
+            .await?
+            .ok_or_else(|| RuntimeError::Application("unknown team member".into()))?;
+        if person.team_role == lankide_core::TeamRole::External {
+            return Err(RuntimeError::Application("unknown team member".into()));
+        }
+        runtime
+            .invoke_provider_interface(
+                &workspace,
+                format!("{}.human.sync", person.provider_instance_id),
+                serde_json::json!({"person_id":request.person_id}),
+            )
+            .await?;
+        self.list_human_members(GetWorkspaceRequest {
+            request_id: request.request_id,
+            workspace: request.workspace,
+        })
+        .await?
+        .into_iter()
+        .find(|p| p.person_id == request.person_id)
+        .ok_or_else(|| RuntimeError::Application("unknown team member".into()))
+    }
+
     pub async fn update_human_position(
         &self,
         request: lankide_protocol::UpdateHumanPositionRequest,

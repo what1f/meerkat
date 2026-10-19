@@ -1,39 +1,71 @@
 import { useRef, useState } from 'react';
-import { Badge, Bench, Board, Hang } from '../../scene';
-import { EmptyState, InlineText, useToast } from '../../design';
+import { Badge, BadgeVerso, FlipCard, Bench, Board, Hang } from '../../scene';
+import { BrandMark, EmptyState, InlineText, useToast } from '../../design';
 import { useT } from '../../lib/i18n';
 import { avatarUrl, resourceUrl } from '../../lib/assets';
 import type { HumanTeamMember } from '../../lib/api/generated';
-import { useHumanMembers, useUpdateHumanPosition } from '../../lib/queries/workspaces';
+import {
+  useHumanMembers,
+  useSyncHumanProfile,
+  useUpdateHumanPosition,
+} from '../../lib/queries/workspaces';
 import { defaultAvatar } from './avatars';
 import type { MembersPageProps } from './MembersPage';
 
 export function HumanCard({
   workspace,
   person,
+  provider,
   onOpen,
 }: {
   workspace: string;
   person: HumanTeamMember;
+  provider: 'feishu' | 'telegram';
   onOpen: () => void;
 }) {
   const t = useT();
+  const toast = useToast();
+  const sync = useSyncHumanProfile();
+  const [flipped, setFlipped] = useState(false);
+  const actions = [
+    {
+      label: t('members.sync'),
+      busy: sync.isPending,
+      onClick: () => {
+        if (sync.isPending) return;
+        sync.mutate(
+          {
+            request_id: crypto.randomUUID(),
+            workspace: { workspace_id: workspace },
+            person_id: person.person_id,
+          },
+          {
+            onSuccess: () => setFlipped(false),
+            onError: () => toast({ message: t('members.failed') }),
+          },
+        );
+      },
+    },
+    { label: t('members.editPosition'), onClick: onOpen },
+  ];
   const fallback = avatarUrl(defaultAvatar(person.person_id));
   return (
-    <Hang
-      lanyard="lead"
-      swingOnHover
-      onClick={onOpen}
-      data-testid={`human-card-${person.person_id}`}
-    >
-      <Badge
-        size="card"
-        avatar={{
-          src: person.avatar ? resourceUrl(person.avatar.resource_id, workspace) : fallback,
-          fallback,
-        }}
-        name={person.name || t('members.human')}
-        role={person.position}
+    <Hang lanyard="lead" swingOnHover data-testid={`human-card-${person.person_id}`}>
+      <FlipCard
+        flipped={flipped}
+        onFlip={() => setFlipped(!flipped)}
+        back={<BadgeVerso mark={<BrandMark brand={provider} />} actions={actions} />}
+        front={
+          <Badge
+            size="card"
+            avatar={{
+              src: person.avatar ? resourceUrl(person.avatar.resource_id, workspace) : fallback,
+              fallback,
+            }}
+            name={person.name || t('members.human')}
+            role={person.position}
+          />
+        }
       />
     </Hang>
   );

@@ -39,6 +39,15 @@ pub struct UpdateHumanPositionRequest {
     pub position: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SyncHumanProfileRequest {
+    pub request_id: String,
+    pub workspace: Option<WorkspaceRef>,
+    pub person_id: String,
+}
+
 /// Input for the Feishu workspace task-list management interface.
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

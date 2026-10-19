@@ -75,6 +75,7 @@ export type { ResourceRef } from './ResourceRef';
 export type { RevokeMachineRequest } from './RevokeMachineRequest';
 export type { SetRemoteAccessRequest } from './SetRemoteAccessRequest';
 export type { SetWorkspaceStateRequest } from './SetWorkspaceStateRequest';
+export type { SyncHumanProfileRequest } from './SyncHumanProfileRequest';
 export type { TestHarnessRequest } from './TestHarnessRequest';
 export type { TestHarnessResponse } from './TestHarnessResponse';
 export type { UpdateAgentRequest } from './UpdateAgentRequest';

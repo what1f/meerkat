@@ -107,6 +107,11 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
             Vec<json::HumanTeamMember>,
             list_human_members
         ),
+        "sync_human_profile" => call!(
+            json::SyncHumanProfileRequest,
+            json::HumanTeamMember,
+            sync_human_profile
+        ),
         "update_human_position" => call!(
             json::UpdateHumanPositionRequest,
             Vec<json::HumanTeamMember>,

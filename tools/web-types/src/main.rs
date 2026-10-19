@@ -113,6 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         HumanTeamMember,
         WorkspaceTasksInput,
         UpdateHumanPositionRequest,
+        SyncHumanProfileRequest,
         WorkspaceImageRequest,
         WorkspaceImageResponse,
         WorkspaceRef,

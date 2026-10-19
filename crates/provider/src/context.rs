@@ -11,6 +11,21 @@ use std::{
 };
 use tokio::sync::{Notify, mpsc, oneshot};
 
+/// Wall clock for persisted Provider operations; hosts may supply a controlled clock.
+pub trait Clock: Send + Sync {
+    fn now_millis(&self) -> i64;
+}
+#[derive(Debug, Default)]
+pub struct SystemClock;
+impl Clock for SystemClock {
+    fn now_millis(&self) -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|v| v.as_millis().min(i64::MAX as u128) as i64)
+            .unwrap_or(1)
+    }
+}
+
 pub trait SecretReader: Send + Sync {
     fn read<'a>(&'a self, name: &'a str) -> ProviderFuture<'a, SecretValue>;
 }
@@ -131,6 +146,40 @@ pub trait ProviderStorage: Send + Sync {
         Box::pin(async {
             Err(ProviderError::Unsupported {
                 operation: "join_human_team",
+            })
+        })
+    }
+    fn claim_human_profile_sync<'a>(
+        &'a self,
+        _: &'a PersonId,
+        _: bool,
+        _: i64,
+    ) -> ProviderFuture<'a, bool> {
+        Box::pin(async {
+            Err(ProviderError::Unsupported {
+                operation: "claim_human_profile_sync",
+            })
+        })
+    }
+    fn human_profile<'a>(
+        &'a self,
+        _: &'a PersonId,
+    ) -> ProviderFuture<'a, (Option<String>, Option<ResourceRef>)> {
+        Box::pin(async {
+            Err(ProviderError::Unsupported {
+                operation: "human_profile",
+            })
+        })
+    }
+    fn update_human_profile<'a>(
+        &'a self,
+        _: &'a PersonId,
+        _: Option<&'a str>,
+        _: Option<&'a ResourceRef>,
+    ) -> ProviderFuture<'a, ()> {
+        Box::pin(async {
+            Err(ProviderError::Unsupported {
+                operation: "update_human_profile",
             })
         })
     }

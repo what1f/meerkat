@@ -209,6 +209,45 @@ impl Storage {
         Ok(person)
     }
 
+    /// Atomically reserve a team-wide sync attempt before any network request.
+    pub fn claim_human_profile_sync(
+        &self,
+        workspace_id: &WorkspaceId,
+        person_id: &PersonId,
+        force: bool,
+        now: i64,
+    ) -> Result<bool> {
+        Ok(self.conn()?.execute("UPDATE people SET last_profile_sync_at=?3 WHERE workspace_id=?1 AND person_id=?2 AND team_role IN('member','lead') AND (?4 OR last_profile_sync_at IS NULL OR last_profile_sync_at<=?3-3600000)", params![workspace_id.as_str(),person_id.as_str(),now,force])? == 1)
+    }
+
+    pub fn human_profile(
+        &self,
+        workspace_id: &WorkspaceId,
+        person_id: &PersonId,
+    ) -> Result<(Option<String>, Option<lankide_core::ResourceRef>)> {
+        let (name, avatar): (Option<String>, Option<String>) = self.read_conn()?.query_row("SELECT name,avatar_json FROM people WHERE workspace_id=?1 AND person_id=?2 AND team_role IN('member','lead')", params![workspace_id.as_str(),person_id.as_str()], |r| Ok((r.get(0)?,r.get(1)?)))?;
+        Ok((name, avatar.map(|v| serde_json::from_str(&v)).transpose()?))
+    }
+
+    pub fn update_human_profile(
+        &self,
+        workspace_id: &WorkspaceId,
+        person_id: &PersonId,
+        name: Option<&str>,
+        avatar: Option<&lankide_core::ResourceRef>,
+        now: i64,
+    ) -> Result<bool> {
+        let connection = self.conn()?;
+        let changed = connection.execute("UPDATE people SET name=COALESCE(?3,name),avatar_json=COALESCE(?4,avatar_json),updated_at=?5 WHERE workspace_id=?1 AND person_id=?2 AND team_role IN('member','lead') AND ((?3 IS NOT NULL AND name IS NOT ?3) OR (?4 IS NOT NULL AND avatar_json IS NOT ?4))", params![workspace_id.as_str(),person_id.as_str(),name,avatar.map(serde_json::to_string).transpose()?,now])?;
+        if changed == 0 {
+            let exists: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM people WHERE workspace_id=?1 AND person_id=?2 AND team_role IN('member','lead'))", params![workspace_id.as_str(),person_id.as_str()], |r| r.get(0))?;
+            if !exists {
+                return Err(StorageError::Invalid("unknown team member".into()));
+            }
+        }
+        Ok(changed == 1)
+    }
+
     pub fn update_human_position(
         &self,
         workspace_id: &WorkspaceId,

@@ -24,9 +24,9 @@ pub use crate::management::{
     ManagementSubscription, ModelCatalogRequest, PairingCode, ProviderCatalog, ProviderCatalogItem,
     ProviderInterface, ProviderOnboardingState, ReactionCatalog, ReactionCatalogItem, RemoteAccess,
     RenameMachineRequest, RevokeMachineRequest, SetRemoteAccessRequest, SetWorkspaceStateRequest,
-    TestHarnessRequest, TestHarnessResponse, UpdateAgentRequest, UpdateHumanPositionRequest,
-    UpdateWorkspaceRequest, UploadWorkspaceImageRequest, UploadWorkspaceImageResponse, Workspace,
-    WorkspaceImageRequest, WorkspaceImageResponse,
+    SyncHumanProfileRequest, TestHarnessRequest, TestHarnessResponse, UpdateAgentRequest,
+    UpdateHumanPositionRequest, UpdateWorkspaceRequest, UploadWorkspaceImageRequest,
+    UploadWorkspaceImageResponse, Workspace, WorkspaceImageRequest, WorkspaceImageResponse,
 };
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]

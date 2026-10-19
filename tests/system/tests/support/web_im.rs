@@ -165,6 +165,22 @@ impl Im {
             .await?;
         Ok(())
     }
+    pub fn feishu_profile(
+        &self,
+        workspace: &str,
+        name: String,
+        avatar_changed: bool,
+        unavailable: bool,
+        delay_ms: u64,
+    ) {
+        let mock = self.feishu(workspace);
+        let mut state = mock.0.lock().unwrap();
+        state.name = name;
+        state.contact_unavailable = unavailable;
+        state.contact_delay_ms = delay_ms;
+        state.member_avatar = avatar_changed
+            .then(|| include_bytes!("../../../../apps/web/src/assets/avatars/01.jpg").to_vec());
+    }
     pub fn feishu_person(
         &self,
         workspace: &str,

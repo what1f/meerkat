@@ -8,6 +8,7 @@ use std::{
 #[derive(Default)]
 pub struct State {
     pub name: String,
+    pub avatar: Option<Vec<u8>>,
     pub expired: bool,
     pub fail_send: bool,
     pub updates: VecDeque<Value>,
@@ -28,7 +29,7 @@ impl TelegramWeb {
         let http = Server::start(move |r| {
             let mut state = shared.lock().unwrap();
             if r.path.starts_with("/file/") {
-                return Response::file(b"avatar");
+                return Response::file(state.avatar.as_deref().unwrap_or(b"avatar"));
             }
             let method = r.path.rsplit('/').next().unwrap();
             let body = if r.body.is_empty() {

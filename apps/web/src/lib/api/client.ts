@@ -11,6 +11,7 @@ export class ApiError extends Error {
 }
 interface Operations {
   list_human_members: { input: DTO.GetWorkspaceRequest; output: DTO.HumanTeamMember[] };
+  sync_human_profile: { input: DTO.SyncHumanProfileRequest; output: DTO.HumanTeamMember };
   update_human_position: { input: DTO.UpdateHumanPositionRequest; output: DTO.HumanTeamMember[] };
   list_figure_packs: { input: DTO.ListFigurePacksRequest; output: DTO.FigurePack[] };
   import_figure_pack: { input: DTO.ImportFigurePackRequest; output: DTO.FigurePack };

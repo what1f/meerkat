@@ -29,6 +29,16 @@ enum Command {
         workspace: String,
         on: bool,
     },
+    FeishuProfile {
+        workspace: String,
+        name: String,
+        #[serde(default)]
+        avatar_changed: bool,
+        #[serde(default)]
+        unavailable: bool,
+        #[serde(default)]
+        delay_ms: u64,
+    },
     FeishuPerson {
         workspace: String,
         user: String,
@@ -96,6 +106,13 @@ async fn control(
     match command {
         Command::FeishuTasklist { workspace, fail } => return Ok(im.tasklist(&workspace, fail)),
         Command::FeishuScan { workspace, state } => im.scan(&workspace, state),
+        Command::FeishuProfile {
+            workspace,
+            name,
+            avatar_changed,
+            unavailable,
+            delay_ms,
+        } => im.feishu_profile(&workspace, name, avatar_changed, unavailable, delay_ms),
         Command::FeishuPerson {
             workspace,
             user,
