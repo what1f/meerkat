@@ -10,6 +10,16 @@ export function useManagementEvents(workspace?: string) {
     let socket: WebSocket;
     let timer: ReturnType<typeof setTimeout>;
     let failures = 0;
+    function invalidate(queryKey?: readonly string[]) {
+      void client.invalidateQueries({
+        queryKey,
+        predicate: (query) => query.meta?.preserveInFlight !== true,
+      });
+      void client.invalidateQueries(
+        { queryKey, predicate: (query) => query.meta?.preserveInFlight === true },
+        { cancelRefetch: false },
+      );
+    }
     function connect() {
       const url = new URL('/api/v1/events', location.href);
       url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -19,7 +29,7 @@ export function useManagementEvents(workspace?: string) {
       socket = new WebSocket(url);
       socket.onopen = () => {
         failures = 0;
-        void client.invalidateQueries();
+        invalidate();
       };
       socket.onmessage = ({ data }) => {
         let frame: EventFrame;
@@ -34,7 +44,7 @@ export function useManagementEvents(workspace?: string) {
           return;
         }
         for (const queryKey of eventKeys[frame.data.kind]) {
-          void client.invalidateQueries({ queryKey });
+          invalidate(queryKey);
         }
       };
       socket.onerror = () => socket.close();

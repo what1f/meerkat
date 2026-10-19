@@ -169,6 +169,14 @@ async function telegramToken(page: Page) {
 
 test('A late Telegram answer does not move the Feishu flow on', async ({ page, baseURL }) => {
   test.setTimeout(90_000);
+  const cancelledPolls: string[] = [];
+  page.on('requestfailed', (request) => {
+    if (
+      request.url().endsWith('/api/v1/advance_agent_onboarding') &&
+      request.postDataJSON().action === 'poll'
+    )
+      cancelledPolls.push(request.failure()?.errorText ?? 'cancelled');
+  });
   let release!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));
   let arrived!: () => void;
@@ -193,6 +201,7 @@ test('A late Telegram answer does not move the Feishu flow on', async ({ page, b
   await next(page).click();
   await chooseAiAndCreate(page);
   await firstReply(page, baseURL!, workspace);
+  expect(cancelledPolls).toEqual([]);
 });
 
 test('Skipping an AI that could not be read ends onboarding', async ({ page, baseURL }) => {

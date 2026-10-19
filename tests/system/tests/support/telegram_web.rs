@@ -14,7 +14,6 @@ pub struct State {
     pub fail_send: bool,
     pub updates: VecDeque<Value>,
     pub sends: Vec<Value>,
-    pub managed: bool,
 }
 pub struct TelegramWeb {
     pub http: Server,
@@ -67,10 +66,11 @@ impl TelegramWeb {
                 "setMyName" | "setMyDescription" | "setMessageReaction" => json!(true),
                 "getUpdates" => {
                     if r.path.contains("100:manager") {
-                        if state.managed {
+                        // Telegram replays unconfirmed updates until getUpdates advances
+                        // offset. A cancelled onboarding poll must not consume the event.
+                        if body["offset"].as_i64().unwrap_or(0) > 1 {
                             json!([])
                         } else {
-                            state.managed = true;
                             json!([{"update_id":1,"managed_bot":{"user":{"id":300,"first_name":state.name},"bot":{"id":200,"is_bot":true,"first_name":"Alpha","username":"alpha_bot"}}}])
                         }
                     } else {

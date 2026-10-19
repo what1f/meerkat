@@ -69,6 +69,9 @@ export function useAgentOnboardingProgress(input: DTO.GetAgentOnboardingRequest,
   const poll = usePoll();
   return useQuery({
     queryKey: progressKey(input),
+    // Advancing onboarding changes server state; management events must let an
+    // in-flight poll finish instead of aborting and starting it again.
+    meta: { preserveInFlight: true },
     queryFn: async ({ signal }): Promise<DTO.AgentOnboardingState | null> => {
       const previous = client.getQueryData<DTO.AgentOnboardingState>(progressKey(input));
       // Event invalidation must not advance a finished onboarding again.
