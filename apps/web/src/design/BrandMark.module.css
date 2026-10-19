@@ -4,6 +4,10 @@
 }
 
 /* Monochrome marks follow the ink color. */
-.root[data-brand='pi'] {
+.root[data-brand='pi'],
+.root[data-brand='openai'],
+.root[data-brand='anthropic'],
+.root[data-brand='moonshot'],
+.root[data-brand='grok'] {
   filter: var(--mono-mark);
 }

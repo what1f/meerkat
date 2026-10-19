@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   BrandMark,
+  modelBrand,
   OptionColumn,
   Popover,
   SearchField,
@@ -146,18 +147,22 @@ export function BrainPicker({
             ))}
           </OptionColumn>
           <OptionColumn title={t('members.model')}>
-            {shown.map((x) => (
-              <OptionColumn.Item
-                key={x.model_id}
-                mono
-                selected={x.model_id === draft.model}
-                dimmed={!x.available}
-                hint={twins(x) ? sourceOf(x.model_id) : undefined}
-                onSelect={() => pickModel(x.model_id, x.supported_thinking_levels)}
-              >
-                {named(x)}
-              </OptionColumn.Item>
-            ))}
+            {shown.map((x) => {
+              const brand = modelBrand(x.model_id, x.display_name);
+              return (
+                <OptionColumn.Item
+                  key={x.model_id}
+                  mono
+                  leading={brand ? <BrandMark brand={brand} size={16} /> : null}
+                  selected={x.model_id === draft.model}
+                  dimmed={!x.available}
+                  hint={twins(x) ? sourceOf(x.model_id) : undefined}
+                  onSelect={() => pickModel(x.model_id, x.supported_thinking_levels)}
+                >
+                  {named(x)}
+                </OptionColumn.Item>
+              );
+            })}
           </OptionColumn>
           <OptionColumn
             title={t('members.thinking')}

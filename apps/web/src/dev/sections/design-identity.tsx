@@ -43,7 +43,25 @@ export function DesignIdentity() {
         ))}
       </Spec>
       <Spec name="BrandMark">
-        {(['feishu', 'telegram', 'codex', 'claude_code', 'pi'] as const).map((brand) => (
+        {(
+          [
+            'feishu',
+            'telegram',
+            'codex',
+            'claude_code',
+            'pi',
+            'deepseek',
+            'claude',
+            'anthropic',
+            'openai',
+            'gemini',
+            'qwen',
+            'mistral',
+            'moonshot',
+            'meta',
+            'grok',
+          ] as const
+        ).map((brand) => (
           <State key={brand} label={brand}>
             <D.BrandMark brand={brand} />
           </State>
