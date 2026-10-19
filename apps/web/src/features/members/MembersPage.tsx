@@ -114,18 +114,6 @@ function MemberBoard({
       </Board>,
       'wall',
     );
-  if (!list.length && !humans.data?.length)
-    return frame(
-      {},
-      <EmptyState
-        title={t('members.empty')}
-        action={
-          <Button variant="primary" onClick={add} data-testid="add-member">
-            {t('members.add')}
-          </Button>
-        }
-      />,
-    );
   return frame(
     {},
     <Board layout="rails">

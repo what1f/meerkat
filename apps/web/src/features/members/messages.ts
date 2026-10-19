@@ -2,7 +2,6 @@ import { registerMessages } from '../../lib/i18n';
 
 const en = {
   add: 'Add member',
-  empty: 'No members yet',
   name: 'Name',
   human: 'Team member',
   role: 'Role',
@@ -65,7 +64,6 @@ const en = {
 
 const zh: typeof en = {
   add: '添加成员',
-  empty: '还没有成员',
   name: '名字',
   human: '团队成员',
   role: '岗位',
