@@ -91,6 +91,13 @@
   flex: 1;
   overflow: auto;
   user-select: text;
+
+  /* A scrollbar that takes width would shift the top bar whenever the page grows. */
+  scrollbar-width: none;
+}
+
+.root > div:last-child > main::-webkit-scrollbar {
+  display: none;
 }
 
 /* On the wall the pegboard runs under a transparent top bar. The bar makes no stacking context of
