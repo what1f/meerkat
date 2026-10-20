@@ -1,0 +1,19 @@
+.root {
+  display: block;
+  flex: none;
+  height: 12px;
+  background: var(--shimmer);
+  background-size: var(--shimmer-size);
+  border-radius: var(--r-xs);
+  animation: shimmer 1.4s linear infinite;
+}
+
+.root[data-shape='circle'] {
+  border-radius: var(--r-full);
+}
+
+@keyframes shimmer {
+  to {
+    background-position: var(--shimmer-end);
+  }
+}

@@ -1,0 +1,122 @@
+.root {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 18px;
+  margin: 0 -18px;
+  border-bottom: var(--rule-line);
+}
+
+.root > label {
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.check {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--ink-3);
+  border-color: var(--ink-4);
+  border-style: solid;
+  border-width: 1.5px;
+  border-radius: var(--r-check);
+  transition: border-color var(--d-base);
+}
+
+.check > input {
+  position: absolute;
+  inset: -1.5px;
+  margin: 0;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.check > input:disabled {
+  cursor: default;
+}
+
+.check:has(:focus-visible) {
+  box-shadow: var(--ring-focus);
+}
+
+/* The tick is drawn in pen. */
+.check > svg {
+  position: absolute;
+  top: -3px;
+  right: -1px;
+  width: 20px;
+  height: 20px;
+  pointer-events: none;
+  fill: var(--none);
+  stroke: var(--ink);
+  stroke-dasharray: 16;
+  stroke-dashoffset: 16;
+  stroke-width: 2.6;
+  transition: stroke-dashoffset var(--d-slow) var(--ease);
+}
+
+.root[data-done='true'] .check {
+  border-color: var(--ink-3);
+}
+
+.root[data-done='true'] .check > svg {
+  stroke-dashoffset: 0;
+}
+
+.text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--strike);
+  transition:
+    color var(--d-base),
+    background-size var(--d-slow) var(--ease);
+}
+
+.root[data-done='true'] .text {
+  color: var(--ink-3);
+  background: var(--strike-done);
+}
+
+.root > [data-size] {
+  flex: none;
+  margin-left: auto;
+}
+
+.root[data-done='true'] > [data-size] {
+  opacity: 0.5;
+  filter: grayscale(1);
+}
+
+.root[data-new] {
+  color: var(--ink-3);
+}
+
+.root[data-new] .check {
+  border-style: dashed;
+}
+
+.root[data-new] input:not([type]) {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  color: var(--ink);
+  background: var(--clear);
+  border-style: none;
+  outline-style: none;
+}
+
+.root[data-new] input::placeholder {
+  color: var(--ink-3);
+}

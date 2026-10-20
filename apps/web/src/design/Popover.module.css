@@ -1,0 +1,28 @@
+/* Popups float above the scene: the console, figures and dragged things. */
+.positioner {
+  z-index: var(--z-popup);
+}
+
+.popup {
+  max-height: var(--available-height);
+  overflow: auto;
+  outline-style: none;
+  background: var(--elevated);
+  border: var(--hairline);
+  border-radius: var(--r-menu);
+  box-shadow: var(--shadow-2);
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--d-base) var(--ease),
+    transform var(--d-base) var(--ease);
+}
+
+.popup[data-starting-style],
+.popup[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
+}
+
+.root {
+  flex: none;
+}

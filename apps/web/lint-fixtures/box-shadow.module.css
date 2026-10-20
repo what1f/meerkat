@@ -1,0 +1,4 @@
+/* expect: scale-unlimited/declaration-strict-value */
+.bad {
+  box-shadow: 0 1px 2px black;
+}

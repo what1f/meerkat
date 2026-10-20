@@ -244,13 +244,14 @@ pub struct AgentOnboardingState {
 }
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct MachineOption {
+    pub is_local: bool,
     pub registered: bool,
     pub revoked_at: Option<i64>,
     pub last_seen_at: Option<i64>,
     pub paired_at: i64,
     pub os: String,
     pub version: String,
-    pub inventory: Vec<lankide_protocol::link::HarnessInfo>,
+    pub inventory: Vec<lankide_protocol::management::HarnessInfo>,
     pub id: String,
     pub name: String,
     pub available: bool,
@@ -665,17 +666,17 @@ fn from_workspace(v: wire::Workspace) -> Result<Workspace, ClientError> {
             name: provider_name(&v.provider_id),
             icon: v.provider_id,
         },
-        status: if v.desired_state == wire::DesiredState::Paused as i32 {
+        status: if v.desired_state == wire::DesiredState::Paused {
             WorkspaceStatus::Paused
         } else {
             WorkspaceStatus::Active
         },
-        observed_state: match wire::ObservedState::try_from(v.observed_state).ok() {
-            Some(wire::ObservedState::Starting) => WorkspaceObservedState::Starting,
-            Some(wire::ObservedState::Running) => WorkspaceObservedState::Running,
-            Some(wire::ObservedState::Paused) => WorkspaceObservedState::Paused,
-            Some(wire::ObservedState::Error) => WorkspaceObservedState::Error,
-            Some(wire::ObservedState::Stopped) => WorkspaceObservedState::Stopped,
+        observed_state: match v.observed_state {
+            wire::ObservedState::Starting => WorkspaceObservedState::Starting,
+            wire::ObservedState::Running => WorkspaceObservedState::Running,
+            wire::ObservedState::Paused => WorkspaceObservedState::Paused,
+            wire::ObservedState::Error => WorkspaceObservedState::Error,
+            wire::ObservedState::Stopped => WorkspaceObservedState::Stopped,
             _ => WorkspaceObservedState::Unknown,
         },
         status_message: v.status_message,
@@ -778,9 +779,7 @@ fn from_onboarding(
         .workspace
         .ok_or_else(|| ClientError::Protocol("onboarding workspace missing".into()))?
         .workspace_id;
-    let status = match wire::OnboardingStatus::try_from(v.status)
-        .map_err(|_| ClientError::Protocol("unknown onboarding status".into()))?
-    {
+    let status = match v.status {
         wire::OnboardingStatus::ActionRequired => OnboardingStatus::ActionRequired,
         wire::OnboardingStatus::Verifying => OnboardingStatus::Verifying,
         wire::OnboardingStatus::Ready => OnboardingStatus::Ready,
@@ -813,9 +812,7 @@ fn from_agent_onboarding(
     let agent = v
         .agent
         .ok_or_else(|| ClientError::Protocol("agent onboarding scope missing".into()))?;
-    let status = match wire::OnboardingStatus::try_from(v.status)
-        .map_err(|_| ClientError::Protocol("unknown onboarding status".into()))?
-    {
+    let status = match v.status {
         wire::OnboardingStatus::ActionRequired => OnboardingStatus::ActionRequired,
         wire::OnboardingStatus::Verifying => OnboardingStatus::Verifying,
         wire::OnboardingStatus::Ready => OnboardingStatus::Ready,
@@ -1054,8 +1051,8 @@ impl ManagementClient for RuntimeManagementClient {
                     request_id: self.request_id(),
                     workspace: Some(wref(w)),
                     desired_state: match s {
-                        WorkspaceStatus::Active => wire::DesiredState::Running as i32,
-                        WorkspaceStatus::Paused => wire::DesiredState::Paused as i32,
+                        WorkspaceStatus::Active => wire::DesiredState::Running,
+                        WorkspaceStatus::Paused => wire::DesiredState::Paused,
                     },
                 })
                 .await
@@ -1141,6 +1138,8 @@ impl ManagementClient for RuntimeManagementClient {
             self.client
                 .clone()
                 .create_agent(wire::CreateAgentRequest {
+                    figure: Default::default(),
+                    launch_arguments: Default::default(),
                     request_id: self.request_id(),
                     agent: Some(aref(w, &d.id)),
                     name: d.name,
@@ -1195,6 +1194,8 @@ impl ManagementClient for RuntimeManagementClient {
             self.client
                 .clone()
                 .update_agent(wire::UpdateAgentRequest {
+                    figure: Default::default(),
+                    launch_arguments: Default::default(),
                     request_id: self.request_id(),
                     agent: Some(aref(&a.workspace_id, &a.id)),
                     name: Some(a.name),
@@ -1419,6 +1420,7 @@ impl ManagementClient for RuntimeManagementClient {
             .machines
             .into_iter()
             .map(|c| MachineOption {
+                is_local: c.is_local,
                 registered: c.registered,
                 revoked_at: c.revoked_at,
                 last_seen_at: c.last_seen_at,
@@ -1428,7 +1430,7 @@ impl ManagementClient for RuntimeManagementClient {
                 inventory: c.harnesses,
                 id: c.machine_id,
                 name: c.display_name,
-                available: c.observed_state == wire::ObservedState::Running as i32,
+                available: c.observed_state == wire::ObservedState::Running,
             })
             .collect())
     }
@@ -1605,9 +1607,7 @@ impl ManagementClient for RuntimeManagementClient {
             .into_inner()
             .map(|r| {
                 r.map_err(map_status).and_then(|e| {
-                    let kind = match wire::ManagementEventKind::try_from(e.kind)
-                        .map_err(|_| ClientError::Protocol("unknown event kind".into()))?
-                    {
+                    let kind = match e.kind {
                         wire::ManagementEventKind::WorkspaceCreated => {
                             ManagementEventKind::WorkspaceCreated
                         }

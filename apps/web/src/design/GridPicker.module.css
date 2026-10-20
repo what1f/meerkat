@@ -1,0 +1,96 @@
+.root {
+  --cell-radius: var(--r-lg);
+  --cell-ring: var(--cell-selected);
+  --cell: 36px;
+  --gap: 6px;
+  --pad: 0px;
+
+  display: grid;
+  gap: var(--gap);
+  justify-content: start;
+  padding: var(--pad);
+}
+
+/* Tight grid for small glyphs: soft selection, content leans in on hover. */
+.compact {
+  --cell-radius: var(--r-menu);
+  --cell-ring: inset 0 0 0 0 var(--clear);
+  --gap: 2px;
+  --pad: 8px;
+}
+
+.root > [role='row'] {
+  display: contents;
+}
+
+.root [role='gridcell'] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.root [role='gridcell'] > button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--cell);
+  min-height: var(--cell);
+  padding: 0;
+  color: var(--ink-2);
+  background: var(--clear);
+  border-style: none;
+  border-radius: var(--cell-radius);
+  transition:
+    background-color var(--d-fast),
+    box-shadow var(--d-base),
+    transform var(--d-fast) var(--ease-pop);
+}
+
+.root [aria-selected='true'] > button {
+  background: var(--accent-soft);
+  box-shadow: var(--cell-ring);
+}
+
+.root [role='gridcell'] > button:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.root [role='gridcell'] > button:focus-visible {
+  outline-style: none;
+  box-shadow: var(--ring-focus);
+}
+
+.none {
+  width: 22px;
+  height: 22px;
+  border: var(--dashed-strong);
+  border-radius: var(--r-sm);
+}
+
+.root [role='gridcell'] > button:hover .none {
+  border-color: var(--ink-3);
+}
+
+.compact img {
+  transition: transform var(--d-base) var(--ease-pop);
+}
+
+.compact button:hover img,
+.compact button:focus-visible img {
+  transform: scale(1.22) rotate(-4deg);
+}
+
+/* Scrolls without a bar; the cut last row says there is more. */
+.capped {
+  box-sizing: border-box;
+  align-content: start;
+  max-height: calc(var(--rows) * (var(--cell) + var(--gap)) - var(--gap) + var(--pad) * 2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.capped::-webkit-scrollbar {
+  display: none;
+}

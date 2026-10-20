@@ -1,11 +1,6 @@
 use crate::{
-    Auth, Credentials, Domain, FeishuClient, FeishuRegistrar, RegistrationPoll, ReqwestTransport,
-    Transport,
-    agent_tasks::{join_team_tasklist_as_lead, task_system_enabled},
-    authorization::standard_capability_gaps,
-    authorization_url,
-    console::{self, DeveloperConsole, Login, UserGrant},
-    contains_standard_capabilities,
+    Auth, Credentials, Domain, FeishuClient, FeishuRegistrar, RegistrationPoll, Transport,
+    authorization::standard_capability_gaps, authorization_url, contains_standard_capabilities,
 };
 use lankide_provider::{
     AgentOnboardingContext, ProviderError, ProviderOnboarding, ProviderOnboardingStatus,
@@ -33,14 +28,10 @@ fn onboarding(step: &str, status: ProviderOnboardingStatus, payload: Value) -> P
         poll_interval_seconds: (matches!(
             status,
             ProviderOnboardingStatus::ActionRequired | ProviderOnboardingStatus::Verifying
-        ) && (payload
-            .get("device_code")
-            .and_then(Value::as_str)
-            .is_some_and(|value| !value.trim().is_empty())
-            || matches!(
-                payload.get("phase").and_then(Value::as_str),
-                Some("permissions" | "console_login")
-            )))
+        ) && matches!(
+            payload.get("phase").and_then(Value::as_str),
+            Some("permissions" | "registration")
+        ))
         .then(|| {
             payload
                 .get("interval_seconds")
@@ -57,15 +48,6 @@ fn onboarding(step: &str, status: ProviderOnboardingStatus, payload: Value) -> P
 
 fn pending_state_key(context: &AgentOnboardingContext) -> String {
     format!("__agent_onboarding/{}", context.agent_id.as_str())
-}
-
-pub async fn agent_onboarding(
-    context: AgentOnboardingContext,
-    action: String,
-    payload: Value,
-) -> Result<ProviderOnboarding, ProviderError> {
-    agent_onboarding_with_transport(context, action, payload, Arc::new(ReqwestTransport::new()))
-        .await
 }
 
 pub(crate) async fn agent_onboarding_with_transport(
@@ -107,13 +89,10 @@ pub(crate) async fn agent_onboarding_with_transport(
     if payload.get("phase").and_then(Value::as_str) == Some("permissions") {
         return poll_permissions(context, payload, transport).await;
     }
-    if (action == "start" || payload.get("phase").and_then(Value::as_str) == Some("console_login"))
-        && matches!(configured_domain(&context)?, Domain::Feishu)
-        && let Some(created) = console_onboarding(&context, &action, transport.clone()).await
-    {
-        return created;
-    }
-    if action == "start" || payload.get("phase").and_then(Value::as_str) == Some("console_login") {
+    if action == "start" {
+        if !matches!(configured_domain(&context)?, Domain::Feishu) {
+            return Err(ProviderError::InvalidInput { field: "domain" });
+        }
         let registration = FeishuRegistrar::new(transport.clone())
             .start()
             .await
@@ -122,6 +101,7 @@ pub(crate) async fn agent_onboarding_with_transport(
             "create_app",
             ProviderOnboardingStatus::ActionRequired,
             json!({
+                "phase": "registration",
                 "device_code": registration.device_code,
                 "verification_uri": registration.verification_uri,
                 "interval_seconds": registration.interval.as_secs(),
@@ -141,11 +121,18 @@ pub(crate) async fn agent_onboarding_with_transport(
         .await
         .map_err(|_| external("feishu_registration_poll"))?;
     match result {
-        RegistrationPoll::Pending { .. } => Ok(onboarding(
-            "create_app",
-            ProviderOnboardingStatus::Verifying,
-            payload,
-        )),
+        RegistrationPoll::Pending { slow_down } => {
+            let mut payload = payload;
+            if slow_down {
+                payload["interval_seconds"] =
+                    json!((payload["interval_seconds"].as_u64().unwrap_or(5) + 5).min(30));
+            }
+            Ok(onboarding(
+                "create_app",
+                ProviderOnboardingStatus::ActionRequired,
+                payload,
+            ))
+        }
         RegistrationPoll::Complete(credential) => {
             context
                 .write_agent_secret("app_secret", SecretValue::new(credential.app_secret()))
@@ -176,114 +163,15 @@ pub(crate) async fn agent_onboarding_with_transport(
         }
         RegistrationPoll::Denied => Ok(ProviderOnboarding {
             error_code: Some("access_denied".into()),
-            error_message: Some("飞书未确认创建应用。".into()),
+            error_message: None,
             ..onboarding("create_app", ProviderOnboardingStatus::Error, payload)
         }),
         RegistrationPoll::Expired => Ok(ProviderOnboarding {
             error_code: Some("expired".into()),
-            error_message: Some("本次确认已过期。".into()),
+            error_message: None,
             ..onboarding("create_app", ProviderOnboardingStatus::Error, json!({}))
         }),
     }
-}
-
-/// Creates the Agent App through the developer console, asking the user to
-/// sign in by QR code first when needed. `None` falls back to the
-/// registration flow, so a console failure never blocks Agent creation.
-async fn console_onboarding(
-    context: &AgentOnboardingContext,
-    action: &str,
-    transport: Arc<dyn Transport>,
-) -> Option<Result<ProviderOnboarding, ProviderError>> {
-    let login = console::login(
-        transport.clone(),
-        context.workspace_secrets(),
-        context.workspace_secret_writer(),
-        if action == "start" { "start" } else { "poll" },
-    )
-    .await
-    .ok()?;
-    let session = match login {
-        Login::Ready(session) => session,
-        Login::Waiting { qr_code, scanned } => {
-            return Some(Ok(onboarding(
-                "console_login",
-                if scanned {
-                    ProviderOnboardingStatus::Verifying
-                } else {
-                    ProviderOnboardingStatus::ActionRequired
-                },
-                json!({
-                    "phase": "console_login",
-                    "qr_code": qr_code,
-                    "interval_seconds": 2,
-                }),
-            )));
-        }
-        Login::Required => return None,
-    };
-    let mut developer_console = DeveloperConsole::new(transport, session);
-    let created = developer_console.create_agent_app(&context.name).await;
-    console::save_session(
-        context.workspace_secret_writer(),
-        &developer_console.into_session(),
-    )
-    .await
-    .ok()?;
-    let created = created.ok()?;
-    Some(
-        async {
-            context
-                .write_agent_secret("app_secret", SecretValue::new(created.app_secret()))
-                .await?;
-            let permissions_payload = json!({
-                "phase": "permissions",
-                "app_id": created.app_id,
-                "creator_open_id": "",
-                "via": "console",
-                "domain": "feishu",
-                "interval_seconds": 2,
-            });
-            context
-                .storage()
-                .put(
-                    &pending_state_key(context),
-                    serde_json::to_vec(&permissions_payload)
-                        .map_err(|_| external("feishu_authorization_state"))?,
-                )
-                .await?;
-            Ok(onboarding(
-                "permissions",
-                ProviderOnboardingStatus::Verifying,
-                permissions_payload,
-            ))
-        }
-        .await,
-    )
-}
-
-/// The team lead's token for `app_id`, granted with the saved console
-/// session instead of a separate consent page.
-async fn lead_grant(
-    context: &AgentOnboardingContext,
-    transport: Arc<dyn Transport>,
-    app_id: &str,
-    app_secret: &str,
-    domain: &Domain,
-) -> Option<UserGrant> {
-    let session = console::saved_session(transport.clone(), context.workspace_secrets())
-        .await
-        .ok()??;
-    let mut developer_console = DeveloperConsole::new(transport, session);
-    let grant = developer_console
-        .authorize_user(app_id, app_secret, domain.base_url())
-        .await;
-    let _ = console::save_session(
-        context.workspace_secret_writer(),
-        &developer_console.into_session(),
-    )
-    .await;
-    grant.ok()
 }
 
 async fn poll_permissions(
@@ -297,11 +185,6 @@ async fn poll_permissions(
         .filter(|value| !value.trim().is_empty())
         .ok_or(ProviderError::InvalidInput { field: "app_id" })?
         .to_owned();
-    let creator_open_id = payload
-        .get("creator_open_id")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
     let secret_name = format!("agent:{}:app_secret", context.agent_id.as_str());
     let app_secret = context
         .workspace_secrets()
@@ -311,7 +194,6 @@ async fn poll_permissions(
         .to_owned();
     let domain = configured_domain(&context)?;
     let inspected_app_id = app_id.clone();
-    let inspected_creator_open_id = creator_open_id.clone();
     let inspected_transport = transport.clone();
     let inspected_secret = app_secret.clone();
     let inspected_domain = domain.clone();
@@ -326,85 +208,93 @@ async fn poll_permissions(
             return Ok::<_, crate::ClientError>(None);
         }
         let bot = client.bot_info(Auth::Tenant).await?;
-        let creator = if inspected_creator_open_id.trim().is_empty() {
-            None
-        } else {
-            Some(
-                client
-                    .get_user(&inspected_creator_open_id, Auth::Tenant)
-                    .await?,
-            )
-        };
-        Ok(Some((
-            bot.open_id,
-            creator.map(|user| (user.open_id, user.union_id, user.user_id)),
-        )))
+        Ok(Some(bot.open_id))
     })
     .await;
     match result {
-        Ok(Some((bot_open_id, mut creator))) => {
-            let mut creator_open_id = creator_open_id;
-            if payload.get("via").and_then(Value::as_str) == Some("console")
-                && let Some(grant) =
-                    lead_grant(&context, transport.clone(), &app_id, &app_secret, &domain).await
+        Ok(Some(bot_open_id)) => {
+            let client =
+                FeishuClient::new(transport.clone(), Credentials::app(&app_id, &app_secret))
+                    .map_err(|e| e.provider_error(false))?
+                    .with_domain(domain.clone());
+            let union = client
+                .application_creator("union_id")
+                .await
+                .map_err(|e| e.provider_error(false))?;
+            let creator_open_id = payload["creator_open_id"]
+                .as_str()
+                .filter(|v| !v.is_empty())
+                .ok_or(ProviderError::InvalidInput {
+                    field: "creator_open_id",
+                })?;
+            let tenant = client
+                .tenant_key()
+                .await
+                .map_err(|e| e.provider_error(false))?;
+            let mut person = context.storage().get_or_create_person(&union).await?;
+            let mut identity = person.provider_state.clone();
+            identity["external_id_type"] = json!("union_id");
+            identity["open_ids_by_app"][&app_id] = json!(creator_open_id);
+            person = context
+                .storage()
+                .compare_and_set_person_state(&person.person_id, person.state_revision, identity)
+                .await?;
+            let (profile, signature) = tokio::join!(
+                client.get_user(creator_open_id, Auth::Tenant),
+                client.human_signature(creator_open_id, "open_id"),
+            );
+            let profile = profile.ok();
+            let signature = signature.ok().flatten();
+            let name = profile
+                .as_ref()
+                .map(|p| p.name.as_str())
+                .filter(|v| !v.is_empty());
+            let mut avatar = None;
+            if let Some(url) = profile
+                .as_ref()
+                .map(|p| p.avatar.avatar_origin.as_str())
+                .filter(|v| !v.is_empty())
             {
-                if task_system_enabled(&context.workspace_config)
-                    && let Ok(client) = FeishuClient::new(
-                        transport,
-                        Credentials::app(app_id.clone(), app_secret)
-                            .with_user_access_token(grant.access_token()),
-                    )
+                if let Ok(response) = transport
+                    .execute(crate::http::Request::new(crate::http::Method::Get, url))
+                    .await
                 {
-                    // The Agent still works without the list; task tools join it later.
-                    let _ = join_team_tasklist_as_lead(
-                        context.storage(),
-                        &context.workspace_config,
-                        &client.with_domain(domain),
-                        &app_id,
-                    )
-                    .await;
+                    if (200..300).contains(&response.status) {
+                        avatar = context
+                            .save_resource(lankide_provider::ResourceUpload {
+                                file_name: "member.jpg".into(),
+                                media_type: response
+                                    .headers
+                                    .iter()
+                                    .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                                    .map(|(_, v)| v.clone())
+                                    .unwrap_or_else(|| "image/jpeg".into()),
+                                bytes: response.body,
+                            })
+                            .await
+                            .ok();
+                    }
                 }
-                creator_open_id = grant.open_id.clone();
-                creator = Some((grant.open_id, grant.union_id, grant.user_id));
             }
-            let creator_person_id = if let Some((open_id, union_id, user_id)) = creator {
-                let (external_id_type, external_id) = if !union_id.trim().is_empty() {
-                    ("union_id", union_id.trim())
-                } else if !user_id.trim().is_empty() {
-                    ("user_id", user_id.trim())
-                } else {
-                    ("open_id", open_id.trim())
-                };
-                let mut person = context.storage().get_or_create_person(external_id).await?;
-                let mut state = person
-                    .provider_state
-                    .as_object()
-                    .cloned()
-                    .unwrap_or_default();
-                state.insert("external_id_type".to_owned(), json!(external_id_type));
-                let mut open_ids = state
-                    .remove("open_ids_by_app")
-                    .and_then(|value| value.as_object().cloned())
-                    .unwrap_or_default();
-                if !open_id.trim().is_empty() {
-                    open_ids.insert(app_id.clone(), json!(open_id));
-                }
-                state.insert("open_ids_by_app".to_owned(), Value::Object(open_ids));
-                let next = Value::Object(state);
-                if next != person.provider_state {
-                    person = context
-                        .storage()
-                        .compare_and_set_person_state(
-                            &person.person_id,
-                            person.state_revision,
-                            next,
-                        )
-                        .await?;
-                }
-                Some(person.person_id.to_string())
-            } else {
-                None
-            };
+            context
+                .storage()
+                .join_human_team(&person.person_id, Some(&tenant), name, avatar.as_ref())
+                .await?;
+            context
+                .storage()
+                .update_human_profile(&person.person_id, None, None, signature.as_deref())
+                .await?;
+            let creator_person_id = Some(person.person_id.to_string());
+            if !creator_open_id.is_empty() {
+                crate::agent_tasks::initialize_tasklist(
+                    &context,
+                    transport.clone(),
+                    &app_id,
+                    &app_secret,
+                    domain,
+                )
+                .await?;
+            }
             context
                 .storage()
                 .put(&pending_state_key(&context), b"{}".to_vec())
@@ -426,11 +316,16 @@ async fn poll_permissions(
             ProviderOnboardingStatus::Verifying,
             payload,
         )),
-        Err(error) if error.is_retryable() => Ok(onboarding(
-            "permissions",
-            ProviderOnboardingStatus::Verifying,
-            payload,
-        )),
+        Err(error)
+            if error.is_retryable()
+                || matches!(error, crate::ClientError::Api { code: 99991672, .. }) =>
+        {
+            Ok(onboarding(
+                "permissions",
+                ProviderOnboardingStatus::Verifying,
+                payload,
+            ))
+        }
         Err(_) => Ok(ProviderOnboarding {
             error_code: Some("inspection_failed".into()),
             error_message: Some("无法读取飞书应用状态。".into()),

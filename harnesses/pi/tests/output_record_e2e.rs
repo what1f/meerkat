@@ -32,6 +32,7 @@ async fn streamed_turn_keeps_bounded_final_record() -> Result<(), Box<dyn std::e
         .start(SessionRequest {
             permission_policy: Default::default(),
             config: HarnessConfig {
+                launch_arguments: Default::default(),
                 harness_id: "pi".into(),
                 model: ModelRef::new("local", "Local"),
                 thinking_level: "off".into(),

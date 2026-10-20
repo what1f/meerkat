@@ -11,6 +11,12 @@ struct Server {
 }
 impl Server {
     async fn start(paths: &RuntimePaths) -> Result<Self, Error> {
+        if !paths.home.join("runtime.json").exists() {
+            std::fs::write(
+                paths.home.join("runtime.json"),
+                r#"{"machine_link_listen":"127.0.0.1:0","remote_access_port":0}"#,
+            )?;
+        }
         let (stop, stopped) = oneshot::channel();
         let task = tokio::spawn(run_daemon(
             paths.clone(),
@@ -126,7 +132,7 @@ async fn pinned_pair_command_reconnects_and_remote_address_changes_live() -> Res
     let second_home = tempfile::tempdir()?;
     std::fs::write(
         runtime_home.path().join("runtime.json"),
-        r#"{"pairing_validity_ms":1000}"#,
+        r#"{"machine_link_listen":"127.0.0.1:0","remote_access_port":0,"pairing_validity_ms":1000}"#,
     )?;
     let paths = RuntimePaths::for_home(runtime_home.path())?;
     let server = Server::start(&paths).await?;

@@ -1,0 +1,13 @@
+.root {
+  --field: var(--card);
+
+  display: grid;
+  row-gap: 6px;
+}
+
+.root > h5 {
+  margin: 0 0 2px;
+  font-size: var(--t-small);
+  font-weight: 600;
+  color: var(--ink);
+}

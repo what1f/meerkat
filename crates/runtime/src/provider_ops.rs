@@ -177,11 +177,26 @@ impl Runtime {
         input: serde_json::Value,
     ) -> Result<serde_json::Value, RuntimeError> {
         self.require_active(workspace_id)?;
-        self.host(workspace_id)
+        let result = self
+            .host(workspace_id)
             .await?
             .invoke_interface(interface_id, input)
-            .await
-            .map_err(Into::into)
+            .await;
+        if let Err(error) = &result {
+            // Never log interface input or upstream error text: either can contain secrets.
+            if let Some((step, code, status)) = error.upstream_diagnostic() {
+                log::warn!(
+                    "provider interface failed workspace={workspace_id} category={} step={step} upstream_code={code:?} http_status={status:?}",
+                    error.code()
+                );
+            } else {
+                log::warn!(
+                    "provider interface failed workspace={workspace_id} category={}",
+                    error.code()
+                );
+            }
+        }
+        result.map_err(Into::into)
     }
 
     pub async fn recall_message(

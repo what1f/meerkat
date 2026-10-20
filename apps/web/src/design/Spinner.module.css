@@ -1,0 +1,25 @@
+.root {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-color: var(--current);
+  border-style: solid;
+  border-width: 1.6px;
+  border-right-color: var(--clear);
+  border-radius: var(--r-full);
+  opacity: 0.8;
+  animation: spin 0.7s linear infinite;
+}
+
+.root[data-size='md'] {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

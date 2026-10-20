@@ -220,6 +220,32 @@ impl lankide_protocol::MachinePeer for RuntimePeerAdapter {
 
 #[async_trait::async_trait]
 impl RuntimePeer for RuntimePeerAdapter {
+    async fn read_management_resource(
+        &self,
+        workspace_id: String,
+        resource_id: i64,
+    ) -> Result<(ResourceRef, Vec<u8>), Status> {
+        let workspace_id = WorkspaceId::new(workspace_id)
+            .map_err(|_| Status::invalid_argument("Choose a valid workspace"))?;
+        let resource_id = ResourceId::new(resource_id)
+            .map_err(|_| Status::invalid_argument("Choose a valid resource"))?;
+        let runtime = self.application.runtime().map_err(status)?;
+        runtime
+            .database()
+            .resource_metadata(&workspace_id, resource_id)
+            .await
+            .map_err(|error| status(error.into()))?
+            .ok_or_else(|| Status::not_found("Resource not found"))?;
+        let value = self
+            .application
+            .resource_store()
+            .map_err(status)?
+            .read(&workspace_id, resource_id)
+            .await
+            .map_err(status)?;
+        Ok((value.resource, value.bytes))
+    }
+
     async fn upload_resource(
         &self,
         mut chunks: ResourceChunkStream,
@@ -353,7 +379,19 @@ impl RuntimePeer for RuntimePeerAdapter {
             .workspace_record(&workspace_id)
             .await
             .map_err(|error| status(error.into()))?;
-        let referenced = workspace.cover_resource_id == Some(resource_id);
+        let figure_reference = storage
+            .list_figure_packs(&workspace_id)
+            .await
+            .map_err(|error| status(error.into()))?
+            .iter()
+            .any(|pack| {
+                pack["frames"].as_object().is_some_and(|frames| {
+                    frames
+                        .values()
+                        .any(|frame| frame["resource_id"].as_i64() == Some(resource_id.get()))
+                })
+            });
+        let referenced = workspace.cover_resource_id == Some(resource_id) || figure_reference;
         if !referenced {
             return Err(Status::permission_denied(
                 "This image is not part of the workspace profile",
@@ -425,6 +463,24 @@ impl RuntimePeer for RuntimePeerAdapter {
         })
     }
 
+    async fn import_figure_pack(
+        &self,
+        request: lankide_protocol::ImportFigurePackRequest,
+    ) -> Result<lankide_protocol::FigurePack, Status> {
+        self.application
+            .import_figure_pack(request)
+            .await
+            .map_err(status)
+    }
+    async fn list_figure_packs(
+        &self,
+        request: lankide_protocol::ListFigurePacksRequest,
+    ) -> Result<Vec<lankide_protocol::FigurePack>, Status> {
+        self.application
+            .list_figure_packs(request)
+            .await
+            .map_err(status)
+    }
     async fn list_workspaces(
         &self,
         request: ListWorkspacesRequest,
@@ -461,6 +517,34 @@ impl RuntimePeer for RuntimePeerAdapter {
             .await
             .map_err(status)
     }
+    async fn list_human_members(
+        &self,
+        request: GetWorkspaceRequest,
+    ) -> Result<Vec<lankide_protocol::HumanTeamMember>, Status> {
+        self.application
+            .list_human_members(request)
+            .await
+            .map_err(status)
+    }
+    async fn sync_human_profile(
+        &self,
+        request: lankide_protocol::SyncHumanProfileRequest,
+    ) -> Result<lankide_protocol::HumanTeamMember, Status> {
+        self.application
+            .sync_human_profile(request)
+            .await
+            .map_err(status)
+    }
+    async fn update_human_position(
+        &self,
+        request: lankide_protocol::UpdateHumanPositionRequest,
+    ) -> Result<Vec<lankide_protocol::HumanTeamMember>, Status> {
+        self.application
+            .update_human_position(request)
+            .await
+            .map_err(status)
+    }
+
     async fn list_agents(&self, request: ListAgentsRequest) -> Result<ListAgentsResponse, Status> {
         self.application.list_agents(request).await.map_err(status)
     }
@@ -480,6 +564,15 @@ impl RuntimePeer for RuntimePeerAdapter {
     ) -> Result<ExecutionDetails, Status> {
         self.application
             .get_execution_details(request)
+            .await
+            .map_err(status)
+    }
+    async fn get_agent_first_reply(
+        &self,
+        request: GetAgentRequest,
+    ) -> Result<lankide_protocol::AgentFirstReply, Status> {
+        self.application
+            .get_agent_first_reply(request)
             .await
             .map_err(status)
     }
@@ -610,6 +703,46 @@ impl RuntimePeer for RuntimePeerAdapter {
             .await
             .map_err(status)
     }
+    async fn test_harness(
+        &self,
+        request: lankide_protocol::TestHarnessRequest,
+    ) -> Result<lankide_protocol::TestHarnessResponse, Status> {
+        self.application
+            .machine_broker()
+            .test_harness(request)
+            .await
+    }
+    async fn get_model_catalog(
+        &self,
+        request: lankide_protocol::ModelCatalogRequest,
+    ) -> Result<lankide_protocol::ModelCatalog, Status> {
+        let catalog = self
+            .application
+            .machine_catalog(CatalogRequest::default())
+            .await
+            .map_err(status)?;
+        let machine = catalog
+            .machines
+            .into_iter()
+            .find(|machine| machine.machine_id == request.machine_id)
+            .ok_or_else(|| Status::not_found("Machine not found"))?;
+        if machine.observed_state != lankide_protocol::ObservedState::Running
+            || machine.revoked_at.is_some()
+        {
+            return Err(Status::unavailable("Machine is offline"));
+        }
+        let harness = machine
+            .harnesses
+            .into_iter()
+            .find(|harness| harness.harness_id == request.harness_id)
+            .ok_or_else(|| Status::not_found("Harness not found"))?;
+        if !harness.model_catalog_error.is_empty() {
+            return Err(Status::unavailable("Models could not be loaded"));
+        }
+        harness
+            .model_catalog
+            .ok_or_else(|| Status::unavailable("Models are not ready"))
+    }
     async fn get_harness_catalog(&self, request: CatalogRequest) -> Result<HarnessCatalog, Status> {
         self.application.harness_catalog(request).map_err(status)
     }
@@ -649,7 +782,7 @@ impl RuntimePeer for RuntimePeerAdapter {
                     };
                     if event.sequence <= after
                         || (event.kind
-                            != lankide_protocol::ManagementEventKind::MachineCatalogChanged as i32
+                            != lankide_protocol::ManagementEventKind::MachineCatalogChanged
                             && workspace.as_ref().is_some_and(|workspace| {
                                 event
                                     .workspace
@@ -796,10 +929,18 @@ pub(crate) fn status(error: RuntimeError) -> Status {
         RuntimeError::InvalidExecutionToken => {
             Status::permission_denied("This action is no longer authorized.")
         }
+        RuntimeError::ProviderCall(lankide_provider::ProviderError::AppConfigurationFailed {
+            ..
+        }) => Status::failed_precondition("The connection could not be completed. Try again.")
+            .with_detail(Some("app_configuration_failed".into())),
         RuntimeError::ProviderCall(lankide_provider::ProviderError::NotFound { .. })
         | RuntimeError::ProviderCall(lankide_provider::ProviderError::UnknownRegistration {
             ..
         }) => Status::not_found("The provider interface was not found."),
+        RuntimeError::ProviderCall(lankide_provider::ProviderError::InvalidInput {
+            field: "team_enterprise",
+        }) => Status::failed_precondition("This person belongs to another organization.")
+            .with_detail(Some("team_enterprise".into())),
         RuntimeError::ProviderCall(lankide_provider::ProviderError::InvalidInput { .. })
         | RuntimeError::ProviderCall(lankide_provider::ProviderError::InvalidSchema { .. })
         | RuntimeError::ProviderCall(lankide_provider::ProviderError::SchemaMismatch { .. }) => {

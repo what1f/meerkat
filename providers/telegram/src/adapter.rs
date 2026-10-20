@@ -66,6 +66,7 @@ impl InvocationHandler for WorkspaceStatusHandler {
 
 /// Telegram Provider with a production reqwest transport by default.
 pub struct TelegramProvider {
+    clock: Arc<dyn lankide_provider::Clock>,
     transport: SharedTransport,
     workspaces: Arc<Mutex<BTreeMap<String, WorkspaceState>>>,
     contexts: Arc<Mutex<BTreeMap<String, InitContext>>>,
@@ -75,6 +76,7 @@ pub struct TelegramProvider {
 impl Clone for TelegramProvider {
     fn clone(&self) -> Self {
         Self {
+            clock: self.clock.clone(),
             transport: self.transport.clone(),
             workspaces: self.workspaces.clone(),
             contexts: self.contexts.clone(),
@@ -102,11 +104,17 @@ impl Default for TelegramProvider {
 impl TelegramProvider {
     pub fn new() -> Self {
         Self {
+            clock: Arc::new(lankide_provider::SystemClock),
             transport: Arc::new(ReqwestTransport::new()),
             workspaces: Arc::new(Mutex::new(BTreeMap::new())),
             contexts: Arc::new(Mutex::new(BTreeMap::new())),
             identity_lock: Arc::new(AsyncMutex::new(())),
         }
+    }
+
+    pub fn with_clock(mut self, clock: Arc<dyn lankide_provider::Clock>) -> Self {
+        self.clock = clock;
+        self
     }
 
     pub fn with_transport<T: Transport + 'static>(mut self, transport: T) -> Self {
@@ -403,6 +411,19 @@ impl Provider for TelegramProvider {
                         }
                     }))?,
                     handler: Arc::new(WorkspaceStatusHandler {
+                        context: context.clone(),
+                    }),
+                })
+                .await?;
+            context
+                .register_interface(InterfaceDefinition {
+                    id: "telegram.human.sync".into(),
+                    input_schema: JsonSchema::new(
+                        json!({"type":"object","required":["person_id"]}),
+                    )?,
+                    output_schema: JsonSchema::new(json!({"type":"object"}))?,
+                    handler: Arc::new(HumanSyncHandler {
+                        provider: self.clone(),
                         context: context.clone(),
                     }),
                 })
@@ -762,6 +783,7 @@ impl Provider for TelegramProvider {
                         request,
                         normalization,
                         offset_key,
+                        self.clock.clone(),
                     )
                 });
             self.replace_state(
@@ -986,6 +1008,7 @@ fn spawn_poller(
     request: PollRequest,
     normalization: NormalizationConfig,
     offset_key: String,
+    clock: Arc<dyn lankide_provider::Clock>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let retry = EventRetry::configured(&context);
@@ -1037,6 +1060,46 @@ fn spawn_poller(
                                 )
                                 .await?,
                             );
+                        }
+                        let accepted = converted.as_ref().unwrap();
+                        if failures == 0
+                            && accepted.sender.kind == EventSenderType::Human
+                            && matches!(accepted.kind, ProviderEventKind::Message(_))
+                        {
+                            if let Ok(person_id) =
+                                lankide_core::PersonId::new(accepted.sender.id.clone())
+                            {
+                                let context = context.clone();
+                                let client = poller.client().clone();
+                                let clock = clock.clone();
+                                tokio::spawn(async move {
+                                    let result = async {
+                                        if context
+                                            .storage()
+                                            .claim_human_profile_sync(
+                                                &person_id,
+                                                false,
+                                                clock.now_millis(),
+                                            )
+                                            .await?
+                                        {
+                                            sync_human_profile(&context, &client, &person_id)
+                                                .await?;
+                                        }
+                                        Ok::<_, ProviderError>(())
+                                    }
+                                    .await;
+                                    if let Err(error) = result {
+                                        context.logger().log(
+                                            lankide_provider::LogLevel::Warn,
+                                            &format!(
+                                                "Telegram profile sync failed: {}",
+                                                error.code()
+                                            ),
+                                        );
+                                    }
+                                });
+                            }
                         }
                         context
                             .event_sink()
@@ -1396,4 +1459,101 @@ pub(crate) fn api_endpoint(config: &Value) -> Result<String, ProviderError> {
         });
     }
     Ok(value.trim_end_matches('/').to_owned())
+}
+
+struct HumanSyncHandler {
+    provider: TelegramProvider,
+    context: InitContext,
+}
+impl InvocationHandler for HumanSyncHandler {
+    fn invoke<'a>(&'a self, input: Value) -> ProviderFuture<'a, Value> {
+        Box::pin(async move {
+            let person_id =
+                lankide_core::PersonId::new(input["person_id"].as_str().unwrap_or_default())
+                    .map_err(|_| ProviderError::InvalidInput { field: "person_id" })?;
+            let prefix = format!("{}/agent/", self.context.workspace_id());
+            let clients: Vec<_> = self
+                .provider
+                .workspaces
+                .lock()
+                .map_err(|_| ProviderError::External {
+                    operation: "telegram_workspace_state",
+                    retryable: true,
+                })?
+                .iter()
+                .filter(|(key, _)| key.starts_with(&prefix))
+                .map(|(_, state)| state.client.clone())
+                .collect();
+            for client in clients {
+                if sync_human_profile(&self.context, &client, &person_id)
+                    .await
+                    .is_ok()
+                {
+                    self.context
+                        .storage()
+                        .claim_human_profile_sync(
+                            &person_id,
+                            true,
+                            self.provider.clock.now_millis(),
+                        )
+                        .await?;
+                    return Ok(json!({}));
+                }
+            }
+            Err(ProviderError::External {
+                operation: "sync_human_profile",
+                retryable: true,
+            })
+        })
+    }
+}
+async fn sync_human_profile(
+    context: &InitContext,
+    client: &SharedClient,
+    person_id: &lankide_core::PersonId,
+) -> Result<(), ProviderError> {
+    let person = context.storage().person(person_id).await?;
+    if person.team_role == lankide_provider::TeamRole::External {
+        return Err(ProviderError::InvalidInput { field: "person_id" });
+    }
+    let user_id = person
+        .external_id
+        .parse()
+        .map_err(|_| ProviderError::InvalidInput { field: "person_id" })?;
+    let chat = client
+        .get_chat(user_id)
+        .await
+        .map_err(|_| ProviderError::External {
+            operation: "telegram_profile",
+            retryable: true,
+        })?;
+    let name = chat.display_name();
+    let mut avatar = None;
+    if let Ok(Some(photo)) = client.user_profile_photo(user_id).await {
+        let previous = context.storage().human_profile(person_id).await?.1;
+        let unchanged = if let Some(previous) = &previous {
+            context.storage().resource(previous).await?.bytes == photo.data
+        } else {
+            false
+        };
+        if !unchanged {
+            avatar = context
+                .save_resource(ResourceUpload {
+                    file_name: "member.jpg".into(),
+                    media_type: photo.content_type,
+                    bytes: photo.data,
+                })
+                .await
+                .ok();
+        }
+    }
+    context
+        .storage()
+        .update_human_profile(
+            person_id,
+            (!name.is_empty()).then_some(name.as_str()),
+            avatar.as_ref(),
+            chat.bio.as_deref(),
+        )
+        .await
 }

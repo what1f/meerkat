@@ -42,14 +42,16 @@ A permanent error is logged once and skipped; its platform acknowledgement
 lets later events flow. Source reconnects use capped backoff until recovery or
 shutdown.
 
-New Agents use the developer console once the team lead has signed in by QR
-code, either right after creating the workspace or in the first Agent's dialog:
+New Agents use Feishu's official device registration, followed by the official
+permissions confirmation link and published-capability polling. Each creator
+joins the team once by union identity; the first creator becomes the lead.
+Profiles use the contact API and enterprise checks use the official tenant key.
 
 ```sh
-cargo test -p lankide-provider-feishu --test e2e console_onboarding::
+cargo test -p lankide-system-e2e --test e2e provider_management_e2e::
+pnpm --dir apps/web exec playwright test e2e/rig.spec.ts e2e/onboarding.spec.ts e2e/members.spec.ts
 ```
 
-The scenarios simulate the Feishu sign-in, developer console, consent and
-Tasklist endpoints. One sign-in creates and publishes every Agent App, the
-first Agent creates the Team Tasklist as the lead, and later Agents join it as
-editors. A console failure falls back to confirming the new App in Feishu.
+The scenarios replace only external Feishu network, IM and Harness boundaries.
+They cover expiry, refusal, administrator approval waiting, cross-enterprise
+rejection, profile fallback and repeated creators. No user OAuth is requested.

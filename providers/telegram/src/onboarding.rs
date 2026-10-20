@@ -240,12 +240,11 @@ pub(crate) async fn agent_onboarding_with_transport(
     let manager_username_for_poll = manager_username;
     let username_for_poll = username.clone();
     let display_name = context.name.clone();
+    let poll_transport = transport.clone();
     let poll = (async move {
-        let client = TelegramClient::new(
-            transport.clone(),
-            Credentials::new(manager_account_id, token),
-        )?
-        .with_domain(endpoint);
+        let client =
+            TelegramClient::new(poll_transport, Credentials::new(manager_account_id, token))?
+                .with_domain(endpoint);
         let registration = if let Some(manager_username) = manager_username_for_poll {
             client.managed_bot_registration_for_manager(
                 &manager_username,
@@ -291,6 +290,46 @@ pub(crate) async fn agent_onboarding_with_transport(
     .map_err(|_| external("telegram_registration_poll"))?;
 
     if let Some(credential) = poll.0 {
+        let person = context
+            .storage()
+            .get_or_create_person(&credential.creator_user_id)
+            .await?;
+        let token = context
+            .workspace_secrets()
+            .read("manager_bot_token")
+            .await?;
+        let manager = TelegramClient::new(
+            transport.clone(),
+            Credentials::new("manager", token.expose_secret()),
+        )
+        .map_err(|_| external("telegram_member"))?
+        .with_domain(crate::adapter::api_endpoint(&context.workspace_config)?);
+        let mut avatar = None;
+        if let Ok(Some(photo)) = manager.user_profile_photo(credential.creator.id).await {
+            avatar = context
+                .save_resource(lankide_provider::ResourceUpload {
+                    file_name: "member.jpg".into(),
+                    media_type: photo.content_type,
+                    bytes: photo.data,
+                })
+                .await
+                .ok();
+        }
+        context
+            .storage()
+            .join_human_team(
+                &person.person_id,
+                None,
+                Some(&credential.creator.display_name()),
+                avatar.as_ref(),
+            )
+            .await?;
+        if let Ok(chat) = manager.get_chat(credential.creator.id).await {
+            context
+                .storage()
+                .update_human_profile(&person.person_id, None, None, chat.bio.as_deref())
+                .await?;
+        }
         context
             .write_agent_secret("bot_token", SecretValue::new(credential.token()))
             .await?;

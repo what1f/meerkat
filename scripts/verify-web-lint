@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""Prove each lint constraint rejects its own negative fixture."""
+
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parent.parent
+WEB = ROOT / "apps/web"
+ENV = {**os.environ, "WEB_LINT_FIXTURES": "1"}
+
+
+def main():
+    failures = []
+    fixtures = sorted((WEB / "lint-fixtures").rglob("*"))
+    count = 0
+    for path in fixtures:
+        if not path.is_file():
+            continue
+        source = path.read_text()
+        expected = re.search(r"expect: ([\w@/.-]+)", source)
+        if not expected:
+            failures.append(f"{path.name}: missing expected rule")
+            continue
+        rule = expected.group(1)
+        relative = str(path.relative_to(WEB))
+        if path.name.endswith(".contract.tsx"):
+            command = [
+                "pnpm",
+                "exec",
+                "tsc",
+                "--ignoreConfig",
+                "--noEmit",
+                "--strict",
+                "--noUncheckedIndexedAccess",
+                "--jsx",
+                "react-jsx",
+                "--module",
+                "esnext",
+                "--moduleResolution",
+                "bundler",
+                "--target",
+                "es2022",
+                "--skipLibCheck",
+                "--types",
+                "vite/client",
+                relative,
+            ]
+            result = subprocess.run(
+                command, cwd=WEB, env=ENV, text=True, capture_output=True
+            )
+            if result.returncode != 0:
+                failures.append(
+                    f"{relative}: type contracts failed; {result.stdout[:1000]}"
+                )
+            else:
+                print(
+                    f"[web-lint] PASS {relative}: negative type contracts and trigger refs"
+                )
+            count += 1
+            continue
+        if path.suffix == ".css":
+            command = ["pnpm", "exec", "stylelint", relative, "--formatter", "json"]
+            result = subprocess.run(
+                command, cwd=WEB, env=ENV, text=True, capture_output=True
+            )
+        else:
+            if "// pad-to: 201" in source:
+                source += (
+                    "\n" * (201 - len(source.splitlines())) + "export const end = 1;\n"
+                )
+            command = [
+                "pnpm",
+                "exec",
+                "eslint",
+                "--stdin",
+                "--stdin-filename",
+                relative,
+                "--format",
+                "json",
+                "--max-warnings",
+                "0",
+            ]
+            result = subprocess.run(
+                command, cwd=WEB, env=ENV, input=source, text=True, capture_output=True
+            )
+        try:
+            reports = json.loads(result.stdout or result.stderr)
+            messages = [
+                message
+                for report in reports
+                for message in report.get("messages", report.get("warnings", []))
+            ]
+            found = {message.get("ruleId", message.get("rule")) for message in messages}
+        except (ValueError, TypeError):
+            found = set()
+        if rule not in found or result.returncode == 0:
+            failures.append(
+                f"{relative}: expected {rule}, got {found}; {result.stderr[:300]}"
+            )
+        else:
+            print(f"[web-lint] PASS {relative}: {rule}")
+        count += 1
+    if not count:
+        failures.append("no fixtures found")
+    if failures:
+        print("\n".join(failures), file=sys.stderr)
+        return 1
+    print(f"[web-lint] PASS ({count} negative fixtures)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

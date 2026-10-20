@@ -311,7 +311,7 @@ impl RuntimePeer for TestPeer {
             agent: request.agent,
             provider_id: "feishu".into(),
             step: "create_app".into(),
-            status: OnboardingStatus::ActionRequired as i32,
+            status: OnboardingStatus::ActionRequired,
             payload_json: if request.action == "invalid" {
                 "invalid".into()
             } else {
@@ -1245,6 +1245,7 @@ fn assignment() -> AssignExecution {
             bio: "Finds primary evidence".into(),
         }),
         harness: Some(HarnessConfig {
+            launch_arguments: Default::default(),
             harness_id: "pi".into(),
             executable_path: "/usr/local/bin/pi".into(),
             model: "deepseek-v4-flash".into(),

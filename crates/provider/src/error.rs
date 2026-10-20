@@ -12,6 +12,17 @@ pub enum ProviderError {
         entity: &'static str,
     },
     SecretAccessDenied,
+    AppConfigurationFailed {
+        operation: &'static str,
+        upstream_code: Option<i64>,
+        status: Option<u16>,
+    },
+    Upstream {
+        operation: &'static str,
+        upstream_code: Option<i64>,
+        status: Option<u16>,
+        retryable: bool,
+    },
     EventSinkClosed,
     DuplicateRegistration {
         id: String,
@@ -41,6 +52,8 @@ impl ProviderError {
             Self::InvalidInput { .. } => "invalid_input",
             Self::NotFound { .. } => "not_found",
             Self::SecretAccessDenied => "secret_access_denied",
+            Self::AppConfigurationFailed { .. } => "app_configuration_failed",
+            Self::Upstream { .. } => "external",
             Self::EventSinkClosed => "event_sink_closed",
             Self::DuplicateRegistration { .. } => "duplicate_registration",
             Self::UnknownRegistration { .. } => "unknown_registration",
@@ -48,6 +61,24 @@ impl ProviderError {
             Self::SchemaMismatch { .. } => "schema_mismatch",
             Self::Timeout { .. } => "timeout",
             Self::External { .. } => "external",
+        }
+    }
+
+    /// Only trusted operation identifiers and numeric upstream metadata may be logged.
+    pub const fn upstream_diagnostic(&self) -> Option<(&'static str, Option<i64>, Option<u16>)> {
+        match self {
+            Self::AppConfigurationFailed {
+                operation,
+                upstream_code,
+                status,
+            }
+            | Self::Upstream {
+                operation,
+                upstream_code,
+                status,
+                ..
+            } => Some((operation, *upstream_code, *status)),
+            _ => None,
         }
     }
 }

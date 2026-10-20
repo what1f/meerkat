@@ -1,0 +1,470 @@
+/* Tokens from docs/design/system.html. The only place literal values live. */
+:root {
+  /* type */
+  --font:
+    -apple-system, blinkmacsystemfont, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', sans-serif;
+  /* stylelint-disable value-keyword-case -- Canonical system font names from the design. */
+  --font-display:
+    ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  /* stylelint-enable value-keyword-case */
+  --t-caption: 11px;
+  --t-small: 12px;
+  --t-body: 13px;
+  --t-title: 15px;
+  --t-heading: 22px;
+  --t-display: 28px;
+  --t-hero: 32px;
+
+  /* size */
+  --h-sm: 28px;
+  --h-md: 32px;
+  --h-lg: 40px;
+  --row: 40px;
+  --row-lg: 56px;
+  --safe-area: 48px;
+  --dock-clearance: 104px;
+
+  /* the top bar the board runs under; 0 when the page has none over it */
+  --bar-h: 0px;
+  --column: 560px;
+  --hole-pitch: 24px;
+  --chevron-line: 1.5px solid currentcolor;
+
+  /* space */
+  --sp-xs: 4px;
+  --sp-sm: 14px;
+  --sp-md: 16px;
+  --sp-lg: 24px;
+  --sp-xl: 32px;
+  --sp-2xl: 48px;
+
+  /* radius: inner = outer − padding */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+
+  /* motion */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-pop: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --d-fast: 120ms;
+  --d-base: 200ms;
+  --d-slow: 320ms;
+
+  /* Title bar over the wall, bottom to top: drag layer, live board content, bar controls. */
+  --z-drag: 1;
+  --z-live: 4;
+  --z-bar: 30;
+
+  /* Layers above the scene: popups, then tooltips, then toasts. */
+  --z-popup: 200;
+  --z-tooltip: 300;
+  --z-toast: 400;
+
+  /* utility */
+  --clear: transparent;
+  --none: none;
+  --current: currentcolor;
+  --line-through: line-through;
+  --inherit: inherit;
+  --clip-padding: padding-box;
+  --r-0: 0;
+  --r-full: 50%;
+  --r-pill: 999px;
+  --r-hairline: 2px;
+
+  /* component radius */
+  --r-menu: 10px;
+  --r-dock-item: 11px;
+  --r-input-lg: 10px;
+  --r-toast: 19px;
+  --r-bubble: 16px 16px 16px 6px;
+  --r-bubble-me: 16px 16px 6px 16px;
+  --r-thumb: 9px;
+  --r-badge-lg: 14px;
+  --r-rig: 26px;
+  --r-tray: 0 0 18px 18px;
+  --r-gauge: 3px;
+  --r-gate: 5px;
+  --r-slip: 6px 6px 0 0;
+  --r-screen-card: 5px;
+  --r-row-over: 18px;
+  --r-check: 5px;
+  --r-clamp: 7px 7px 9px 9px;
+  --r-paper: 1px;
+  --r-curl: 0 0 40% 40% / 0 0 100% 100%;
+  --r-pull-knob: 50% 50% 46% 46% / 42% 42% 58% 58%;
+
+  /* component type */
+  --t-tiny: 10px;
+  --t-note: 12.5px;
+  --t-chat: 13.5px;
+  --t-label: 14px;
+  --t-alert: 14px;
+  --t-row: 15px;
+  --t-empty: 20px;
+  --t-soul: 20px;
+  --t-label-name: 24px;
+  --t-model: 30px;
+  --t-zz-2: 10px;
+  --t-zz-3: 8px;
+
+  /* fixed paint: these surfaces look the same in both themes */
+  --on-accent: #fff;
+  --on-danger: #fff;
+  --veil: rgb(0 0 0 / 30%);
+  --on-veil: #fff;
+  --avatar-edge: inset 0 0 0 1px rgb(0 0 0 / 6%);
+  --ring-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 2px),
+    #000 calc(100% - 1.5px)
+  );
+  --shimmer-size: 200% 100%;
+  --shimmer-end: -200% 0;
+  --holes-size: var(--hole-pitch) var(--hole-pitch);
+  --paper-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .3 0 0 0 0 .25 0 0 0 0 .15 0 0 0 1.6 -.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --qr-ink: #15161a;
+  --qr-paper: #fff;
+  --qr-ok-ring: 0 0 0 3px #fff;
+  --mini-canvas-light: #f1f2f6;
+  --mini-surface-light: #fff;
+  --mini-ink-light: #1b1d26;
+  --mini-canvas-dark: #101115;
+  --mini-surface-dark: #17181d;
+  --mini-ink-dark: #fff;
+  --drag-shadow: drop-shadow(0 22px 18px rgb(20 22 40 / 16%));
+  --carry-shadow: drop-shadow(0 14px 12px rgb(20 22 40 / 22%));
+  --wallpaper-alert: linear-gradient(150deg, #ff9a8f, #f2655c 60%, #e65466);
+  --screen-glare: linear-gradient(118deg, rgb(255 255 255 / 28%), rgb(255 255 255 / 0%) 42%);
+  --screen-off: #0f1013;
+  --screen-card: rgb(255 255 255 / 92%);
+  --screen-card-shadow: 0 3px 8px -2px rgb(40 40 110 / 28%);
+  --screen-line: #d7dae6;
+  --screen-side-line: rgb(255 255 255 / 85%);
+  --screen-typing: #eceef5;
+  --screen-typing-dot: #8b90a3;
+  --alert-ink: #e5484d;
+  --alert-paper: #fff;
+  --alert-shadow: 0 4px 10px -3px rgb(120 20 20 / 45%);
+  --screen-face: radial-gradient(120% 90% at 20% 0%, #2e3036, #16171b 60%, #111215);
+  --screen-glass: linear-gradient(160deg, rgb(255 255 255 / 7%), transparent 40%);
+  --screen-ink: #f2f2f4;
+  --screen-mark: invert(1);
+  --screen-ink-2: rgb(242 242 244 / 78%);
+  --screen-ink-3: rgb(242 242 244 / 60%);
+  --gauge-off: rgb(255 255 255 / 14%);
+  --gauge-glow: 0 0 6px rgb(255 255 255 / 35%);
+  --key-lit: #c27a12;
+  --led-on: #3fbf6a;
+  --led-on-glow: 0 0 6px #3fbf6a;
+  --led-off: inset 0 1px 1px rgb(0 0 0 / 25%);
+  --gate-face: linear-gradient(90deg, #1c1d21, #34353b);
+  --gate-shadow: inset 0 1px 3px rgb(0 0 0 / 70%), 0 1px 0 rgb(255 255 255 / 70%);
+  --knob-face: radial-gradient(circle at 35% 30%, #fff, #d5d7dd 45%, #9b9ea8 100%);
+  --knob-shadow: 0 3px 6px rgb(0 0 0 / 30%), inset 0 -2px 3px rgb(0 0 0 / 15%);
+  --lip-face: linear-gradient(180deg, #1b1c20, #2b2c31);
+  --pull-knob-shadow: 0 3px 5px rgb(40 30 10 / 25%), inset 0 -1.5px 1.5px rgb(90 70 40 / 25%);
+
+  /* onboarding stage: always dark */
+  --stage-ink: #f2f2f4;
+  --stage-ink-2: rgb(242 242 244 / 62%);
+  --stage-hover: rgb(255 255 255 / 5%);
+  --stage-on: rgb(255 255 255 / 9%);
+  --stage-led: rgb(255 255 255 / 14%);
+  --stage-chip: rgb(255 255 255 / 12%);
+  --stage-chip-hover: rgb(255 255 255 / 20%);
+  --led-ok: #46d17f;
+  --led-ok-glow: 0 0 8px rgb(70 209 127 / 80%);
+  --led-fail: #ff5d5d;
+  --led-fail-glow: 0 0 8px rgb(255 93 93 / 80%);
+  --reply-ok: #8fe3a8;
+  --reply-fail: #ff9a9a;
+}
+
+/* Composite paint that reads theme colors. Declared on every themed
+   element so nested light and dark previews resolve their own colors. */
+[data-theme] {
+  --ring-focus: 0 0 0 3px var(--accent-soft);
+  --ring-err: 0 0 0 3px var(--err-soft);
+  --hairline: 1px solid var(--line);
+  --dashed: 1px dashed var(--line-strong);
+  --dashed-strong: 1.5px dashed var(--line-strong);
+  --dashed-strong-1: 1.5px dashed var(--ink-4);
+  --edge-line: 1px solid var(--edge);
+  --edge-left: -1px 0 0 var(--line);
+  --rule-line: 1px solid var(--rule);
+  --dock-shadow: 0 0 0 0.5px var(--edge), var(--shadow-2);
+  --edge-ring: 0 0 0 0.5px var(--edge);
+  --inset-line: inset 0 0 0 1px var(--line);
+  --editing-line: 0 1.5px 0 var(--accent);
+  --on-ink-soft: color-mix(in srgb, var(--on-ink) 14%, transparent);
+  --on-ink-softer: color-mix(in srgb, var(--on-ink) 22%, transparent);
+  --ink-hover: color-mix(in srgb, var(--ink) 86%, var(--surface));
+  --danger-hover: color-mix(in srgb, var(--danger) 88%, #000);
+  --avatar-selected: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
+  --creating-arc: conic-gradient(from 0deg, transparent 0 55%, var(--accent) 100%);
+  --segment-thumb: var(--surface);
+  --segment-shadow: 0 1px 2px rgb(0 0 0 / 8%), 0 0 0 0.5px var(--line);
+  --bubble-shadow: 0 0 0 0.5px var(--edge), 0 8px 18px -10px rgb(20 22 40 / 30%);
+  --bubble-me-shadow: 0 8px 18px -10px rgb(60 70 180 / 55%);
+  --shimmer: linear-gradient(90deg, var(--field) 0%, var(--active) 50%, var(--field) 100%);
+  --cell-selected: inset 0 0 0 2px var(--accent);
+  --thumb-ring: 0 0 0 1px var(--line);
+  --thumb-ring-on: 0 0 0 2px var(--accent), 0 0 0 5px var(--accent-soft);
+  --board-face: linear-gradient(180deg, var(--board-top), var(--board));
+  --holes:
+    radial-gradient(circle at 12px 12px, var(--hole) 0 2px, transparent 2.6px),
+    radial-gradient(circle at 12px 13px, var(--hole-lip) 0 2.2px, transparent 2.8px);
+  --peg-face: radial-gradient(circle at 38% 32%, #fff 0, var(--peg) 55%, var(--peg-edge) 100%);
+  --peg-shadow: 1px 2px 2px rgb(0 0 0 / 28%);
+  --cord-weave: repeating-linear-gradient(0deg, rgb(255 255 255 / 10%) 0 1px, transparent 1px 3px);
+  --cord-shadow: 1px 2px 2px rgb(0 0 0 / 12%);
+  --clip-face: linear-gradient(90deg, var(--peg-edge), #fff 45%, var(--peg) 70%, var(--peg-edge));
+  --clip-shadow: 0 1px 1px rgb(0 0 0 / 25%);
+  --card-shadow: 0 0 0 0.5px var(--edge), var(--hang-shadow);
+  --card-shadow-focus: var(--card-shadow), 0 0 0 3px var(--accent-soft);
+  --card-rear: linear-gradient(var(--field), var(--field)), var(--card);
+  --slot-face: color-mix(in srgb, var(--board), #000 22%);
+  --slot-shadow:
+    inset 0 1.5px 1.5px rgb(0 0 0 / 40%), inset 0 -0.5px 0 rgb(0 0 0 / 15%),
+    0 0.5px 0 var(--slot-lip);
+  --clip-ring-shadow: drop-shadow(0 1.2px 0.6px rgb(0 0 0 / 28%));
+  --mask-ink: #000;
+  --mask-fade: rgb(0 0 0 / 25%);
+  --sleeve-face: linear-gradient(155deg, var(--sleeve-a), var(--sleeve-b) 45%, var(--sleeve-a));
+  --sleeve-shadow-focus: var(--sleeve-shadow), var(--ring-focus);
+  --sleeve-shadow:
+    inset 0 0 0 1px var(--sleeve-edge), inset 0 1px 0 var(--sleeve-edge), var(--hang-shadow);
+  --punch-shadow: inset 0 1px 1px rgb(0 0 0 / 30%);
+  --eyelet: radial-gradient(
+    circle,
+    var(--board) 0 4.5px,
+    var(--peg-edge) 5px,
+    #fff 6.5px,
+    var(--peg) 8px,
+    var(--peg-edge) 9px
+  );
+  --ruled: repeating-linear-gradient(180deg, transparent 0 31px, var(--rule) 31px 32px);
+  --ruled-42: repeating-linear-gradient(transparent 0 41px, var(--rule) 41px 42px);
+  --label-shadow:
+    0 0 0 0.5px var(--edge), 0 1px 2px rgb(20 22 40 / 6%), 0 8px 14px -10px rgb(20 22 40 / 28%);
+  --tape-edge: 0 0 0 0.5px rgb(0 0 0 / 6%);
+  --wood:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 9px,
+      var(--grain) 9px 10px,
+      transparent 10px 23px
+    ),
+    repeating-linear-gradient(
+      88deg,
+      transparent 0 31px,
+      var(--grain) 31px 33px,
+      transparent 33px 57px
+    ),
+    radial-gradient(90% 40% at 70% 30%, rgb(255 255 255 / 16%), transparent 70%),
+    linear-gradient(180deg, var(--wood-a), var(--wood-b));
+  --wood-shadow:
+    inset 0 0 0 0.5px rgb(90 60 25 / 25%), inset 0 1px 0 rgb(255 255 255 / 30%), var(--hang-shadow);
+  --curl-shadow: -2px 6px 8px -4px rgb(60 40 10 / 28%), 2px 6px 8px -4px rgb(60 40 10 / 28%);
+  --clamp-sheen: linear-gradient(180deg, rgb(255 255 255 / 12%), transparent 60%);
+  --clamp-shadow: 0 2px 3px rgb(0 0 0 / 25%), inset 0 -2px 0 rgb(0 0 0 / 25%);
+  --clamp-slot: rgb(255 255 255 / 14%);
+  --paper-face:
+    radial-gradient(60px 14px at 50% 0, rgb(40 30 10 / 14%), transparent),
+    linear-gradient(180deg, transparent 70%, rgb(80 60 20 / 2.5%)), var(--paper);
+  --paper-shadow: 0 0 0 0.5px rgb(70 50 20 / 12%), 0 1px 1px rgb(70 50 20 / 12%);
+  --paper-under-shadow: 0 0 0 0.5px rgb(70 50 20 / 14%), 0 1px 2px rgb(70 50 20 / 12%);
+  --strike: linear-gradient(var(--ink-3), var(--ink-3)) 0 55% / 0 1px no-repeat;
+  --strike-done: linear-gradient(var(--ink-3), var(--ink-3)) 0 55% / 100% 1px no-repeat;
+  --rig-face: linear-gradient(180deg, var(--rig-hi), var(--rig) 30%, var(--rig));
+  --hook-bar: linear-gradient(90deg, var(--peg-edge), var(--peg) 50%, var(--peg-edge));
+  --hook-shadow: 1px 2px 2px rgb(0 0 0 / 18%);
+  --key-face: linear-gradient(180deg, var(--rig-hi), var(--rig));
+  --key-shadow-focus: var(--key-shadow), 0 0 0 3px var(--accent-soft);
+  --key-shadow-down: 0 0 0 0.5px var(--edge), inset 0 1px 2px rgb(0 0 0 / 12%);
+  --key-shadow-off: 0 0 0 0.5px var(--edge), inset 0 1px 2px rgb(0 0 0 / 8%);
+  --tab-shadow: 0 0 0 0.5px var(--line-strong), 0 2px 4px -1px rgb(20 22 40 / 18%);
+  --tray-shadow:
+    inset 0 8px 10px -8px rgb(0 0 0 / 25%), 0 0 0 0.5px var(--edge), var(--hang-shadow);
+  --screen-shadow:
+    inset 0 0 0 1px rgb(0 0 0 / 60%), inset 0 2px 6px rgb(0 0 0 / 60%),
+    0 1px 0 rgb(255 255 255 / 75%), 0 0 0 4px var(--rig-lo);
+  --screen-shadow-hover: var(--screen-shadow), 0 0 0 7px var(--accent-soft);
+  --wallpaper: linear-gradient(150deg, var(--wall-a), var(--wall-b) 55%, var(--wall-c));
+  --floor-shade: radial-gradient(closest-side, var(--ws-shade), transparent);
+  --zz-halo: 0 0 3px var(--surface), 0 0 6px var(--surface);
+  --slip-shadow: 0 0 0 0.5px var(--edge), 0 2px 6px -2px rgb(20 22 40 / 15%);
+  --slip-lifted:
+    0 0 0 0.5px var(--edge), 0 30px 60px -20px rgb(20 22 40 / 45%),
+    0 6px 14px -6px rgb(20 22 40 / 20%);
+  --slot-shade: linear-gradient(transparent, rgb(20 22 40 / 8%));
+  --knob-shadow-focus: var(--knob-shadow), 0 0 0 4px var(--accent-soft);
+  --knob-ring: var(--pull-knob-shadow), 0 0 0 3px var(--accent-soft);
+  --pull-line: linear-gradient(var(--ink-4), var(--ink-3));
+  --sticker-shadow:
+    0 0 0 0.5px var(--edge), 0 2px 3px rgb(20 22 40 / 12%), 0 8px 14px -8px rgb(20 22 40 / 30%);
+  --sticker-shadow-focus: var(--sticker-shadow), 0 0 0 3px var(--accent-soft);
+}
+
+[data-theme='light'] {
+  --glass: rgb(246 246 249 / 78%);
+  --slot-lip: rgb(255 255 255 / 90%);
+  --sleeve-a: rgb(255 255 255 / 62%);
+  --sleeve-b: rgb(255 255 255 / 30%);
+  --sleeve-edge: rgb(27 29 38 / 10%);
+  --canvas: #f1f2f6;
+  --surface: #fff;
+  --elevated: #fff;
+  --well: #f5f6f9;
+  --bubble: #fff;
+  --edge: rgb(27 29 38 / 7%);
+  --board: #ececee;
+  --board-top: #f4f4f6;
+  --hole: rgb(27 29 38 / 13%);
+  --hole-lip: rgb(255 255 255 / 90%);
+  --peg: #c9cbd2;
+  --peg-edge: #8e919c;
+  --cord: #2c2e35;
+  --card: #fff;
+  --wood-a: #e8d2ac;
+  --wood-b: #d8b98a;
+  --grain: rgb(128 86 40 / 9%);
+  --clipboard: #d5d6db;
+  --rule: rgb(70 110 200 / 20%);
+  --paper: #fcfbf7;
+  --paper-under: #f3f1ea;
+  --paper-grain: 0.05;
+  --ws-over: rgb(91 107 214 / 7%);
+  --ws-shade: rgb(20 22 40 / 20%);
+  --wall-a: #c3ccff;
+  --wall-b: #e6ddff;
+  --wall-c: #f7f2ff;
+  --furniture: none;
+  --sitter: none;
+  --hang-shadow: 0 1px 2px rgb(20 22 40 / 6%), 0 18px 28px -14px rgb(20 22 40 / 30%);
+  --rig: #f3f0e9;
+  --rig-hi: #fbf9f4;
+  --rig-lo: #e4dfd4;
+  --engrave: rgb(70 60 40 / 42%);
+  --field: rgb(27 29 38 / 4%);
+  --hover: rgb(27 29 38 / 4.5%);
+  --active: rgb(27 29 38 / 7.5%);
+  --line: rgb(27 29 38 / 8%);
+  --line-strong: rgb(27 29 38 / 14%);
+  --ink: #1b1d26;
+  --ink-2: rgb(27 29 38 / 62%);
+  --ink-3: rgb(27 29 38 / 40%);
+  --ink-4: rgb(27 29 38 / 22%);
+  --on-ink: #fff;
+  --accent: #626ccc;
+  --accent-soft: rgb(98 108 204 / 16%);
+  --ok: #2e9b5c;
+  --busy: #d18c1a;
+  --err: #d14343;
+  --idle: rgb(27 29 38 / 26%);
+  --err-soft: rgb(209 67 67 / 8%);
+  --danger: #d14343;
+  --shadow-1: 0 1px 2px rgb(20 22 40 / 5%);
+  --shadow-2: 0 1px 2px rgb(20 22 40 / 6%), 0 10px 28px -8px rgb(20 22 40 / 16%);
+  --shadow-3: 0 2px 6px rgb(20 22 40 / 6%), 0 28px 70px -14px rgb(20 22 40 / 30%);
+  --backdrop: rgb(20 22 40 / 16%);
+  --doc-bg: #f8f9fb;
+  --lanyard-lead: #6c78d2;
+  --tag-shadow: drop-shadow(0 0 0.5px var(--edge)) drop-shadow(0 14px 14px rgb(20 22 40 / 16%));
+  --tape: rgb(248 247 242 / 75%);
+  --engrave-shadow: 0 1px 0 rgb(255 255 255 / 60%);
+  --lip-shadow: inset 0 2px 3px rgb(0 0 0 / 70%), 0 1px 0 rgb(255 255 255 / 80%);
+  --rig-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 70%), inset 0 -2px 0 var(--rig-lo), 0 0 0 0.5px var(--edge),
+    var(--hang-shadow);
+  --key-shadow:
+    0 0 0 0.5px var(--edge), 0 1px 0 rgb(255 255 255 / 80%) inset, 0 2px 0 var(--rig-lo),
+    0 3px 6px -2px rgb(20 22 40 / 18%);
+  --pull-knob: radial-gradient(circle at 36% 30%, #fff, #e6dfd1 55%, #b9ae99);
+  --sitter-off: saturate(0.55);
+  --mono-mark: none;
+}
+
+[data-theme='dark'] {
+  --glass: rgb(44 46 52 / 72%);
+  --slot-lip: rgb(255 255 255 / 8%);
+  --sleeve-a: rgb(255 255 255 / 7%);
+  --sleeve-b: rgb(255 255 255 / 2%);
+  --sleeve-edge: rgb(255 255 255 / 10%);
+  --canvas: #101115;
+  --surface: #17181d;
+  --elevated: #202128;
+  --well: #1c1d23;
+  --bubble: #26272e;
+  --edge: rgb(255 255 255 / 7%);
+  --board: #18191d;
+  --board-top: #1c1d22;
+  --hole: rgb(0 0 0 / 60%);
+  --hole-lip: rgb(255 255 255 / 5%);
+  --peg: #8a8d98;
+  --peg-edge: #4a4c55;
+  --cord: #4b4e58;
+  --card: #24252c;
+  --wood-a: #6f5a42;
+  --wood-b: #5d4a35;
+  --grain: rgb(0 0 0 / 14%);
+  --clipboard: #2e3037;
+  --rule: rgb(140 170 255 / 10%);
+  --paper: #2a2a2e;
+  --paper-under: #232327;
+  --paper-grain: 0.08;
+  --ws-over: rgb(140 160 255 / 9%);
+  --ws-shade: rgb(0 0 0 / 60%);
+  --wall-a: #39427e;
+  --wall-b: #574a8c;
+  --wall-c: #6b5a9a;
+  --furniture: brightness(0.6) contrast(1.1);
+  --sitter: brightness(0.76);
+  --hang-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 20px 30px -12px rgb(0 0 0 / 75%);
+  --rig: #2c2c31;
+  --rig-hi: #36363c;
+  --rig-lo: #222226;
+  --engrave: rgb(255 255 255 / 34%);
+  --field: rgb(255 255 255 / 5%);
+  --hover: rgb(255 255 255 / 5%);
+  --active: rgb(255 255 255 / 8.5%);
+  --line: rgb(255 255 255 / 7%);
+  --line-strong: rgb(255 255 255 / 13%);
+  --ink: #e8e9ee;
+  --ink-2: rgb(232 233 238 / 62%);
+  --ink-3: rgb(232 233 238 / 40%);
+  --ink-4: rgb(232 233 238 / 22%);
+  --on-ink: #17181d;
+  --accent: #8c95ec;
+  --accent-soft: rgb(140 149 236 / 22%);
+  --ok: #4cc282;
+  --busy: #efb04a;
+  --err: #f07a7a;
+  --idle: rgb(255 255 255 / 28%);
+  --err-soft: rgb(240 122 122 / 10%);
+  --danger: #c84444;
+  --shadow-1: 0 0 0 1px rgb(255 255 255 / 2%);
+  --shadow-2: 0 0 0 1px rgb(255 255 255 / 4%), 0 12px 32px -8px rgb(0 0 0 / 60%);
+  --shadow-3: 0 0 0 1px rgb(255 255 255 / 6%), 0 30px 80px -12px rgb(0 0 0 / 70%);
+  --backdrop: rgb(0 0 0 / 45%);
+  --doc-bg: #0c0d10;
+  --segment-thumb: var(--elevated);
+  --lanyard-lead: #6470c4;
+  --tag-shadow: drop-shadow(0 0 0.5px var(--edge)) drop-shadow(0 16px 16px rgb(0 0 0 / 55%));
+  --tape: rgb(255 255 255 / 14%);
+  --engrave-shadow: 0 -1px 0 rgb(0 0 0 / 50%);
+  --lip-shadow: inset 0 2px 3px rgb(0 0 0 / 80%), 0 1px 0 rgb(255 255 255 / 8%);
+  --rig-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 6%), inset 0 -2px 0 var(--rig-lo), 0 0 0 0.5px var(--edge),
+    var(--hang-shadow);
+  --key-shadow:
+    0 0 0 0.5px var(--edge), 0 1px 0 rgb(255 255 255 / 6%) inset, 0 2px 0 #18181b,
+    0 3px 6px -2px rgb(0 0 0 / 40%);
+  --pull-knob: radial-gradient(circle at 36% 30%, #c9c2b4, #8d8576 55%, #5c5547);
+  --sitter-off: brightness(0.76) saturate(0.55);
+  --mono-mark: invert(1);
+}

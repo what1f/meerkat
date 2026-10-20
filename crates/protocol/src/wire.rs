@@ -9,22 +9,24 @@ pub use crate::link::{
     RuntimeHello, SessionDirective, Shutdown, ToolDefinition, ToolError, ToolResult, WorkspaceRef,
 };
 pub use crate::management::{
-    AdvanceAgentOnboardingRequest, AdvanceProviderOnboardingRequest, Agent, AgentAttention,
-    AgentAvatarFile, AgentAvatarUpload, AgentOnboardingState, CancelAttemptRequest,
-    CancelAttemptResponse, CatalogRequest, ChannelAttention, CreateAgentRequest,
-    CreateWorkspaceRequest, DeleteAgentRequest, DeleteAgentResponse, EnvironmentVariableSet,
-    ExecutionAttemptDetails, ExecutionDetails, GetAgentAvatarRequest, GetAgentAvatarResponse,
+    AdvanceAgentOnboardingRequest, AdvanceProviderOnboardingRequest, Agent, AgentActivity,
+    AgentAttention, AgentAvatarFile, AgentAvatarUpload, AgentFirstReply, AgentFirstReplyState,
+    AgentOnboardingState, CancelAttemptRequest, CancelAttemptResponse, CatalogRequest,
+    ChannelAttention, CreateAgentRequest, CreateWorkspaceRequest, DeleteAgentRequest,
+    DeleteAgentResponse, EnvironmentVariableSet, ExecutionAttemptDetails, ExecutionDetails,
+    FigureFrames, FigurePack, GetAgentAvatarRequest, GetAgentAvatarResponse,
     GetAgentOnboardingRequest, GetAgentRequest, GetExecutionDetailsRequest,
     GetProviderOnboardingRequest, GetWorkspaceRequest, HarnessCatalog, HarnessCatalogItem,
-    InvokeProviderInterfaceRequest, InvokeProviderInterfaceResponse, ListAgentsRequest,
-    ListAgentsResponse, ListProviderInterfacesRequest, ListProviderInterfacesResponse,
-    ListWorkspacesRequest, ListWorkspacesResponse, MachineCatalog, MachineCatalogItem,
-    ManagementEvent, ManagementSubscription, ModelCatalogRequest, PairingCode, ProviderCatalog,
-    ProviderCatalogItem, ProviderInterface, ProviderOnboardingState, ReactionCatalog,
-    ReactionCatalogItem, RemoteAccess, RenameMachineRequest, RevokeMachineRequest,
-    SetRemoteAccessRequest, SetWorkspaceStateRequest, UpdateAgentRequest, UpdateWorkspaceRequest,
-    UploadWorkspaceImageRequest, UploadWorkspaceImageResponse, Workspace, WorkspaceImageRequest,
-    WorkspaceImageResponse,
+    HarnessTestState, HumanTeamMember, ImportFigurePackRequest, InvokeProviderInterfaceRequest,
+    InvokeProviderInterfaceResponse, ListAgentsRequest, ListAgentsResponse, ListFigurePacksRequest,
+    ListProviderInterfacesRequest, ListProviderInterfacesResponse, ListWorkspacesRequest,
+    ListWorkspacesResponse, MachineCatalog, MachineCatalogItem, ManagementEvent,
+    ManagementSubscription, ModelCatalogRequest, PairingCode, ProviderCatalog, ProviderCatalogItem,
+    ProviderInterface, ProviderOnboardingState, ReactionCatalog, ReactionCatalogItem, RemoteAccess,
+    RenameMachineRequest, RevokeMachineRequest, SetRemoteAccessRequest, SetWorkspaceStateRequest,
+    SyncHumanProfileRequest, TestHarnessRequest, TestHarnessResponse, UpdateAgentRequest,
+    UpdateHumanPositionRequest, UpdateWorkspaceRequest, UploadWorkspaceImageRequest,
+    UploadWorkspaceImageResponse, Workspace, WorkspaceImageRequest, WorkspaceImageResponse,
 };
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
@@ -128,6 +130,8 @@ pub struct ContentResult {
     pub resources: Vec<ResourceRef>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
 #[repr(i32)]
 pub enum HarnessAvailability {
     Unspecified = 0,
@@ -244,6 +248,8 @@ impl TryFrom<i32> for ExecutionEventKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
 #[repr(i32)]
 pub enum DesiredState {
     Unspecified = 0,
@@ -268,6 +274,8 @@ impl TryFrom<i32> for DesiredState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
 #[repr(i32)]
 pub enum ObservedState {
     Unspecified = 0,
@@ -298,6 +306,8 @@ impl TryFrom<i32> for ObservedState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
 #[repr(i32)]
 pub enum AttentionMode {
     Unspecified = 0,
@@ -326,6 +336,8 @@ impl TryFrom<i32> for AttentionMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
 #[repr(i32)]
 pub enum OnboardingStatus {
     Unspecified = 0,
@@ -354,6 +366,8 @@ impl TryFrom<i32> for OnboardingStatus {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
 #[repr(i32)]
 pub enum ManagementEventKind {
     Unspecified = 0,

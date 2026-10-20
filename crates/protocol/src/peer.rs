@@ -15,6 +15,15 @@ pub type ManagementEventStream =
 /// A Runtime-side peer behind the protocol validation and HTTP/JSON and private Agent socket boundaries.
 #[async_trait::async_trait]
 pub trait RuntimePeer: Send + Sync + 'static {
+    /// Local management reads workspace-scoped resources without an execution token.
+    async fn read_management_resource(
+        &self,
+        _workspace_id: String,
+        _resource_id: i64,
+    ) -> Result<(ResourceRef, Vec<u8>), Status> {
+        Err(Status::unimplemented("read_management_resource"))
+    }
+
     async fn upload_resource(&self, chunks: ResourceChunkStream) -> Result<ResourceRef, Status>;
 
     async fn download_resource(
@@ -22,6 +31,18 @@ pub trait RuntimePeer: Send + Sync + 'static {
         request: ResourceRequest,
     ) -> Result<ResourceChunkStream, Status>;
 
+    async fn import_figure_pack(
+        &self,
+        _request: ImportFigurePackRequest,
+    ) -> Result<FigurePack, Status> {
+        Err(Status::unimplemented("import_figure_pack"))
+    }
+    async fn list_figure_packs(
+        &self,
+        _request: ListFigurePacksRequest,
+    ) -> Result<Vec<FigurePack>, Status> {
+        Err(Status::unimplemented("list_figure_packs"))
+    }
     async fn list_workspaces(
         &self,
         _request: ListWorkspacesRequest,
@@ -68,6 +89,25 @@ pub trait RuntimePeer: Send + Sync + 'static {
         Err(Status::unimplemented("set_workspace_state"))
     }
 
+    async fn list_human_members(
+        &self,
+        _request: GetWorkspaceRequest,
+    ) -> Result<Vec<HumanTeamMember>, Status> {
+        Err(Status::unimplemented("list_human_members"))
+    }
+    async fn sync_human_profile(
+        &self,
+        _request: SyncHumanProfileRequest,
+    ) -> Result<HumanTeamMember, Status> {
+        Err(Status::unimplemented("sync_human_profile"))
+    }
+    async fn update_human_position(
+        &self,
+        _request: UpdateHumanPositionRequest,
+    ) -> Result<Vec<HumanTeamMember>, Status> {
+        Err(Status::unimplemented("update_human_position"))
+    }
+
     async fn list_agents(&self, _request: ListAgentsRequest) -> Result<ListAgentsResponse, Status> {
         Err(Status::unimplemented("list_agents"))
     }
@@ -86,6 +126,12 @@ pub trait RuntimePeer: Send + Sync + 'static {
         Err(Status::unimplemented("get_execution_details"))
     }
 
+    async fn get_agent_first_reply(
+        &self,
+        _request: GetAgentRequest,
+    ) -> Result<AgentFirstReply, Status> {
+        Err(Status::unimplemented("get_agent_first_reply"))
+    }
     async fn get_agent(&self, _request: GetAgentRequest) -> Result<Agent, Status> {
         Err(Status::unimplemented("get_agent"))
     }
@@ -178,6 +224,12 @@ pub trait RuntimePeer: Send + Sync + 'static {
         Err(Status::unimplemented("get_harness_catalog"))
     }
 
+    async fn test_harness(
+        &self,
+        _request: TestHarnessRequest,
+    ) -> Result<TestHarnessResponse, Status> {
+        Err(Status::unimplemented("test_harness"))
+    }
     async fn get_model_catalog(
         &self,
         _request: ModelCatalogRequest,

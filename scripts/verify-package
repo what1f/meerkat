@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import plistlib
 from pathlib import Path
 import runpy
 import shutil
@@ -18,6 +19,14 @@ ROOT = Path(__file__).resolve().parent.parent
 def group_members(group):
     rows = subprocess.check_output(["ps", "-eo", "pid=,pgid="], text=True)
     return [int(pid) for pid, pgid in (row.split() for row in rows.splitlines()) if int(pgid) == group]
+
+
+def prepare_bootstrap_home(home):
+    home.mkdir(parents=True, mode=0o700)
+    (home / "runtime.json").write_text(json.dumps({
+        "machine_link_listen": "127.0.0.1:0",
+        "remote_access_port": 0,
+    }))
 
 
 def main():
@@ -54,8 +63,12 @@ def main():
             snapshot = runpy.run_path(str(ROOT / "scripts/package-provenance"))["bundle_snapshot"]
             if snapshot(extracted) != json.loads(receipt.read_text())["bundle_files"]:
                 raise ValueError("extracted package differs from its signed receipt")
+            info = plistlib.loads((extracted / "Contents/Info.plist").read_bytes())
+            if info.get("NSAppTransportSecurity", {}).get("NSAllowsLocalNetworking") is not True:
+                raise ValueError("local networking is not allowed in Info.plist")
             subprocess.run(["codesign", "--verify", "--deep", "--strict", str(extracted)], check=True)
             home = root / "home"
+            prepare_bootstrap_home(home)
             bootstrap_result = artifacts / "bootstrap.json"
             env = {**os.environ, "LANKIDE_HOME": str(home)}
             # An explicit socket tells Desktop to connect to an existing
@@ -66,7 +79,8 @@ def main():
                     env=env,
                     stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
                 try:
-                    code = process.wait(timeout=45)
+                    bootstrap_contract = runpy.run_path(str(ROOT / "apps/desktop/tests/bootstrap_e2e.py"))
+                    code, discovered_url = bootstrap_contract["wait_for_smoke"](process, home, timeout=45)
                     result["exit_status"] = code
                     deadline = time.monotonic() + 2
                     while group_members(process.pid) and time.monotonic() < deadline:
@@ -78,6 +92,7 @@ def main():
                     observed = json.loads(bootstrap_result.read_text())
                     if observed.get("status") != "passed" or not all(observed.get(key) is True for key in ("runtime_ready", "machine_connected", "management")):
                         raise ValueError("extracted Desktop did not pass all startup checks")
+                    bootstrap_contract["assert_navigation"](observed, discovered_url)
                     if any((home / "run" / name).exists() for name in ("runtime.sock", "runtime.lock", "machine.lock")):
                         raise ValueError("extracted Desktop left service endpoints behind")
                     result.update(bootstrap=observed, signature="passed", archive_content="passed", cleanup="passed")

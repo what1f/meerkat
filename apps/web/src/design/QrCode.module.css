@@ -1,0 +1,12 @@
+.root {
+  display: block;
+  fill: var(--qr-ink);
+  background: var(--qr-paper);
+  transition:
+    opacity var(--d-slow) var(--ease),
+    filter var(--d-slow) var(--ease);
+}
+
+.root rect {
+  shape-rendering: crispedges;
+}

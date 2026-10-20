@@ -1,0 +1,107 @@
+.root {
+  position: absolute;
+  top: 0;
+  right: 14px;
+  z-index: 6;
+  width: 28px;
+  height: 64px;
+  padding: 0;
+  cursor: grab;
+  touch-action: none;
+  background: var(--clear);
+  border-style: none;
+  transform-origin: 50% 0;
+}
+
+.root:hover {
+  animation: sway 2.4s var(--ease) infinite;
+}
+
+.root:focus-visible {
+  outline-style: none;
+}
+
+.line {
+  position: absolute;
+  top: 0;
+  left: 13.25px;
+  width: 1.5px;
+  height: calc(42px + var(--pull));
+  background: var(--pull-line);
+}
+
+.knob {
+  position: absolute;
+  top: calc(39px + var(--pull));
+  left: 7px;
+  width: 14px;
+  height: 19px;
+  background: var(--pull-knob);
+  border-radius: var(--r-pull-knob);
+  box-shadow: var(--pull-knob-shadow);
+}
+
+.root:focus-visible .knob {
+  box-shadow: var(--knob-ring);
+}
+
+.root[data-snap='0'] {
+  animation: cord-back-a 0.7s var(--ease-pop);
+}
+
+.root[data-snap='1'] {
+  animation: cord-back-b 0.7s var(--ease-pop);
+}
+
+.root[data-held='true'] {
+  cursor: grabbing;
+  animation: none;
+}
+
+/* Two identical keyframes so every release replays the bounce. */
+@keyframes cord-back-a {
+  0% {
+    transform: translateY(6px);
+  }
+
+  35% {
+    transform: translateY(-3px) rotate(4deg);
+  }
+
+  60% {
+    transform: rotate(-3deg);
+  }
+
+  80% {
+    transform: rotate(1.5deg);
+  }
+}
+
+@keyframes cord-back-b {
+  0% {
+    transform: translateY(6px);
+  }
+
+  35% {
+    transform: translateY(-3px) rotate(4deg);
+  }
+
+  60% {
+    transform: rotate(-3deg);
+  }
+
+  80% {
+    transform: rotate(1.5deg);
+  }
+}
+
+@keyframes sway {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+
+  50% {
+    transform: rotate(2.5deg);
+  }
+}

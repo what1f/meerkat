@@ -27,7 +27,6 @@ where
     let url = format!("ws://{}", listener.local_addr()?);
     let secret = link::publish(&socket, &url)?;
     let (stop, stopped) = tokio::sync::oneshot::channel();
-    let owner = lankide_protocol::management::OwnerCredential::load_or_create(&socket)?;
     std::fs::write(
         socket.join(lankide_protocol::management::URL_FILE),
         url.replacen("ws://", "http://", 1),
@@ -35,7 +34,6 @@ where
     let ws = tokio::spawn(lankide_protocol::resources::serve_with_management(
         listener,
         secret,
-        owner,
         peer.clone(),
         config,
         Default::default(),

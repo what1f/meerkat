@@ -1,7 +1,66 @@
 //! Management JSON contract. Canonical serde DTOs for management.
+pub use crate::wire::{
+    AttentionMode, DesiredState, HarnessAvailability, ManagementEventKind, ObservedState,
+    OnboardingStatus,
+};
 use serde::{Deserialize, Serialize};
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentFirstReplyState {
+    #[default]
+    Waiting,
+    Replied,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentFirstReply {
+    pub state: AgentFirstReplyState,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HumanTeamMember {
+    pub person_id: String,
+    pub team_role: String,
+    pub name: Option<String>,
+    pub avatar: Option<ResourceRef>,
+    pub position: String,
+    pub signature: String,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateHumanPositionRequest {
+    pub request_id: String,
+    pub workspace: Option<WorkspaceRef>,
+    pub person_id: String,
+    pub position: String,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SyncHumanProfileRequest {
+    pub request_id: String,
+    pub workspace: Option<WorkspaceRef>,
+    pub person_id: String,
+}
+
+/// Input for the Feishu workspace task-list management interface.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
+pub enum WorkspaceTasksInput {
+    List,
+    Rename { name: String },
+}
+
 pub const PREFIX: &str = "/api/v1/";
 pub const EVENTS_PATH: &str = "/api/v1/events";
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AdvanceAgentOnboardingRequest {
     pub request_id: String,
@@ -10,6 +69,7 @@ pub struct AdvanceAgentOnboardingRequest {
     pub field_values_json: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AdvanceProviderOnboardingRequest {
     pub request_id: String,
@@ -18,8 +78,12 @@ pub struct AdvanceProviderOnboardingRequest {
     pub field_values_json: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Agent {
+    pub figure: String,
+    pub launch_arguments: Vec<String>,
+    pub activity: AgentActivity,
     pub agent: Option<AgentRef>,
     pub name: String,
     pub role: String,
@@ -40,32 +104,38 @@ pub struct Agent {
     pub pause_reason: Option<String>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentAttention {
     pub channels: Vec<ChannelAttention>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentAvatarFile {
     pub path: String,
     pub media_type: String,
     #[serde(with = "base64_bytes")]
+    #[cfg_attr(feature = "typescript", ts(type = "string"))]
     pub bytes: Vec<u8>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentAvatarUpload {
     pub media_type: String,
     #[serde(with = "base64_bytes")]
+    #[cfg_attr(feature = "typescript", ts(type = "string"))]
     pub bytes: Vec<u8>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentOnboardingState {
     pub agent: Option<AgentRef>,
     pub provider_id: String,
     pub step: String,
-    pub status: i32,
+    pub status: OnboardingStatus,
     pub payload_json: String,
     pub verification_uri: String,
     pub poll_interval_seconds: u32,
@@ -77,38 +147,45 @@ pub use crate::link::AgentRef;
 
 pub use crate::link::AttemptFailure;
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CancelAttemptRequest {
     pub request_id: String,
     pub execution_id: i64,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CancelAttemptResponse {}
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CatalogRequest {
     pub request_id: String,
     pub workspace: Option<WorkspaceRef>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ChannelAttention {
     pub channel_id: String,
-    pub mode: i32,
+    pub mode: AttentionMode,
     pub interval_minutes: u32,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MachineCatalog {
     pub machines: Vec<MachineCatalogItem>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MachineCatalogItem {
+    pub is_local: bool,
     pub machine_id: String,
     pub display_name: String,
-    pub observed_state: i32,
+    pub observed_state: ObservedState,
     pub harnesses: Vec<HarnessInfo>,
     pub status_message: String,
     pub registered: bool,
@@ -119,8 +196,13 @@ pub struct MachineCatalogItem {
     pub version: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CreateAgentRequest {
+    #[serde(default)]
+    pub figure: String,
+    #[serde(default)]
+    pub launch_arguments: Vec<String>,
     pub request_id: String,
     pub agent: Option<AgentRef>,
     pub name: String,
@@ -139,6 +221,7 @@ pub struct CreateAgentRequest {
     pub provider_agent_secrets_json: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CreateWorkspaceRequest {
     pub request_id: String,
@@ -150,12 +233,14 @@ pub struct CreateWorkspaceRequest {
     pub provider_secrets_json: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeleteAgentRequest {
     pub request_id: String,
     pub agent: Option<AgentRef>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeleteAgentResponse {
     pub request_id: String,
@@ -164,11 +249,13 @@ pub struct DeleteAgentResponse {
 
 pub use crate::link::EnvironmentVariable;
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EnvironmentVariableSet {
     pub entries: Vec<EnvironmentVariable>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExecutionAttemptDetails {
     pub attempt: u32,
@@ -177,6 +264,7 @@ pub struct ExecutionAttemptDetails {
     pub failure: Option<AttemptFailure>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExecutionDetails {
     pub error_code: Option<String>,
@@ -186,12 +274,14 @@ pub struct ExecutionDetails {
     pub attempts: Vec<ExecutionAttemptDetails>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GetAgentAvatarRequest {
     pub request_id: String,
     pub agent: Option<AgentRef>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GetAgentAvatarResponse {
     pub request_id: String,
@@ -199,52 +289,87 @@ pub struct GetAgentAvatarResponse {
     pub avatar: Option<AgentAvatarFile>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GetAgentOnboardingRequest {
     pub request_id: String,
     pub agent: Option<AgentRef>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GetAgentRequest {
     pub request_id: String,
     pub agent: Option<AgentRef>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GetExecutionDetailsRequest {
     pub request_id: String,
     pub execution_id: i64,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GetProviderOnboardingRequest {
     pub request_id: String,
     pub workspace: Option<WorkspaceRef>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GetWorkspaceRequest {
     pub request_id: String,
     pub workspace: Option<WorkspaceRef>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HarnessCatalog {
     pub harnesses: Vec<HarnessCatalogItem>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HarnessCatalogItem {
     pub harness_id: String,
     pub display_name: String,
     pub description: String,
-    pub availability: i32,
+    pub availability: HarnessAvailability,
     pub supported_thinking_levels: Vec<String>,
 }
 
-pub use crate::link::HarnessInfo;
+/// Management inventory uses string enums; Machine link inventory keeps numeric fields.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HarnessInfo {
+    pub harness_id: String,
+    pub display_name: String,
+    pub availability: HarnessAvailability,
+    pub version: String,
+    pub reason: String,
+    pub model_catalog: Option<ModelCatalog>,
+    pub model_catalog_error: String,
+    pub capabilities: Vec<String>,
+}
+impl TryFrom<crate::link::HarnessInfo> for HarnessInfo {
+    type Error = crate::Status;
+    fn try_from(value: crate::link::HarnessInfo) -> Result<Self, Self::Error> {
+        Ok(Self {
+            harness_id: value.harness_id,
+            display_name: value.display_name,
+            availability: HarnessAvailability::try_from(value.availability)?,
+            version: value.version,
+            reason: value.reason,
+            model_catalog: value.model_catalog,
+            model_catalog_error: value.model_catalog_error,
+            capabilities: value.capabilities,
+        })
+    }
+}
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InvokeProviderInterfaceRequest {
     pub request_id: String,
@@ -253,6 +378,7 @@ pub struct InvokeProviderInterfaceRequest {
     pub input_json: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InvokeProviderInterfaceResponse {
     pub request_id: String,
@@ -261,24 +387,28 @@ pub struct InvokeProviderInterfaceResponse {
     pub output_json: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ListAgentsRequest {
     pub request_id: String,
     pub workspace: Option<WorkspaceRef>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ListAgentsResponse {
     pub request_id: String,
     pub agents: Vec<Agent>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ListProviderInterfacesRequest {
     pub request_id: String,
     pub workspace: Option<WorkspaceRef>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ListProviderInterfacesResponse {
     pub request_id: String,
@@ -286,26 +416,30 @@ pub struct ListProviderInterfacesResponse {
     pub interfaces: Vec<ProviderInterface>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ListWorkspacesRequest {
     pub request_id: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ListWorkspacesResponse {
     pub request_id: String,
     pub workspaces: Vec<Workspace>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ManagementEvent {
     pub sequence: u64,
     pub occurred_at: i64,
-    pub kind: i32,
+    pub kind: ManagementEventKind,
     pub workspace: Option<WorkspaceRef>,
     pub agent: Option<AgentRef>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ManagementSubscription {
     pub request_id: String,
@@ -317,6 +451,7 @@ pub use crate::link::ModelCatalog;
 
 pub use crate::link::ModelCatalogItem;
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModelCatalogRequest {
     pub request_id: String,
@@ -325,6 +460,7 @@ pub struct ModelCatalogRequest {
     pub harness_id: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PairingCode {
     pub code: String,
@@ -332,11 +468,13 @@ pub struct PairingCode {
     pub expires_at: i64,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProviderCatalog {
     pub providers: Vec<ProviderCatalogItem>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProviderCatalogItem {
     pub provider_id: String,
@@ -346,6 +484,7 @@ pub struct ProviderCatalogItem {
     pub capabilities: Vec<String>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProviderInterface {
     pub interface_id: String,
@@ -354,12 +493,13 @@ pub struct ProviderInterface {
     pub output_schema_json: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProviderOnboardingState {
     pub workspace: Option<WorkspaceRef>,
     pub provider_id: String,
     pub step: String,
-    pub status: i32,
+    pub status: OnboardingStatus,
     pub payload_json: String,
     pub verification_uri: String,
     pub poll_interval_seconds: u32,
@@ -367,11 +507,13 @@ pub struct ProviderOnboardingState {
     pub error_message: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReactionCatalog {
     pub reactions: Vec<ReactionCatalogItem>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReactionCatalogItem {
     pub reaction_id: String,
@@ -382,6 +524,7 @@ pub struct ReactionCatalogItem {
 
 pub use crate::link::ResourceRef;
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RenameMachineRequest {
     pub request_id: String,
@@ -389,21 +532,26 @@ pub struct RenameMachineRequest {
     pub name: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RevokeMachineRequest {
     pub request_id: String,
     pub machine_id: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SetWorkspaceStateRequest {
     pub request_id: String,
     pub workspace: Option<WorkspaceRef>,
-    pub desired_state: i32,
+    pub desired_state: DesiredState,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UpdateAgentRequest {
+    pub figure: Option<String>,
+    pub launch_arguments: Option<Vec<String>>,
     pub request_id: String,
     pub agent: Option<AgentRef>,
     pub name: Option<String>,
@@ -423,6 +571,7 @@ pub struct UpdateAgentRequest {
     pub provider_agent_secrets_json: Option<String>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UpdateWorkspaceRequest {
     pub request_id: String,
@@ -434,6 +583,7 @@ pub struct UpdateWorkspaceRequest {
     pub provider_secrets_json: Option<String>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UploadWorkspaceImageRequest {
     pub request_id: String,
@@ -441,9 +591,11 @@ pub struct UploadWorkspaceImageRequest {
     pub file_name: String,
     pub media_type: String,
     #[serde(with = "base64_bytes")]
+    #[cfg_attr(feature = "typescript", ts(type = "string"))]
     pub bytes: Vec<u8>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UploadWorkspaceImageResponse {
     pub request_id: String,
@@ -451,6 +603,7 @@ pub struct UploadWorkspaceImageResponse {
     pub resource: Option<ResourceRef>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Workspace {
     pub workspace: Option<WorkspaceRef>,
@@ -459,13 +612,14 @@ pub struct Workspace {
     pub rules: String,
     pub provider_id: String,
     pub provider_config_json: String,
-    pub desired_state: i32,
-    pub observed_state: i32,
+    pub desired_state: DesiredState,
+    pub observed_state: ObservedState,
     pub status_message: String,
     pub created_at: i64,
     pub updated_at: i64,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceImageRequest {
     pub request_id: String,
@@ -473,18 +627,21 @@ pub struct WorkspaceImageRequest {
     pub resource_id: i64,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceImageResponse {
     pub request_id: String,
     pub workspace: Option<WorkspaceRef>,
     pub resource: Option<ResourceRef>,
     #[serde(with = "base64_bytes")]
+    #[cfg_attr(feature = "typescript", ts(type = "string"))]
     pub bytes: Vec<u8>,
 }
 
 pub use crate::link::WorkspaceRef;
 
 /// Stable JSON error body; code follows the existing management status categories.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ErrorBody {
     pub code: ErrorCode,
@@ -506,67 +663,10 @@ impl ErrorBody {
     }
 }
 
-/// Owner secret and listener discovery are local files, never API parameters.
-pub const OWNER_FILE: &str = "management-owner.secret";
+/// Local listener discovery.
 pub const URL_FILE: &str = "management.url";
 
-#[derive(Clone)]
-pub struct OwnerCredential(String);
-impl OwnerCredential {
-    pub fn load_or_create(run: &std::path::Path) -> std::io::Result<Self> {
-        use std::io::Write;
-        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-        std::fs::create_dir_all(run)?;
-        let path = run.join(OWNER_FILE);
-        let secret = format!(
-            "{}{}",
-            uuid::Uuid::new_v4().simple(),
-            uuid::Uuid::new_v4().simple()
-        );
-        if !path.exists() {
-            // Publish only a complete, synced secret. A crash cannot leave an empty owner file.
-            let temporary = run.join(format!(".management-owner-{}.tmp", uuid::Uuid::new_v4()));
-            let publication = (|| {
-                let mut file = std::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .mode(0o600)
-                    .open(&temporary)?;
-                file.write_all(secret.as_bytes())?;
-                file.sync_all()?;
-                match std::fs::hard_link(&temporary, &path) {
-                    Ok(()) => std::fs::File::open(run)?.sync_all(),
-                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
-                    Err(error) => Err(error),
-                }
-            })();
-            let _ = std::fs::remove_file(temporary);
-            publication?;
-        }
-        let metadata = std::fs::symlink_metadata(&path)?;
-        if !metadata.is_file() || metadata.permissions().mode() & 0o777 != 0o600 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                "unsafe owner credential file",
-            ));
-        }
-        let secret = std::fs::read_to_string(path)?;
-        if secret.len() != 64 || !secret.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "invalid owner credential",
-            ));
-        }
-        Ok(Self(secret))
-    }
-    pub fn authorizes(&self, candidate: &str) -> bool {
-        use sha2::{Digest, Sha256};
-        use subtle::ConstantTimeEq;
-        // Fixed-size digests ensure the comparison does not leak a matching prefix.
-        bool::from(Sha256::digest(self.0.as_bytes()).ct_eq(&Sha256::digest(candidate.as_bytes())))
-    }
-}
-
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum EventFrame {
@@ -574,6 +674,7 @@ pub enum EventFrame {
     Error(ErrorBody),
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[repr(i32)]
@@ -616,11 +717,13 @@ pub(crate) mod base64_bytes {
 }
 
 /// Remote Machine entry point. Management always remains on loopback.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RemoteAccess {
     pub address: Option<String>,
     pub cert_sha256: Option<String>,
 }
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SetRemoteAccessRequest {
     pub address: Option<String>,
@@ -630,4 +733,78 @@ pub trait RemoteAccessControl: Send + Sync {
     async fn get(&self) -> Result<RemoteAccess, crate::Status>;
     async fn enable(&self) -> Result<RemoteAccess, crate::Status>;
     async fn set(&self, address: Option<String>) -> Result<RemoteAccess, crate::Status>;
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentActivity {
+    #[default]
+    Idle,
+    Busy,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct FigureFrames {
+    pub work: ResourceRef,
+    pub sleep: ResourceRef,
+    pub carry: ResourceRef,
+    pub stand: ResourceRef,
+}
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct FigurePack {
+    pub id: String,
+    pub name: String,
+    pub author: String,
+    pub scale: f64,
+    pub frames: FigureFrames,
+}
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ImportFigurePackRequest {
+    pub workspace: Option<WorkspaceRef>,
+    #[serde(with = "base64_bytes")]
+    #[cfg_attr(feature = "typescript", ts(type = "string"))]
+    pub bytes: Vec<u8>,
+}
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ListFigurePacksRequest {
+    pub workspace: Option<WorkspaceRef>,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TestHarnessRequest {
+    pub machine_id: String,
+    pub harness_id: String,
+    pub model: String,
+    pub thinking_level: String,
+    #[cfg_attr(feature = "typescript", ts(optional))]
+    pub cli_path: Option<String>,
+    pub environment_variables: Vec<EnvironmentVariable>,
+    pub launch_arguments: Vec<String>,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HarnessTestState {
+    Passed,
+    Failed,
+    TimedOut,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TestHarnessResponse {
+    pub state: HarnessTestState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "typescript", ts(optional))]
+    pub reply: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "typescript", ts(optional))]
+    pub error_code: Option<String>,
 }

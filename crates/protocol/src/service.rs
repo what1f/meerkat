@@ -179,6 +179,24 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
         ))
     }
 
+    pub async fn import_figure_pack(
+        &self,
+        request: Request<ImportFigurePackRequest>,
+    ) -> Result<Response<FigurePack>, Status> {
+        validate_workspace_ref(request.get_ref().workspace.as_ref())?;
+        Ok(Response::new(
+            self.peer.import_figure_pack(request.into_inner()).await?,
+        ))
+    }
+    pub async fn list_figure_packs(
+        &self,
+        request: Request<ListFigurePacksRequest>,
+    ) -> Result<Response<Vec<FigurePack>>, Status> {
+        validate_workspace_ref(request.get_ref().workspace.as_ref())?;
+        Ok(Response::new(
+            self.peer.list_figure_packs(request.into_inner()).await?,
+        ))
+    }
     pub async fn get_workspace(
         &self,
         request: Request<GetWorkspaceRequest>,
@@ -276,12 +294,45 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
         let input = request.get_ref();
         validate_request_id(&input.request_id)?;
         validate_workspace_ref(input.workspace.as_ref())?;
-        match DesiredState::try_from(input.desired_state) {
-            Ok(DesiredState::Running | DesiredState::Paused) => {}
+        match input.desired_state {
+            DesiredState::Running | DesiredState::Paused => {}
             _ => return Err(Status::invalid_argument("invalid_desired_state")),
         }
         Ok(Response::new(
             self.peer.set_workspace_state(request.into_inner()).await?,
+        ))
+    }
+
+    pub async fn list_human_members(
+        &self,
+        request: Request<GetWorkspaceRequest>,
+    ) -> Result<Response<Vec<HumanTeamMember>>, Status> {
+        validate_request_id(&request.get_ref().request_id)?;
+        validate_workspace_ref(request.get_ref().workspace.as_ref())?;
+        Ok(Response::new(
+            self.peer.list_human_members(request.into_inner()).await?,
+        ))
+    }
+    pub async fn sync_human_profile(
+        &self,
+        request: Request<SyncHumanProfileRequest>,
+    ) -> Result<Response<HumanTeamMember>, Status> {
+        validate_request_id(&request.get_ref().request_id)?;
+        validate_workspace_ref(request.get_ref().workspace.as_ref())?;
+        Ok(Response::new(
+            self.peer.sync_human_profile(request.into_inner()).await?,
+        ))
+    }
+    pub async fn update_human_position(
+        &self,
+        request: Request<UpdateHumanPositionRequest>,
+    ) -> Result<Response<Vec<HumanTeamMember>>, Status> {
+        validate_request_id(&request.get_ref().request_id)?;
+        validate_workspace_ref(request.get_ref().workspace.as_ref())?;
+        Ok(Response::new(
+            self.peer
+                .update_human_position(request.into_inner())
+                .await?,
         ))
     }
 
@@ -296,6 +347,18 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
         ))
     }
 
+    pub async fn get_agent_first_reply(
+        &self,
+        request: Request<GetAgentRequest>,
+    ) -> Result<Response<AgentFirstReply>, Status> {
+        validate_request_id(&request.get_ref().request_id)?;
+        validate_agent_ref(request.get_ref().agent.as_ref())?;
+        Ok(Response::new(
+            self.peer
+                .get_agent_first_reply(request.into_inner())
+                .await?,
+        ))
+    }
     pub async fn get_agent(
         &self,
         request: Request<GetAgentRequest>,
@@ -527,6 +590,16 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
         ))
     }
 
+    pub async fn test_harness(
+        &self,
+        request: Request<TestHarnessRequest>,
+    ) -> Result<Response<TestHarnessResponse>, Status> {
+        require_text(&request.get_ref().machine_id, "machine_id")?;
+        require_text(&request.get_ref().harness_id, "harness_id")?;
+        Ok(Response::new(
+            self.peer.test_harness(request.into_inner()).await?,
+        ))
+    }
     pub async fn get_model_catalog(
         &self,
         request: Request<ModelCatalogRequest>,
@@ -582,8 +655,7 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
                     if event.sequence <= last_sequence {
                         return Err(Status::out_of_range("management_sequence_regression"));
                     }
-                    let kind = ManagementEventKind::try_from(event.kind)
-                        .map_err(|_| Status::invalid_argument("unknown_management_event_kind"))?;
+                    let kind = event.kind;
                     if kind != ManagementEventKind::MachineCatalogChanged {
                         validate_workspace_ref(event.workspace.as_ref())?;
                     }

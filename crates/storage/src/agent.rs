@@ -28,6 +28,8 @@ type StoredAgentRow = (
     String,
     String,
     i64,
+    String,
+    String,
 );
 #[derive(Clone, Debug)]
 pub struct AgentSpec {
@@ -51,6 +53,8 @@ pub struct AgentRecord {
     pub role: String,
     pub bio: String,
     pub avatar: Option<String>,
+    pub figure: String,
+    pub launch_arguments: Vec<String>,
     pub soul: String,
     pub machine_id: String,
     /// Storage-owned revision of the Machine/Harness placement.
@@ -181,7 +185,7 @@ fn delete_agent_state(
 }
 
 fn load_agent_record(c: &Connection, w: &WorkspaceId, a: &AgentId) -> Result<AgentRecord> {
-    let row:StoredAgentRow=c.query_row("SELECT name,agent_id,created_at,updated_at,role,bio,avatar,soul,machine_id,harness_id,model,thinking,auto_reaction,cli_path,env_json,provider_agent_config_json,session_config_json,attention_json,provider_state_json,placement_generation FROM agents WHERE workspace_id=?1 AND agent_id=?2",params![w.as_str(),a.as_str()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?,r.get(11)?,r.get(12)?,r.get(13)?,r.get(14)?,r.get(15)?,r.get(16)?,r.get(17)?,r.get(18)?,r.get(19)?)))?;
+    let row:StoredAgentRow=c.query_row("SELECT name,agent_id,created_at,updated_at,role,bio,avatar,soul,machine_id,harness_id,model,thinking,auto_reaction,cli_path,env_json,provider_agent_config_json,session_config_json,attention_json,provider_state_json,placement_generation,figure,launch_arguments_json FROM agents WHERE workspace_id=?1 AND agent_id=?2",params![w.as_str(),a.as_str()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?,r.get(11)?,r.get(12)?,r.get(13)?,r.get(14)?,r.get(15)?,r.get(16)?,r.get(17)?,r.get(18)?,r.get(19)?,r.get(20)?,r.get(21)?)))?;
     Ok(AgentRecord {
         workspace_id: w.clone(),
         agent_id: aid(row.1)?,
@@ -191,6 +195,8 @@ fn load_agent_record(c: &Connection, w: &WorkspaceId, a: &AgentId) -> Result<Age
         role: row.4,
         bio: row.5,
         avatar: row.6,
+        figure: row.20,
+        launch_arguments: serde_json::from_str(&row.21)?,
         soul: row.7,
         machine_id: row.8,
         placement_generation: row.19,
@@ -322,6 +328,7 @@ impl Storage {
                 record.agent_id
             )));
         }
+        t.execute("UPDATE agents SET figure=?3,launch_arguments_json=?4 WHERE workspace_id=?1 AND agent_id=?2", params![record.workspace_id.as_str(),record.agent_id.as_str(),record.figure,serde_json::to_string(&record.launch_arguments)?])?;
         let mut revision: i64 = t.query_row(
             "SELECT coalesce(max(revision),0) FROM agent_named_secrets WHERE workspace_id=?1 AND agent_id=?2",
             params![record.workspace_id.as_str(), record.agent_id.as_str()],
@@ -409,5 +416,54 @@ impl Storage {
             "DELETE FROM agent_file_deletions WHERE workspace_id=?1 AND agent_id=?2",
             params![workspace_id.as_str(), agent_id.as_str()],
         )? == 1)
+    }
+}
+
+impl Storage {
+    pub fn insert_figure_pack(
+        &self,
+        workspace: &WorkspaceId,
+        id: &str,
+        metadata: Value,
+    ) -> Result<()> {
+        self.conn()?.execute(
+            "INSERT INTO figure_packs(workspace_id,id,metadata_json) VALUES(?1,?2,?3)",
+            params![workspace.as_str(), id, serde_json::to_string(&metadata)?],
+        )?;
+        Ok(())
+    }
+    pub fn list_figure_packs(&self, workspace: &WorkspaceId) -> Result<Vec<Value>> {
+        let c = self.read_conn()?;
+        let mut statement =
+            c.prepare("SELECT metadata_json FROM figure_packs WHERE workspace_id=?1 ORDER BY id")?;
+        let rows = statement
+            .query_map([workspace.as_str()], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        rows.into_iter()
+            .map(|row| Ok(serde_json::from_str(&row)?))
+            .collect()
+    }
+    pub fn remove_resource_metadata(
+        &self,
+        workspace: &WorkspaceId,
+        id: lankide_core::ResourceId,
+    ) -> Result<()> {
+        self.conn()?.execute(
+            "DELETE FROM resource_metadata WHERE workspace_id=?1 AND resource_id=?2",
+            params![workspace.as_str(), id.get()],
+        )?;
+        Ok(())
+    }
+    pub fn busy_agents(
+        &self,
+        workspace: Option<&WorkspaceId>,
+    ) -> Result<std::collections::BTreeSet<(WorkspaceId, AgentId)>> {
+        let c = self.read_conn()?;
+        let mut statement = c.prepare("SELECT DISTINCT workspace_id,agent_id FROM executions WHERE state IN('assigning','running','recovering') AND (?1 IS NULL OR workspace_id=?1)")?;
+        Ok(statement
+            .query_map([workspace.map(WorkspaceId::as_str)], |row| {
+                Ok((wid(row.get(0)?)?, aid(row.get(1)?)?))
+            })?
+            .collect::<rusqlite::Result<_>>()?)
     }
 }

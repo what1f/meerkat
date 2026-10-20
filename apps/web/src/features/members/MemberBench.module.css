@@ -1,0 +1,36 @@
+/* Values with no spacing token stay in pixels. */
+
+.stage {
+  display: grid;
+  grid-auto-flow: column;
+  column-gap: 40px;
+  margin-top: -40px;
+}
+
+.spacer {
+  margin-left: auto;
+}
+
+.brain {
+  display: grid;
+  row-gap: 10px;
+  width: min(660px, 100vw - 24px);
+  padding: 10px;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.25fr 112px;
+  column-gap: 6px;
+}
+
+.advanced {
+  display: grid;
+  row-gap: 18px;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 2fr 3fr;
+  column-gap: 6px;
+}

@@ -267,21 +267,6 @@ async fn prepare_assignment(
         .harness
         .as_ref()
         .ok_or_else(|| MachineError::InvalidAssignment("missing_harness".into()))?;
-    if !STANDARD_HARNESS_IDS.contains(&wire_config.harness_id.as_str()) {
-        return Err(MachineError::InvalidAssignment(
-            "unsupported_harness".into(),
-        ));
-    }
-    if Path::new(&wire_config.executable_path)
-        .file_name()
-        .and_then(|v| v.to_str())
-        == Some("dcc")
-        && wire_config.harness_id != "claude_code"
-    {
-        return Err(MachineError::InvalidAssignment(
-            "dcc_requires_claude_code".into(),
-        ));
-    }
     let factory = inner
         .factories
         .get(&wire_config.harness_id)
@@ -541,11 +526,26 @@ async fn prepare_assignment(
     Ok(())
 }
 
-fn native_config(
+pub(super) fn native_config(
     config: &lankide_protocol::HarnessConfig,
     fingerprint: &str,
     defaults: &NativeHarnessConfig,
 ) -> Result<NativeHarnessConfig, MachineError> {
+    if !STANDARD_HARNESS_IDS.contains(&config.harness_id.as_str()) {
+        return Err(MachineError::InvalidAssignment(
+            "unsupported_harness".into(),
+        ));
+    }
+    if Path::new(&config.executable_path)
+        .file_name()
+        .and_then(|v| v.to_str())
+        == Some("dcc")
+        && config.harness_id != "claude_code"
+    {
+        return Err(MachineError::InvalidAssignment(
+            "dcc_requires_claude_code".into(),
+        ));
+    }
     let mut environment = defaults.environment.clone();
     environment.extend(
         config
@@ -557,6 +557,7 @@ fn native_config(
         harness_id: config.harness_id.clone(),
         model: ModelRef::new(config.model.clone(), config.model.clone()),
         thinking_level: config.thinking_level.clone(),
+        launch_arguments: config.launch_arguments.clone(),
         cli_path: if config.executable_path.trim().is_empty() {
             defaults.cli_path.clone()
         } else {

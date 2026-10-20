@@ -1,0 +1,13 @@
+.root {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.leading {
+  display: flex;
+  order: -1;
+  justify-content: center;
+  margin-bottom: 14px;
+}

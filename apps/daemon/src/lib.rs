@@ -175,7 +175,7 @@ where
         600_000
     }
     fn default_link_listen() -> String {
-        "127.0.0.1:0".into()
+        "127.0.0.1:7440".into()
     }
     fn default_attempt_lease_ms() -> u64 {
         15_000
@@ -203,13 +203,16 @@ where
         .set_attempt_lease(Duration::from_millis(settings.attempt_lease_ms))?;
     application.set_pairing_validity(Duration::from_millis(settings.pairing_validity_ms))?;
     let address = settings.machine_link_listen;
-    let listener = tokio::net::TcpListener::bind(&address).await?;
+    let listener = tokio::net::TcpListener::bind(&address)
+        .await
+        .map_err(|error| {
+            io::Error::new(error.kind(), format!("cannot listen on {address}: {error}"))
+        })?;
     if !listener.local_addr()?.ip().is_loopback() {
         return Err(AppError::InvalidHome("local listener must use loopback"));
     }
     let url = format!("ws://{}", listener.local_addr()?);
     let secret = lankide_protocol::link::publish(&paths.run, &url)?;
-    let owner = lankide_protocol::management::OwnerCredential::load_or_create(&paths.run)?;
     let mut management_address = listener.local_addr()?;
     if management_address.ip().is_unspecified() {
         management_address.set_ip(match management_address {
@@ -236,9 +239,9 @@ where
         secret,
         RuntimePeerAdapter::new(application.clone()),
         settings.machine_link,
-        Some(owner),
         Some(remote.clone()),
         None,
+        Some(std::sync::Arc::new(lankide_web_assets::serve)),
         async {
             let _ = link_stopped.await;
         },

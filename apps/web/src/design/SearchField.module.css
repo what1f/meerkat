@@ -1,0 +1,29 @@
+.root {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  height: 44px;
+  padding: 0 16px;
+  color: var(--ink-3);
+  border-bottom: var(--hairline);
+}
+
+.root > input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font-size: var(--t-body);
+  color: var(--ink);
+  appearance: none;
+  background: var(--clear);
+  border-style: none;
+  outline-style: none;
+}
+
+.root > input::placeholder {
+  color: var(--ink-3);
+}
+
+.root > input::-webkit-search-cancel-button {
+  display: none;
+}

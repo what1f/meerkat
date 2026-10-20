@@ -108,46 +108,12 @@ impl InboundResourceCache {
     }
 }
 
-/// Signs the user in to the Feishu developer console with a QR code, so new
-/// Agent Apps are created without another confirmation.
-pub const CONSOLE_LOGIN_INTERFACE: &str = "feishu.workspace.console_login";
-
-struct ConsoleLoginHandler {
-    context: InitContext,
-    transport: SharedTransport,
-}
-
-impl InvocationHandler for ConsoleLoginHandler {
-    fn invoke<'a>(&'a self, input: Value) -> ProviderFuture<'a, Value> {
-        Box::pin(async move {
-            let action = input
-                .get("action")
-                .and_then(Value::as_str)
-                .unwrap_or("status");
-            let login = crate::console::login(
-                self.transport.clone(),
-                self.context.secret_reader(),
-                self.context.secret_writer(),
-                action,
-            )
-            .await?;
-            Ok(match login {
-                crate::console::Login::Ready(_) => serde_json::json!({"state": "ready"}),
-                crate::console::Login::Required => serde_json::json!({"state": "required"}),
-                crate::console::Login::Waiting { qr_code, scanned } => serde_json::json!({
-                    "state": if scanned { "scanned" } else { "waiting" },
-                    "qr_code": qr_code,
-                }),
-            })
-        })
-    }
-}
-
 /// Feishu Provider with a production reqwest transport by default.
 ///
 /// `with_transport` and `with_event_source_factory` are the two seams used by
 /// module E2E and by hosts that already own a configured SDK websocket client.
 pub struct FeishuProvider {
+    clock: Arc<dyn lankide_provider::Clock>,
     transport: SharedTransport,
     event_source_factory: Option<Arc<EventSourceFactory>>,
     workspaces: Arc<Mutex<BTreeMap<String, WorkspaceState>>>,
@@ -159,6 +125,7 @@ pub struct FeishuProvider {
 impl Clone for FeishuProvider {
     fn clone(&self) -> Self {
         Self {
+            clock: self.clock.clone(),
             transport: self.transport.clone(),
             event_source_factory: self.event_source_factory.clone(),
             workspaces: self.workspaces.clone(),
@@ -189,6 +156,7 @@ impl Default for FeishuProvider {
 impl FeishuProvider {
     pub fn new() -> Self {
         Self {
+            clock: Arc::new(lankide_provider::SystemClock),
             transport: Arc::new(ReqwestTransport::new()),
             event_source_factory: Some(Arc::new(crate::ws::native_event_source_factory)),
             workspaces: Arc::new(Mutex::new(BTreeMap::new())),
@@ -202,6 +170,11 @@ impl FeishuProvider {
     /// supplies its own event receiver later.
     pub fn without_event_source(mut self) -> Self {
         self.event_source_factory = None;
+        self
+    }
+
+    pub fn with_clock(mut self, clock: Arc<dyn lankide_provider::Clock>) -> Self {
+        self.clock = clock;
         self
     }
 
@@ -377,24 +350,34 @@ impl Provider for FeishuProvider {
 
     fn init<'a>(&'a self, context: InitContext) -> ProviderFuture<'a, ()> {
         Box::pin(async move {
+            for (id, handler) in [(
+                "feishu.workspace.tasks",
+                Arc::new(crate::workspace_tasks::TasksHandler {
+                    context: context.clone(),
+                    transport: self.transport.clone(),
+                }) as Arc<dyn InvocationHandler>,
+            )] {
+                context
+                    .register_interface(InterfaceDefinition {
+                        id: id.into(),
+                        input_schema: JsonSchema::new(
+                            serde_json::json!({"type":"object","required":["action"]}),
+                        )?,
+                        output_schema: JsonSchema::new(serde_json::json!({"type":"object"}))?,
+                        handler,
+                    })
+                    .await?;
+            }
             context
                 .register_interface(InterfaceDefinition {
-                    id: CONSOLE_LOGIN_INTERFACE.into(),
-                    input_schema: JsonSchema::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {"action": {"enum": ["status", "start", "poll"]}}
-                    }))?,
-                    output_schema: JsonSchema::new(serde_json::json!({
-                        "type": "object",
-                        "required": ["state"],
-                        "properties": {
-                            "state": {"enum": ["ready", "required", "waiting", "scanned"]},
-                            "qr_code": {"type": "string"}
-                        }
-                    }))?,
-                    handler: Arc::new(ConsoleLoginHandler {
+                    id: "feishu.human.sync".into(),
+                    input_schema: JsonSchema::new(
+                        serde_json::json!({"type":"object","required":["person_id"]}),
+                    )?,
+                    output_schema: JsonSchema::new(serde_json::json!({"type":"object"}))?,
+                    handler: Arc::new(HumanSyncHandler {
+                        provider: self.clone(),
                         context: context.clone(),
-                        transport: self.transport.clone(),
                     }),
                 })
                 .await?;
@@ -762,6 +745,13 @@ impl Provider for FeishuProvider {
                 .ok_or(ProviderError::NotFound {
                     entity: "workspace",
                 })?;
+            // Task availability is optional and does not prevent this Agent from receiving IM.
+            let _ = crate::agent_tasks::initialize_existing_tasklist(
+                &init_context,
+                client.clone(),
+                &app_id,
+            )
+            .await;
             let mut event_task = None;
             if let Some(factory) = self.event_source_factory.clone() {
                 let source_workspace_id = context.workspace_id.clone();
@@ -804,6 +794,7 @@ impl Provider for FeishuProvider {
                     normalization,
                     self.identity_lock.clone(),
                     self.inbound_resource_cache.clone(),
+                    self.clock.clone(),
                 ));
             }
             self.replace_state(
@@ -835,12 +826,15 @@ impl Provider for FeishuProvider {
         action: String,
         opaque_payload: Value,
     ) -> ProviderFuture<'a, lankide_provider::ProviderOnboarding> {
-        Box::pin(crate::onboarding::agent_onboarding_with_transport(
-            context,
-            action,
-            opaque_payload,
-            self.transport.clone(),
-        ))
+        Box::pin(async move {
+            crate::onboarding::agent_onboarding_with_transport(
+                context,
+                action,
+                opaque_payload,
+                self.transport.clone(),
+            )
+            .await
+        })
     }
 
     fn update_agent<'a>(
@@ -1016,6 +1010,7 @@ fn spawn_dispatcher(
     normalization: NormalizationConfig,
     identity_lock: Arc<AsyncMutex<()>>,
     inbound_resource_cache: Arc<AsyncMutex<InboundResourceCache>>,
+    clock: Arc<dyn lankide_provider::Clock>,
 ) -> EventTask {
     let (shutdown, mut stopped) = tokio::sync::oneshot::channel();
     let task = tokio::spawn(async move {
@@ -1028,6 +1023,8 @@ fn spawn_dispatcher(
             identity_lock,
             inbound_resource_cache,
             human_names: BTreeMap::new(),
+            transport: transport.clone(),
+            clock: clock.clone(),
         };
         loop {
             let result = tokio::select! {
@@ -1125,6 +1122,8 @@ struct FeishuEventBridge {
     context: InitContext,
     client: Arc<SharedClient>,
     auth: Auth,
+    transport: SharedTransport,
+    clock: Arc<dyn lankide_provider::Clock>,
     identity_lock: Arc<AsyncMutex<()>>,
     inbound_resource_cache: Arc<AsyncMutex<InboundResourceCache>>,
     human_names: BTreeMap<String, (String, Instant)>,
@@ -1182,6 +1181,12 @@ impl NormalizedEventSink for FeishuEventBridge {
             } else {
                 None
             };
+            let sync_app = match &event {
+                NormalizedEvent::Message(message) if message.sender.kind == SenderKind::Human => {
+                    Some(message.app_id.clone())
+                }
+                _ => None,
+            };
             let Some(provider_event) = normalized_event_to_provider(
                 &self.context,
                 &self.client,
@@ -1194,6 +1199,37 @@ impl NormalizedEventSink for FeishuEventBridge {
             else {
                 return Ok(());
             };
+            if let Some(app_id) = sync_app {
+                if let Ok(person_id) = lankide_core::PersonId::new(provider_event.sender.id.clone())
+                {
+                    let context = self.context.clone();
+                    let client = self.client.clone();
+                    let transport = self.transport.clone();
+                    let clock = self.clock.clone();
+                    tokio::spawn(async move {
+                        let result = async {
+                            if context
+                                .storage()
+                                .claim_human_profile_sync(&person_id, false, clock.now_millis())
+                                .await?
+                            {
+                                sync_human_profile(
+                                    &context, client, transport, &app_id, &person_id,
+                                )
+                                .await?;
+                            }
+                            Ok::<_, ProviderError>(())
+                        }
+                        .await;
+                        if let Err(error) = result {
+                            context.logger().log(
+                                lankide_provider::LogLevel::Warn,
+                                &format!("Feishu profile sync failed: {}", error.code()),
+                            );
+                        }
+                    });
+                }
+            }
             self.context
                 .event_sink()
                 .emit(provider_event)
@@ -1427,6 +1463,13 @@ async fn normalized_event_to_provider(
             provider_data: serde_json::to_value(&update).map_err(crate::events::SinkError::from)?,
         })),
         NormalizedEvent::Task(task) => {
+            if crate::agent_tasks::task_system_enabled(context.workspace_config()) {
+                context
+                    .storage()
+                    .management_changed()
+                    .await
+                    .map_err(crate::events::SinkError::from)?;
+            }
             let Some((sender, custom)) =
                 crate::agent_tasks::task_event(context, client.clone(), auth, &task)
                     .await
@@ -1566,6 +1609,21 @@ async fn resolved_sender(
                     .map_err(crate::events::SinkError::from)?;
             }
         }
+    }
+    if person.team_role != lankide_provider::TeamRole::External {
+        let (saved_name, _) = context
+            .storage()
+            .human_profile(&person.person_id)
+            .await
+            .map_err(crate::events::SinkError::from)?;
+        return Ok(sender(
+            kind,
+            person.person_id.as_str(),
+            saved_name
+                .as_deref()
+                .filter(|v| !v.is_empty())
+                .unwrap_or(name),
+        ));
     }
     let current_open_id = alias("open_id").or_else(|| {
         person
@@ -1864,4 +1922,147 @@ fn inbound_media_metadata(
         }
     }
     (file_name, media_type)
+}
+
+struct HumanSyncHandler {
+    provider: FeishuProvider,
+    context: InitContext,
+}
+impl InvocationHandler for HumanSyncHandler {
+    fn invoke<'a>(&'a self, input: Value) -> ProviderFuture<'a, Value> {
+        Box::pin(async move {
+            let person_id =
+                lankide_core::PersonId::new(input["person_id"].as_str().unwrap_or_default())
+                    .map_err(|_| ProviderError::InvalidInput { field: "person_id" })?;
+            let person = self.context.storage().person(&person_id).await?;
+            if person.team_role == lankide_provider::TeamRole::External {
+                return Err(ProviderError::InvalidInput { field: "person_id" });
+            }
+            let (_, directory) = crate::identity::load(self.context.storage()).await?;
+            for (id, identity) in directory.agents {
+                let Ok(agent_id) = AgentId::new(id) else {
+                    continue;
+                };
+                let Ok(state) = self
+                    .provider
+                    .state(self.context.workspace_id().as_str(), &agent_id)
+                else {
+                    continue;
+                };
+                if sync_human_profile(
+                    &self.context,
+                    state.client,
+                    self.provider.transport.clone(),
+                    &identity.app_id,
+                    &person_id,
+                )
+                .await
+                .is_ok()
+                {
+                    self.context
+                        .storage()
+                        .claim_human_profile_sync(
+                            &person_id,
+                            true,
+                            self.provider.clock.now_millis(),
+                        )
+                        .await?;
+                    return Ok(serde_json::json!({}));
+                }
+            }
+            Err(ProviderError::External {
+                operation: "sync_human_profile",
+                retryable: true,
+            })
+        })
+    }
+}
+
+async fn sync_human_profile(
+    context: &InitContext,
+    client: Arc<SharedClient>,
+    transport: SharedTransport,
+    app_id: &str,
+    person_id: &lankide_core::PersonId,
+) -> Result<(), ProviderError> {
+    let person = context.storage().person(person_id).await?;
+    if person.team_role == lankide_provider::TeamRole::External {
+        return Err(ProviderError::InvalidInput { field: "person_id" });
+    }
+    let open_id = person.provider_state["open_ids_by_app"][app_id].as_str();
+    let (signature_id, signature_id_type) = match open_id {
+        Some(id) => (id, "open_id"),
+        None => (person.external_id.as_str(), "union_id"),
+    };
+    let (profile, signature) = tokio::join!(
+        async {
+            match open_id {
+                Some(id) => client.get_user(id, Auth::Tenant).await,
+                None => {
+                    client
+                        .get_user_by_id(
+                            &person.external_id,
+                            person.provider_state["external_id_type"]
+                                .as_str()
+                                .unwrap_or("union_id"),
+                            Auth::Tenant,
+                        )
+                        .await
+                }
+            }
+        },
+        client.human_signature(signature_id, signature_id_type)
+    );
+    // Signature permissions can lag behind the rest of the bot's permissions.
+    let signature = signature.ok().flatten();
+    let profile = match profile {
+        Ok(profile) => profile,
+        Err(error) => {
+            context
+                .storage()
+                .update_human_profile(person_id, None, None, signature.as_deref())
+                .await?;
+            return Err(error.provider_error(false));
+        }
+    };
+    let mut avatar = None;
+    if !profile.avatar.avatar_origin.is_empty() {
+        // Missing or unreadable picture must preserve the last good picture.
+        let downloaded = transport
+            .execute(crate::http::Request::new(
+                crate::http::Method::Get,
+                &profile.avatar.avatar_origin,
+            ))
+            .await;
+        if let Ok(response) = downloaded {
+            if (200..300).contains(&response.status) {
+                let previous = context.storage().human_profile(person_id).await?.1;
+                let unchanged = if let Some(previous) = &previous {
+                    context.storage().resource(previous).await?.bytes == response.body
+                } else {
+                    false
+                };
+                if !unchanged {
+                    avatar = context
+                        .save_resource(ResourceUpload {
+                            file_name: "member.jpg".into(),
+                            media_type: response
+                                .headers
+                                .iter()
+                                .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                                .map(|(_, v)| v.clone())
+                                .unwrap_or_else(|| "image/jpeg".into()),
+                            bytes: response.body,
+                        })
+                        .await
+                        .ok();
+                }
+            }
+        }
+    }
+    let name = (!profile.name.trim().is_empty()).then_some(profile.name.as_str());
+    context
+        .storage()
+        .update_human_profile(person_id, name, avatar.as_ref(), signature.as_deref())
+        .await
 }

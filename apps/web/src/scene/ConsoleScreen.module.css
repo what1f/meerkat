@@ -1,0 +1,41 @@
+/* The display: one control that opens the picker. */
+.root {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 20px 24px 18px;
+  color: var(--screen-ink);
+  text-align: left;
+  background: var(--screen-face);
+  border-style: none;
+  border-radius: var(--r-xl);
+  box-shadow: var(--screen-shadow);
+  transition:
+    transform var(--d-fast),
+    box-shadow var(--d-base);
+}
+
+.root::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: '';
+  background: var(--screen-glass);
+  border-radius: var(--r-xl);
+}
+
+button.root:hover,
+button.root:focus-visible {
+  outline-style: none;
+  box-shadow: var(--screen-shadow-hover);
+}
+
+button.root:active,
+button.root[data-popup-open] {
+  transform: translateY(1px);
+}
+
+.root[data-variant='list'] {
+  min-height: 136px;
+  padding: 10px;
+}

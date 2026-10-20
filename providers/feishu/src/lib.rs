@@ -6,7 +6,6 @@ mod adapter;
 mod agent_tasks;
 mod authorization;
 pub mod client;
-mod console;
 pub mod dto;
 pub mod events;
 pub mod http;
@@ -20,7 +19,7 @@ pub mod registration;
 pub mod tasks;
 pub mod ws;
 
-pub use adapter::{CONSOLE_LOGIN_INTERFACE, EventSourceFactory, FeishuProvider};
+pub use adapter::{EventSourceFactory, FeishuProvider};
 pub use authorization::{
     STANDARD_BOT_EVENTS, STANDARD_BOT_TENANT_SCOPES, authorization_url,
     contains_standard_capabilities,
@@ -45,12 +44,14 @@ pub use normalize::{
     NormalizedTaskEvent, ReactionAction, SenderKind, normalize_chat_update, normalize_event,
     normalize_message, normalize_reaction, normalize_task,
 };
-pub use onboarding::agent_onboarding;
-pub use registration::{
-    Registrar as FeishuRegistrar, Registration, RegistrationCredential, RegistrationPoll,
-};
 pub use tasks::{
     Comment as TaskCommentInput, CreateTask, ListRequest as TaskListRequest, MemberIdentity,
     TaskEventReason, TaskMemberInput, TaskPatch, TasklistMember,
 };
 pub use ws::{FeishuWebSocketSource, native_event_source_factory};
+
+mod workspace_tasks;
+
+pub use registration::{
+    Registrar as FeishuRegistrar, Registration, RegistrationCredential, RegistrationPoll,
+};

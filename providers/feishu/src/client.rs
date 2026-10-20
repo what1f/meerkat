@@ -868,6 +868,87 @@ impl<T: Transport> Client<T> {
         })
     }
 
+    /// The enterprise of this App's tenant token (not a developer-session tenant ID).
+    pub(crate) async fn tenant_key(&self) -> Result<String, ClientError> {
+        let response: ApiResponse<Value> = self
+            .json_request(
+                Method::Get,
+                "/open-apis/tenant/v2/tenant/query",
+                &[],
+                None,
+                Auth::Tenant,
+                "tenant_info",
+            )
+            .await?;
+        response
+            .data
+            .and_then(|data| {
+                data["tenant"]["tenant_key"]
+                    .as_str()
+                    .filter(|v| !v.is_empty())
+                    .map(str::to_owned)
+            })
+            .ok_or_else(|| ClientError::MissingField {
+                operation: "tenant_info".into(),
+                field: "tenant_key".into(),
+            })
+    }
+
+    pub(crate) async fn application_creator(&self, id_type: &str) -> Result<String, ClientError> {
+        let response: ApiResponse<Value> = self
+            .json_request(
+                Method::Get,
+                "/open-apis/application/v6/applications/me",
+                &[
+                    ("lang".into(), "zh_cn".into()),
+                    ("user_id_type".into(), id_type.into()),
+                ],
+                None,
+                Auth::Tenant,
+                "application_creator",
+            )
+            .await?;
+        response
+            .data
+            .and_then(|data| {
+                data["app"]["creator_id"]
+                    .as_str()
+                    .filter(|v| !v.is_empty())
+                    .map(str::to_owned)
+            })
+            .ok_or_else(|| ClientError::MissingField {
+                operation: "application_creator".into(),
+                field: "creator_id".into(),
+            })
+    }
+
+    /// Read only the creator's signature through the official directory API.
+    /// Missing fields remain None; an explicit empty string clears the signature.
+    pub(crate) async fn human_signature(
+        &self,
+        user_id: &str,
+        id_type: &str,
+    ) -> Result<Option<String>, ClientError> {
+        let response: ApiResponse<Value> = self
+            .json_request(
+                Method::Post,
+                "/open-apis/directory/v1/employees/mget",
+                &[("employee_id_type".into(), id_type.into())],
+                Some(&serde_json::json!({
+                    "employee_ids": [user_id],
+                    "required_fields": ["base_info.description"],
+                })),
+                Auth::Tenant,
+                "human_signature",
+            )
+            .await?;
+        Ok(response.data.and_then(|data| {
+            data["employees"].as_array()?.first()?["base_info"]["description"]
+                .as_str()
+                .map(str::to_owned)
+        }))
+    }
+
     pub async fn get_user(&self, open_id: &str, auth: Auth) -> Result<UserRecord, ClientError> {
         self.get_user_by_id(open_id, "open_id", auth).await
     }

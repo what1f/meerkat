@@ -417,6 +417,7 @@ fn factory(pid_journal: &Path) -> Result<Box<dyn HarnessFactory>, String> {
 
 fn config(mode: &str) -> HarnessConfig {
     HarnessConfig {
+        launch_arguments: Default::default(),
         harness_id: "conformance".to_owned(),
         model: ModelRef::new("fixture-model", "Fixture Model"),
         thinking_level: "low".to_owned(),

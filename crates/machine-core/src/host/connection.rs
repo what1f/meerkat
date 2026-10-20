@@ -170,11 +170,11 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, MachineError> {
                 return Ok(started.elapsed());
             }
             frame = inbound.recv() => match frame {
-                Some(Ok(frame)) => {
+                Some(Ok((frame, received_at))) => {
                     if frame.protocol_version != lankide_protocol::PROTOCOL_VERSION { return Err(MachineError::ProtocolVersionUnsupported); }
                     deadline.as_mut().reset(tokio::time::Instant::now() + heartbeat_interval * 3);
                     if !matches!(frame.frame, Some(lankide_protocol::link::RuntimePayload::Heartbeat)) {
-                        dispatch(inner.clone(), frame).await?
+                        dispatch(inner.clone(), frame, received_at).await?
                     }
                 }
                 Some(Err(error @ LinkError::Closed(CloseReason::MachineRevoked | CloseReason::MachineUnknown))) => return Err(error.into()),
@@ -204,7 +204,9 @@ async fn pump_link<
 >(
     mut link: L,
     mut outgoing: mpsc::Receiver<MachineFrame>,
-    incoming: mpsc::Sender<Result<lankide_protocol::link::RuntimeFrame, LinkError>>,
+    incoming: mpsc::Sender<
+        Result<(lankide_protocol::link::RuntimeFrame, tokio::time::Instant), LinkError>,
+    >,
     interval: Duration,
 ) {
     let result: Result<(), LinkError> = async {
@@ -217,7 +219,7 @@ async fn pump_link<
                 }
                 frame = link.receive() => {
                     let Some(frame) = frame? else { return Ok(()) };
-                    if incoming.send(Ok(frame)).await.is_err() { return Ok(()); }
+                    if incoming.send(Ok((frame, tokio::time::Instant::now()))).await.is_err() { return Ok(()); }
                 }
             }
         }
@@ -244,8 +246,15 @@ async fn make_hello(inner: &Inner) -> MachineHello {
                             .collect()
                     })
                     .unwrap_or_default(),
-                model_catalog: None,
-                model_catalog_error: String::new(),
+                model_catalog: inner
+                    .model_catalogs
+                    .get(*id)
+                    .and_then(|value| value.0.clone()),
+                model_catalog_error: inner
+                    .model_catalogs
+                    .get(*id)
+                    .map(|value| value.1.clone())
+                    .unwrap_or_default(),
                 harness_id: (*id).to_owned(),
                 display_name: factory
                     .map(|factory| factory.info().display_name.clone())
@@ -304,10 +313,24 @@ async fn publish_inventory(inner: &Inner) {
     .await;
 }
 
-async fn dispatch(inner: Arc<Inner>, frame: RuntimeFrame) -> Result<(), MachineError> {
+async fn dispatch(
+    inner: Arc<Inner>,
+    frame: RuntimeFrame,
+    received_at: tokio::time::Instant,
+) -> Result<(), MachineError> {
     match frame.frame {
         Some(runtime_frame::Frame::CapabilityResponse(response)) => {
             super::proxy::response(&inner, response).await
+        }
+        Some(runtime_frame::Frame::TestHarness(request)) => {
+            let task = tokio::spawn(super::harness_test::run(
+                inner.clone(),
+                request,
+                received_at,
+            ));
+            let mut tasks = inner.assignment_tasks.lock().await;
+            tasks.retain(|task| !task.is_finished());
+            tasks.push(task);
         }
         Some(runtime_frame::Frame::AssignExecution(assign)) => {
             let task_inner = inner.clone();

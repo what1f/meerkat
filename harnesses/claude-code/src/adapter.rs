@@ -48,7 +48,7 @@ impl ClaudeCodeHarness {
         }
         if !matches!(
             config.thinking_level.as_str(),
-            "off" | "low" | "medium" | "high" | "xhigh" | "max"
+            "" | "off" | "low" | "medium" | "high" | "xhigh" | "max"
         ) {
             return Err(HarnessError::invalid_config(
                 "unsupported Claude Code thinking level",
@@ -546,9 +546,10 @@ impl Inner {
             ])
             .arg(&self.mcp_path);
         command.args(["--system-prompt", self.request.system_prompt.as_str()]);
+        command.args(&self.request.config.launch_arguments);
         if self.request.config.thinking_level == "off" {
             command.env("CLAUDE_CODE_DISABLE_THINKING", "1");
-        } else {
+        } else if !self.request.config.thinking_level.is_empty() {
             command
                 .args(["--effort", self.request.config.thinking_level.as_str()])
                 .env("CLAUDE_CODE_DISABLE_THINKING", "0");
@@ -650,6 +651,7 @@ impl Inner {
     fn reap(&self, force: bool) {
         self.stdin.lock().expect("stdin lock").take();
         if let Some(mut child) = self.child.lock().expect("child lock").take() {
+            lankide_harness::kill_process_group(child.id());
             if force || child.try_wait().ok().flatten().is_none() {
                 let _ = child.kill();
             }

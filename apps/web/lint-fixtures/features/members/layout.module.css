@@ -1,0 +1,4 @@
+/* expect: property-allowed-list */
+.bad {
+  position: absolute;
+}

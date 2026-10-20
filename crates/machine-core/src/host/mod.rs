@@ -3,6 +3,7 @@ mod connection;
 mod control;
 mod events;
 mod failure;
+mod harness_test;
 mod liveness;
 mod proxy;
 mod records;
@@ -311,6 +312,7 @@ impl Machine {
         let mut defaults = HashMap::new();
         let mut factories = HashMap::new();
         let mut probes = HashMap::new();
+        let mut model_catalogs = HashMap::new();
         for (harness_id, registration) in self.harnesses {
             let mut probe = match registration.factory.probe(&registration.probe_config).await {
                 Ok(probe) => probe,
@@ -328,6 +330,34 @@ impl Machine {
             probe.reason = probe
                 .reason
                 .map(|reason| redact_diagnostic(&reason, &registration.probe_config));
+            let models = tokio::time::timeout(
+                Duration::from_secs(5),
+                registration.factory.models(&registration.probe_config),
+            )
+            .await;
+            let catalog = match models {
+                Ok(Ok(models)) => (
+                    Some(lankide_protocol::ModelCatalog {
+                        models: models
+                            .into_iter()
+                            .map(|model| lankide_protocol::ModelCatalogItem {
+                                available: true,
+                                model_id: model.id,
+                                display_name: model.name,
+                                description: model.description,
+                                supported_thinking_levels: model.thinking_levels,
+                            })
+                            .collect(),
+                    }),
+                    String::new(),
+                ),
+                Ok(Err(error)) => (
+                    None,
+                    redact_diagnostic(&error.to_string(), &registration.probe_config),
+                ),
+                Err(_) => (None, "Model discovery timed out".into()),
+            };
+            model_catalogs.insert(harness_id.clone(), catalog);
             defaults.insert(harness_id.clone(), registration.probe_config);
             factories.insert(harness_id.clone(), registration.factory);
             probes.insert(harness_id, probe);
@@ -358,6 +388,7 @@ impl Machine {
             factories,
             defaults,
             probes,
+            model_catalogs,
             state: Mutex::new(persisted),
             starting: Mutex::new(HashMap::new()),
             active: Mutex::new(HashMap::new()),
@@ -508,6 +539,7 @@ struct Inner {
     factories: HashMap<String, Arc<dyn HarnessFactory>>,
     defaults: HashMap<String, NativeHarnessConfig>,
     probes: HashMap<String, ProbeResult>,
+    model_catalogs: HashMap<String, (Option<lankide_protocol::ModelCatalog>, String)>,
     state: Mutex<PersistedState>,
     starting: Mutex<HashMap<String, StartingExecution>>,
     active: Mutex<HashMap<String, ActiveExecution>>,

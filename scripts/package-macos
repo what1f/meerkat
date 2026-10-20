@@ -73,7 +73,7 @@ ICONSET="$ICON_TEMP/Lankide.iconset"
 mkdir "$ICONSET"
 cleanup() { rm -rf "$ICON_TEMP"; }
 trap cleanup EXIT INT TERM
-SOURCE_ICON="$ROOT_DIR/apps/desktop/assets/logo.png"
+SOURCE_ICON="$ROOT_DIR/apps/desktop/assets/app-icon.png"
 for specification in \
   '16 icon_16x16.png' '32 icon_16x16@2x.png' \
   '32 icon_32x32.png' '64 icon_32x32@2x.png' \

@@ -156,6 +156,10 @@ impl RuntimeApplication {
                 shutdown_timeout,
             }),
         };
+        application
+            .runtime()?
+            .database()
+            .observe_activity(Arc::downgrade(&application.inner));
         application.load_persisted_workspaces().await?;
         application.inner.state.store(APP_READY, Ordering::Release);
         Ok(application)
@@ -185,10 +189,6 @@ impl RuntimeApplication {
                             "[runtime] workspace={} Provider startup failed: {error}",
                             workspace.id
                         );
-                        runtime
-                            .database()
-                            .set_workspace_active(&workspace.id, false, now_millis())
-                            .await?;
                         runtime
                             .database()
                             .set_workspace_setup(
@@ -462,10 +462,6 @@ impl RuntimeApplication {
             {
                 runtime
                     .database()
-                    .set_workspace_active(&workspace.id, false, now_millis())
-                    .await?;
-                runtime
-                    .database()
                     .set_workspace_setup(
                         &workspace.id,
                         lankide_storage::WorkspaceSetupStatus::Error,
@@ -539,6 +535,18 @@ impl RuntimeApplication {
             let changed = changes.notified();
             tokio::pin!(changed);
             changed.as_mut().enable();
+            for (workspace, agent) in runtime.database().take_management_changes() {
+                self.emit_management(
+                    if agent.is_some() {
+                        lankide_protocol::ManagementEventKind::AgentUpdated
+                    } else {
+                        lankide_protocol::ManagementEventKind::WorkspaceUpdated
+                    },
+                    &workspace,
+                    agent.as_ref(),
+                    now_millis(),
+                );
+            }
             let next_due = match self.schedule_ready_work(&runtime).await {
                 Ok(due) => due,
                 Err(error) => {
@@ -708,7 +716,7 @@ impl RuntimeApplication {
         let _ = self.inner.events.send(lankide_protocol::ManagementEvent {
             sequence,
             occurred_at: now_millis(),
-            kind: lankide_protocol::ManagementEventKind::MachineCatalogChanged as i32,
+            kind: lankide_protocol::ManagementEventKind::MachineCatalogChanged,
             workspace: None,
             agent: None,
         });
@@ -725,7 +733,7 @@ impl RuntimeApplication {
         let _ = self.inner.events.send(lankide_protocol::ManagementEvent {
             sequence,
             occurred_at,
-            kind: kind as i32,
+            kind,
             workspace: Some(WorkspaceRef {
                 workspace_id: workspace.to_string(),
             }),
@@ -777,6 +785,7 @@ pub(crate) fn agent_runtime_config(
                 "thinking": agent.thinking,
                 "cli": agent.cli_path,
                 "environment": agent.env,
+                "launch_arguments": agent.launch_arguments,
             })
             .to_string()
             .as_bytes(),
@@ -813,6 +822,7 @@ pub(crate) fn agent_runtime_config(
         harness: HarnessConfig {
             harness_id: agent.harness_id,
             executable_path: agent.cli_path.unwrap_or_default(),
+            launch_arguments: agent.launch_arguments,
             model: agent.model,
             thinking_level: agent.thinking,
             environment_variables: agent
@@ -922,6 +932,14 @@ impl lankide_provider::SecretWriter for WorkspaceServices {
     }
 }
 impl ProviderStorage for WorkspaceServices {
+    fn management_changed(&self) -> SdkFuture<'_, ()> {
+        Box::pin(async move {
+            self.storage
+                .management_changed(self.workspace_id.clone(), None);
+            Ok(())
+        })
+    }
+
     fn get<'a>(&'a self, key: &'a str) -> SdkFuture<'a, Option<Vec<u8>>> {
         Box::pin(async move {
             self.storage
@@ -958,6 +976,18 @@ impl ProviderStorage for WorkspaceServices {
                 .put_workspace_provider_state(&self.workspace_id, &state)
                 .await
                 .map_err(provider_storage_error)
+        })
+    }
+    fn agent_config<'a>(&'a self, agent_id: &'a AgentId) -> SdkFuture<'a, serde_json::Value> {
+        Box::pin(async move {
+            self.storage
+                .agent_record(&self.workspace_id, agent_id)
+                .await
+                .map(|agent| agent.provider_agent_config)
+                .map_err(|_| ProviderError::External {
+                    operation: "provider_storage",
+                    retryable: true,
+                })
         })
     }
     fn agent_state<'a>(&'a self, agent_id: &'a AgentId) -> SdkFuture<'a, serde_json::Value> {
@@ -1040,6 +1070,88 @@ impl ProviderStorage for WorkspaceServices {
                 .await
                 .map(person_identity)
                 .map_err(provider_storage_error)
+        })
+    }
+    fn join_human_team<'a>(
+        &'a self,
+        person_id: &'a PersonId,
+        tenant_id: Option<&'a str>,
+        name: Option<&'a str>,
+        avatar: Option<&'a lankide_core::ResourceRef>,
+    ) -> SdkFuture<'a, ProviderPersonIdentity> {
+        Box::pin(async move {
+            let person = self
+                .storage
+                .join_human_team(
+                    &self.workspace_id,
+                    person_id,
+                    tenant_id,
+                    name,
+                    avatar,
+                    now_millis(),
+                )
+                .await
+                .map_err(|error| {
+                    if matches!(&error, StorageError::Conflict(v) if v == "team_enterprise") {
+                        ProviderError::InvalidInput {
+                            field: "team_enterprise",
+                        }
+                    } else {
+                        provider_storage_error(error)
+                    }
+                })?;
+            self.management_changed().await?;
+            Ok(person_identity(person))
+        })
+    }
+    fn claim_human_profile_sync<'a>(
+        &'a self,
+        person_id: &'a PersonId,
+        force: bool,
+        now: i64,
+    ) -> SdkFuture<'a, bool> {
+        Box::pin(async move {
+            self.storage
+                .claim_human_profile_sync(&self.workspace_id, person_id, force, now)
+                .await
+                .map_err(provider_storage_error)
+        })
+    }
+    fn human_profile<'a>(
+        &'a self,
+        person_id: &'a PersonId,
+    ) -> SdkFuture<'a, (Option<String>, Option<lankide_core::ResourceRef>)> {
+        Box::pin(async move {
+            self.storage
+                .human_profile(&self.workspace_id, person_id)
+                .await
+                .map_err(provider_storage_error)
+        })
+    }
+    fn update_human_profile<'a>(
+        &'a self,
+        person_id: &'a PersonId,
+        name: Option<&'a str>,
+        avatar: Option<&'a lankide_core::ResourceRef>,
+        signature: Option<&'a str>,
+    ) -> SdkFuture<'a, ()> {
+        Box::pin(async move {
+            let changed = self
+                .storage
+                .update_human_profile(
+                    &self.workspace_id,
+                    person_id,
+                    name,
+                    avatar,
+                    signature,
+                    now_millis(),
+                )
+                .await
+                .map_err(provider_storage_error)?;
+            if changed {
+                self.management_changed().await?;
+            }
+            Ok(())
         })
     }
     fn person<'a>(&'a self, person_id: &'a PersonId) -> SdkFuture<'a, ProviderPersonIdentity> {

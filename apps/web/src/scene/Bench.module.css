@@ -1,0 +1,11 @@
+.root {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 120px 72px;
+  align-items: flex-start;
+  justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 150px 40px var(--dock-clearance);
+  margin: 0 auto;
+}

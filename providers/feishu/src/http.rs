@@ -41,9 +41,6 @@ pub struct Request {
     pub query: Vec<(String, String)>,
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
-    /// Web sign-in hops set cookies on every redirect, so those callers read
-    /// each hop themselves.
-    pub follow_redirects: bool,
 }
 
 impl fmt::Debug for Request {
@@ -52,9 +49,7 @@ impl fmt::Debug for Request {
             .headers
             .iter()
             .map(|(name, value)| {
-                if name.eq_ignore_ascii_case("authorization")
-                    || name.eq_ignore_ascii_case("cookie")
-                    || name.to_ascii_lowercase().contains("csrf")
+                if name.eq_ignore_ascii_case("authorization") || name.eq_ignore_ascii_case("cookie")
                 {
                     (name.clone(), "<redacted>".to_owned())
                 } else {
@@ -81,13 +76,7 @@ impl Request {
             query: Vec::new(),
             headers: Vec::new(),
             body: Vec::new(),
-            follow_redirects: true,
         }
-    }
-
-    pub fn without_redirects(mut self) -> Self {
-        self.follow_redirects = false;
-        self
     }
 
     pub fn query(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
@@ -159,13 +148,6 @@ impl Response {
             .find(|(key, _)| key.eq_ignore_ascii_case(name))
             .map(|(_, value)| value.as_str())
     }
-
-    pub fn header_values<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a str> + 'a {
-        self.headers
-            .iter()
-            .filter(move |(key, _)| key.eq_ignore_ascii_case(name))
-            .map(|(_, value)| value.as_str())
-    }
 }
 
 pub type TransportFuture<'a> = std::pin::Pin<
@@ -185,7 +167,6 @@ impl<T: Transport + ?Sized> Transport for Arc<T> {
 #[derive(Clone)]
 pub struct ReqwestTransport {
     client: reqwest::Client,
-    no_redirect_client: reqwest::Client,
 }
 impl fmt::Debug for ReqwestTransport {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -207,11 +188,6 @@ impl ReqwestTransport {
                 .timeout(timeout)
                 .build()
                 .expect("reqwest client configuration is valid"),
-            no_redirect_client: reqwest::Client::builder()
-                .timeout(timeout)
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .expect("reqwest client configuration is valid"),
         }
     }
 }
@@ -225,12 +201,7 @@ impl Transport for ReqwestTransport {
                 Method::Patch => reqwest::Method::PATCH,
                 Method::Delete => reqwest::Method::DELETE,
             };
-            let client = if request.follow_redirects {
-                &self.client
-            } else {
-                &self.no_redirect_client
-            };
-            let mut builder = client.request(method, &request.path);
+            let mut builder = self.client.request(method, &request.path);
             if !request.query.is_empty() {
                 builder = builder.query(&request.query);
             }
@@ -312,6 +283,40 @@ pub enum ClientError {
 }
 
 impl ClientError {
+    pub(crate) fn provider_error(&self, configuration: bool) -> lankide_provider::ProviderError {
+        let (operation, upstream_code, status) = match self {
+            Self::Api {
+                operation, code, ..
+            } => (operation.as_str(), Some(*code), None),
+            Self::HttpStatus { operation, status } => (operation.as_str(), None, Some(*status)),
+            Self::MissingField { operation, .. } => (operation.as_str(), None, None),
+            Self::Transport(_) => ("transport", None, None),
+            Self::Decode(_) => ("decode", None, None),
+            Self::Encode(_) | Self::InvalidInput(_) => ("request", None, None),
+        };
+        // Do not forward arbitrary strings, URLs or upstream messages into diagnostics.
+        let operation = match operation {
+            "transport" => "transport",
+            "decode" => "decode",
+            "request" => "request",
+            _ => "feishu_api",
+        };
+        if configuration {
+            lankide_provider::ProviderError::AppConfigurationFailed {
+                operation,
+                upstream_code,
+                status,
+            }
+        } else {
+            lankide_provider::ProviderError::Upstream {
+                operation,
+                upstream_code,
+                status,
+                retryable: self.is_retryable(),
+            }
+        }
+    }
+
     pub fn is_retryable(&self) -> bool {
         match self {
             Self::Transport(_) => true,

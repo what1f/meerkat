@@ -1,0 +1,46 @@
+.root {
+  width: 352px;
+}
+
+.tag {
+  position: relative;
+  width: 352px;
+  min-height: 416px;
+  padding: 52px 32px 28px;
+  background: var(--card);
+  clip-path: polygon(36px 0, calc(100% - 36px) 0, 100% 36px, 100% 100%, 0 100%, 0 36px);
+}
+
+.tag :is(h2, h3, h4, h5, h6) {
+  margin: 0 0 10px;
+  font-size: var(--t-caption);
+  font-weight: 500;
+  color: var(--ink-3);
+  text-align: center;
+  text-indent: 0.3em;
+  letter-spacing: 0.3em;
+}
+
+.tag textarea:is(*, :hover, :focus) {
+  display: block;
+  width: 100%;
+  min-height: 288px;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  line-height: 32px;
+  color: var(--ink);
+  cursor: text;
+  resize: none;
+  background: var(--ruled);
+  border-style: none;
+  border-radius: var(--r-0);
+  outline-style: none;
+  box-shadow: var(--none);
+}
+
+.tag textarea::placeholder {
+  color: var(--ink-4);
+}

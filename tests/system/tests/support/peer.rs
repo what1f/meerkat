@@ -38,10 +38,19 @@ fn main() {
         .append(true)
         .open(&controls_path)
         .expect("control journal");
-    writeln!(controls, "{}", json!({"op": first["op"], "native_session_id": first["request"]["native_session_id"], "pid": std::process::id()})).expect("record session start");
+    writeln!(controls, "{}", json!({"op": first["op"], "native_session_id": first["request"]["native_session_id"], "pid": std::process::id(), "argv": std::env::args().skip(1).collect::<Vec<_>>(), "config": first["request"]["config"], "system_prompt": first["request"]["system_prompt"], "directory": std::env::current_dir().expect("cwd"), "tools": first["request"]["tools"]})).expect("record session start");
     let script: Script =
         serde_json::from_str(&std::env::var("LANKIDE_SYSTEM_SCRIPT").expect("Agent script"))
             .expect("script JSON");
+    if matches!(script, Script::HangOnStart) {
+        let child = std::process::Command::new("sleep")
+            .arg("300")
+            .spawn()
+            .expect("child");
+        std::fs::write("system-child.pid", child.id().to_string()).expect("child journal");
+        std::thread::sleep(Duration::from_secs(300));
+        return;
+    }
     emit(
         json!({"type":"bound","native_session_id":first["request"]["native_session_id"].as_str().unwrap_or("system-native")}),
     );
@@ -91,6 +100,11 @@ fn main() {
                 .expect("record input");
                 sequence = 0;
                 event(&mut sequence, json!({"kind":"started"}));
+                if let Ok(hold) = std::env::var("LANKIDE_SYSTEM_HOLD") {
+                    while std::path::Path::new(&hold).exists() {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                }
                 let (text, delay) = match &script {
                     Script::Reply {
                         text,
@@ -162,7 +176,28 @@ fn main() {
                         );
                         continue;
                     }
-                    Script::Hang => continue,
+                    Script::Greeting => {
+                        let child = std::process::Command::new("sleep")
+                            .arg("300")
+                            .spawn()
+                            .expect("child");
+                        let reply = json!({
+                            "greeting": "Hello!",
+                            "child_pid": child.id(),
+                            "runtime_environment": std::env::vars().any(|(key, _)| key.starts_with("LANKIDE_RUNTIME_")),
+                            "environment": std::env::var("GREETING_VALUE").expect("greeting env"),
+                            "argv": std::env::args().skip(1).collect::<Vec<_>>(),
+                            "model": first["request"]["config"]["model"]["model_id"],
+                            "thinking_level": first["request"]["config"]["thinking_level"],
+                            "tools": first["request"]["tools"],
+                        }).to_string();
+                        event(
+                            &mut sequence,
+                            json!({"kind":"completed", "final_output":reply}),
+                        );
+                        continue;
+                    }
+                    Script::Hang | Script::HangOnStart => continue,
                     Script::HangOnce { text } => {
                         if !std::path::Path::new("system-hung-once").exists() {
                             std::fs::write("system-hung-once", b"hung").expect("hang marker");
@@ -255,6 +290,48 @@ fn main() {
                             );
                         }
                         (text, 0)
+                    }
+                    Script::DeferredPrivateReply { text } => {
+                        let path =
+                            format!("{}.read", std::env::var("LANKIDE_SYSTEM_INPUTS").unwrap());
+                        if !std::path::Path::new(&path).exists() {
+                            assert!(input.contains("chat_id=300"));
+                            std::fs::write(&path, input).unwrap();
+                            event(
+                                &mut sequence,
+                                json!({"kind":"completed","final_output":"OK"}),
+                            );
+                            continue;
+                        }
+                        let history = runtime
+                            .block_on(lankide_cli::execute_from_environment(vec![
+                                "invoke".into(),
+                                "chat_messages".into(),
+                                "--arguments-json".into(),
+                                json!({"channel_id":"private_chat","chat_id":"300"}).to_string(),
+                            ]))
+                            .expect("read the earlier private conversation");
+                        assert!(history.to_string().contains("hello"));
+                        let sent = runtime
+                            .block_on(lankide_cli::execute_from_environment(vec![
+                                "send".into(),
+                                "--channel".into(),
+                                "private_chat".into(),
+                                "--chat".into(),
+                                "300".into(),
+                                "--content".into(),
+                                text.clone(),
+                                "--force".into(),
+                                "--idempotency-key".into(),
+                                "deferred-private".into(),
+                            ]))
+                            .expect("send in the earlier private conversation");
+                        assert_eq!(sent["accepted"], true);
+                        event(
+                            &mut sequence,
+                            json!({"kind":"completed","final_output":"OK"}),
+                        );
+                        continue;
                     }
                     Script::Capability { arguments, text } => {
                         runtime

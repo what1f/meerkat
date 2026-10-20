@@ -36,6 +36,7 @@ fn harness_config(
     cli_path: PathBuf,
 ) -> HarnessConfig {
     HarnessConfig {
+        launch_arguments: Default::default(),
         harness_id: harness_id.into(),
         model: ModelRef::new(model, model),
         thinking_level: thinking_level.into(),

@@ -428,6 +428,15 @@ async fn a_lasting_im_outage_skips_the_event_and_delivers_later_messages() {
         .into_parts();
     assert!(matches!(event.kind, ProviderEventKind::Message(ref m) if m.content == "after"));
     receipt.accept();
+    // Acceptance queues the acknowledgement; wait for the mock IM to receive it
+    // before shutdown closes the event source.
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while server.acknowledgements() != 3 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("accepted events were not acknowledged");
     host.shutdown().await.unwrap();
     assert_eq!(server.acknowledgements(), 3);
 }
@@ -1166,6 +1175,32 @@ async fn task_host(
         .await
         .unwrap();
     }
+    let requests = server.requests();
+    let transfers = requests
+        .iter()
+        .filter(|request| {
+            request.method == "PATCH"
+                && request.path.split('?').next().unwrap()
+                    == "/open-apis/task/v2/tasklists/tasklist_team"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        transfers.len(),
+        1,
+        "the creating App transfers ownership once"
+    );
+    assert_eq!(
+        transfers[0].header("authorization"),
+        "Bearer tenant-cli_alpha"
+    );
+    assert_eq!(transfers[0].json()["origin_owner_to_role"], "editor");
+    assert!(requests.iter().any(|request| {
+        request.method == "POST"
+            && request.path.split('?').next().unwrap()
+                == "/open-apis/task/v2/tasklists/tasklist_team/add_members"
+            && request.header("authorization") == "Bearer tenant-cli_beta"
+            && request.json()["members"] == json!([{"id":"cli_beta","type":"app","role":"editor"}])
+    }));
     host
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -58,6 +58,7 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
             )?;
         }
         let config = HarnessConfig {
+            launch_arguments: Default::default(),
             harness_id: id.clone(),
             model: ModelRef::new("native-model", "Native model"),
             thinking_level: "low".into(),

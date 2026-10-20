@@ -1,0 +1,8 @@
+{
+  "productName": "Lankide",
+  "version": "0.1.0",
+  "identifier": "com.lankide.desktop",
+  "build": { "frontendDist": "boot" },
+  "app": { "withGlobalTauri": false, "macOSPrivateApi": true, "windows": [] },
+  "bundle": { "active": false, "icon": ["assets/app-icon.png"] }
+}

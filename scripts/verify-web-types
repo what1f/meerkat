@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""Generate management bindings in isolation and reject stale committed files."""
+from pathlib import Path
+import subprocess
+import tempfile
+import sys
+
+root = Path(__file__).resolve().parent.parent
+with tempfile.TemporaryDirectory(prefix="lankide-web-types-") as temporary:
+    subprocess.run(["cargo", "run", "--quiet", "--locked", "-p", "lankide-web-types", "--", temporary], cwd=root, check=True)
+    generated = Path(temporary)
+    committed = root / "apps/web/src/lib/api/generated"
+    expected = {p.name: p.read_bytes() for p in generated.glob("*.ts")}
+    actual = {p.name: p.read_bytes() for p in committed.glob("*.ts")}
+    changed = sorted(name for name in expected.keys() | actual.keys() if expected.get(name) != actual.get(name))
+    if changed:
+        print("[web-types] FAIL: run just web-types: " + ", ".join(changed), file=sys.stderr)
+        sys.exit(1)
+print("[web-types] PASS")

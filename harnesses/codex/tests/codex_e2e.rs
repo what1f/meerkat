@@ -98,6 +98,7 @@ async fn run_scenario(
     prepare_overlay(&codex_home)?;
     let nonce = unique("nonce");
     let config = HarnessConfig {
+        launch_arguments: Default::default(),
         harness_id: "codex".to_owned(),
         model: ModelRef::new("gpt-5.6-luna", "GPT-5.6 Luna"),
         thinking_level: "low".to_owned(),
@@ -471,6 +472,7 @@ async fn codex_default_home_is_agent_local() {
     let temp = tempfile::tempdir().unwrap();
     let agent_socket = temp.path().join("agent.sock");
     let config = HarnessConfig {
+        launch_arguments: Default::default(),
         harness_id: "codex".into(),
         model: ModelRef::new("gpt-5.6-luna", "Codex"),
         thinking_level: "low".into(),
@@ -535,6 +537,7 @@ async fn codex_default_home_is_agent_local() {
 #[ignore = "requires installed native CLI; reads model directory without a model turn"]
 async fn native_model_catalog() {
     let config = HarnessConfig {
+        launch_arguments: Default::default(),
         harness_id: "codex".into(),
         cli_path: "codex".into(),
         model: ModelRef::new("", ""),

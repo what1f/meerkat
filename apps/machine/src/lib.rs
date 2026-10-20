@@ -293,6 +293,7 @@ fn harness_config(
     environment: &BTreeMap<String, String>,
 ) -> HarnessConfig {
     HarnessConfig {
+        launch_arguments: Default::default(),
         harness_id: harness_id.into(),
         model: ModelRef::new("", ""),
         thinking_level: String::new(),

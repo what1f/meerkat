@@ -1,0 +1,109 @@
+/* Pegboard: a perforated board on the office wall. */
+.root {
+  --bx: 0px;
+  --by: 0px;
+  --holes-at: var(--bx) var(--by), var(--bx) var(--by);
+
+  position: relative;
+  min-height: 100%;
+  padding-top: calc(var(--bar-h) + var(--sp-xs));
+  background: var(--board-face);
+}
+
+.root[data-layout='open'] {
+  padding-top: var(--bar-h);
+}
+
+.root[data-layout='free'] {
+  padding-bottom: var(--dock-clearance);
+  padding-inline: var(--sp-xl);
+}
+
+.root::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: '';
+  background-image: var(--holes);
+  background-position: var(--holes-at);
+  background-size: var(--holes-size);
+  transition: opacity 0.9s var(--ease);
+}
+
+.root[data-holes='fade']::before {
+  opacity: 0;
+}
+
+.items {
+  position: relative;
+}
+
+/* Peg pitch is a multiple of the hole grid so every badge hangs on a hole. */
+.root[data-layout='rails'] .items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 192px);
+  grid-auto-rows: 312px;
+  gap: var(--hole-pitch);
+  justify-content: center;
+
+  /* Four across at most; a narrower board wraps to the columns that fit. */
+  width: min(100%, 840px);
+  padding: 0 0 var(--dock-clearance);
+  margin: 0 auto;
+}
+
+/* One sleeve on an empty board, at the design's optical center. */
+.root[data-layout='rails'] .items:has(> :only-child[data-shape='badge']) {
+  grid-template-columns: 192px;
+  padding-top: 72px;
+}
+
+/* Free board: every item hangs on a hole by its peg and can move to another. */
+.root[data-layout='free'] .items > * {
+  position: absolute;
+  touch-action: none;
+  cursor: grab;
+  transform-origin: 50% 12px;
+  translate: -50% 0;
+}
+
+.items > [data-dragging] {
+  z-index: 20;
+  cursor: grabbing;
+  filter: var(--drag-shadow);
+}
+
+.root[data-layout='free'] .items > [data-settling] {
+  transition:
+    left 0.28s var(--ease),
+    top 0.28s var(--ease),
+    rotate 0.28s var(--ease);
+}
+
+.root[data-layout='rails'] .items > [data-settling] {
+  transition:
+    translate 0.3s var(--ease),
+    rotate 0.3s var(--ease);
+}
+
+.items > [data-swing] {
+  animation: swing 1.7s cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+
+@keyframes swing {
+  14% {
+    transform: rotate(2.2deg);
+  }
+
+  36% {
+    transform: rotate(-1.5deg);
+  }
+
+  58% {
+    transform: rotate(0.8deg);
+  }
+
+  80% {
+    transform: rotate(-0.3deg);
+  }
+}

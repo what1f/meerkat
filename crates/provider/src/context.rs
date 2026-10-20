@@ -11,6 +11,21 @@ use std::{
 };
 use tokio::sync::{Notify, mpsc, oneshot};
 
+/// Wall clock for persisted Provider operations; hosts may supply a controlled clock.
+pub trait Clock: Send + Sync {
+    fn now_millis(&self) -> i64;
+}
+#[derive(Debug, Default)]
+pub struct SystemClock;
+impl Clock for SystemClock {
+    fn now_millis(&self) -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|v| v.as_millis().min(i64::MAX as u128) as i64)
+            .unwrap_or(1)
+    }
+}
+
 pub trait SecretReader: Send + Sync {
     fn read<'a>(&'a self, name: &'a str) -> ProviderFuture<'a, SecretValue>;
 }
@@ -25,6 +40,11 @@ impl SecretWriter for DeniedSecretWriter {
     }
 }
 pub trait ProviderStorage: Send + Sync {
+    /// Invalidate the current workspace's management data after a Provider write.
+    fn management_changed(&self) -> ProviderFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
+
     fn get<'a>(&'a self, key: &'a str) -> ProviderFuture<'a, Option<Vec<u8>>>;
     fn put<'a>(&'a self, key: &'a str, value: Vec<u8>) -> ProviderFuture<'a, ()>;
     fn workspace_state<'a>(&'a self) -> ProviderFuture<'a, Value> {
@@ -46,6 +66,14 @@ pub trait ProviderStorage: Send + Sync {
                 field: "workspace_provider_state",
             })?;
             self.put("__workspace_state", bytes).await
+        })
+    }
+    /// Read this Workspace's existing Agent Provider configuration, without secrets.
+    fn agent_config<'a>(&'a self, _: &'a AgentId) -> ProviderFuture<'a, Value> {
+        Box::pin(async {
+            Err(ProviderError::Unsupported {
+                operation: "read_agent_provider_config",
+            })
         })
     }
     fn agent_state<'a>(&'a self, agent_id: &'a AgentId) -> ProviderFuture<'a, Value> {
@@ -104,6 +132,55 @@ pub trait ProviderStorage: Send + Sync {
         Box::pin(async {
             Err(ProviderError::Unsupported {
                 operation: "resolve_person_identity",
+            })
+        })
+    }
+    /// Add an authenticated bot creator. Runtime owns membership and profile storage.
+    fn join_human_team<'a>(
+        &'a self,
+        _: &'a PersonId,
+        _: Option<&'a str>,
+        _: Option<&'a str>,
+        _: Option<&'a ResourceRef>,
+    ) -> ProviderFuture<'a, ProviderPersonIdentity> {
+        Box::pin(async {
+            Err(ProviderError::Unsupported {
+                operation: "join_human_team",
+            })
+        })
+    }
+    fn claim_human_profile_sync<'a>(
+        &'a self,
+        _: &'a PersonId,
+        _: bool,
+        _: i64,
+    ) -> ProviderFuture<'a, bool> {
+        Box::pin(async {
+            Err(ProviderError::Unsupported {
+                operation: "claim_human_profile_sync",
+            })
+        })
+    }
+    fn human_profile<'a>(
+        &'a self,
+        _: &'a PersonId,
+    ) -> ProviderFuture<'a, (Option<String>, Option<ResourceRef>)> {
+        Box::pin(async {
+            Err(ProviderError::Unsupported {
+                operation: "human_profile",
+            })
+        })
+    }
+    fn update_human_profile<'a>(
+        &'a self,
+        _: &'a PersonId,
+        _: Option<&'a str>,
+        _: Option<&'a ResourceRef>,
+        _: Option<&'a str>,
+    ) -> ProviderFuture<'a, ()> {
+        Box::pin(async {
+            Err(ProviderError::Unsupported {
+                operation: "update_human_profile",
             })
         })
     }
@@ -532,6 +609,7 @@ pub struct AgentOnboardingContext {
     secret_reader: Arc<dyn SecretReader>,
     secret_writer: Arc<dyn SecretWriter>,
     storage: Arc<dyn ProviderStorage>,
+    resource_saver: Arc<dyn ResourceSaver>,
 }
 impl AgentOnboardingContext {
     pub fn new(
@@ -551,7 +629,14 @@ impl AgentOnboardingContext {
             secret_reader: services.secret_reader,
             secret_writer: services.secret_writer,
             storage: services.storage,
+            resource_saver: services.resource_saver,
         }
+    }
+    pub async fn save_resource(
+        &self,
+        upload: ResourceUpload,
+    ) -> Result<ResourceRef, ProviderError> {
+        self.resource_saver.save(upload).await
     }
     pub fn workspace_secrets(&self) -> &dyn SecretReader {
         self.secret_reader.as_ref()

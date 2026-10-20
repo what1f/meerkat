@@ -148,9 +148,7 @@ impl RuntimeApplication {
         &self,
         request: SetWorkspaceStateRequest,
     ) -> Result<ProtocolWorkspace, RuntimeError> {
-        let desired = match DesiredState::try_from(request.desired_state)
-            .unwrap_or(DesiredState::Unspecified)
-        {
+        let desired = match request.desired_state {
             DesiredState::Running => WorkspaceDesiredState::Running,
             DesiredState::Paused => WorkspaceDesiredState::Paused,
             DesiredState::Unspecified => {
@@ -163,6 +161,86 @@ impl RuntimeApplication {
         workspace_dto(self.runtime()?.database(), record).await
     }
 
+    pub async fn list_human_members(
+        &self,
+        request: GetWorkspaceRequest,
+    ) -> Result<Vec<lankide_protocol::HumanTeamMember>, RuntimeError> {
+        let workspace_id = workspace_id(request.workspace.clone())?;
+        self.runtime()?.database().workspace(&workspace_id).await?;
+        Ok(self
+            .runtime()?
+            .database()
+            .list_human_team_member_views(&workspace_id)
+            .await?
+            .into_iter()
+            .map(|p| lankide_protocol::HumanTeamMember {
+                person_id: p.person_id.to_string(),
+                team_role: p.team_role.as_str().into(),
+                name: p.name,
+                avatar: p.avatar.map(Into::into),
+                position: p.position,
+                signature: p.signature,
+            })
+            .collect())
+    }
+
+    pub async fn sync_human_profile(
+        &self,
+        request: lankide_protocol::SyncHumanProfileRequest,
+    ) -> Result<lankide_protocol::HumanTeamMember, RuntimeError> {
+        let workspace = workspace_id(request.workspace.clone())?;
+        let person_id = PersonId::new(request.person_id.clone())
+            .map_err(|e| RuntimeError::InvalidCore(e.to_string()))?;
+        let runtime = self.runtime()?;
+        let person = runtime
+            .database()
+            .person(&workspace, &person_id)
+            .await?
+            .ok_or_else(|| RuntimeError::Application("unknown team member".into()))?;
+        if person.team_role == lankide_core::TeamRole::External {
+            return Err(RuntimeError::Application("unknown team member".into()));
+        }
+        runtime
+            .invoke_provider_interface(
+                &workspace,
+                format!("{}.human.sync", person.provider_instance_id),
+                serde_json::json!({"person_id":request.person_id}),
+            )
+            .await?;
+        self.list_human_members(GetWorkspaceRequest {
+            request_id: request.request_id,
+            workspace: request.workspace,
+        })
+        .await?
+        .into_iter()
+        .find(|p| p.person_id == request.person_id)
+        .ok_or_else(|| RuntimeError::Application("unknown team member".into()))
+    }
+
+    pub async fn update_human_position(
+        &self,
+        request: lankide_protocol::UpdateHumanPositionRequest,
+    ) -> Result<Vec<lankide_protocol::HumanTeamMember>, RuntimeError> {
+        let workspace_id = workspace_id(request.workspace.clone())?;
+        let person = PersonId::new(request.person_id)
+            .map_err(|e| RuntimeError::InvalidCore(e.to_string()))?;
+        self.runtime()?
+            .database()
+            .update_human_position(&workspace_id, &person, &request.position, now_millis())
+            .await?;
+        self.emit_management(
+            ManagementEventKind::WorkspaceUpdated,
+            &workspace_id,
+            None,
+            now_millis(),
+        );
+        self.list_human_members(GetWorkspaceRequest {
+            request_id: request.request_id,
+            workspace: request.workspace,
+        })
+        .await
+    }
+
     pub async fn list_agents(
         &self,
         request: ListAgentsRequest,
@@ -170,8 +248,10 @@ impl RuntimeApplication {
         let workspace = workspace_id(request.workspace)?;
         let runtime = self.runtime()?;
         let mut agents = Vec::new();
+        let busy = runtime.database().busy_agents(Some(&workspace)).await?;
         for record in runtime.database().list_agent_records(&workspace).await? {
-            agents.push(agent_dto(record, runtime.database()).await?);
+            let activity = busy.contains(&(record.workspace_id.clone(), record.agent_id.clone()));
+            agents.push(agent_dto_with_activity(record, runtime.database(), activity).await?);
         }
         Ok(ListAgentsResponse {
             request_id: request.request_id,
@@ -179,6 +259,25 @@ impl RuntimeApplication {
         })
     }
 
+    pub async fn get_agent_first_reply(
+        &self,
+        request: GetAgentRequest,
+    ) -> Result<lankide_protocol::AgentFirstReply, RuntimeError> {
+        let (workspace, agent) = agent_id(request.agent)?;
+        let runtime = self.runtime()?;
+        runtime.database().agent_record(&workspace, &agent).await?;
+        Ok(lankide_protocol::AgentFirstReply {
+            state: if runtime
+                .database()
+                .agent_has_first_reply(&workspace, &agent)
+                .await?
+            {
+                lankide_protocol::AgentFirstReplyState::Replied
+            } else {
+                lankide_protocol::AgentFirstReplyState::Waiting
+            },
+        })
+    }
     pub async fn get_agent(&self, request: GetAgentRequest) -> Result<ProtocolAgent, RuntimeError> {
         let (workspace, agent) = agent_id(request.agent)?;
         let runtime = self.runtime()?;
@@ -214,6 +313,8 @@ impl RuntimeApplication {
     }
 
     async fn validate_placement(&self, agent: &AgentRecord) -> Result<(), RuntimeError> {
+        self.validate_figure(&agent.workspace_id, &agent.figure)
+            .await?;
         let machine = self
             .runtime()?
             .database()
@@ -228,10 +329,7 @@ impl RuntimeApplication {
         let inventory: Vec<lankide_protocol::link::HarnessInfo> =
             serde_json::from_str(&machine.inventory_json)
                 .map_err(|e| RuntimeError::Application(e.to_string()))?;
-        if !inventory.iter().any(|h| h.harness_id == agent.harness_id) {
-            return Err(RuntimeError::HarnessUnavailableOnMachine);
-        }
-        Ok(())
+        validate_harness_selection(&inventory, &agent.harness_id, &agent.model, &agent.thinking)
     }
 
     pub async fn create_agent(
@@ -252,6 +350,12 @@ impl RuntimeApplication {
             role: request.role,
             bio: request.bio,
             avatar: None,
+            figure: if request.figure.is_empty() {
+                "default".into()
+            } else {
+                request.figure
+            },
+            launch_arguments: request.launch_arguments,
             soul: request.soul,
             machine_id: request.machine_id,
             placement_generation: 1,
@@ -311,6 +415,12 @@ impl RuntimeApplication {
             .agent_record(&workspace_id, &agent_id)
             .await?;
         let mut record = old_record.clone();
+        if let Some(value) = request.figure {
+            record.figure = value;
+        }
+        if let Some(value) = request.launch_arguments {
+            record.launch_arguments = value;
+        }
         if let Some(value) = request.name {
             record.name = value;
         }
@@ -384,6 +494,7 @@ impl RuntimeApplication {
             || old_record.machine_id != record.machine_id
             || old_record.thinking != record.thinking
             || old_record.cli_path != record.cli_path
+            || old_record.launch_arguments != record.launch_arguments
             || old_record.env != record.env
             || old_record.session_config != record.session_config;
         let result = AgentLifecycle::new(self)
@@ -546,21 +657,6 @@ impl RuntimeApplication {
                 .database()
                 .update_agent_record_with_secrets(agent, &serde_json::json!({}))
                 .await?;
-            if let Some(person_id) = agent
-                .provider_agent_config
-                .get("creator_person_id")
-                .and_then(serde_json::Value::as_str)
-                .and_then(|value| lankide_core::PersonId::new(value.to_owned()).ok())
-            {
-                match runtime
-                    .database()
-                    .initialize_team_lead(&workspace_id, &person_id, now_millis())
-                    .await
-                {
-                    Ok(_) | Err(StorageError::Conflict(_)) => {}
-                    Err(error) => return Err(error.into()),
-                }
-            }
             let host = runtime.host(&workspace_id).await?;
             host.create_agent(agent_id.clone(), provider_agent_spec(&agent))
                 .await?;
@@ -607,6 +703,7 @@ impl RuntimeApplication {
                     serde_json::from_str(&record.inventory_json)
                         .map_err(|e| RuntimeError::Application(e.to_string()))?;
                 Ok(MachineCatalogItem {
+                    is_local: record.is_local,
                     machine_id: record.machine_id,
                     display_name: record.display_name,
                     observed_state: if record.revoked_at.is_some() {
@@ -615,8 +712,12 @@ impl RuntimeApplication {
                         ObservedState::Running
                     } else {
                         ObservedState::Stopped
-                    } as i32,
-                    harnesses: inventory,
+                    },
+                    harnesses: inventory
+                        .into_iter()
+                        .map(lankide_protocol::management::HarnessInfo::try_from)
+                        .collect::<Result<_, _>>()
+                        .map_err(|e| RuntimeError::Application(e.to_string()))?,
                     status_message: String::new(),
                     registered: true,
                     revoked_at: record.revoked_at,
@@ -633,7 +734,7 @@ impl RuntimeApplication {
                 .find(|value| value.machine_id == machine_id)
             {
                 if machine.revoked_at.is_none() {
-                    machine.observed_state = ObservedState::Error as i32;
+                    machine.observed_state = ObservedState::Error;
                     machine.status_message = reason.to_string();
                 }
                 continue;
@@ -641,7 +742,7 @@ impl RuntimeApplication {
             machines.push(MachineCatalogItem {
                 display_name: machine_id.clone(),
                 machine_id,
-                observed_state: ObservedState::Error as i32,
+                observed_state: ObservedState::Error,
                 harnesses: Vec::new(),
                 status_message: reason.to_string(),
                 ..Default::default()
@@ -660,7 +761,8 @@ impl RuntimeApplication {
                 harness_id: harness.harness_id,
                 display_name: harness.display_name,
                 description: harness.reason,
-                availability: harness.availability,
+                availability: lankide_protocol::HarnessAvailability::try_from(harness.availability)
+                    .unwrap_or(lankide_protocol::HarnessAvailability::Unspecified),
                 supported_thinking_levels: Vec::new(),
             })
             .collect();
@@ -707,18 +809,18 @@ async fn workspace_dto(
         provider_id: record.provider_id.to_string(),
         provider_config_json: record.provider_config.to_string(),
         desired_state: if record.active {
-            DesiredState::Running as i32
+            DesiredState::Running
         } else {
-            DesiredState::Paused as i32
+            DesiredState::Paused
         },
         observed_state: if record.setup_status == WorkspaceSetupStatus::Error {
-            ObservedState::Error as i32
+            ObservedState::Error
         } else if record.setup_status == WorkspaceSetupStatus::Pending {
-            ObservedState::Starting as i32
+            ObservedState::Starting
         } else if record.active {
-            ObservedState::Running as i32
+            ObservedState::Running
         } else {
-            ObservedState::Paused as i32
+            ObservedState::Paused
         },
         status_message: if record.setup_status == WorkspaceSetupStatus::Error {
             "Setup needs attention.".into()
@@ -742,7 +844,7 @@ fn agent_onboarding_dto(
         }),
         provider_id: workspace.provider_id.to_string(),
         step: state.step,
-        status: onboarding_status(state.status) as i32,
+        status: onboarding_status(state.status),
         payload_json: state.opaque_payload.to_string(),
         verification_uri: state.verification_uri.unwrap_or_default(),
         poll_interval_seconds: state.poll_interval_seconds.unwrap_or_default(),
@@ -789,7 +891,7 @@ fn attention_record(
             .ok_or_else(|| {
                 RuntimeError::Application("This attention setting is unavailable.".into())
             })?;
-        let mode = AttentionMode::try_from(value.mode).unwrap_or(AttentionMode::Unspecified);
+        let mode = value.mode;
         let record = match mode {
             AttentionMode::Mention | AttentionMode::Always | AttentionMode::Mute
                 if value.interval_minutes != 0 =>
@@ -878,11 +980,30 @@ async fn resource_ref(
 }
 
 async fn agent_dto(record: AgentRecord, storage: Database) -> Result<ProtocolAgent, RuntimeError> {
+    let busy = storage
+        .busy_agents(Some(&record.workspace_id))
+        .await?
+        .contains(&(record.workspace_id.clone(), record.agent_id.clone()));
+    agent_dto_with_activity(record, storage, busy).await
+}
+
+async fn agent_dto_with_activity(
+    record: AgentRecord,
+    storage: Database,
+    busy: bool,
+) -> Result<ProtocolAgent, RuntimeError> {
     let pause_reason = storage
         .agent_pause_reason(&record.workspace_id, &record.agent_id)
         .await?;
     Ok(ProtocolAgent {
         pause_reason,
+        figure: record.figure,
+        launch_arguments: record.launch_arguments,
+        activity: if busy {
+            lankide_protocol::AgentActivity::Busy
+        } else {
+            lankide_protocol::AgentActivity::Idle
+        },
         agent: Some(AgentRef {
             workspace_id: record.workspace_id.to_string(),
             agent_id: record.agent_id.to_string(),
@@ -920,7 +1041,7 @@ async fn agent_dto(record: AgentRecord, storage: Database) -> Result<ProtocolAge
                     };
                     ChannelAttention {
                         channel_id: channel_id.to_string(),
-                        mode: mode as i32,
+                        mode,
                         interval_minutes,
                     }
                 })
@@ -1009,7 +1130,7 @@ fn onboarding_dto(
         }),
         provider_id: workspace.provider_id.to_string(),
         step: state.step,
-        status: onboarding_status(state.status) as i32,
+        status: onboarding_status(state.status),
         payload_json: state.opaque_payload.to_string(),
         verification_uri: state.verification_uri.unwrap_or_default(),
         poll_interval_seconds: state.poll_interval_seconds.unwrap_or_default(),
@@ -1027,7 +1148,7 @@ fn onboarding_status(status: ProviderOnboardingStatus) -> OnboardingStatus {
     }
 }
 
-fn workspace_id(value: Option<WorkspaceRef>) -> Result<WorkspaceId, RuntimeError> {
+pub(crate) fn workspace_id(value: Option<WorkspaceRef>) -> Result<WorkspaceId, RuntimeError> {
     WorkspaceId::new(
         value
             .ok_or_else(|| RuntimeError::Application("workspace ref required".into()))?
@@ -1053,4 +1174,35 @@ fn parse_json(value: &str) -> Result<serde_json::Value, RuntimeError> {
 }
 fn nonempty(value: String) -> Option<String> {
     (!value.trim().is_empty()).then_some(value)
+}
+
+pub(crate) fn validate_harness_selection(
+    inventory: &[lankide_protocol::HarnessInfo],
+    harness_id: &str,
+    model_id: &str,
+    thinking_level: &str,
+) -> Result<(), RuntimeError> {
+    if let Some(model) = inventory
+        .iter()
+        .find(|h| h.harness_id == harness_id)
+        .and_then(|h| h.model_catalog.as_ref())
+        .and_then(|catalog| {
+            catalog
+                .models
+                .iter()
+                .find(|model| model.model_id == model_id)
+        })
+    {
+        if !thinking_level.is_empty()
+            && !model
+                .supported_thinking_levels
+                .contains(&thinking_level.to_owned())
+        {
+            return Err(RuntimeError::InvalidCore("thinking_level_invalid".into()));
+        }
+    }
+    if !inventory.iter().any(|h| h.harness_id == harness_id) {
+        return Err(RuntimeError::HarnessUnavailableOnMachine);
+    }
+    Ok(())
 }

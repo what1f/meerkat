@@ -1,0 +1,83 @@
+import type { ReactNode } from 'react';
+import type { UIProps } from './types';
+
+import css from './OptionColumn.module.css';
+export type OptionColumnProps = Omit<UIProps, 'className' | 'style'> & {
+  title: string;
+  /** The options. */
+  children?: ReactNode;
+  /** A control that is not an option, such as a `Lever`. It sits below the listbox. */
+  control?: ReactNode;
+};
+export function OptionColumn({ title, children, control, ...rest }: OptionColumnProps) {
+  return (
+    <section {...rest} className={css.root} aria-label={title}>
+      <h3>{title}</h3>
+      {children && (
+        <div role="listbox" aria-label={title}>
+          {children}
+        </div>
+      )}
+      {control && <div className={css.control}>{control}</div>}
+    </section>
+  );
+}
+export type OptionColumnItemProps = Omit<UIProps, 'className' | 'style'> & {
+  selected?: boolean;
+  dimmed?: boolean;
+  mono?: boolean;
+  leading?: ReactNode;
+  /** Tells apart options that share a label, such as where a model comes from. */
+  hint?: string;
+  onSelect: () => void;
+  children: ReactNode;
+};
+OptionColumn.Item = function Item({
+  selected = false,
+  dimmed,
+  mono,
+  leading,
+  hint,
+  onSelect,
+  children,
+  ...rest
+}: OptionColumnItemProps) {
+  return (
+    <button
+      {...rest}
+      className={css.item}
+      type="button"
+      role="option"
+      aria-selected={selected}
+      data-dimmed={dimmed}
+      data-mono={mono}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        const items = Array.from(
+          e.currentTarget
+            .closest('[role="listbox"]')
+            ?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? [],
+        );
+        const index = items.indexOf(e.currentTarget);
+        const next =
+          e.key === 'ArrowDown'
+            ? (index + 1) % items.length
+            : e.key === 'ArrowUp'
+              ? (index + items.length - 1) % items.length
+              : e.key === 'Home'
+                ? 0
+                : e.key === 'End'
+                  ? items.length - 1
+                  : undefined;
+        if (next !== undefined) {
+          e.preventDefault();
+          items[next]?.focus();
+        }
+      }}
+    >
+      {leading}
+      <span data-label>{children}</span>
+      {hint && <span data-hint>{hint}</span>}
+    </button>
+  );
+};

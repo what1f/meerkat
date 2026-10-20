@@ -102,6 +102,7 @@ pub async fn run(factory: &dyn HarnessFactory, adapter: &str) -> Result<()> {
         let request = SessionRequest {
             permission_policy: Default::default(),
             config: HarnessConfig {
+                launch_arguments: Default::default(),
                 harness_id: adapter.into(),
                 model: ModelRef::new("configured-model", "Model"),
                 thinking_level: "low".into(),

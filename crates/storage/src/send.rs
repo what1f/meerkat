@@ -164,6 +164,28 @@ pub(super) fn load_recoverable_sends(
 }
 
 impl Storage {
+    pub fn agent_has_first_reply(&self, workspace: &WorkspaceId, agent: &AgentId) -> Result<bool> {
+        Ok(self.read_conn()?.query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM messages m
+                JOIN chats c USING(chat_id)
+                JOIN message_send_attempts s USING(message_id)
+                JOIN agents a ON a.workspace_id=c.workspace_id AND a.agent_id=m.sender_id
+                JOIN people p ON p.workspace_id=c.workspace_id AND p.person_id=c.recipient_person_id
+                WHERE c.workspace_id=?1 AND m.sender_id=?2 AND c.receiving_agent_id=?2
+                  AND m.send_status='sent' AND s.state='sent'
+                  AND length(trim(m.content_markdown))>0 AND m.created_at>=a.created_at
+                  AND p.team_role='lead')",
+            params![workspace.as_str(), agent.as_str()],
+            |row| row.get(0),
+        )?)
+    }
+    pub fn first_reply_sender(&self, message_id: i64) -> Result<Option<(WorkspaceId, AgentId)>> {
+        let c = self.read_conn()?;
+        let pair: Option<(String,String)> = c.query_row("SELECT c.workspace_id,m.sender_id FROM messages m JOIN chats c USING(chat_id) WHERE message_id=?1 AND m.sender_kind='agent'", [message_id], |row| Ok((row.get(0)?,row.get(1)?))).optional()?;
+        pair.map(|(w, a)| Ok((wid(w)?, aid(a)?))).transpose()
+    }
+
     pub fn cursors(&self, w: &WorkspaceId, a: &AgentId) -> Result<Vec<CursorView>> {
         let c = self.read_conn()?;
         let mut s=c.prepare("SELECT chat_id,read_to_message_id FROM agent_chat_cursors WHERE workspace_id=?1 AND agent_id=?2 ORDER BY chat_id")?;

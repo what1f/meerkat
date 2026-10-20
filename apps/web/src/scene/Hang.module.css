@@ -1,0 +1,198 @@
+.root {
+  --u: 0.9px;
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 192px;
+  padding-top: 60px;
+  transform-origin: 50% 12px;
+  transition: opacity var(--d-base) var(--ease);
+}
+
+.root:has([data-size='stage'], [data-size='intro']) {
+  --u: 1.05px;
+
+  width: auto;
+}
+
+/* You wear the brand lanyard; members wear black. */
+.root[data-lanyard='lead'] {
+  --cord: var(--lanyard-lead);
+}
+
+.peg {
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  z-index: 3;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  background: var(--peg-face);
+  border-radius: var(--r-full);
+  box-shadow: var(--peg-shadow);
+}
+
+.cord {
+  position: absolute;
+  top: 11px;
+  left: 50%;
+  z-index: 1;
+}
+
+.cord::before,
+.cord::after {
+  position: absolute;
+  top: 0;
+  left: -1.5px;
+  width: 3px;
+  height: 37px;
+  content: '';
+  background-color: var(--cord);
+  background-image: var(--cord-weave);
+  border-radius: var(--r-hairline);
+  box-shadow: var(--cord-shadow);
+  transform-origin: 50% 0;
+}
+
+.cord::before {
+  transform: rotate(4deg);
+}
+
+.cord::after {
+  transform: rotate(-4deg);
+}
+
+.clip {
+  position: absolute;
+  top: 46px;
+  left: 50%;
+  z-index: 2;
+  width: 7px;
+  height: 9px;
+  margin-left: -3.5px;
+  background: var(--clip-face);
+  border-radius: var(--r-hairline);
+  box-shadow: var(--clip-shadow);
+}
+
+/* The ring fades into the slot, where its lower half passes behind the card. */
+.clip::after {
+  --cut: calc(7px + 12 * var(--u));
+
+  filter: var(--clip-ring-shadow);
+  mask: linear-gradient(
+    var(--mask-ink) calc(var(--cut) - 3.5 * var(--u)),
+    var(--mask-fade) var(--cut),
+    transparent 0
+  );
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  box-sizing: border-box;
+  width: 12px;
+  height: calc(14px + 16 * var(--u));
+  margin-left: -6px;
+  content: '';
+  border-color: var(--peg-edge);
+  border-style: solid;
+  border-width: 1.6px;
+  border-top-color: var(--peg);
+  border-radius: var(--r-sm);
+}
+
+.root[data-motion='enter'] {
+  animation: hang-in 0.9s var(--ease-pop);
+}
+
+.root[data-motion='leave'] {
+  opacity: 0;
+  transform: translateY(14px) rotate(4deg);
+  transition:
+    opacity var(--d-slow) var(--ease),
+    transform var(--d-slow) var(--ease);
+}
+
+.root[data-motion='turn-in'] {
+  animation: turn-in 0.8s var(--ease-pop);
+}
+
+.root[data-swing],
+.root[data-swing-hover='true']:hover {
+  animation: swing 1.7s cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+
+@keyframes hang-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-40px) rotate(-3deg);
+  }
+
+  55% {
+    opacity: 1;
+    transform: rotate(2deg);
+  }
+
+  80% {
+    transform: rotate(-0.8deg);
+  }
+}
+
+@keyframes turn-in {
+  from {
+    opacity: 0.4;
+    transform: perspective(900px) rotateY(-90deg);
+  }
+}
+
+@keyframes swing {
+  14% {
+    transform: rotate(2.2deg);
+  }
+
+  36% {
+    transform: rotate(-1.5deg);
+  }
+
+  58% {
+    transform: rotate(0.8deg);
+  }
+
+  80% {
+    transform: rotate(-0.3deg);
+  }
+}
+
+.root[role='button'] {
+  cursor: pointer;
+  outline-style: none;
+}
+
+/* The ring goes on what hangs, not on the lanyard. */
+.root[role='button']:focus-visible > :last-child {
+  box-shadow: var(--card-shadow-focus);
+}
+
+.root[data-faded='true'] {
+  opacity: 0.35;
+}
+
+/* The lanyard keeps its colour, washed out; the hand-over is to come back to life on hover. */
+.root[data-muted='true'] :is(.cord, .clip) {
+  filter: grayscale(1) opacity(0.7);
+  transition: filter var(--d-base) var(--ease);
+}
+
+.root[data-muted='true'][role='button']:is(:hover, :focus-visible) :is(.cord, .clip) {
+  filter: grayscale(0.4) opacity(0.9);
+}
+
+.root[data-muted='true'][role='button'] > :last-child {
+  transition: transform var(--d-base) var(--ease);
+}
+
+.root[data-muted='true'][role='button']:is(:hover, :focus-visible) > :last-child {
+  transform: translateY(-3px);
+}

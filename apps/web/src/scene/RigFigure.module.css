@@ -1,0 +1,24 @@
+/* Where it sits is up to the slot it is placed in, e.g. the console's top edge. */
+.root {
+  display: block;
+  width: 60px;
+  height: 90px;
+  padding: 0;
+  background: var(--clear);
+  border-style: none;
+  filter: var(--sitter);
+  transition: translate var(--d-slow) var(--ease-pop);
+}
+
+button.root {
+  cursor: pointer;
+}
+
+button.root:hover {
+  translate: 0 -3px;
+}
+
+.root img {
+  width: 100%;
+  height: 100%;
+}

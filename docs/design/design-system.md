@@ -30,13 +30,13 @@ To add:
 
 | Token | Purpose | Replaces |
 |---|---|---|
-| `status_active` | running, online, passed test | `0x22a447`, `0x238636`, `0x16803a`, `success` used as a dot |
-| `status_busy` | starting, syncing | `0xb7791f` |
-| `status_idle` | stopped, offline | `0x9a9a9a` |
-| `status_error` | failed | `0xdc2626`, `error` used as a dot |
-| `status_*_soft` | tinted backgrounds for the above | `0x22a4470d`, `0x16803a11`, `0xdc262611`, banner `0xff00000a` |
+| `ok` | running, online, passed test | `0x22a447`, `0x238636`, `0x16803a`, `success` used as a dot |
+| `busy` | starting, syncing | `0xb7791f` |
+| `idle` | stopped, offline | `0x9a9a9a` |
+| `err` | failed | `0xdc2626`, `error` used as a dot |
+| `*-soft` | tinted backgrounds for the above | `0x22a4470d`, `0x16803a11`, `0xdc262611`, banner `0xff00000a` |
 | `board` | pegboard canvas and hole color, shared by the members page and onboarding | — |
-| `brand_*` | periwinkle `#7683d6` (also your own lanyard), ochre, plum | `0xfccc73`, `0x4e3038`, `0x3e2328` in the peek mascot |
+| `brand-*` | periwinkle `#7683d6` (also your own lanyard), ochre, plum | `0xfccc73`, `0x4e3038`, `0x3e2328` in the peek mascot |
 
 `DesktopSteps` hard-codes its own greens (`0x86c89a`, `0x22a44714`, `0x238636`).
 
@@ -45,22 +45,32 @@ Avatar backgrounds use the muted palette in
 
 ### Typography
 
-System UI font (`.SystemUIFont`) and JetBrains Mono. Sizes in use today: 10, 11,
-12, 13, 14, 16, 18, 20, 21, 22, 24. Target scale:
+System fonts only; nothing is bundled. Body and controls use the system UI
+font (SF Pro, PingFang SC for Chinese). Character comes from hierarchy, not
+from extra faces:
 
-| Role | Size | Weight | Current strays |
+- **Display:** SF Pro Rounded (`ui-rounded`) for member names, page and
+  dialog titles, and the team switcher. Chinese stays on PingFang.
+- **Mono:** SF Mono (`ui-monospace`) for literal values: commands, paths,
+  parameters, environment variables, and model IDs. It is also the badge foot
+  and the model readout on a member's screen. A model's display name is not
+  mono; where a picker shows both, the name is regular and the ID mono.
+- No serif faces.
+
+| Role | Size | Weight | Face |
 |---|---|---|---|
-| Display (onboarding titles) | 28 | Semibold, `Songti SC` serif | — |
-| Page title | 24 | Semibold | 21, 22 |
-| Dialog title | 20 | Semibold | — |
-| Subhead | 16 | Medium | — |
-| Body | 14 | Regular | — |
-| Secondary, labels | 13 | Regular | — |
-| Caption, hints | 12 | Regular | — |
-| Micro (badges, handles) | 11 | Medium | 10 |
+| Display (onboarding titles) | 28 | Bold | Rounded |
+| Badge name, page title | 22–24 | Bold | Rounded |
+| Dialog title | 20 | Semibold | Rounded |
+| Subhead | 16 | Medium | UI |
+| Body | 14 | Regular | UI |
+| Secondary, labels | 13 | Regular | UI |
+| Caption, hints | 12 | Regular | UI |
+| Micro (badge role, handles) | 11 | Semibold | UI |
 
-The serif face is used only for onboarding display titles. The 18 px emoji in
-the reaction picker is content, not type.
+A badge reads name, then role, then bio. The role is a small semibold line in
+`ink-2`; Latin roles are uppercase with wide tracking, Chinese roles are not
+tracked. Use tabular numbers wherever digits update in place.
 
 ### Spacing
 
@@ -97,10 +107,10 @@ Standardize on small 440, medium 560, large 720.
 
 | Component | Status |
 |---|---|
-| `DesktopButton` (primary, outline, ghost, icon, loading) | Keep. Add a quiet text-link variant for **稍后设置**, **切换账号**, **高级设置**. |
+| `DesktopButton` (primary, outline, ghost, icon, loading) | Keep. Add `LinkButton`, a quiet text link for **稍后设置**, **切换账号**, **高级设置**. |
 | `DesktopInput`, `DesktopTextarea`, `DesktopSelect`, `DesktopCheckbox` | Keep. |
 | `DesktopFormField` | Keep. |
-| `DesktopBanner` | Keep. Move the error tint to `status_error_soft`. |
+| `DesktopBanner` | Keep. Move the error tint to `err-soft`. |
 | `DesktopDialog`, header, footer | Keep. |
 | `DesktopSteps` | Replace with hairline progress dashes. Used by the workspace dialog, the Agent dialog, and the old onboarding wizard, all of which the new flow replaces. |
 | `DesktopChip`, `desktop_choice` | Keep. |
@@ -109,18 +119,34 @@ Standardize on small 440, medium 560, large 720.
 | `DesktopAvatar` | Keep. Add built-in avatar sources. |
 | `desktop_card` | Unused. Remove or adopt for onboarding tiles. |
 | `DesktopAvatarGroup` | Only `apps/ui-preview` uses it. |
-| Peek mascot (`apps/desktop/src/ui/components.rs`) | Move into the crate as `Mascot` with poses: peek from an edge, sit, wave. |
+| Peek mascot (`apps/desktop/src/ui/components.rs`) | Move into the crate as `Mascot`; the only pose is peek from an edge. |
 
 New primitives for onboarding:
 
-- `OnboardingPage`: pegboard canvas (holes fade out on the desk scenes),
-  progress dashes, centered column, fixed footer.
-- `StatusDot`: the only way to render status.
+- `OnboardingFlow`: pegboard canvas (`Board` with holes that fade out on the
+  desk scenes), progress `Dashes`, centered column, fixed footer.
+- `StatusDot`: the only way to render status: `ok`, `busy`, `idle`, `err`.
 - `QrTag`: a QR hung on the pegboard like a tag: waiting, scanned (dimmed with
   the scanner's avatar), expired (refresh on the code). After sign-in it flips
   into your badge.
-- `HarnessRow`: icon, name, radio, test button or result, inline reply.
+- `HarnessRow`: AI mark, name, test light (running, passed, failed), selected
+  row, the reply under it, or an install action when nothing is found.
 - `AvatarPicker`: **上传** followed by the built-in set.
+
+## Navigation
+
+There is no sidebar. A floating glass dock sits at the bottom center of the
+window: the team switcher (opens upward), a separator, then icon buttons for
+成员, 团队, and 工区, each with a tooltip. Settings opens from the app menu
+with ⌘,. The traffic lights sit directly on the board; nothing draws a top
+band or a divider through them. Content leaves enough bottom clearance that
+the dock never covers the last row.
+
+## Empty board
+
+The add-member slot is a blank plastic sleeve hanging on a lanyard, with a
+plus and 添加成员. When a team has no members, that sleeve is the only thing
+on the board, centered; there is no separate empty-state message.
 
 ## Figures
 
@@ -148,7 +174,7 @@ chair at the same place, so the app can swap them without moving anything;
 | `stand` | Standing, facing the viewer | Picker thumbnail |
 
 The chair is drawn into `work` and `sleep`; the desk and computers are not.
-The figure sits centered in front of a desk from `office/`, without a tail or
+The figure sits centered in front of a desk from `apps/web/src/assets/office/`, without a tail or
 feet showing. Each desk comes with its computers, and its screens are
 transparent holes; the app draws the status behind them. There are two
 setups: a MacBook on a stand next to a display, and a display with a Mac mini.
@@ -158,7 +184,7 @@ main screen shows the status: typing when replying, a red 「!」 when the
 member needs attention, dark when paused. Members of an offline workspace
 sleep in front of dark screens. When the team is off duty (下班), nobody
 replies: every member has gone home, so each desk shows the empty chair from
-`office/` and all screens are off. A workspace without members has no desk.
+`apps/web/src/assets/office/` and all screens are off. A workspace without members has no desk.
 
 ### Pack format
 
@@ -175,8 +201,8 @@ work.png  sleep.png  carry.png  stand.png
 
 `scale` is the pixel density of the images (2 means drawn at twice the
 display size). Import rejects packs with missing frames. The built-in figures
-in `figures/` use the same layout. The desk setups are shared office art in
-`office/`.
+in `apps/web/src/assets/figures/` use the same layout. The desk setups are
+shared office art in `apps/web/src/assets/office/`.
 
 ## Copy
 
@@ -211,6 +237,6 @@ mascot keeps its colors.
    `components.rs`, `controls.rs`.
 2. Fix the copy violations above.
 3. Snap type sizes to the scale; review spacing and radius strays visually.
-4. Add `StatusDot`, the text-link button, `OnboardingPage`, `QrTag`,
+4. Add `StatusDot`, `LinkButton`, `OnboardingFlow`, `QrTag`,
    `HarnessRow`, `AvatarPicker`, and `Mascot`.
 5. Remove `DesktopSteps` and unused helpers with the old wizard.

@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lankide</title>
+<style>
+  /* Values from apps/web/src/design/tokens.css. */
+  :root {
+    --font: -apple-system, blinkmacsystemfont, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', sans-serif;
+    --t-body: 13px;
+    --t-title: 15px;
+    --h-md: 32px;
+    --r-pill: 999px;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --d-fast: 120ms;
+    --d-slow: 320ms;
+    --canvas: #f1f2f6;
+    --surface: #fff;
+    --line-strong: rgb(27 29 38 / 14%);
+    --ink: #1b1d26;
+    --ink-2: rgb(27 29 38 / 62%);
+    --on-ink: #fff;
+    --accent-soft: rgb(98 108 204 / 16%);
+    --ink-hover: color-mix(in srgb, var(--ink) 86%, var(--surface));
+    color-scheme: light dark;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --canvas: #101115;
+      --surface: #17181d;
+      --line-strong: rgb(255 255 255 / 13%);
+      --ink: #e8e9ee;
+      --ink-2: rgb(232 233 238 / 62%);
+      --on-ink: #17181d;
+      --accent-soft: rgb(140 149 236 / 22%);
+    }
+  }
+
+  html, body { height: 100%; margin: 0; }
+
+  body {
+    font: var(--t-body) / 1.5 var(--font);
+    color: var(--ink);
+    background: var(--canvas);
+    -webkit-font-smoothing: antialiased;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-app-region: drag;
+    cursor: default;
+  }
+
+  main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+  }
+
+  /* The meerkat peeks out of its burrow while Lankide opens; the script below drives it. */
+  .peek { position: relative; width: 196px; height: 180px; }
+  .peek .hole { position: absolute; top: 148px; left: 10px; width: 176px; height: 32px; background: #4e3038; border-radius: var(--r-pill); }
+  .peek .clip { position: absolute; top: 0; left: 0; width: 196px; height: 164px; overflow: hidden; }
+  .peek .meerkat { position: absolute; top: 168px; left: 28px; width: 140px; height: 148px; }
+  .peek img { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .peek .eye { position: absolute; width: 13.2px; height: 15px; background: #3e2328; border-radius: var(--r-pill); }
+  .peek .eye::after { position: absolute; top: calc(50% - 6.3px); left: 5.4px; width: 5px; height: 5px; content: ''; background: #fccc73; border-radius: var(--r-pill); }
+  .peek .eye[data-closed]::after { display: none; }
+
+  section { display: flex; flex-direction: column; align-items: center; margin-top: 16px; }
+  section[hidden] { display: none; }
+
+  progress { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  #loading { margin: 0; color: var(--ink-2); opacity: 1; }
+
+
+  h1 { margin: 0 0 16px; font-size: var(--t-title); font-weight: 600; text-align: center; }
+
+  button {
+    height: var(--h-md);
+    padding: 0 14px;
+    font: inherit;
+    font-weight: 500;
+    color: var(--on-ink);
+    cursor: pointer;
+    background: var(--ink);
+    border: 0;
+    border-radius: var(--r-pill);
+    outline: none;
+    -webkit-app-region: no-drag;
+    transition: background-color var(--d-fast) var(--ease), transform var(--d-fast) var(--ease), box-shadow var(--d-fast);
+  }
+  button:hover { background: var(--ink-hover); }
+  button:active { transform: scale(0.97); }
+  button:focus-visible { box-shadow: 0 0 0 3px var(--accent-soft); }
+
+</style>
+<main data-tauri-drag-region="deep">
+  <div class="peek" aria-hidden="true">
+    <div class="hole"></div>
+    <div class="clip">
+      <div class="meerkat">
+        <img src="meerkat-peek.png" alt="">
+        <i class="eye" data-x="49.5" data-y="46.7"></i>
+        <i class="eye" data-x="100.2" data-y="40.6"></i>
+      </div>
+    </div>
+  </div>
+  <section id="loader" role="status" aria-live="polite"><progress></progress><p id="loading"></p></section>
+  <section id="error" hidden role="alert"><h1 id="error-title"></h1><button id="action" type="button"></button></section>
+</main>
+<script>
+  const zh = navigator.language.toLowerCase().startsWith('zh');
+  const messages = zh ? {
+    loading: '正在打开 Lankide…', retry: '重试', settings: '打开系统设置',
+    'background-permission': '请允许 Lankide 在后台运行',
+    'background-installation': '请重新安装 Lankide',
+    'helper-missing': '请重新安装 Lankide',
+    'update-pending': '请退出并重新打开 Lankide',
+    'startup-failed': '无法打开 Lankide'
+  } : {
+    loading: 'Opening Lankide…', retry: 'Retry', settings: 'Open System Settings',
+    'background-permission': 'Allow Lankide to run in the background',
+    'background-installation': 'Reinstall Lankide',
+    'helper-missing': 'Reinstall Lankide',
+    'update-pending': 'Quit and reopen Lankide',
+    'startup-failed': 'Could not open Lankide'
+  };
+  document.documentElement.lang = zh ? 'zh' : 'en';
+  document.getElementById('loading').textContent = messages.loading;
+  function render() {
+    const code = location.hash.slice(1);
+    document.getElementById('loader').hidden = Boolean(code);
+    document.getElementById('error').hidden = !code;
+    document.getElementById('error-title').textContent = messages[code] || messages['startup-failed'];
+    const settings = code === 'background-permission';
+    const action = document.getElementById('action');
+    action.textContent = settings ? messages.settings : messages.retry;
+    action.onclick = () => { location.href = `lankide-boot://${settings ? 'settings' : 'retry'}`; };
+  }
+  addEventListener('hashchange', render);
+  render();
+
+  // One peekaboo cycle: the eyes come up for a quick look around, then the whole body climbs out
+  // and looks to each side, then sinks back. Only the pupils move sideways.
+  const meerkat = document.querySelector('.meerkat');
+  const eyes = [...document.querySelectorAll('.eye')];
+  const PERIOD = 6400;
+  const HIDDEN = 168, PEEK = 94, UP = 18;
+  const span = (t, from, to) => Math.min(Math.max((t - from) / (to - from), 0), 1);
+  const decelerate = (p) => 1 - (1 - p) ** 3;
+  const ease = (p) => (1 - Math.cos(Math.PI * p)) / 2;
+  const blink = (t, at) => 1 - Math.sin(Math.PI * span(t, at, at + 0.032)) ** 2 * 0.95;
+  const dart = (t, at) => decelerate(span(t, at, at + 0.04));
+  function pose(t) {
+    const peekGaze = -dart(t, 0.16) + 2 * dart(t, 0.225) - dart(t, 0.29);
+    const gaze = -dart(t, 0.53) + 2 * dart(t, 0.64) - dart(t, 0.75);
+    const peek = decelerate(span(t, 0.03, 0.13));
+    const climb = ease(span(t, 0.34, 0.45));
+    const sink = ease(span(t, 0.82, 0.95));
+    return {
+      y: HIDDEN + (PEEK - HIDDEN) * peek + (UP - PEEK) * climb + (HIDDEN - UP) * sink,
+      gaze: peekGaze + gaze,
+      openness: blink(t, 0.315) * blink(t, 0.48) * blink(t, 0.69)
+    };
+  }
+  function paint(p) {
+    meerkat.style.top = `${p.y}px`;
+    const height = Math.max(15 * p.openness, 2);
+    for (const eye of eyes) {
+      eye.style.left = `${Number(eye.dataset.x) + p.gaze * 4.5 - 6.6}px`;
+      eye.style.top = `${Number(eye.dataset.y) - height / 2}px`;
+      eye.style.height = `${height}px`;
+      eye.toggleAttribute('data-closed', p.openness <= 0.6);
+    }
+  }
+  const still = matchMedia('(prefers-reduced-motion: reduce)');
+  let frame = 0;
+  function sync() {
+    cancelAnimationFrame(frame);
+    const moving = !still.matches && !location.hash.slice(1);
+    if (!moving) return paint({ y: PEEK, gaze: 0, openness: 1 });
+    const run = (now) => { paint(pose((now % PERIOD) / PERIOD)); frame = requestAnimationFrame(run); };
+    frame = requestAnimationFrame(run);
+  }
+  still.addEventListener('change', sync);
+  addEventListener('hashchange', sync);
+  sync();
+</script>
+</html>

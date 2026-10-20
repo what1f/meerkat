@@ -653,6 +653,7 @@ fn build_machine(
             .register_harness(RegisteredHarness::new(
                 factory,
                 NativeHarnessConfig {
+                    launch_arguments: Default::default(),
                     harness_id: id.into(),
                     model: ModelRef::new("fixture", "fixture"),
                     thinking_level: "low".into(),
@@ -713,6 +714,7 @@ fn assign(
                 bio: String::new(),
             }),
             harness: Some(HarnessConfig {
+                launch_arguments: Default::default(),
                 harness_id: harness_id.into(),
                 executable_path: executable.display().to_string(),
                 model: "fixture".into(),

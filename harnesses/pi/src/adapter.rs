@@ -49,7 +49,7 @@ impl PiHarness {
         }
         if !matches!(
             config.thinking_level.as_str(),
-            "off" | "minimal" | "low" | "medium" | "high" | "xhigh"
+            "" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh"
         ) {
             return Err(HarnessError::invalid_config(
                 "unsupported Pi thinking level",
@@ -62,6 +62,7 @@ impl PiHarness {
         &self,
         request: SessionRequest,
         resume: bool,
+        startup_deadline: Option<Instant>,
     ) -> Result<Box<dyn HarnessSession>, HarnessError> {
         self.validate(&request.config)?;
         match (resume, request.native_session_id.as_deref()) {
@@ -101,6 +102,9 @@ impl PiHarness {
         write_extension(&paths.extension_path, &request.tools, &names)?;
 
         let mut command = Command::new(&request.config.cli_path);
+        if !request.config.thinking_level.is_empty() {
+            command.args(["--thinking", request.config.thinking_level.as_str()]);
+        }
         let stderr = OpenOptions::new()
             .create(true)
             .append(true)
@@ -112,8 +116,6 @@ impl PiHarness {
                 "rpc",
                 "--model",
                 request.config.model.model_id.as_str(),
-                "--thinking",
-                request.config.thinking_level.as_str(),
                 "--no-extensions",
                 "--extension",
             ])
@@ -146,6 +148,7 @@ impl PiHarness {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
         }
+        command.args(&request.config.launch_arguments);
         let mut child = command.spawn().map_err(|error| {
             let mut failure = harness_error(
                 HarnessErrorCode::SpawnFailed,
@@ -177,7 +180,7 @@ impl PiHarness {
             reap(&mut child, paths.pid_journal.as_deref(), true);
             return Err(error);
         }
-        let state = match wait_for_state(&line_receiver) {
+        let state = match wait_for_state(&line_receiver, startup_deadline) {
             Ok(state) => state,
             Err(error) => {
                 let detail = process_exit_detail(&paths.stderr_path, &mut child, &error.message);
@@ -357,11 +360,19 @@ impl HarnessFactory for PiHarness {
     }
 
     fn start<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
-        Box::pin(async move { self.open(request, false) })
+        Box::pin(async move { self.open(request, false, None) })
+    }
+
+    fn start_before<'a>(
+        &'a self,
+        request: SessionRequest,
+        deadline: Instant,
+    ) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
+        Box::pin(async move { self.open(request, false, Some(deadline)) })
     }
 
     fn resume<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
-        Box::pin(async move { self.open(request, true) })
+        Box::pin(async move { self.open(request, true, None) })
     }
 }
 
@@ -564,9 +575,17 @@ fn validate_session_file(
 
 fn wait_for_state(
     receiver: &std_mpsc::Receiver<Result<String, std::io::Error>>,
+    startup_deadline: Option<Instant>,
 ) -> Result<Value, HarnessError> {
     let deadline = Instant::now() + BIND_TIMEOUT;
+    let deadline = startup_deadline.map_or(deadline, |limit| deadline.min(limit));
     loop {
+        if startup_deadline.is_some() && Instant::now() >= deadline {
+            return Err(harness_error(
+                HarnessErrorCode::Timeout,
+                "Pi get_state timeout",
+            ));
+        }
         let line = receiver
             .recv_timeout(deadline.saturating_duration_since(Instant::now()))
             .map_err(|error| match error {
@@ -686,6 +705,7 @@ impl Inner {
         self.stdin.lock().expect("Pi stdin mutex poisoned").take();
         if let Some(mut child) = self.child.lock().expect("Pi child mutex poisoned").take() {
             let pid = child.id();
+            lankide_harness::kill_process_group(child.id());
             if child.try_wait().ok().flatten().is_none() {
                 let _ = child.kill();
             }
@@ -717,6 +737,7 @@ impl Drop for Inner {
             && let Some(mut child) = child.take()
         {
             let pid = child.id();
+            lankide_harness::kill_process_group(child.id());
             let _ = child.kill();
             let _ = child.wait();
             record_pid(self.pid_journal.as_deref(), "reaped", pid);
@@ -1478,6 +1499,7 @@ fn write_line(stdin: &mut ChildStdin, value: &Value) -> Result<(), HarnessError>
 
 fn reap(child: &mut Child, journal: Option<&Path>, force: bool) {
     let pid = child.id();
+    lankide_harness::kill_process_group(child.id());
     if force || child.try_wait().ok().flatten().is_none() {
         let _ = child.kill();
     }

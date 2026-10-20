@@ -13,6 +13,7 @@ mod machine_broker;
 use database::Database;
 mod error;
 mod execution;
+mod figures;
 mod lifecycle;
 mod management;
 mod pairing;

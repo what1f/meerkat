@@ -24,6 +24,7 @@ struct BrokerInner {
     next_connection_id: AtomicU64,
     link_rejections: StdRwLock<BTreeMap<String, lankide_protocol::link::CloseReason>>,
     pending: StdMutex<BTreeMap<i64, PendingExecution>>,
+    pending_harness_tests: StdMutex<BTreeMap<String, PendingHarnessTest>>,
     pending_agent_deletions: StdMutex<BTreeMap<String, oneshot::Sender<Result<(), String>>>>,
 }
 
@@ -37,6 +38,24 @@ struct MachineConnection {
     reconciled: bool,
     reconciling: bool,
     active_agents: BTreeSet<(String, String)>,
+}
+
+struct PendingHarnessTest {
+    machine_id: String,
+    instance_id: String,
+    response: oneshot::Sender<lankide_protocol::TestHarnessResponse>,
+}
+
+struct PendingHarnessTestGuard<'a> {
+    inner: &'a BrokerInner,
+    id: String,
+}
+impl Drop for PendingHarnessTestGuard<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut pending) = self.inner.pending_harness_tests.lock() {
+            pending.remove(&self.id);
+        }
+    }
 }
 
 struct PendingExecution {
@@ -65,6 +84,7 @@ impl MachineBroker {
                 next_connection_id: AtomicU64::new(0),
                 link_rejections: StdRwLock::new(BTreeMap::new()),
                 pending: StdMutex::new(BTreeMap::new()),
+                pending_harness_tests: StdMutex::new(BTreeMap::new()),
                 pending_agent_deletions: StdMutex::new(BTreeMap::new()),
             }),
         }
@@ -81,6 +101,104 @@ impl MachineBroker {
             .attempt_lease_millis
             .store(millis, Ordering::Relaxed);
         Ok(())
+    }
+
+    pub async fn test_harness(
+        &self,
+        request: lankide_protocol::TestHarnessRequest,
+    ) -> Result<lankide_protocol::TestHarnessResponse, Status> {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+        tokio::time::timeout_at(deadline, self.run_harness_test(request, deadline))
+            .await
+            .unwrap_or_else(|_| {
+                Ok(lankide_protocol::TestHarnessResponse {
+                    state: lankide_protocol::HarnessTestState::TimedOut,
+                    reply: None,
+                    error_code: None,
+                })
+            })
+    }
+
+    async fn run_harness_test(
+        &self,
+        request: lankide_protocol::TestHarnessRequest,
+        deadline: tokio::time::Instant,
+    ) -> Result<lankide_protocol::TestHarnessResponse, Status> {
+        let machines = self
+            .database()
+            .map_err(crate::peer::status)?
+            .registered_machines()
+            .await
+            .map_err(|error| crate::peer::status(error.into()))?;
+        let machine = machines
+            .iter()
+            .find(|machine| machine.machine_id == request.machine_id)
+            .ok_or_else(|| crate::peer::status(RuntimeError::MachineNotRegistered))?;
+        if machine.revoked_at.is_some() {
+            return Err(crate::peer::status(RuntimeError::MachineRevoked));
+        }
+        let connection = self
+            .inner
+            .connections
+            .read()
+            .map_err(|_| crate::peer::status(RuntimeError::RuntimeLockPoisoned))?
+            .get(&request.machine_id)
+            .cloned()
+            .ok_or_else(|| Status::unavailable("Machine is offline"))?;
+        crate::management::validate_harness_selection(
+            &connection.harnesses,
+            &request.harness_id,
+            &request.model,
+            &request.thinking_level,
+        )
+        .map_err(crate::peer::status)?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let (sender, receiver) = oneshot::channel();
+        self.inner
+            .pending_harness_tests
+            .lock()
+            .map_err(|_| crate::peer::status(RuntimeError::RuntimeLockPoisoned))?
+            .insert(
+                id.clone(),
+                PendingHarnessTest {
+                    machine_id: request.machine_id,
+                    instance_id: connection.instance_id,
+                    response: sender,
+                },
+            );
+        let _pending = PendingHarnessTestGuard {
+            inner: &self.inner,
+            id: id.clone(),
+        };
+        let frame = RuntimeFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            frame: Some(runtime_frame::Frame::TestHarness(
+                lankide_protocol::link::TestHarness {
+                    request_id: id.clone(),
+                    // Leave time for Machine cleanup and the result frame.
+                    budget_millis: deadline
+                        .saturating_duration_since(tokio::time::Instant::now())
+                        .as_millis()
+                        .saturating_sub(1000) as u64,
+                    harness: lankide_protocol::HarnessConfig {
+                        harness_id: request.harness_id,
+                        executable_path: request.cli_path.unwrap_or_default(),
+                        model: request.model,
+                        thinking_level: request.thinking_level,
+                        environment_variables: request.environment_variables,
+                        launch_arguments: request.launch_arguments,
+                    },
+                },
+            )),
+        };
+        connection
+            .sender
+            .send(Ok(frame))
+            .await
+            .map_err(|_| Status::unavailable("Machine is offline"))?;
+        receiver
+            .await
+            .map_err(|_| Status::unavailable("Machine is offline"))
     }
 
     pub fn reject_link(
@@ -484,6 +602,19 @@ impl MachineBroker {
             _ => {}
         }
         match frame {
+            machine_frame::Frame::TestHarnessResult(result) => {
+                let mut pending = self
+                    .inner
+                    .pending_harness_tests
+                    .lock()
+                    .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
+                if pending.get(&result.request_id).is_some_and(|pending| {
+                    pending.machine_id == machine_id && pending.instance_id == instance_id
+                }) && let Some(pending) = pending.remove(&result.request_id)
+                {
+                    let _ = pending.response.send(result.result);
+                }
+            }
             machine_frame::Frame::AssignmentResult(result) => {
                 let execution = result.execution.as_ref().ok_or_else(|| {
                     RuntimeError::Application("assignment missing execution".into())

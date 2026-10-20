@@ -10,13 +10,20 @@ dev:
     cargo build --locked --bin lankided --bin lankide-machine --bin lankide
     cargo run --locked -p lankide-desktop
 
+web-dev:
+    pnpm -C apps/web dev
+
+web-types:
+    cargo run --locked -p lankide-web-types -- apps/web/src/lib/api/generated
+
 check:
+    just web-check
+    ./scripts/verify-web-types
     ./scripts/verify-open-source
     ./scripts/verify-production-boundary
     cargo fmt --all --check
     cargo check --workspace --all-targets --locked
     ./scripts/verify-e2e-contracts
-    ./scripts/verify-desktop-ui-boundary
 
 test:
     ./scripts/verify-all --gate hermetic
@@ -45,3 +52,17 @@ full-release:
 
 release: full-release
     @echo "Release verification and distributable package are ready."
+
+web-check:
+    pnpm -C apps/web install --frozen-lockfile
+    pnpm -C apps/web format:check
+    pnpm -C apps/web lint
+    pnpm -C apps/web stylelint
+    pnpm -C apps/web typecheck
+    pnpm -C apps/web build
+    ./scripts/verify-web-lint
+
+web-e2e:
+    pnpm -C apps/web build
+    cargo build --locked -p lankide-system-e2e --bins
+    pnpm -C apps/web e2e

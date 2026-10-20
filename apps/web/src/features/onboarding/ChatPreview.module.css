@@ -1,0 +1,16 @@
+.root {
+  display: grid;
+  width: 320px;
+  row-gap: 10px;
+}
+
+.wait {
+  display: grid;
+  grid-auto-flow: column;
+  column-gap: 8px;
+  margin-inline: auto;
+}
+
+.wait > * {
+  margin-block: auto;
+}

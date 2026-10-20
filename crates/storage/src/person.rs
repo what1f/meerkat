@@ -26,6 +26,9 @@ pub struct HumanTeamMemberView {
     pub person_id: PersonId,
     pub name: Option<String>,
     pub team_role: TeamRole,
+    pub avatar: Option<lankide_core::ResourceRef>,
+    pub position: String,
+    pub signature: String,
 }
 
 fn person_id(s: String) -> rusqlite::Result<PersonId> {
@@ -150,35 +153,120 @@ impl Storage {
             .collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
-    /// Return the Agent-facing human roster. Display names come from accepted
-    /// messages, so the people identity record remains limited to stable IDs
-    /// and Provider-owned identity state.
     pub fn list_human_team_member_views(
         &self,
         workspace_id: &WorkspaceId,
     ) -> Result<Vec<HumanTeamMemberView>> {
         let connection = self.read_conn()?;
-        let mut statement = connection.prepare(
-            "SELECT p.person_id,p.team_role,(SELECT NULLIF(TRIM(m.sender_name),'') FROM messages m JOIN chats c ON c.chat_id=m.chat_id WHERE c.workspace_id=p.workspace_id AND m.sender_kind='human' AND m.sender_id=p.person_id AND NULLIF(TRIM(m.sender_name),'') IS NOT NULL ORDER BY m.occurred_at DESC,m.message_id DESC LIMIT 1) FROM people p WHERE p.workspace_id=?1 AND p.team_role IN('member','lead') ORDER BY p.person_id",
-        )?;
+        let mut statement = connection.prepare("SELECT person_id,team_role,name,avatar_json,position,signature FROM people WHERE workspace_id=?1 AND team_role IN('member','lead') ORDER BY created_at,person_id")?;
         Ok(statement
             .query_map([workspace_id.as_str()], |row| {
-                let role = row.get::<_, String>(1)?;
+                let role: String = row.get(1)?;
+                let avatar: Option<String> = row.get(3)?;
                 Ok(HumanTeamMemberView {
                     person_id: person_id(row.get(0)?)?,
                     name: row.get(2)?,
                     team_role: TeamRole::parse(&role)
-                        .ok_or_else(|| StorageError::Invalid(format!("team role {role}")))
-                        .map_err(|error| {
-                            rusqlite::Error::FromSqlConversionFailure(
-                                1,
-                                rusqlite::types::Type::Text,
-                                Box::new(error),
-                            )
-                        })?,
+                        .ok_or_else(|| rusqlite::Error::InvalidQuery)?,
+                    avatar: avatar
+                        .map(|v| {
+                            serde_json::from_str(&v).map_err(|e| {
+                                rusqlite::Error::FromSqlConversionFailure(
+                                    3,
+                                    rusqlite::types::Type::Text,
+                                    Box::new(e),
+                                )
+                            })
+                        })
+                        .transpose()?,
+                    position: row.get(4)?,
+                    signature: row.get(5)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Enrollment, enterprise validation and first-human election share one transaction.
+    pub fn join_human_team(
+        &self,
+        workspace_id: &WorkspaceId,
+        person_id: &PersonId,
+        tenant_id: Option<&str>,
+        name: Option<&str>,
+        avatar: Option<&lankide_core::ResourceRef>,
+        now: i64,
+    ) -> Result<PersonRecord> {
+        let mut connection = self.conn()?;
+        let transaction = connection.transaction()?;
+        let tenant: Option<String> = transaction.query_row("SELECT tenant_id FROM people WHERE workspace_id=?1 AND team_role IN('member','lead') AND tenant_id IS NOT NULL LIMIT 1", [workspace_id.as_str()], |r| r.get(0)).optional()?;
+        if tenant.as_deref().is_some_and(|v| Some(v) != tenant_id) {
+            return Err(StorageError::Conflict("team_enterprise".into()));
+        }
+        let has_member: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM people WHERE workspace_id=?1 AND team_role IN('member','lead'))", [workspace_id.as_str()], |r| r.get(0))?;
+        let role = if has_member { "member" } else { "lead" };
+        transaction.execute("UPDATE people SET team_role=CASE WHEN team_role='external' THEN ?1 ELSE team_role END, position=CASE WHEN team_role='external' AND ?1='lead' THEN 'Team Leader' ELSE position END,name=COALESCE(?2,name),avatar_json=COALESCE(?3,avatar_json),tenant_id=?4,updated_at=?5 WHERE workspace_id=?6 AND person_id=?7", params![role,name,avatar.map(serde_json::to_string).transpose()?,tenant_id,now,workspace_id.as_str(),person_id.as_str()])?;
+        let person = load_person_by_id(&transaction, workspace_id, person_id)?
+            .ok_or_else(|| StorageError::Invalid("unknown person".into()))?;
+        transaction.commit()?;
+        Ok(person)
+    }
+
+    /// Atomically reserve a team-wide sync attempt before any network request.
+    pub fn claim_human_profile_sync(
+        &self,
+        workspace_id: &WorkspaceId,
+        person_id: &PersonId,
+        force: bool,
+        now: i64,
+    ) -> Result<bool> {
+        Ok(self.conn()?.execute("UPDATE people SET last_profile_sync_at=?3 WHERE workspace_id=?1 AND person_id=?2 AND team_role IN('member','lead') AND (?4 OR last_profile_sync_at IS NULL OR last_profile_sync_at<=?3-3600000)", params![workspace_id.as_str(),person_id.as_str(),now,force])? == 1)
+    }
+
+    pub fn human_profile(
+        &self,
+        workspace_id: &WorkspaceId,
+        person_id: &PersonId,
+    ) -> Result<(Option<String>, Option<lankide_core::ResourceRef>)> {
+        let (name, avatar): (Option<String>, Option<String>) = self.read_conn()?.query_row("SELECT name,avatar_json FROM people WHERE workspace_id=?1 AND person_id=?2 AND team_role IN('member','lead')", params![workspace_id.as_str(),person_id.as_str()], |r| Ok((r.get(0)?,r.get(1)?)))?;
+        Ok((name, avatar.map(|v| serde_json::from_str(&v)).transpose()?))
+    }
+
+    pub fn update_human_profile(
+        &self,
+        workspace_id: &WorkspaceId,
+        person_id: &PersonId,
+        name: Option<&str>,
+        avatar: Option<&lankide_core::ResourceRef>,
+        signature: Option<&str>,
+        now: i64,
+    ) -> Result<bool> {
+        let connection = self.conn()?;
+        let changed = connection.execute("UPDATE people SET name=COALESCE(?3,name),avatar_json=COALESCE(?4,avatar_json),signature=COALESCE(?5,signature),updated_at=?6 WHERE workspace_id=?1 AND person_id=?2 AND team_role IN('member','lead') AND ((?3 IS NOT NULL AND name IS NOT ?3) OR (?4 IS NOT NULL AND avatar_json IS NOT ?4) OR (?5 IS NOT NULL AND signature IS NOT ?5))", params![workspace_id.as_str(),person_id.as_str(),name,avatar.map(serde_json::to_string).transpose()?,signature,now])?;
+        if changed == 0 {
+            let exists: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM people WHERE workspace_id=?1 AND person_id=?2 AND team_role IN('member','lead'))", params![workspace_id.as_str(),person_id.as_str()], |r| r.get(0))?;
+            if !exists {
+                return Err(StorageError::Invalid("unknown team member".into()));
+            }
+        }
+        Ok(changed == 1)
+    }
+
+    pub fn update_human_position(
+        &self,
+        workspace_id: &WorkspaceId,
+        person_id: &PersonId,
+        position: &str,
+        now: i64,
+    ) -> Result<()> {
+        if position.chars().count() > 120 {
+            return Err(StorageError::Invalid("position too long".into()));
+        }
+        let connection = self.conn()?;
+        let changed = connection.execute("UPDATE people SET position=?1,updated_at=?2 WHERE workspace_id=?3 AND person_id=?4 AND team_role IN('member','lead')",params![position.trim(),now,workspace_id.as_str(),person_id.as_str()])?;
+        if changed != 1 {
+            return Err(StorageError::Invalid("unknown team member".into()));
+        }
+        Ok(())
     }
 
     pub fn compare_and_set_person_state(
@@ -237,44 +325,6 @@ impl Storage {
         }
         load_person_by_id(&*connection, workspace_id, person_id)?
             .ok_or_else(|| StorageError::Invalid("person disappeared".into()))
-    }
-
-    pub fn initialize_team_lead(
-        &self,
-        workspace_id: &WorkspaceId,
-        person_id: &PersonId,
-        now: i64,
-    ) -> Result<PersonRecord> {
-        let mut connection = self.conn()?;
-        let transaction = connection.transaction()?;
-        let current_lead: Option<String> = transaction
-            .query_row(
-                "SELECT person_id FROM people WHERE workspace_id=?1 AND team_role='lead'",
-                [workspace_id.as_str()],
-                |row| row.get(0),
-            )
-            .optional()?;
-        match current_lead {
-            Some(current) if current != person_id.as_str() => {
-                return Err(StorageError::Conflict(
-                    "workspace already has a team lead".into(),
-                ));
-            }
-            Some(_) => {}
-            None => {
-                let changed = transaction.execute(
-                    "UPDATE people SET team_role='lead',updated_at=?1 WHERE workspace_id=?2 AND person_id=?3",
-                    params![now, workspace_id.as_str(), person_id.as_str()],
-                )?;
-                if changed != 1 {
-                    return Err(StorageError::Invalid("unknown person".into()));
-                }
-            }
-        }
-        let person = load_person_by_id(&transaction, workspace_id, person_id)?
-            .ok_or_else(|| StorageError::Invalid("person disappeared".into()))?;
-        transaction.commit()?;
-        Ok(person)
     }
 
     pub fn update_team_member(

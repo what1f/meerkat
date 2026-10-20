@@ -1,0 +1,83 @@
+.root {
+  --r-card: calc(14 * var(--u, 0.9px));
+  --t-tear: calc(12.5 * var(--u, 0.9px));
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: calc(196 * var(--u, 0.9px));
+  height: calc(276 * var(--u, 0.9px));
+  padding-top: calc(70 * var(--u, 0.9px));
+  overflow: hidden;
+  color: var(--ink);
+  background: var(--card);
+  border-radius: var(--r-card);
+  box-shadow: var(--card-shadow);
+}
+
+.slot {
+  position: absolute;
+  top: calc(9 * var(--u, 0.9px));
+  left: 50%;
+  width: calc(26 * var(--u, 0.9px));
+  height: calc(6 * var(--u, 0.9px));
+  margin-left: calc(-13 * var(--u, 0.9px));
+  background: var(--board);
+  border-radius: var(--r-pill);
+  box-shadow: var(--slot-shadow);
+}
+
+.org {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(64 * var(--u, 0.9px));
+  height: calc(64 * var(--u, 0.9px));
+  background: var(--field);
+  border-radius: var(--r-card);
+}
+
+.org img {
+  width: calc(34 * var(--u, 0.9px));
+  height: calc(34 * var(--u, 0.9px));
+}
+
+.tear {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-top: auto;
+}
+
+.tear > button {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  height: calc(40 * var(--u, 0.9px));
+  font-size: var(--t-tear);
+  color: var(--ink-2);
+  background: var(--clear);
+  border-style: none;
+  border-top: var(--dashed);
+  transition:
+    background-color var(--d-fast),
+    color var(--d-fast);
+}
+
+.tear > button:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.tear > button > svg {
+  color: var(--ink-3);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

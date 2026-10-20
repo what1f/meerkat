@@ -24,6 +24,9 @@ pub enum Script {
     ReplyBeforeTerminal {
         text: String,
     },
+    DeferredPrivateReply {
+        text: String,
+    },
     LinkReply {
         text: String,
     },
@@ -42,6 +45,8 @@ pub enum Script {
     FailMidTurn {
         text: String,
     },
+    Greeting,
+    HangOnStart,
     Hang,
     HangOnce {
         text: String,
@@ -102,10 +107,16 @@ impl Script {
 
 pub(crate) struct ScriptedHarness {
     process: ProcessHarnessFactory,
+    models: Option<Vec<NativeModel>>,
+    controls: PathBuf,
 }
 impl ScriptedHarness {
     pub fn new(journal: PathBuf) -> Self {
         Self {
+            models: None,
+            controls: std::env::var_os("LANKIDE_SYSTEM_CONTROL_ROOT")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| journal.parent().unwrap().join("scripted-members")),
             process: ProcessHarnessFactory::new(
                 HarnessInfo::new("pi", "Scripted process").expect("harness id"),
                 ProcessHarnessSpec {
@@ -116,6 +127,43 @@ impl ScriptedHarness {
                 },
             ),
         }
+    }
+    pub fn with_models(mut self, models: Vec<NativeModel>) -> Self {
+        self.models = Some(models);
+        self
+    }
+    fn prepare(&self, mut request: SessionRequest) -> Result<SessionRequest, HarnessError> {
+        // Machine's public working directory is workspace/agents/member. Use that
+        // identity; browser-created members need no editable test configuration.
+        let home = &request.working_directory;
+        let agent = home
+            .file_name()
+            .ok_or_else(|| HarnessError::new(HarnessErrorCode::InvalidConfig, "member home"))?;
+        let workspace = home
+            .ancestors()
+            .nth(2)
+            .and_then(|p| p.file_name())
+            .ok_or_else(|| HarnessError::new(HarnessErrorCode::InvalidConfig, "workspace home"))?;
+        let dir = self.controls.join(workspace).join(agent);
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| HarnessError::new(HarnessErrorCode::InvalidConfig, e.to_string()))?;
+        let env = &mut request.config.environment;
+        for (key, file) in [
+            ("LANKIDE_SYSTEM_INPUTS", "inputs.jsonl"),
+            ("LANKIDE_SYSTEM_CONTROLS", "controls.jsonl"),
+            ("LANKIDE_SYSTEM_STEERS", "steers.jsonl"),
+            ("LANKIDE_SYSTEM_RELEASE", "release"),
+        ] {
+            env.entry(key.into())
+                .or_insert_with(|| dir.join(file).display().to_string());
+        }
+        env.entry("LANKIDE_SYSTEM_SCRIPT".into())
+            .or_insert_with(|| serde_json::to_string(&Script::reply("hi")).unwrap());
+        env.insert(
+            "LANKIDE_SYSTEM_HOLD".into(),
+            dir.join("hold").display().to_string(),
+        );
+        Ok(request)
     }
     fn spawn_failure(request: &SessionRequest) -> Option<HarnessError> {
         let script = request.config.environment.get("LANKIDE_SYSTEM_SCRIPT")?;
@@ -135,14 +183,86 @@ impl HarnessFactory for ScriptedHarness {
     fn probe<'a>(&'a self, config: &'a HarnessConfig) -> HarnessFuture<'a, ProbeResult> {
         self.process.probe(config)
     }
+    fn models<'a>(&'a self, _config: &'a HarnessConfig) -> HarnessFuture<'a, Vec<NativeModel>> {
+        Box::pin(async move {
+            if let Some(models) = &self.models {
+                return Ok(models.clone());
+            }
+            Ok(vec![
+                NativeModel {
+                    id: "scripted".into(),
+                    name: "Scripted".into(),
+                    description: String::new(),
+                    thinking_levels: vec!["low".into(), "high".into()],
+                },
+                NativeModel {
+                    id: "short".into(),
+                    name: "Short".into(),
+                    description: String::new(),
+                    thinking_levels: vec!["medium".into()],
+                },
+                NativeModel {
+                    id: "plain".into(),
+                    name: "Plain".into(),
+                    description: String::new(),
+                    thinking_levels: vec![],
+                },
+                // The same name from two sources, and enough models to fill a picker column.
+                NativeModel {
+                    id: "north/twin".into(),
+                    name: "Twin Flash Preview With A Very Long Name".into(),
+                    description: String::new(),
+                    thinking_levels: vec![
+                        "low".into(),
+                        "medium".into(),
+                        "high".into(),
+                        "max".into(),
+                    ],
+                },
+                NativeModel {
+                    id: "south/twin".into(),
+                    name: "Twin Flash Preview With A Very Long Name".into(),
+                    description: String::new(),
+                    thinking_levels: vec!["low".into()],
+                },
+            ]
+            .into_iter()
+            .chain((0..8).map(|n| NativeModel {
+                id: format!("filler-{n}"),
+                name: format!("Filler {n}"),
+                description: String::new(),
+                thinking_levels: vec![],
+            }))
+            .collect())
+        })
+    }
     fn start<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
+        let request = match self.prepare(request) {
+            Ok(request) => request,
+            Err(error) => return Box::pin(async move { Err(error) }),
+        };
         if let Some(error) = Self::spawn_failure(&request) {
             Box::pin(async move { Err(error) })
         } else {
             self.process.start(request)
         }
     }
+    fn start_before<'a>(
+        &'a self,
+        request: SessionRequest,
+        deadline: std::time::Instant,
+    ) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
+        if let Some(error) = Self::spawn_failure(&request) {
+            Box::pin(async move { Err(error) })
+        } else {
+            self.process.start_before(request, deadline)
+        }
+    }
     fn resume<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
+        let request = match self.prepare(request) {
+            Ok(request) => request,
+            Err(error) => return Box::pin(async move { Err(error) }),
+        };
         if let Some(error) = Self::spawn_failure(&request) {
             Box::pin(async move { Err(error) })
         } else {

@@ -195,6 +195,15 @@ impl<'a> WorkspaceLifecycle<'a> {
                     .await;
             }
             self.application.start_workspace_loop(command.id.clone())?;
+            runtime
+                .database()
+                .set_workspace_setup(
+                    &command.id,
+                    WorkspaceSetupStatus::Ready,
+                    None,
+                    record.updated_at,
+                )
+                .await?;
         }
         self.application.emit_management(
             ManagementEventKind::WorkspaceUpdated,
@@ -202,7 +211,11 @@ impl<'a> WorkspaceLifecycle<'a> {
             None,
             record.updated_at,
         );
-        Ok(record)
+        runtime
+            .database()
+            .workspace_record(&command.id)
+            .await
+            .map_err(Into::into)
     }
 
     pub async fn set_state(
@@ -214,6 +227,10 @@ impl<'a> WorkspaceLifecycle<'a> {
         let runtime = self.application.runtime()?;
         match desired {
             WorkspaceDesiredState::Running => {
+                runtime
+                    .database()
+                    .set_workspace_active(&id, true, now)
+                    .await?;
                 if !runtime.has_provider_instance(&id) {
                     let record = runtime.database().workspace_record(&id).await?;
                     if self
@@ -267,10 +284,6 @@ impl<'a> WorkspaceLifecycle<'a> {
         id: &WorkspaceId,
         now: i64,
     ) -> Result<T, RuntimeError> {
-        runtime
-            .database()
-            .set_workspace_active(id, false, now)
-            .await?;
         runtime
             .database()
             .set_workspace_setup(

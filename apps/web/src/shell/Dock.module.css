@@ -1,0 +1,60 @@
+.root {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  z-index: var(--z-bar);
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  max-width: calc(100% - 16px);
+  padding: 5px;
+  background: var(--glass);
+  border-radius: var(--r-xl);
+  box-shadow: var(--dock-shadow);
+  backdrop-filter: blur(20px) saturate(1.4);
+  transform: translateX(-50%);
+}
+
+.separator {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: var(--line-strong);
+}
+
+.item {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 34px;
+  padding: 0;
+  color: var(--ink-2);
+  background: var(--clear);
+  border-style: none;
+  border-radius: var(--r-dock-item);
+  transition:
+    background var(--d-fast),
+    color var(--d-fast);
+}
+
+.item:hover,
+.item[aria-current='page'] {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.item[aria-current='page'] {
+  background: var(--active);
+}
+
+.item:focus-visible {
+  outline-style: none;
+  box-shadow: var(--ring-focus);
+}
+
+.root [role='tooltip'] {
+  bottom: calc(100% + 10px);
+}

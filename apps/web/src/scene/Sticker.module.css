@@ -1,0 +1,34 @@
+.root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  color: var(--ink-3);
+  cursor: pointer;
+  background: var(--card);
+  border-style: none;
+  border-radius: var(--r-full);
+  box-shadow: var(--sticker-shadow);
+  rotate: -8deg;
+  transition:
+    rotate var(--d-slow) var(--ease-pop),
+    scale var(--d-slow) var(--ease-pop);
+}
+
+.root:hover,
+.root:focus-visible {
+  outline-style: none;
+  scale: 1.05;
+  rotate: -2deg;
+}
+
+.root:focus-visible {
+  box-shadow: var(--sticker-shadow-focus);
+}
+
+.root img {
+  width: 40px;
+  height: 40px;
+}

@@ -2,7 +2,7 @@
 
 ## 用户交付物
 
-本地版交付一个 `Lankide.app`。DMG 提供 App 和 Applications 快捷方式，用户拖入应用程序目录后打开；ZIP 提供同一份 App。App 内包含管理界面、两个后台进程和一个 Agent 执行期 CLI：
+本地版交付一个 `Lankide.app`。DMG 提供 App 和 Applications 快捷方式，用户拖入应用程序目录后打开；ZIP 提供同一份 App。App 包含 Tauri 外壳、两个后台进程和一个 Agent 执行期 CLI。Web 管理界面内嵌在 Runtime 中：
 
 ```text
 Lankide.app/Contents/
@@ -42,7 +42,7 @@ just release         # Full Release Gate + 最终可分发包
 
 打包逻辑位于 `scripts/package-macos`，`Justfile` 只提供稳定入口。开发包默认使用 ad-hoc 签名；设置 `LANKIDE_CODESIGN_IDENTITY` 后会使用指定身份依次签名内部可执行文件和整个 App。
 
-打包需要 macOS、仓库固定的 Rust 工具链和 `just`；生成 DMG 还需要 `uv`。
+打包需要 macOS、仓库固定的 Rust 工具链、`just` 和 `pnpm`；生成 DMG 还需要 `uv`。
 DMG 使用固定版本 `dmgbuild==1.6.7`，安装窗口不含说明文案。
 背景位于 `apps/desktop/assets/dmg/`，提供 640×400 和 1280×800 两种分辨率；
 中间的箭头提示拖动方向，两侧留给 App 与 Applications 图标。
@@ -52,7 +52,8 @@ DMG 使用固定版本 `dmgbuild==1.6.7`，安装窗口不含说明文案。
 
 ```text
 just package
-  → 检查生产边界、记录源码、构建四个 release 二进制
+  → 检查生产边界、记录源码、构建 Web 静态资源并内嵌进 Runtime
+  → 构建四个 release 二进制（Desktop 使用 Tauri custom-protocol）
   → 校验源码与二进制、检查架构、组装 App 和许可证
   → 签名内部可执行文件，再签名 App
   → 生成 ZIP 并核对 App 的内容与权限
@@ -90,10 +91,10 @@ package-provenance.json
 `scripts/verify-package` 不依赖页面操作。它从打包后的 App 主程序启动一个隔离的临时 Lankide Home，验证：
 
 1. Bundle 中四个可执行文件位置正确；
-2. App 与内部可执行文件签名有效；
+2. App 与内部可执行文件签名有效，`Info.plist` 允许本地网络访问；
 3. ZIP 完整且没有 App 外置的 daemon 或启动脚本；DMG 中的 App 与同一份签名凭据一致，Applications 快捷方式和安装图标位置正确；两个交付物的 SHA-256 一致；
 4. Bundle 包含并签署两个用户级 LaunchAgent 描述；
-5. 隔离 smoke 路径只启动 Desktop 即可自动启动 Runtime 和 Machine，并在退出后清理临时 daemon、socket 和实例锁。
+5. 隔离 smoke 路径只启动 Desktop 即可自动启动 Runtime 和 Machine，记录的导航 URL 与 `management.url` 一致，并在退出后清理临时 daemon、socket 和实例锁。
 
 结果写入 `target/e2e-artifacts/package/<run_id>/result.json`。
 
@@ -108,3 +109,7 @@ package-provenance.json
 - Linux 使用 `systemd --user` service，分别声明 Runtime 和 Machine 的启动顺序、失败重启和用户会话生命周期。默认随用户登录运行；只有产品明确需要用户退出登录后仍运行时，才由用户显式启用 linger。
 
 Windows/Linux adapter 尚未加入当前 macOS 交付物；实现时复用同一后台生命周期接口，不改变 Desktop、Runtime 或 Machine 的业务接口。
+
+Tauri 只内嵌 `apps/desktop/boot/` 启动页，业务页面由 Runtime 同源提供。
+App 图标来源为 `apps/desktop/assets/app-icon.png`，DMG 素材仍在 `assets/dmg/`。
+实际窗口证据验收入口为 `apps/desktop/window-e2e.sh`，不由 headless smoke 代替。

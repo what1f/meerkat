@@ -527,6 +527,14 @@ impl Storage {
         t.execute("INSERT INTO channels VALUES(?1,?2,?3,?4) ON CONFLICT(workspace_id,channel_id) DO UPDATE SET name=excluded.name,updated_at=excluded.updated_at",params![event.workspace_id.as_str(),event.channel_id.as_str(),event.channel_name,event.now])?;
         t.execute("INSERT INTO chats(workspace_id,channel_id,provider_chat_id,name,created_at,updated_at,receiving_agent_id)VALUES(?1,?2,?3,?4,?5,?5,?6) ON CONFLICT(workspace_id,channel_id,provider_chat_id,receiving_agent_id) DO UPDATE SET name=CASE WHEN excluded.name=excluded.provider_chat_id THEN chats.name ELSE excluded.name END,updated_at=excluded.updated_at",params![event.workspace_id.as_str(),event.channel_id.as_str(),event.provider_chat_id,event.chat_name,event.now,event.receiving_agent_id.as_ref().map(AgentId::as_str).unwrap_or("")])?;
         let chat_id: i64 = t.query_row("SELECT chat_id FROM chats WHERE workspace_id=?1 AND channel_id=?2 AND provider_chat_id=?3 AND receiving_agent_id=?4",params![event.workspace_id.as_str(),event.channel_id.as_str(),event.provider_chat_id,event.receiving_agent_id.as_ref().map(AgentId::as_str).unwrap_or("")],|r|r.get(0))?;
+        if event.receiving_agent_id.is_some()
+            && event.message.sender_kind == MessageAuthorType::Human
+        {
+            t.execute(
+                "UPDATE chats SET recipient_person_id=?2 WHERE chat_id=?1",
+                params![chat_id, event.message.sender_id],
+            )?;
+        }
         if let Some((message_id, direction, sender_kind, sender_id)) = t
             .query_row(
                 "SELECT message_id,direction,sender_kind,sender_id FROM messages WHERE chat_id=?1 AND provider_message_id=?2",

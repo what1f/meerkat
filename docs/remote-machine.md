@@ -27,16 +27,13 @@ cloud. Machine links use WebSocket; management and resources use HTTP.
   for Agents in diskless cloud sandboxes or for files shared across Machines,
   and would be added as another Machine-side file provider.
 - Multiple Runtime instances behind a load balancer.
-- A Lankide web UI. The management API is designed so one can be added later:
-  it uses only JSON over HTTP and WS, never depends on local file paths, and
-  its authentication can grow from the local owner credential to a login
-  session. The Runtime would serve the web UI from the same origin. The API
-  stays internal to Lankide clients and is not a public interface.
+- LAN browser management. The Web UI is served by the Runtime on loopback;
+  remote Machines use their separate pinned TLS entry point.
 
 ## Topology
 
 ```text
-Desktop ──HTTP JSON + WS events──▶ Runtime ◀──WS (outbound from Machine)── Machine
+Tauri / Browser ──HTTP JSON + WS events──▶ Runtime ◀──WS (outbound from Machine)── Machine
                                      │                                          │
                                   storage                       local proxy socket
                                   resources                                     │
@@ -50,12 +47,12 @@ Machine, so Machines behind NAT or a firewall work without extra setup.
 
 ## Entry points
 
-The Runtime exposes three separate entry points. Each has its own
-authentication, and none can call another's operations.
+The Runtime exposes three separate entry points with distinct access rules.
+Machine links and resources still require their own credentials.
 
-| Entry point | Caller | Transport | Credential |
+| Entry point | Caller | Transport | Access control |
 |---|---|---|---|
-| Management | Desktop | HTTP JSON requests, one WS for events | Local owner credential |
+| Management | Tauri / local browser / client | HTTP JSON requests, one WS for events | Local Host, Origin, and JSON checks |
 | Machine | machine-daemon | One long-lived WS per Machine | Device credential from pairing |
 | Resources | Machine | HTTP upload and download | Execution token |
 
@@ -142,7 +139,7 @@ socket and cancels pending calls. The Machine link keeps chunk offsets and
 correlation IDs for large JSON capability payloads.
 
 The Runtime has no UDS listener. Its instance lock owns the home, its discovery
-files identify the HTTP listener, and health/readiness checks use authenticated
+files identify the HTTP listener, and health/readiness checks use local origin-checked
 HTTP management calls. Desktop clients keep the same reuse-first startup flow.
 
 The execution token is bound to execution, attempt, Machine, and the Agent's
@@ -269,8 +266,16 @@ registers a random Machine ID and credential hash, and writes
 `machine-credentials.json` in the Machine home with mode 0600. The local
 credential uses `local_discovery: true` to rediscover the Runtime after restart.
 
-Local clients read `management.url` and `management-owner.secret` from the run
-directory. `LANKIDE_RUNTIME_RUN` selects that directory for an externally managed
+Local management listens on `127.0.0.1:7440` by default. An occupied port
+stops startup; there is no random-port fallback. Hermetic rigs explicitly select
+port 0. Local clients read `management.url` from the run directory. There is no
+owner credential. All local routes require Host `127.0.0.1:<port>` or
+`localhost:<port>`. If Origin is present, it must be `http://127.0.0.1:<port>`
+or `http://localhost:<port>`. POST requires `application/json` (optionally
+`; charset=utf-8`). Event subscriptions use
+`/api/v1/events?workspace=<id>&after=<seq>`; both parameters are optional.
+Other OS users on the same host can access management.
+`LANKIDE_RUNTIME_RUN` selects the run directory for an externally managed
 Desktop connection. Native Agent calls use only their private attempt socket.
 
 Live Telegram scenarios read an owner-only JSON fixture selected by
@@ -289,7 +294,7 @@ fixtures, separate from application configuration.
 ## Remote Machine access
 
 Local Machine discovery and management remain on loopback. The Desktop's Add
-Machine dialog uses owner-authenticated `get_remote_access` and
+Machine dialog uses local `get_remote_access` and
 `set_remote_access` operations on local management. `set_remote_access` takes
 `{ "address": "host:port" }`; a null or empty address disables remote access.
 The address is persisted in `remote-access.json`. Changes take effect live.

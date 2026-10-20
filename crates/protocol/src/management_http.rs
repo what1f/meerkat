@@ -25,14 +25,12 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
     peer: P,
     config: TransportConfig,
 ) -> Response<Full<Bytes>> {
-    if request.method() != hyper::Method::POST {
-        return error(crate::Status::invalid_argument("POST required"));
-    }
     let operation = request
         .uri()
         .path()
         .trim_start_matches(json::PREFIX)
         .to_owned();
+    let method = request.method().clone();
     let bytes = match http_body_util::Limited::new(
         request.into_body(),
         json::json_limit(config.max_message_bytes),
@@ -50,6 +48,9 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
     let service = ValidatedRuntimeService::new(peer, config);
     macro_rules! call {
         ($request:ty, $response:ty, $method:ident) => {{
+            if method != hyper::Method::POST {
+                return error(crate::Status::invalid_argument("POST required"));
+            }
             match serde_json::from_slice::<$request>(&bytes) {
                 Ok(value) => match service.$method(crate::Request::new(value)).await {
                     Ok(value) => response(StatusCode::OK, &value.into_inner()),
@@ -60,6 +61,16 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
         }};
     }
     match operation.as_str() {
+        "list_figure_packs" => call!(
+            json::ListFigurePacksRequest,
+            Vec<json::FigurePack>,
+            list_figure_packs
+        ),
+        "import_figure_pack" => call!(
+            json::ImportFigurePackRequest,
+            json::FigurePack,
+            import_figure_pack
+        ),
         "list_workspaces" => call!(
             json::ListWorkspacesRequest,
             json::ListWorkspacesResponse,
@@ -91,10 +102,30 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
             json::Workspace,
             set_workspace_state
         ),
+        "list_human_members" => call!(
+            json::GetWorkspaceRequest,
+            Vec<json::HumanTeamMember>,
+            list_human_members
+        ),
+        "sync_human_profile" => call!(
+            json::SyncHumanProfileRequest,
+            json::HumanTeamMember,
+            sync_human_profile
+        ),
+        "update_human_position" => call!(
+            json::UpdateHumanPositionRequest,
+            Vec<json::HumanTeamMember>,
+            update_human_position
+        ),
         "list_agents" => call!(
             json::ListAgentsRequest,
             json::ListAgentsResponse,
             list_agents
+        ),
+        "get_agent_first_reply" => call!(
+            json::GetAgentRequest,
+            json::AgentFirstReply,
+            get_agent_first_reply
         ),
         "get_agent" => call!(json::GetAgentRequest, json::Agent, get_agent),
         "cancel_attempt" => call!(
@@ -167,6 +198,11 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
             json::CatalogRequest,
             json::HarnessCatalog,
             get_harness_catalog
+        ),
+        "test_harness" => call!(
+            json::TestHarnessRequest,
+            json::TestHarnessResponse,
+            test_harness
         ),
         "get_model_catalog" => call!(
             json::ModelCatalogRequest,

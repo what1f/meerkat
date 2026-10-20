@@ -1,7 +1,7 @@
 use lankide_core::{AgentId, AttentionLevel, ChannelAbility, ChannelId, ProviderId};
 use lankide_provider::*;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
@@ -23,6 +23,7 @@ pub struct Outbound {
     pub workspace: String,
     pub account: String,
     pub chat: String,
+    pub channel_type: String,
     pub kind: OutboundKind,
     pub content: String,
     pub message_id: String,
@@ -43,6 +44,7 @@ pub struct Incoming {
 
 #[derive(Default)]
 pub(crate) struct ImState {
+    pub startup_failures: Mutex<BTreeSet<String>>,
     pub order: AtomicU64,
     pub preparation_gate: Mutex<Option<std::path::PathBuf>>,
     pub resource_contexts: Mutex<BTreeMap<String, InitContext>>,
@@ -118,6 +120,18 @@ impl Provider for ScriptedProvider {
     }
     fn init<'a>(&'a self, context: InitContext) -> ProviderFuture<'a, ()> {
         Box::pin(async move {
+            if self
+                .state
+                .startup_failures
+                .lock()
+                .expect("startup failures")
+                .remove(context.workspace_id().as_str())
+            {
+                return Err(ProviderError::External {
+                    operation: "init",
+                    retryable: true,
+                });
+            }
             self.state
                 .resource_contexts
                 .lock()
@@ -194,6 +208,7 @@ impl Provider for ScriptedProvider {
                 order: self.state.order.fetch_add(1, Ordering::SeqCst),
                 workspace: context.workspace_id.to_string(),
                 account,
+                channel_type: context.channel_id.to_string(),
                 chat: context.chat_id,
                 kind: if context.reply_to.is_some() {
                     OutboundKind::Reply
@@ -221,6 +236,7 @@ impl Provider for ScriptedProvider {
                         order: self.state.order.fetch_add(1, Ordering::SeqCst),
                         workspace: context.workspace_id.to_string(),
                         account: account.clone(),
+                        channel_type: context.channel_id.to_string(),
                         chat: context.chat_id.clone(),
                         kind: OutboundKind::Reaction,
                         content: context.auto_reaction.clone(),
@@ -243,6 +259,7 @@ impl Provider for ScriptedProvider {
                     order: self.state.order.fetch_add(1, Ordering::SeqCst),
                     workspace: context.workspace_id.to_string(),
                     account: self.account(context.workspace_id.as_str(), &context.agent_id),
+                    channel_type: context.channel_id.to_string(),
                     chat: context.chat_id,
                     kind: OutboundKind::Recall,
                     content: String::new(),
@@ -264,6 +281,7 @@ impl Provider for ScriptedProvider {
                     order: self.state.order.fetch_add(1, Ordering::SeqCst),
                     workspace: context.workspace_id.to_string(),
                     account: self.account(context.workspace_id.as_str(), &context.agent_id),
+                    channel_type: context.channel_id.to_string(),
                     chat: context.chat_id,
                     kind: OutboundKind::Edit,
                     content: context.content,

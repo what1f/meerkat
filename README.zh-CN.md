@@ -3,7 +3,7 @@
 [English](README.md)
 
 Lankide 是一款面向 macOS 的本地多 Agent 协作应用。它把 Agent Harness、消息平台、
-持久化工作区和原生 GPUI 桌面端整合在同一个产品中。
+持久化工作区和Tauri 桌面端整合在同一个产品中。
 
 当前支持：
 

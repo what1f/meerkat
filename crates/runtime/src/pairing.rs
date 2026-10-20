@@ -58,7 +58,8 @@ impl RuntimeApplication {
         let device_credential = random_secret()?;
         let machine_id = format!("machine-{}", random_secret()?);
         let code_hash = credential_hash(&request.code);
-        self.runtime()?
+        let machine_id = self
+            .runtime()?
             .database()
             .pair_machine(
                 &MachineRecord {

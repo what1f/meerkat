@@ -747,7 +747,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
         .map_err(err)?;
     restarted
         .storage()
-        .initialize_team_lead(&workspace_a, &lead.person_id, 90)
+        .join_human_team(&workspace_a, &lead.person_id, None, None, None, 90)
         .map_err(err)?;
     let member = restarted
         .storage()
@@ -2148,6 +2148,8 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     )?;
     let created_agent = client
         .create_agent(CreateAgentRequest {
+            figure: Default::default(),
+            launch_arguments: Default::default(),
             request_id: "create-agent-1".into(),
             agent: Some(AgentRef {
                 workspace_id: "application_b".into(),
@@ -2167,7 +2169,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             attention: Some(AgentAttention {
                 channels: vec![ChannelAttention {
                     channel_id: "chat".into(),
-                    mode: AttentionMode::Always as i32,
+                    mode: AttentionMode::Always,
                     interval_minutes: 0,
                 }],
             }),
@@ -2181,13 +2183,15 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         created_agent.attention.is_some_and(|value| {
             value.channels.len() == 4
                 && value.channels.iter().any(|channel| {
-                    channel.channel_id == "chat" && channel.mode == AttentionMode::Always as i32
+                    channel.channel_id == "chat" && channel.mode == AttentionMode::Always
                 })
         }),
         "agent attention roundtrip",
     )?;
     let updated_agent = client
         .update_agent(UpdateAgentRequest {
+            figure: Default::default(),
+            launch_arguments: Default::default(),
             request_id: "update-agent-1".into(),
             agent: created_agent.agent.clone(),
             name: Some("Agent B Updated".into()),
@@ -2297,7 +2301,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .map_err(err)?
         .into_inner();
     ensure(
-        onboarding.status == lankide_protocol::OnboardingStatus::Ready as i32
+        onboarding.status == lankide_protocol::OnboardingStatus::Ready
             && onboarding.verification_uri.is_empty()
             && onboarding.poll_interval_seconds == 0,
         "agent onboarding",
@@ -2413,6 +2417,8 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     )?;
     client
         .update_agent(UpdateAgentRequest {
+            figure: Default::default(),
+            launch_arguments: Default::default(),
             request_id: "change-config-during-execution".into(),
             agent: Some(AgentRef {
                 workspace_id: workspace_id.to_string(),
@@ -3170,6 +3176,8 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
 
     let deleted_agent = client
         .create_agent(CreateAgentRequest {
+            figure: Default::default(),
+            launch_arguments: Default::default(),
             request_id: "create-agent-for-delete".into(),
             agent: Some(AgentRef {
                 workspace_id: "application_b".into(),
@@ -3300,6 +3308,8 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
 
     let recreated_agent = client
         .create_agent(CreateAgentRequest {
+            figure: Default::default(),
+            launch_arguments: Default::default(),
             request_id: "recreate-agent-rpc".into(),
             agent: Some(AgentRef {
                 workspace_id: "application_b".into(),
@@ -3490,6 +3500,7 @@ fn agent_config(
         },
         machine_id: "fixture-machine".into(),
         harness: HarnessConfig {
+            launch_arguments: Default::default(),
             harness_id: "scripted".into(),
             executable_path: "/fixture".into(),
             model: "fixture".into(),

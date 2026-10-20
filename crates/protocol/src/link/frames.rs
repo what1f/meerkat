@@ -8,6 +8,7 @@ pub struct ActiveAttempt {
     pub harness_process_state: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct AgentRef {
     pub workspace_id: String,
@@ -47,6 +48,7 @@ pub struct AssignmentResult {
     pub failure: Option<AttemptFailure>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct AttemptFailure {
     pub code: String,
@@ -130,6 +132,7 @@ pub struct DeliveryResult {
     pub error_message: String,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct EnvironmentVariable {
     pub name: String,
@@ -167,6 +170,7 @@ pub struct ExecutionRef {
 pub struct HarnessConfig {
     pub harness_id: String,
     pub executable_path: String,
+    pub launch_arguments: Vec<String>,
     pub model: String,
     pub thinking_level: String,
     pub environment_variables: Vec<EnvironmentVariable>,
@@ -189,11 +193,13 @@ pub struct InventoryChanged {
     pub harnesses: Vec<HarnessInfo>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct ModelCatalog {
     pub models: Vec<ModelCatalogItem>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct ModelCatalogItem {
     pub model_id: String,
@@ -203,6 +209,7 @@ pub struct ModelCatalogItem {
     pub supported_thinking_levels: Vec<String>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct ResourceRef {
     pub resource_id: i64,
@@ -267,6 +274,7 @@ pub struct ToolResult {
     pub error: Option<ToolError>,
 }
 
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct WorkspaceRef {
     pub workspace_id: String,
@@ -284,6 +292,7 @@ pub enum MachinePayload {
     ResourceTransferResult(ResourceTransferResult),
     InventoryChanged(InventoryChanged),
     DeleteAgentFilesResult(DeleteAgentFilesResult),
+    TestHarnessResult(TestHarnessResult),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Eq)]
@@ -299,6 +308,7 @@ pub enum RuntimePayload {
     ExecutionCommitted(ExecutionCommitted),
     Shutdown(Shutdown),
     DeleteAgentFiles(DeleteAgentFiles),
+    TestHarness(TestHarness),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -341,3 +351,16 @@ pub struct AgentRunContext {
 }
 
 pub use crate::wire::{MachineFrame, RuntimeFrame};
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Eq)]
+pub struct TestHarness {
+    pub request_id: String,
+    pub harness: HarnessConfig,
+    pub budget_millis: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Eq)]
+pub struct TestHarnessResult {
+    pub request_id: String,
+    pub result: crate::management::TestHarnessResponse,
+}

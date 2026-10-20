@@ -1,0 +1,70 @@
+.root {
+  position: relative;
+  width: 84px;
+  height: 196px;
+  margin: 0 auto;
+  touch-action: none;
+  outline-style: none;
+}
+
+.gate {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 14px;
+  width: 10px;
+  background: var(--gate-face);
+  border-radius: var(--r-gate);
+  box-shadow: var(--gate-shadow);
+}
+
+.notch {
+  position: absolute;
+  left: 30px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  height: 20px;
+  margin-top: -10px;
+  font-size: var(--t-small);
+  color: var(--ink-3);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.notch::before {
+  width: 12px;
+  height: 2px;
+  content: '';
+  background: var(--line-strong);
+  border-radius: var(--r-hairline);
+}
+
+.notch[data-on='true'] {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.knob {
+  position: absolute;
+  left: 5px;
+  width: 28px;
+  height: 28px;
+  margin-top: -14px;
+  cursor: grab;
+  background: var(--knob-face);
+  border-radius: var(--r-full);
+  box-shadow: var(--knob-shadow);
+  transition:
+    top 0.35s var(--ease-pop),
+    box-shadow var(--d-fast);
+}
+
+.root:focus-visible .knob {
+  box-shadow: var(--knob-shadow-focus);
+}
+
+.root[data-held='true'] .knob {
+  cursor: grabbing;
+  transition: none;
+}

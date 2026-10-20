@@ -1,0 +1,20 @@
+.root {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  padding: 6px 6px 6px 14px;
+  color: var(--ink);
+  background: var(--err-soft);
+  border-radius: var(--r-lg);
+}
+
+.root[data-tone='quiet'] {
+  color: var(--ink-2);
+  background: var(--well);
+}
+
+.root > div {
+  flex: 1;
+  min-width: 0;
+}

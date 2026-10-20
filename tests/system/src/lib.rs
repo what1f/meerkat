@@ -100,6 +100,7 @@ impl MachineThread {
         executable: PathBuf,
         journal: PathBuf,
         capabilities: Vec<String>,
+        models: Option<Vec<lankide_harness::NativeModel>>,
     ) -> Self {
         let (stop, stopped) = oneshot::channel();
         let thread = std::thread::spawn(move || {
@@ -107,9 +108,20 @@ impl MachineThread {
             // tasks and their sessions stop together, without an OS-wide signal.
             let runtime = tokio::runtime::Runtime::new()?;
             let result = runtime.block_on(async move {
-                let registration = RegisteredHarness::new(ScriptedHarness::new(journal), HarnessConfig {
-                    harness_id: "pi".into(), model: ModelRef::new("scripted", "scripted"), thinking_level: "low".into(),
-                    cli_path: executable, environment: BTreeMap::from([("LANKIDE_SYSTEM_CAPABILITIES".into(), serde_json::to_string(&capabilities)?)]), config_fingerprint: "system-rig".into(),
+                let factory = ScriptedHarness::new(journal);
+                let factory = if let Some(models) = models {
+                    factory.with_models(models)
+                } else {
+                    factory
+                };
+                let registration = RegisteredHarness::new(factory, HarnessConfig {
+                    launch_arguments: Vec::new(),
+                    harness_id: "pi".into(),
+                    model: ModelRef::new("scripted", "scripted"),
+                    thinking_level: "low".into(),
+                    cli_path: executable,
+                    environment: BTreeMap::from([("LANKIDE_SYSTEM_CAPABILITIES".into(), serde_json::to_string(&capabilities)?)]),
+                    config_fingerprint: "system-rig".into(),
                 });
                 tokio::select! {
                     result = lankide_machine::run_with_harnesses(config, vec![registration]) => result.map_err(Into::into),
@@ -193,9 +205,16 @@ pub struct SystemRig {
     client: RuntimeManagementClient,
     im: Arc<ImState>,
     sequence: AtomicU64,
+    provider_factories: ProviderFactoryRegistry,
 }
 impl SystemRig {
     pub async fn start(config: RigConfig) -> Result<Self> {
+        Self::start_with_providers(config, ProviderFactoryRegistry::default()).await
+    }
+    pub async fn start_with_providers(
+        config: RigConfig,
+        provider_factories: ProviderFactoryRegistry,
+    ) -> Result<Self> {
         let home = tempfile::Builder::new()
             .prefix("system-")
             .tempdir_in("/tmp")?;
@@ -210,11 +229,11 @@ impl SystemRig {
         std::fs::write(
             home.path().join("runtime.json"),
             serde_json::to_vec(
-                &json!({"remote_access_port": 0, "pairing_validity_ms":config.pairing_validity.as_millis(), "execution_token_lifetime_ms": config.execution_token_lifetime.as_millis(), "attempt_lease_ms": config.attempt_lease.as_millis(), "machine_link": config.link}),
+                &json!({"machine_link_listen": "127.0.0.1:0", "remote_access_port": 0, "pairing_validity_ms":config.pairing_validity.as_millis(), "execution_token_lifetime_ms": config.execution_token_lifetime.as_millis(), "attempt_lease_ms": config.attempt_lease.as_millis(), "machine_link": config.link}),
             )?,
         )?;
         let im = Arc::new(ImState::default());
-        let factories = factories(im.clone())?;
+        let factories = factories(im.clone(), provider_factories.clone())?;
         let (shutdown, stopped) = oneshot::channel();
         let daemon_paths = paths.clone();
         let (runtime, runtime_kill) = spawn_runtime(daemon_paths, factories, stopped);
@@ -232,6 +251,7 @@ impl SystemRig {
             config,
             im,
             sequence: AtomicU64::new(0),
+            provider_factories,
         };
         timeout(rig.config.timeout, async {
             loop {
@@ -310,6 +330,10 @@ impl SystemRig {
         if let Some(binary) = &self.config.machine_process {
             self.child_machine = Some(
                 std::process::Command::new(binary)
+                    .env(
+                        "LANKIDE_SYSTEM_CONTROL_ROOT",
+                        self.runtime_home().join("scripted-members"),
+                    )
                     .arg(self.machine_home.path())
                     .arg(config.runtime_url.as_ref().expect("URL"))
                     .arg(config.link_secret_file.as_ref().expect("secret"))
@@ -325,6 +349,7 @@ impl SystemRig {
             self.config.harness_executable.clone(),
             self.machine_home.path().join("harness-pids.tsv"),
             self.config.harness_capabilities.clone(),
+            None,
         ));
         Ok(())
     }
@@ -402,6 +427,9 @@ impl SystemRig {
     pub fn management(&self) -> &RuntimeManagementClient {
         &self.client
     }
+    pub fn outbound_count(&self) -> usize {
+        self.im.outbound.lock().expect("outbound").len()
+    }
     pub fn machine_home(&self) -> &std::path::Path {
         self.machine_home.path()
     }
@@ -409,6 +437,12 @@ impl SystemRig {
         self.home.path()
     }
     pub async fn add_machine(&self) -> Result<PairedMachine> {
+        self.add_machine_with_models(None).await
+    }
+    pub async fn add_machine_with_models(
+        &self,
+        models: Option<Vec<lankide_harness::NativeModel>>,
+    ) -> Result<PairedMachine> {
         let home = tempfile::tempdir()?;
         let code = self.client.create_pairing_code().await?;
         let (url, _) = self.local_pairing_endpoint()?;
@@ -426,6 +460,7 @@ impl SystemRig {
             self.config.harness_executable.clone(),
             home.path().join("harness-pids.tsv"),
             self.config.harness_capabilities.clone(),
+            models,
         );
         timeout(self.config.timeout, async {
             loop {
@@ -513,7 +548,7 @@ impl SystemRig {
     }
 
     pub async fn start_runtime(&mut self) -> Result<()> {
-        let factories = factories(self.im.clone())?;
+        let factories = self.provider_factories.clone();
         let paths = self.paths.clone();
         let (shutdown, stopped) = oneshot::channel();
         self.shutdown = Some(shutdown);
@@ -557,7 +592,7 @@ impl SystemRig {
         self.shutdown.take();
         let (shutdown, stopped) = oneshot::channel();
         let (runtime, kill) =
-            spawn_runtime(self.paths.clone(), factories(self.im.clone())?, stopped);
+            spawn_runtime(self.paths.clone(), self.provider_factories.clone(), stopped);
         self.runtime = Some(runtime);
         self.runtime_kill = Some(kill);
         self.shutdown = Some(shutdown);
@@ -617,6 +652,13 @@ impl SystemRig {
             rig: self,
             id: name.into(),
         }
+    }
+    pub fn fail_next_provider_startup(&self, workspace: &str) {
+        self.im
+            .startup_failures
+            .lock()
+            .expect("startup failures")
+            .insert(workspace.into());
     }
     pub async fn workspace(&self, name: &str) -> Result<Workspace<'_>> {
         self.client
@@ -733,6 +775,7 @@ impl<'a> Workspace<'a> {
             workspace: self.id.clone(),
             name: name.into(),
             script: Script::reply("hi"),
+            provider_config: None,
         }
     }
     pub async fn group_message(&self, chat: &str, person: &str, text: &str) -> Result<()> {
@@ -954,10 +997,16 @@ impl<'a> Workspace<'a> {
         } else {
             format!("incoming-{id}")
         };
-        sink.emit(ProviderEvent { receiving_agent_id, channel_id: ChannelId::new(channel)?, provider_chat_id: chat.into(),
+        // The IM accepts human messages while the team's Provider is offline.
+        // Do not queue these events for replay when the team starts work again.
+        if self.rig.management().get_workspace(&self.id).await?.status
+            != lankide_client::WorkspaceStatus::Paused
+        {
+            sink.emit(ProviderEvent { receiving_agent_id, channel_id: ChannelId::new(channel)?, provider_chat_id: chat.into(),
             sender: EventSender { id: person.into(), kind: EventSenderType::Human, name: person.into() },
             kind: ProviderEventKind::Message(MessageEvent { provider_message_id, content: text.into(), reply_to_provider_message_id: None, mentioned_agent_ids: mentions.to_vec(), attachments: Vec::new() }),
             provider_data: json!({"event_id":format!("event-{id}"), "chat_name":chat, "receiving_account":account}) }).await?;
+        }
         self.rig
             .im
             .incoming
@@ -1024,8 +1073,14 @@ pub struct AgentBuilder<'a> {
     workspace: String,
     name: String,
     script: Script,
+    provider_config: Option<serde_json::Value>,
 }
 impl<'a> AgentBuilder<'a> {
+    pub fn provider_config(mut self, config: serde_json::Value) -> Self {
+        self.provider_config = Some(config);
+        self
+    }
+
     pub fn machine(mut self, machine_id: &str) -> Self {
         self.machine_id = machine_id.into();
         self
@@ -1090,7 +1145,9 @@ impl<'a> AgentBuilder<'a> {
                         ),
                     ],
                     provider_handle: account.clone(),
-                    provider_agent_config: json!({"account":account}),
+                    provider_agent_config: self
+                        .provider_config
+                        .unwrap_or_else(|| json!({"account":account})),
                     ..Default::default()
                 },
             )
@@ -1199,7 +1256,7 @@ impl Agent<'_> {
                 attention: Some(lankide_protocol::AgentAttention {
                     channels: vec![lankide_protocol::ChannelAttention {
                         channel_id: "group_chat".into(),
-                        mode: mode as i32,
+                        mode,
                         interval_minutes: 0,
                     }],
                 }),
@@ -1324,8 +1381,10 @@ impl Agent<'_> {
     }
 }
 
-fn factories(im: Arc<ImState>) -> Result<ProviderFactoryRegistry> {
-    let factories = ProviderFactoryRegistry::default();
+fn factories(
+    im: Arc<ImState>,
+    factories: ProviderFactoryRegistry,
+) -> Result<ProviderFactoryRegistry> {
     let state = im.clone();
     factories.register_host_factory(
         ScriptedProvider {
@@ -1362,6 +1421,7 @@ pub async fn run_scripted_machine(
     let registration = RegisteredHarness::new(
         ScriptedHarness::new(home.join("harness-pids.tsv")),
         HarnessConfig {
+            launch_arguments: Default::default(),
             harness_id: "pi".into(),
             model: ModelRef::new("scripted", "scripted"),
             thinking_level: "low".into(),

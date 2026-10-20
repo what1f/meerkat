@@ -1,0 +1,29 @@
+.root {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 22px 0;
+  font-size: var(--t-title);
+  font-weight: 500;
+  color: var(--ink-3);
+  background: var(--clear);
+  border-style: none;
+  border-top: var(--edge-line);
+  transition: color var(--d-base);
+}
+
+.plus {
+  display: flex;
+  transition: transform var(--d-slow) var(--ease-pop);
+}
+
+.root:hover,
+.root:focus-visible {
+  color: var(--ink);
+  outline-style: none;
+}
+
+.root:hover .plus {
+  transform: rotate(90deg);
+}

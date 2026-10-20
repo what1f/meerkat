@@ -24,6 +24,7 @@ struct State {
     cut_before: Option<&'static str>,
     discard_once: Option<&'static str>,
     frame_delay: std::time::Duration,
+    harness_test_budget: Option<u64>,
 }
 pub struct NetProxy {
     address: SocketAddr,
@@ -63,8 +64,8 @@ impl NetProxy {
                             let _active = Active(count);
                             let (cr, cw) = client.into_split(); let (sr, sw) = server.into_split();
                             tokio::select! {
-                                _ = forward(cr, sw, rx.clone(), false, generation, fault.clone()) => {},
-                                _ = forward(sr, cw, rx, true, generation, fault) => {},
+                                _ = forward(cr, sw, rx.clone(), false, generation, fault.clone(), upstream) => {},
+                                _ = forward(sr, cw, rx, true, generation, fault, upstream) => {},
                             }
                         });
                     }
@@ -114,6 +115,11 @@ impl NetProxy {
     pub fn delay_machine_frames(&self, delay: std::time::Duration) {
         self.state.send_modify(|s| s.frame_delay = delay);
     }
+    /// Inject a short test budget at the network boundary, after Machine readiness.
+    pub fn set_harness_test_budget(&self, budget: std::time::Duration) {
+        self.state
+            .send_modify(|s| s.harness_test_budget = Some(budget.as_millis() as u64));
+    }
     pub fn attempts(&self) -> Vec<Instant> {
         self.attempts.lock().expect("attempts").clone()
     }
@@ -133,6 +139,7 @@ async fn forward(
     reply: bool,
     generation: u64,
     fault: watch::Sender<State>,
+    upstream: SocketAddr,
 ) {
     let mut buffer = [0; 16384];
     let mut pending = Vec::new();
@@ -166,6 +173,38 @@ async fn forward(
             }
         }
         if reply {
+            let budget = state.borrow().harness_test_budget;
+            if let Some(budget) = budget {
+                pending.extend_from_slice(&buffer[..length]);
+                while let Some((end, payload)) = client_frame(&pending) {
+                    let mut frame = pending[..end].to_vec();
+                    if let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&payload)
+                        && value["type"] == "test_harness"
+                    {
+                        value["payload"]["budget_millis"] = budget.into();
+                        let payload = serde_json::to_vec(&value).expect("test frame");
+                        // Runtime frames are unmasked. Preserve the original opcode.
+                        frame = vec![pending[0]];
+                        match payload.len() {
+                            n @ 0..=125 => frame.push(n as u8),
+                            n @ 126..=65535 => {
+                                frame.push(126);
+                                frame.extend_from_slice(&(n as u16).to_be_bytes());
+                            }
+                            n => {
+                                frame.push(127);
+                                frame.extend_from_slice(&(n as u64).to_be_bytes());
+                            }
+                        }
+                        frame.extend_from_slice(&payload);
+                    }
+                    if writer.write_all(&frame).await.is_err() {
+                        return;
+                    }
+                    pending.drain(..end);
+                }
+                continue;
+            }
             if writer.write_all(&buffer[..length]).await.is_err() {
                 return;
             }
@@ -179,7 +218,12 @@ async fn forward(
                 else {
                     continue;
                 };
-                if writer.write_all(&pending[..end]).await.is_err() {
+                // The network fixture targets the upstream listener's authority.
+                // Only the HTTP Host changes; all WS frame bytes remain intact.
+                let Ok(header) = upstream_host(&pending[..end], &upstream.to_string()) else {
+                    return;
+                };
+                if writer.write_all(&header).await.is_err() {
                     return;
                 }
                 pending.drain(..end);
@@ -249,4 +293,24 @@ fn client_frame(bytes: &[u8]) -> Option<(usize, Vec<u8>)> {
         .map(|(i, b)| b ^ mask[i % 4])
         .collect();
     Some((end, payload))
+}
+
+/// Local network fixtures must address the actual Runtime port after forwarding.
+pub fn upstream_host(header: &[u8], authority: &str) -> Result<Vec<u8>> {
+    let header = std::str::from_utf8(header)?;
+    let mut rewritten = String::new();
+    for line in header.split("\r\n") {
+        if line
+            .split_once(':')
+            .is_some_and(|(name, _)| name.eq_ignore_ascii_case("host"))
+        {
+            rewritten.push_str(&format!("Host: {authority}"));
+        } else {
+            rewritten.push_str(line);
+        }
+        rewritten.push_str("\r\n");
+    }
+    // split retains the final empty component after the terminating CRLF.
+    rewritten.truncate(rewritten.len() - 2);
+    Ok(rewritten.into_bytes())
 }

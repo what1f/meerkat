@@ -1,0 +1,123 @@
+/* Popups float above the scene: the console, figures and dragged things. */
+.positioner {
+  z-index: var(--z-popup);
+}
+
+/* Quiet: text until hovered. Boxed: a filled field for forms. */
+.root {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  max-width: 100%;
+  height: var(--h-sm);
+  padding: 0 6px 0 8px;
+  font-size: var(--t-body);
+  color: var(--ink);
+  white-space: nowrap;
+  background: var(--clear);
+  border-style: none;
+  border-radius: var(--r-sm);
+  outline-style: none;
+  transition: background-color var(--d-fast);
+}
+
+.root:hover,
+.root[data-popup-open] {
+  background: var(--hover);
+}
+
+.root:focus-visible {
+  box-shadow: var(--ring-focus);
+}
+
+.root > span:first-child {
+  display: inline-flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+}
+
+.root img {
+  width: 15px;
+  height: 15px;
+}
+
+.root[data-variant='boxed'] {
+  width: 100%;
+  height: var(--h-md);
+  padding: 0 8px 0 10px;
+  margin: 0;
+  background: var(--field);
+  border-radius: var(--r-md);
+}
+
+.root[data-variant='boxed']:hover,
+.root[data-variant='boxed'][data-popup-open] {
+  background: var(--active);
+}
+
+.chev {
+  display: flex;
+  color: var(--ink-3);
+}
+
+.popup {
+  min-width: max(184px, var(--anchor-width));
+  max-height: var(--available-height);
+  padding: 4px;
+  overflow: auto;
+  outline-style: none;
+  background: var(--elevated);
+  border: var(--hairline);
+  border-radius: var(--r-menu);
+  box-shadow: var(--shadow-2);
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--d-base) var(--ease),
+    transform var(--d-base) var(--ease);
+}
+
+.popup[data-starting-style],
+.popup[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
+}
+
+.item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  height: 30px;
+  padding: 0 8px;
+  font-size: var(--t-body);
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+  border-radius: var(--r-sm);
+  outline-style: none;
+}
+
+.item[data-highlighted] {
+  background: var(--hover);
+}
+
+.item[data-disabled] {
+  color: var(--ink-3);
+}
+
+.label {
+  flex: 1;
+}
+
+.item img {
+  width: 15px;
+  height: 15px;
+}
+
+.check {
+  display: flex;
+  color: var(--accent);
+}

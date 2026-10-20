@@ -1,0 +1,75 @@
+/* Inline-editable text stays text. Editing adds only an accent underline under the caret: no box. */
+.root {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  font-family: inherit;
+  font-size: var(--t-body);
+  font-weight: inherit;
+  line-height: inherit;
+  color: var(--current);
+  text-align: inherit;
+  letter-spacing: inherit;
+  cursor: text;
+  resize: none;
+  caret-color: var(--accent);
+  background: var(--clear);
+  border-style: none;
+  border-radius: var(--r-0);
+  outline-style: none;
+  field-sizing: content;
+}
+
+/* Editing a committed value adds an underline. Single-line text is only as wide as itself, read or edited, so neighbours stay put. */
+.root[data-mode='commit'] {
+  box-shadow: var(--editing-line);
+}
+
+button.root,
+input.root[data-mode='commit'] {
+  width: fit-content;
+  max-width: 100%;
+}
+
+button.root {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.root::placeholder,
+button.root:empty {
+  color: var(--ink-4);
+}
+
+.root::selection {
+  background: var(--accent-soft);
+}
+
+button.root:focus-visible {
+  border-radius: var(--r-xs);
+  box-shadow: var(--ring-focus);
+}
+
+.root[data-text-style='display'] {
+  font-family: var(--font-display);
+  font-size: var(--t-display);
+  font-weight: 700;
+}
+
+.root[data-text-style='heading'] {
+  font-family: var(--font-display);
+  font-size: var(--t-heading);
+  font-weight: 700;
+}
+
+.root[data-text-style='title'] {
+  font-size: var(--t-title);
+  font-weight: 600;
+}
+
+.root[data-text-style='small'] {
+  font-size: var(--t-small);
+}

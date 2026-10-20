@@ -1,0 +1,83 @@
+/* Workspaces are sections: a quiet heading, a hairline, generous air. No boxes. */
+.root {
+  position: relative;
+  padding: 22px 0 18px;
+  border-top: var(--edge-line);
+}
+
+.root:first-child {
+  padding-top: 4px;
+  border-top-style: none;
+}
+
+.root::before {
+  position: absolute;
+  inset: 6px -14px;
+  pointer-events: none;
+  content: '';
+  background: var(--ws-over);
+  border-radius: var(--r-row-over);
+  opacity: 0;
+  transition: opacity var(--d-base);
+}
+
+.root[data-over]::before {
+  opacity: 1;
+}
+
+.root[data-arriving='true'] {
+  animation: row-in 0.7s var(--ease-pop);
+}
+
+.root > header {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  height: 28px;
+  font-size: var(--t-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.root > header > [role='status'] {
+  width: 7px;
+  height: 7px;
+}
+
+.root[data-status='idle'] > header {
+  color: var(--ink-2);
+}
+
+.root[data-status='idle'] [data-who] {
+  filter: var(--sitter-off);
+}
+
+.menu {
+  display: flex;
+  opacity: 0;
+  transition: opacity var(--d-fast);
+}
+
+.root:hover .menu,
+.root .menu:focus-within,
+.root .menu:has([data-popup-open]) {
+  opacity: 1;
+}
+
+.root > div {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 28px;
+  min-height: 40px;
+  margin-top: 6px;
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+}

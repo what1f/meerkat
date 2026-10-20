@@ -1,0 +1,21 @@
+[package]
+name = "lankide-web-types"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+autotests = false
+
+[dependencies]
+lankide-protocol = { path = "../../crates/protocol", features = ["typescript"] }
+ts-rs = "12"
+
+[[bin]]
+name = "lankide-web-types"
+path = "src/main.rs"
+test = false
+bench = false
+
+[package.metadata.lankide]
+e2e-exemption = "Development-only DTO exporter; just check regenerates all bindings and compares the complete output with committed types. Business behavior is covered by system-management-dto."

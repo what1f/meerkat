@@ -120,7 +120,8 @@ run_hermetic() {
       return 3
     fi
   done < "$ROOT_DIR/tests/e2e-modules.tsv"
-  run_step 'Hermetic business E2Es (workspace, one feature set)' "$SCRIPT_DIR/run-hermetic-tests"
+  run_step 'Hermetic business E2Es (workspace, one feature set)' "$SCRIPT_DIR/run-hermetic-tests" || return $?
+  run_step 'Web browser business E2Es' just web-e2e
 }
 run_release_regressions() {
   run_step 'Desktop real process startup and cleanup' python3 "$ROOT_DIR/apps/desktop/tests/bootstrap_e2e.py" \
@@ -141,22 +142,8 @@ run_live_harness() {
   run_module harness-codex || return $?
   run_module harness-claude-code
 }
-run_desktop_visual() { run_module desktop; }
+run_desktop_visual() { "$ROOT_DIR/apps/desktop/window-e2e.sh"; }
 run_live_composition() { require_live && "$SCRIPT_DIR/verify-live-composition"; }
-
-require_release_desktop_contract() {
-  local command status
-  status="$(awk -F $'\t' '$1 == "desktop" {print $9}' "$ROOT_DIR/tests/e2e-modules.tsv")"
-  if [[ "$status" != implemented ]]; then
-    printf '[verify-all] PENDING: current Desktop acceptance contract is incomplete\n' >&2
-    return 3
-  fi
-  command="$(awk -F $'\t' '$1 == "desktop" {print $5}' "$ROOT_DIR/tests/e2e-modules.tsv")"
-  if [[ -z "$command" || "$command" == *"cargo run"* ]]; then
-    printf '[verify-all] PENDING: Desktop visual contract does not consume LANKIDE_VISUAL_BINARY from the isolated release target\n' >&2
-    return 3
-  fi
-}
 
 prepare_full() {
   local parent="$ROOT_DIR/target/e2e-artifacts/full-release"
@@ -256,10 +243,6 @@ run_full_release() {
   require_live || return $?
   prepare_full || return $?
   record_step disk-preflight 'full-release disk prerequisite' require_disk || return $?
-  # Fail before the build and paid live calls while Desktop still points at a
-  # debug cargo run instead of the isolated release binary.
-  record_step desktop-release-contract 'Desktop must consume isolated release binary' \
-    require_release_desktop_contract || return $?
   CARGO_TARGET_DIR="$ROOT_DIR/target/full-release-builds/$LANKIDE_E2E_RUN_ID"
   mkdir -p "$ROOT_DIR/target/full-release-builds" || return 1
   mkdir "$CARGO_TARGET_DIR" 2>/dev/null || { printf '[verify-all] isolated release target exists\n' >&2; return 5; }

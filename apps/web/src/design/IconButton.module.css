@@ -1,0 +1,38 @@
+.root {
+  --h: var(--h-md);
+
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--h);
+  height: var(--h);
+  padding: 0;
+  color: var(--ink-2);
+  background: var(--clear);
+  border-style: none;
+  border-radius: var(--r-md);
+  transition:
+    background-color var(--d-fast) var(--ease),
+    color var(--d-fast) var(--ease),
+    transform var(--d-fast) var(--ease);
+}
+
+.root:hover,
+.root[data-popup-open] {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.root:active {
+  transform: scale(0.94);
+}
+
+.root:focus-visible {
+  outline-style: none;
+  box-shadow: var(--ring-focus);
+}
+
+.root[data-size='sm'] {
+  --h: var(--h-sm);
+}

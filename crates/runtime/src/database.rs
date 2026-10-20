@@ -24,7 +24,10 @@ impl std::ops::Deref for ReleaseSignal {
 }
 
 struct Signals {
+    management: std::sync::Mutex<Vec<(WorkspaceId, Option<AgentId>)>>,
     released: Notify,
+    application: std::sync::Mutex<Weak<crate::application::ApplicationInner>>,
+    activity_write: std::sync::Mutex<()>,
     changed: Arc<Notify>,
 }
 
@@ -45,10 +48,16 @@ impl Database {
         Self {
             storage,
             signals: ReleaseSignal(Arc::new(Signals {
+                management: std::sync::Mutex::new(Vec::new()),
                 released: Notify::new(),
+                application: std::sync::Mutex::new(Weak::new()),
+                activity_write: std::sync::Mutex::new(()),
                 changed: Arc::new(Notify::new()),
             })),
         }
+    }
+    pub(crate) fn observe_activity(&self, application: Weak<crate::application::ApplicationInner>) {
+        *self.signals.application.lock().expect("activity observer") = application;
     }
     pub(crate) fn as_ref(&self) -> &Storage {
         &self.storage
@@ -59,8 +68,42 @@ impl Database {
             signals: self.signals.0.clone(),
         }
     }
+    pub(crate) async fn agent_record(
+        &self,
+        workspace_id: &WorkspaceId,
+        agent_id: &AgentId,
+    ) -> std::result::Result<AgentRecord, RuntimeError> {
+        let workspace = workspace_id.clone();
+        let agent = agent_id.clone();
+        self.call(false, false, move |storage| {
+            storage.agent_record(&workspace, &agent)
+        })
+        .await
+        .map_err(|error| {
+            if error.is_not_found() {
+                RuntimeError::UnknownAgent {
+                    workspace_id: workspace_id.clone(),
+                    agent_id: agent_id.clone(),
+                }
+            } else {
+                error.into()
+            }
+        })
+    }
+
     pub(crate) fn changes(&self) -> Arc<Notify> {
         self.signals.changed.clone()
+    }
+    pub(crate) fn management_changed(&self, workspace: WorkspaceId, agent: Option<AgentId>) {
+        self.signals
+            .management
+            .lock()
+            .expect("management changes")
+            .push((workspace, agent));
+        self.wake();
+    }
+    pub(crate) fn take_management_changes(&self) -> Vec<(WorkspaceId, Option<AgentId>)> {
+        std::mem::take(&mut *self.signals.management.lock().expect("management changes"))
     }
     pub(crate) fn wake(&self) {
         self.signals.changed.notify_one();
@@ -68,11 +111,45 @@ impl Database {
     async fn call<T: Send + 'static>(
         &self,
         write: bool,
+        activity: bool,
         operation: impl FnOnce(&Storage) -> lankide_storage::Result<T> + Send + 'static,
     ) -> lankide_storage::Result<T> {
         let database = self.clone();
         tokio::task::spawn_blocking(move || {
+            // Serialize state transitions through their commit and invalidation event.
+            let _guard = activity.then(|| {
+                database
+                    .signals
+                    .activity_write
+                    .lock()
+                    .expect("activity transition")
+            });
+            let before = if activity {
+                database.storage.busy_agents(None)?
+            } else {
+                Default::default()
+            };
             let result = operation(&database.storage);
+            if activity {
+                let after = database.storage.busy_agents(None)?;
+                if let Some(inner) = database
+                    .signals
+                    .application
+                    .lock()
+                    .expect("activity observer")
+                    .upgrade()
+                {
+                    let application = crate::RuntimeApplication { inner };
+                    for (workspace, agent) in before.symmetric_difference(&after) {
+                        application.emit_management(
+                            lankide_protocol::ManagementEventKind::AgentUpdated,
+                            workspace,
+                            Some(agent),
+                            now_millis(),
+                        );
+                    }
+                }
+            }
             if write {
                 database.wake();
             }
@@ -127,13 +204,26 @@ macro_rules! database_methods {
         impl Database {
             $(pub(crate) async fn $name(&self, $($arg: $ty),*) -> lankide_storage::Result<$result> {
                 $($prepare)*
-                self.call($write, move |storage| storage.$name($($input),*)).await
+                let activity = matches!(stringify!($name),
+                    "mark_execution_running" | "mark_execution_recovering" | "offer_execution_attempt" |
+                    "accept_execution_attempt" | "commit_execution" | "cancel_execution" |
+                    "fail_execution" | "fail_execution_retry_after" | "record_execution_event" |
+                    "expire_execution_attempt_leases" | "recover_startup" | "reconcile_machine_heartbeat" |
+                    "reject_execution_attempt_with_failure" | "retry_execution_conflict" | "delete_agent");
+                self.call($write, activity, move |storage| storage.$name($($input),*)).await
             })*
         }
     };
 }
 
 database_methods! {
+    true insert_figure_pack(workspace: &WorkspaceId, id: &str, metadata: Value) -> () [let workspace=workspace.clone(); let id=id.to_owned();] (&workspace,&id,metadata);
+    false list_figure_packs(workspace: &WorkspaceId) -> Vec<Value> [let workspace=workspace.clone();] (&workspace);
+    true remove_resource_metadata(workspace: &WorkspaceId, id: ResourceId) -> () [let workspace=workspace.clone();] (&workspace,id);
+    false busy_agents(workspace: Option<&WorkspaceId>) -> std::collections::BTreeSet<(WorkspaceId,AgentId)> [let workspace=workspace.cloned();] (workspace.as_ref());
+    false agent_has_first_reply(workspace: &WorkspaceId, agent: &AgentId) -> bool [let workspace=workspace.clone(); let agent=agent.clone();] (&workspace,&agent);
+    false first_reply_sender(message_id: i64) -> Option<(WorkspaceId, AgentId)> [] (message_id);
+
     false next_agent_work_at(
         workspace: &WorkspaceId,
         agent: &AgentId,
@@ -171,13 +261,6 @@ database_methods! {
         let workspace_id = workspace_id.to_owned();
         let agent_id = agent_id.to_owned();
     ] (&workspace_id, &agent_id);
-    false agent_record(
-        w: &WorkspaceId,
-        a: &AgentId,
-    ) -> AgentRecord [
-        let w = w.to_owned();
-        let a = a.to_owned();
-    ] (&w, &a);
     true allocate_resource_id(
         workspace_id: &WorkspaceId,
         now: i64,
@@ -316,17 +399,6 @@ database_methods! {
     true bind_sent_chat(message_id: i64, native_chat: &str) -> () [let native_chat=native_chat.to_owned();] (message_id,&native_chat);
     true prepare_direct_chat(workspace: &WorkspaceId, agent: &AgentId, channel: &ChannelId, channel_name: &str, person: &PersonId, now: i64) -> String [let workspace=workspace.clone(); let agent=agent.clone(); let channel=channel.clone(); let channel_name=channel_name.to_owned(); let person=person.clone();] (&workspace,&agent,&channel,&channel_name,&person,now);
     true record_outbound_resources(message_id: i64, resources: Vec<ResourceView>) -> () [] (message_id,resources);
-    true finish_message_send(
-        message_id: i64, outcome: SendOutcome, provider_message_ids: Vec<String>,
-        resources: Vec<ResourceView>, now: i64,
-    ) -> FinishSendResult [] (message_id, outcome, provider_message_ids, resources, now);
-    true finish_send(
-        request_key: &str,
-        outcome: SendOutcome,
-        now: i64,
-    ) -> FinishSendResult [
-        let request_key = request_key.to_owned();
-    ] (&request_key, outcome, now);
     true finish_tool_invocation(
         r: &ToolInvocationRequest,
         v: Value,
@@ -351,14 +423,6 @@ database_methods! {
         let workspace_id = workspace_id.to_owned();
     ] (&workspace_id);
     true ingest_event(event: IngestEvent) -> IngestResult [] (event);
-    true initialize_team_lead(
-        workspace_id: &WorkspaceId,
-        person_id: &PersonId,
-        now: i64,
-    ) -> PersonRecord [
-        let workspace_id = workspace_id.to_owned();
-        let person_id = person_id.to_owned();
-    ] (&workspace_id, &person_id, now);
     true insert_new_agent_record(
         record: AgentRecord,
         provider_secrets: &Value,
@@ -440,7 +504,7 @@ database_methods! {
         machine: &MachineRecord,
         code_hash: Option<&str>,
         validity_ms: i64,
-    ) -> () [
+    ) -> String [
         let machine = machine.to_owned();
         let code_hash = code_hash.map(ToOwned::to_owned);
     ] (&machine, code_hash.as_deref(), validity_ms);
@@ -713,6 +777,51 @@ database_methods! {
         let agent_id = agent_id.to_owned();
         let content = content.to_owned();
     ] (&workspace_id, &agent_id, message_id, &content, now);
+    true join_human_team(
+        workspace_id: &WorkspaceId,
+        person_id: &PersonId,
+        tenant_id: Option<&str>,
+        name: Option<&str>,
+        avatar: Option<&lankide_core::ResourceRef>,
+        now: i64,
+    ) -> PersonRecord [
+        let workspace_id = workspace_id.to_owned();
+        let person_id = person_id.to_owned();
+        let tenant_id = tenant_id.map(str::to_owned);
+        let name = name.map(str::to_owned);
+        let avatar = avatar.cloned();
+    ] (&workspace_id, &person_id, tenant_id.as_deref(), name.as_deref(), avatar.as_ref(), now);
+    true claim_human_profile_sync(
+        workspace_id: &WorkspaceId, person_id: &PersonId, force: bool, now: i64,
+    ) -> bool [
+        let workspace_id = workspace_id.to_owned();
+        let person_id = person_id.to_owned();
+    ] (&workspace_id, &person_id, force, now);
+    false human_profile(
+        workspace_id: &WorkspaceId, person_id: &PersonId,
+    ) -> (Option<String>, Option<lankide_core::ResourceRef>) [
+        let workspace_id = workspace_id.to_owned();
+        let person_id = person_id.to_owned();
+    ] (&workspace_id, &person_id);
+    true update_human_profile(
+        workspace_id: &WorkspaceId, person_id: &PersonId, name: Option<&str>, avatar: Option<&lankide_core::ResourceRef>, signature: Option<&str>, now: i64,
+    ) -> bool [
+        let workspace_id = workspace_id.to_owned();
+        let person_id = person_id.to_owned();
+        let name = name.map(str::to_owned);
+        let avatar = avatar.cloned();
+        let signature = signature.map(str::to_owned);
+    ] (&workspace_id, &person_id, name.as_deref(), avatar.as_ref(), signature.as_deref(), now);
+    true update_human_position(
+        workspace_id: &WorkspaceId,
+        person_id: &PersonId,
+        position: &str,
+        now: i64,
+    ) -> () [
+        let workspace_id = workspace_id.to_owned();
+        let person_id = person_id.to_owned();
+        let position = position.to_owned();
+    ] (&workspace_id, &person_id, &position, now);
     true update_team_member(
         workspace_id: &WorkspaceId,
         actor: &PersonId,
@@ -738,4 +847,47 @@ database_methods! {
         let workspace_id = workspace_id.to_owned();
     ] (&workspace_id);
     false workspace_record(id: &WorkspaceId) -> WorkspaceRecord [let id = id.to_owned();] (&id);
+}
+
+impl Database {
+    async fn notify_first_reply(&self, result: &FinishSendResult) -> lankide_storage::Result<()> {
+        if result.changed
+            && result.attempt.state == "sent"
+            && let Some((workspace, agent)) =
+                self.first_reply_sender(result.attempt.message_id).await?
+            && self.agent_has_first_reply(&workspace, &agent).await?
+        {
+            self.management_changed(workspace, Some(agent));
+        }
+        Ok(())
+    }
+    pub(crate) async fn finish_send(
+        &self,
+        request_key: &str,
+        outcome: SendOutcome,
+        now: i64,
+    ) -> lankide_storage::Result<FinishSendResult> {
+        let key = request_key.to_owned();
+        let result = self
+            .call(true, false, move |s| s.finish_send(&key, outcome, now))
+            .await?;
+        self.notify_first_reply(&result).await?;
+        Ok(result)
+    }
+    pub(crate) async fn finish_message_send(
+        &self,
+        message_id: i64,
+        outcome: SendOutcome,
+        provider_message_ids: Vec<String>,
+        resources: Vec<ResourceView>,
+        now: i64,
+    ) -> lankide_storage::Result<FinishSendResult> {
+        let result = self
+            .call(true, false, move |s| {
+                s.finish_message_send(message_id, outcome, provider_message_ids, resources, now)
+            })
+            .await?;
+        self.notify_first_reply(&result).await?;
+        Ok(result)
+    }
 }

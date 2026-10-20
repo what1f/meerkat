@@ -20,7 +20,7 @@ tempfile.workspace = true
 
 [package.metadata.lankide.e2e]
 command = "LANKIDE_E2E_LIVE=1 cargo test -p lankide-harness-codex --test e2e codex_e2e:: -- --ignored --nocapture"
-scenario = "Start, resume, steer, cancel, and collect output from a Codex native session."
+scenario = "Start, resume, steer, cancel, and collect output from a Codex native session. A4a appends independent launch arguments and sends no effort value when no thinking level is selected; cross-module acceptance is in system-member-fields."
 prerequisites = "Codex CLI; gpt-5.6-luna with low reasoning; harness-live prerequisite probe"
 classification = "live"
 unattended = "yes after live opt-in and preflight"
@@ -28,7 +28,7 @@ status = "implemented"
 
 [package.metadata.lankide.e2e-additional.harness-codex-hermetic]
 command = "cargo test -p lankide-harness-codex --test e2e"
-scenario = "Classify missing CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through the public native Harness API; retain original error text and stderr. Start native executions in isolated process groups for Machine-owned tree cleanup. Verify S7.2: full-access native launch with never approval and danger-full-access, Agent-home skills at the native project path, and preserved auth/config overlay and tool/socket wiring. Classify missing or non-executable CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through the public native Harness API; retain original error text and stderr. Validate private LANKIDE_AGENT_SOCKET paths and strip inherited Runtime directory settings from native execution."
+scenario = "Classify missing CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through the public native Harness API; retain original error text and stderr. Start native executions in isolated process groups for Machine-owned tree cleanup. Verify S7.2: full-access native launch with never approval and danger-full-access, Agent-home skills at the native project path, and preserved auth/config overlay and tool/socket wiring. Classify missing or non-executable CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through the public native Harness API; retain original error text and stderr. Validate private LANKIDE_AGENT_SOCKET paths and strip inherited Runtime directory settings from native execution. A4c cleans native process groups on startup failure and session close; cross-module acceptance is in system-harness-test."
 prerequisites = "Python 3"
 classification = "hermetic"
 unattended = "yes"

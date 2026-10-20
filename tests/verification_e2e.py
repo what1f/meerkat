@@ -25,6 +25,11 @@ def run():
         shutil.copy2(ROOT / "scripts/verify-all", scripts / "verify-all")
         shutil.copy2(ROOT / "scripts/run-hermetic-tests", scripts / "run-hermetic-tests")
         (root / "tests").mkdir()
+        # B4 added a browser step to the public hermetic gate. Give this
+        # isolated verification workspace a real recipe and verify dispatch.
+        (root / "Justfile").write_text(
+            "web-e2e:\n    @touch web-e2e-ran\n"
+        )
         (root / "tests/e2e-modules.tsv").write_text(
             "# module_id\tpackage\tkind\tclassification\tcommand\tscenario\tprerequisites\tunattended\tstatus\n"
             "pending\tproduct\tcrate\thermetic\tfalse\tUnfinished business scenario\tNone\tyes\tpending\n"
@@ -61,6 +66,7 @@ def run():
         executable(root / "failing", "#!/bin/sh\nexit 0\n")
         result = subprocess.run([str(scripts / "verify-all"), "--gate", "hermetic"], env=env, capture_output=True, text=True)
         assert result.returncode == 0, result.stdout + result.stderr
+        assert (root / "web-e2e-ran").is_file(), "hermetic gate skipped browser scenarios"
         executable(root / "cargo", "#!/bin/sh\ncase \"$*\" in *--message-format=json*) exit 43;; esac\nexit 0\n")
         result = subprocess.run([str(scripts / "verify-all"), "--gate", "hermetic"], env=env, capture_output=True, text=True)
         assert result.returncode == 43, result.stdout + result.stderr
@@ -153,6 +159,13 @@ def run():
         visual_tests.mkdir(parents=True, exist_ok=True)
         visual_gate = visual_tests / "window_acceptance.py"
         shutil.copy2(ROOT / "apps/desktop/tests/window_acceptance.py", visual_gate)
+        shutil.copy2(ROOT / "apps/desktop/window-e2e.sh", visual_tests.parent / "window-e2e.sh")
+        shutil.copy2(ROOT / "scripts/verify-module", scripts / "verify-module")
+        # A passing headless contract must never satisfy the actual-window gate.
+        (root / "tests/e2e-modules.tsv").write_text(
+            "# module_id\tpackage\tkind\tclassification\tcommand\tscenario\tprerequisites\tunattended\tstatus\n"
+            "desktop\tproduct\tapp\thermetic\ttrue\tHeadless bootstrap\tNone\tyes\timplemented\n"
+        )
         review_dir = root / "window-review"
         visual_env = {**os.environ, "LANKIDE_VISUAL_BINARY": str(binary_dir / "lankide-desktop"), "LANKIDE_RELEASE_BIN_DIR": str(binary_dir)}
         visual_env.pop("LANKIDE_VISUAL_SCENARIOS", None)
@@ -160,6 +173,29 @@ def run():
         def visual(*arguments, env=visual_env):
             return subprocess.run(["python3", str(visual_gate), *map(str, arguments)], env=env, capture_output=True, text=True)
         assert visual().returncode == 4, "missing real-window evidence must not pass"
+        gate_env = {**visual_env, "LANKIDE_E2E_RUN_ID": "visual-no-evidence", "LANKIDE_E2E_LOCK_ROOT": str(root / "locks")}
+        result = subprocess.run([str(scripts / "verify-module"), "--run", "desktop"], env=gate_env, capture_output=True, text=True)
+        assert result.returncode == 0, result.stdout + result.stderr
+        result = subprocess.run([str(scripts / "verify-all"), "--gate", "desktop-visual"], env=gate_env, capture_output=True, text=True)
+        assert result.returncode == 4 and "LANKIDE_VISUAL_REVIEW" in result.stderr, result.stdout + result.stderr
+
+        # The full-release resume step uses the same real visual evidence gate.
+        full_dir = root / "target/e2e-artifacts/full-release/visual-no-evidence"
+        full_dir.mkdir(parents=True)
+        release_dir = root / "target/full-release-builds/visual-no-evidence/release"
+        shutil.copytree(binary_dir, release_dir)
+        steps = [{"id": name, "status": "passed", "cleanup": "passed"} for name in
+                 ("release-build", "hermetic", "live-provider", "live-harness", "live-composition", "check", "release-regressions")]
+        steps.append({"id": "desktop-visual", "status": "failed"})
+        (full_dir / "index.json").write_text(json.dumps({"run_id": "visual-no-evidence", "started_at": "test", "steps": steps}))
+        (full_dir / "result.json").write_text(json.dumps({"status": "failed"}))
+        assert invoke("snapshot", "--output", snapshot).returncode == 0
+        assert invoke("record", "--output", full_dir / "provenance.json", "--binary-dir", release_dir, "--source-snapshot", snapshot).returncode == 0
+        result = subprocess.run([str(scripts / "verify-all"), "--gate", "full-release", "--resume"], env=gate_env, capture_output=True, text=True)
+        assert result.returncode == 4 and "LANKIDE_VISUAL_REVIEW" in result.stdout + result.stderr, result.stdout + result.stderr
+        full_result = json.loads((full_dir / "result.json").read_text())
+        assert full_result["status"] == "failed" and full_result["steps"][-1]["id"] == "desktop-visual-retry-1"
+        assert full_result["steps"][-1]["status"] == "failed"
         assert visual("--prepare", review_dir).returncode == 0
         assert visual("--review", review_dir / "review.json").returncode != 0, "pending template must not pass"
         assert visual("--review", review_dir / "review.json", env={**visual_env, "LANKIDE_VISUAL_SCENARIOS": "agent-list"}).returncode != 0, "partial visual selection must not pass"

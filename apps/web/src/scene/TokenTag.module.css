@@ -1,0 +1,49 @@
+.tag {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 236px;
+  padding: 46px 22px 26px;
+  background: var(--card);
+  clip-path: polygon(28px 0, calc(100% - 28px) 0, 100% 28px, 100% 100%, 0 100%, 0 28px);
+}
+
+.tag > img {
+  margin: 8px 0 24px;
+}
+
+.label {
+  margin: 0 0 6px;
+  font-size: var(--t-tiny);
+  font-weight: 500;
+  color: var(--ink-3);
+  text-indent: 0.3em;
+  letter-spacing: 0.3em;
+}
+
+.tag > input:is(*, :hover, :focus) {
+  width: 100%;
+  height: auto;
+  padding: 4px 0 6px;
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  color: var(--ink);
+  text-align: center;
+  text-overflow: ellipsis;
+  background: var(--clear);
+  border-style: none;
+  border-bottom: var(--dashed-strong-1);
+  border-radius: var(--r-0);
+  box-shadow: var(--none);
+  transition: border-color var(--d-base);
+}
+
+.tag > input:focus {
+  border-bottom-color: var(--ink-3);
+  border-bottom-style: solid;
+}
+
+.tag > input[aria-invalid='true'] {
+  border-bottom-color: var(--err);
+}
