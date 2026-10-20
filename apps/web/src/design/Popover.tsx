@@ -22,7 +22,13 @@ export function Popover({
     <BasePopover.Root open={open} onOpenChange={onOpenChange}>
       <BasePopover.Trigger {...rest} className={css.root} render={trigger} />
       <BasePopover.Portal>
-        <BasePopover.Positioner className={css.positioner} align={align} sideOffset={6}>
+        <BasePopover.Positioner
+          className={css.positioner}
+          align={align}
+          sideOffset={6}
+          // Triggers lean and spin on hover; the popup must stay where it opened.
+          disableAnchorTracking
+        >
           <BasePopover.Popup className={css.popup}>{children}</BasePopover.Popup>
         </BasePopover.Positioner>
       </BasePopover.Portal>

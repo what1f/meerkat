@@ -1,14 +1,18 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { UIProps } from './types';
 import { useState } from 'react';
 import css from './GridPicker.module.css';
 export type GridPickerProps<T> = Omit<UIProps, 'className' | 'style'> & {
-  cells: { value: T; label?: string; content: ReactNode }[];
+  cells: { value: T; label?: string; content?: ReactNode; none?: boolean }[];
   value?: T;
   onPick: (value: T) => void;
   leading?: ReactNode;
   trailing?: ReactNode;
   columns: number;
+  /** Tight grid for small glyphs: soft selection, content that leans in on hover. */
+  compact?: boolean;
+  /** Rows visible before the grid scrolls (no scrollbar); a fractional value leaves the cut row as the cue. */
+  maxRows?: number;
 };
 export function GridPicker<T>({
   cells,
@@ -17,6 +21,8 @@ export function GridPicker<T>({
   leading,
   trailing,
   columns,
+  compact,
+  maxRows,
   ...rest
 }: GridPickerProps<T>) {
   const [focused, setFocused] = useState<{ value: T } | null>(null);
@@ -27,9 +33,14 @@ export function GridPicker<T>({
   return (
     <div
       {...rest}
-      className={css.root}
+      className={[css.root, compact && css.compact, maxRows && css.capped]
+        .filter(Boolean)
+        .join(' ')}
       role="grid"
-      style={{ gridTemplateColumns: `repeat(${count}, 1fr)` }}
+      style={{
+        gridTemplateColumns: `repeat(${count}, 1fr)`,
+        ...(maxRows ? ({ '--rows': maxRows } as CSSProperties) : null),
+      }}
     >
       {leading && (
         <div role="row">
@@ -72,7 +83,7 @@ export function GridPicker<T>({
                       ?.focus();
                   }}
                 >
-                  {cell.content}
+                  {cell.none ? <span className={css.none} /> : cell.content}
                 </button>
               </div>
             );
