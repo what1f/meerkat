@@ -568,6 +568,8 @@ impl wire::RuntimePeer for Peer {
             harnesses: vec!["pi", "codex", "claude_code"]
                 .into_iter()
                 .map(|id| wire::HarnessCatalogItem {
+                    default_environment_variables: Vec::new(),
+                    default_launch_arguments: Vec::new(),
                     harness_id: id.into(),
                     display_name: id.into(),
                     description: String::new(),

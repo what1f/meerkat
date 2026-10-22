@@ -7,7 +7,6 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use tokio_stream::StreamExt;
 
 const CHUNK_BYTES: usize = 64 * 1024;
 
@@ -152,8 +151,6 @@ pub async fn execute(
         "send" => send(&mut client, &config, &args[1..]).await,
         "content" => content(&mut client, &config, &args[1..]).await,
         "profile" => profile(&mut client, &config, &args[1..]).await,
-        "upload" => upload_command(&mut client, &config, &args[1..]).await,
-        "download" => download_command(&mut client, &config, &args[1..]).await,
         "help" | "--help" | "-h" => Ok(json!({"usage": help()})),
         _ => Err(CliError::Usage(help())),
     }
@@ -449,74 +446,6 @@ async fn content(
     }))
 }
 
-async fn upload_command(
-    client: &mut wire::AgentClient,
-    config: &RunConfig,
-    args: &[String],
-) -> Result<Value, CliError> {
-    let options = Options::parse(args, &["--file", "--media-type"], &[])?;
-    let resource = upload_file(
-        client,
-        config,
-        Path::new(options.required("--file")?),
-        options.value("--media-type"),
-    )
-    .await?;
-    Ok(resource_json(resource))
-}
-
-async fn download_command(
-    client: &mut wire::AgentClient,
-    config: &RunConfig,
-    args: &[String],
-) -> Result<Value, CliError> {
-    let options = Options::parse(args, &["--resource-id", "--output"], &[])?;
-    let resource_id = options
-        .required("--resource-id")?
-        .parse::<i64>()
-        .map_err(|_| CliError::Usage("--resource-id must be an integer".to_owned()))?;
-    let output = PathBuf::from(options.required("--output")?);
-    if !output.is_absolute() {
-        return Err(CliError::Usage(
-            "--output must be an absolute path".to_owned(),
-        ));
-    }
-    let mut stream = client
-        .download_resource(wire::ResourceRequest {
-            resource_id,
-            transfer_id: unique_id(),
-            context: Some(config.context()?),
-        })
-        .await
-        .map_err(status)?
-        .into_inner();
-    let mut bytes = Vec::new();
-    let mut expected_offset = 0_u64;
-    let mut complete = false;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(status)?;
-        if chunk.offset != expected_offset {
-            return Err(CliError::Decode("resource offset mismatch".to_owned()));
-        }
-        expected_offset += chunk.bytes.len() as u64;
-        bytes.extend_from_slice(&chunk.bytes);
-        if chunk.eof {
-            complete = true;
-            break;
-        }
-    }
-    if !complete {
-        return Err(CliError::Decode(
-            "resource download ended before EOF".to_owned(),
-        ));
-    }
-    if let Some(parent) = output.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&output, &bytes)?;
-    Ok(json!({"resource_id": resource_id, "output": output, "size_bytes": bytes.len()}))
-}
-
 fn media_type_for(path: &Path) -> Option<&'static str> {
     let extension = path.extension()?.to_str()?.to_ascii_lowercase();
     Some(match extension.as_str() {
@@ -656,7 +585,7 @@ fn require_no_extra(args: &[String], expected: usize) -> Result<(), CliError> {
 }
 
 fn help() -> String {
-    "lankide capabilities | profile [update --name NAME --role ROLE --bio BIO --avatar PATH] | invoke <capability> [--arguments-json JSON | --arguments-file PATH] | send (--channel ID --chat ID | --to PERSON_ID) (--content TEXT | --content-file PATH) [--reply-to MESSAGE_ID] [--attachment PATH] [--force] | content --kind KIND --id ID | upload --file PATH [--media-type TYPE] | download --resource-id ID --output ABSOLUTE_PATH".to_owned()
+    "lankide capabilities | profile [update --name NAME --role ROLE --bio BIO --avatar PATH] | invoke <capability> [--arguments-json JSON | --arguments-file PATH] | send (--channel ID --chat ID | --to PERSON_ID) (--content TEXT | --content-file PATH) [--reply-to MESSAGE_ID] [--attachment PATH] [--force] | content --kind KIND --id ID".to_owned()
 }
 
 struct Options {

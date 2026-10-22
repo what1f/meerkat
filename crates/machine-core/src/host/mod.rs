@@ -3,6 +3,7 @@ mod connection;
 mod control;
 mod events;
 mod failure;
+mod files;
 mod harness_test;
 mod liveness;
 mod proxy;
@@ -515,6 +516,8 @@ struct ActiveExecution {
     session: Arc<dyn HarnessSession>,
     agent_home: PathBuf,
     context: AgentRunContext,
+    delivery_lock: Arc<tokio::sync::Mutex<()>>,
+    accepting_deliveries: bool,
     accepting_tool_results: bool,
     last_event_sequence: u64,
 }

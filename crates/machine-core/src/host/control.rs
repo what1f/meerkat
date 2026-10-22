@@ -46,7 +46,10 @@ pub(super) fn prepare_tool_arguments(
     Ok(serde_json::Value::Object(object))
 }
 
-pub(super) async fn handle_steer(inner: &Inner, steer: lankide_protocol::DeliverSteer) {
+pub(super) async fn handle_steer(
+    inner: &std::sync::Arc<Inner>,
+    steer: lankide_protocol::DeliverSteer,
+) {
     let Some(execution) = steer.execution else {
         return;
     };
@@ -54,43 +57,124 @@ pub(super) async fn handle_steer(inner: &Inner, steer: lankide_protocol::Deliver
         return;
     };
     let key = assignment_key(execution.execution_id, execution.attempt);
+    let delivery_lock = inner
+        .active
+        .lock()
+        .await
+        .get(&key)
+        .map(|active| active.delivery_lock.clone());
+    let _delivery_guard = match &delivery_lock {
+        Some(lock) => Some(lock.lock().await),
+        None => None,
+    };
+    let remembered = inner
+        .state
+        .lock()
+        .await
+        .accepted_steers
+        .get(&key)
+        .and_then(|receipts| receipts.get(&delivery.delivery_id))
+        .cloned();
+    if let Some(receipt) = remembered {
+        send_frame(
+            inner,
+            MachineFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                frame: Some(machine_frame::Frame::DeliveryResult(receipt)),
+            },
+        )
+        .await;
+        return;
+    }
     let session = inner
         .active
         .lock()
         .await
         .get(&key)
         .filter(|active| {
-            active
-                .capabilities
-                .contains(&lankide_harness::HarnessCapability::Steer)
+            active.accepting_deliveries
+                && active
+                    .capabilities
+                    .contains(&lankide_harness::HarnessCapability::Steer)
         })
-        .map(|active| active.session.clone());
+        .map(|active| {
+            (
+                active.session.clone(),
+                active.agent_home.clone(),
+                active.context.clone(),
+            )
+        });
     let result = match session {
-        Some(session) => {
-            session
-                .steer(delivery.delivery_id.to_string(), delivery.rendered_markdown)
+        Some((session, home, context)) => {
+            let mut local = Vec::new();
+            let mut failed = None;
+            for resource in &delivery.resources {
+                match super::proxy::download_resource(
+                    inner.clone(),
+                    resource,
+                    context.clone(),
+                    &home.join("resources"),
+                )
                 .await
+                {
+                    Ok(path) => local.push((resource.resource_id, path)),
+                    Err(error) => {
+                        failed = Some(lankide_harness::HarnessError::new(
+                            lankide_harness::HarnessErrorCode::InvalidState,
+                            error.to_string(),
+                        ));
+                        break;
+                    }
+                }
+            }
+            match failed {
+                Some(error) => Err(error),
+                None => {
+                    session
+                        .steer(
+                            delivery.delivery_id.to_string(),
+                            crate::resources::replace_resource_links(
+                                &delivery.rendered_markdown,
+                                &local,
+                            ),
+                        )
+                        .await
+                }
+            }
         }
         None => Err(lankide_harness::HarnessError::new(
             lankide_harness::HarnessErrorCode::InvalidState,
             "execution is not active",
         )),
     };
+    let receipt = DeliveryResult {
+        execution: Some(execution),
+        delivery_id: delivery.delivery_id,
+        accepted: result.as_ref().is_ok_and(|r| r.accepted),
+        error_code: result
+            .as_ref()
+            .err()
+            .map(|error| format!("{:?}", error.code).to_lowercase())
+            .unwrap_or_default(),
+        error_message: result.err().map(|error| error.message).unwrap_or_default(),
+    };
+    if receipt.accepted {
+        let mut state = inner.state.lock().await;
+        state
+            .accepted_steers
+            .entry(key)
+            .or_default()
+            .insert(receipt.delivery_id, receipt.clone());
+        if let Err(error) = state.save(&inner.state_path) {
+            log::error!("[machine] failed to persist steer receipt: {error}");
+            return;
+        }
+    }
     send_frame(
         inner,
         MachineFrame {
             protocol_version: lankide_protocol::PROTOCOL_VERSION,
-            frame: Some(machine_frame::Frame::DeliveryResult(DeliveryResult {
-                execution: Some(execution),
-                delivery_id: delivery.delivery_id,
-                accepted: result.as_ref().is_ok_and(|receipt| receipt.accepted),
-                error_code: result
-                    .as_ref()
-                    .err()
-                    .map(|error| format!("{:?}", error.code).to_lowercase())
-                    .unwrap_or_default(),
-                error_message: result.err().map(|error| error.message).unwrap_or_default(),
-            })),
+            frame: Some(machine_frame::Frame::DeliveryResult(receipt)),
         },
     )
     .await;
@@ -330,6 +414,24 @@ pub(super) async fn replay_pending(inner: &Inner, sender: &mpsc::Sender<MachineF
             .send(MachineFrame {
                 protocol_version: lankide_protocol::PROTOCOL_VERSION,
                 frame: Some(machine_frame::Frame::DeliveryResult(delivery)),
+            })
+            .await;
+    }
+    // The accepted input must be durable at Runtime before a replayed terminal
+    // event can commit the execution, including when its original receipt was lost.
+    let steers = inner
+        .state
+        .lock()
+        .await
+        .accepted_steers
+        .values()
+        .flat_map(|receipts| receipts.values().cloned())
+        .collect::<Vec<_>>();
+    for receipt in steers {
+        let _ = sender
+            .send(MachineFrame {
+                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                frame: Some(machine_frame::Frame::DeliveryResult(receipt)),
             })
             .await;
     }

@@ -6,3 +6,6 @@ mod native_defaults_e2e;
 mod output_record_e2e;
 #[path = "../pi_e2e.rs"]
 mod pi_e2e;
+
+#[path = "../plugin_live_e2e.rs"]
+mod plugin_live_e2e;

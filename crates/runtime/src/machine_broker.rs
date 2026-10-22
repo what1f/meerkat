@@ -835,7 +835,8 @@ impl MachineBroker {
                     .map(|value| value.attempt)
                     .unwrap_or_default();
                 if result.delivery_id < 0 {
-                    self.database()?
+                    let changed = self
+                        .database()?
                         .mark_steer_delivery_result(
                             -result.delivery_id,
                             execution_id,
@@ -846,6 +847,9 @@ impl MachineBroker {
                             now_millis(),
                         )
                         .await?;
+                    if changed && result.accepted {
+                        self.database()?.acknowledge_delivery(execution_id).await?;
+                    }
                     return Ok(());
                 }
                 self.database()?
@@ -857,6 +861,9 @@ impl MachineBroker {
                         now_millis(),
                     )
                     .await?;
+                if result.accepted {
+                    self.database()?.acknowledge_delivery(execution_id).await?;
+                }
                 let mut pending = self
                     .inner
                     .pending
@@ -1329,7 +1336,17 @@ fn steer_frame(delivery: SteerDelivery) -> RuntimeFrame {
                     rendered_markdown: delivery.rendered_markdown,
                     snapshot_id: 0,
                     trigger_reasons: Vec::new(),
-                    resources: Vec::new(),
+                    resources: delivery
+                        .resources
+                        .into_iter()
+                        .map(|r| lankide_protocol::ResourceRef {
+                            resource_id: r.resource_id.get(),
+                            file_name: r.file_name,
+                            media_type: r.media_type,
+                            size_bytes: r.size_bytes,
+                            sha256: r.sha256,
+                        })
+                        .collect(),
                     created_at: delivery.created_at,
                 }),
             },

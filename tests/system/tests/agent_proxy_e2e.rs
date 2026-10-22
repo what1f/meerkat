@@ -63,7 +63,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
             "wrong attachment shape must be actionable: {result}"
         );
     }
-    assert_eq!(report["local_markdown"]["error"]["code"], "invalid_input");
+    assert_eq!(report["local_markdown"]["success"], true);
     assert_eq!(
         report["content"]["content_markdown"],
         "Please read this message"
@@ -71,7 +71,6 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     assert_eq!(report["updated"]["name"], "Bruce Lee");
     assert_eq!(report["invoked"]["success"], true);
     assert_eq!(report["sent"]["accepted"], true);
-    assert_eq!(report["downloaded"]["size_bytes"], 1_200_000);
     assert!(
         report["capabilities"]["capabilities"]
             .as_array()
@@ -171,15 +170,22 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
         local.list_capabilities(old_context.clone()).await.is_err(),
         "open connections must stop working"
     );
-    assert_eq!(
-        team.transcript(&bruce, "team-chat"),
-        ["Please read this message", "Sent with an attachment"]
-    );
+    let transcript = team.transcript(&bruce, "team-chat");
+    assert_eq!(transcript.len(), 3);
+    assert_eq!(transcript[1], "attachment.txt");
+    assert!(transcript[2].contains("Sent with an attachment"));
+    assert!(transcript[2].contains("`[example](./missing-inline.txt)`"));
+    assert!(transcript[2].contains("![example](./missing-fenced.png)"));
     let sends = team.outbound(&bruce, "team-chat");
-    assert_eq!(sends.len(), 1);
-    assert!(sends[0].reply_to.is_some());
-    assert_eq!(sends[0].resources.len(), 1);
-    assert_eq!(sends[0].resources[0].resource.size_bytes, 1_200_000);
+    assert_eq!(sends.len(), 2);
+    assert!(sends[1].reply_to.is_some());
+    assert_eq!(sends[0].resources.len(), 2);
+    assert_eq!(sends[0].resources[1].resource.media_type, "image/png");
+    for (index, send) in sends.into_iter().enumerate() {
+        assert_eq!(send.resources.len(), if index == 0 { 2 } else { 1 });
+        assert_eq!(send.resources[0].resource.size_bytes, 1_200_000);
+        assert_eq!(send.resources[0].resource.media_type, "text/plain");
+    }
     rig.stop_machine()?;
     // S15.3: replay the credential on an authenticated WS after the attempt finishes.
     let (url, _) = rig.machine_endpoint()?;

@@ -7,7 +7,8 @@ import { useAgentOnboardingProgress, useStartAgentOnboarding } from '../../lib/q
 import { avatarUrl } from '../../lib/assets';
 import { builtinUpload, defaultAvatar } from './avatars';
 import { creationOf, onboards, type Creation } from './creation';
-import { formatArgs, parseArgs } from './args';
+import { formatArgs } from './args';
+import { harnessDefaults, harnessDraft } from './harnessDraft';
 import {
   blank,
   broken,
@@ -50,22 +51,14 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
   );
 
   const base: Draft = agent.data ? { ...blank, ...pick(agent.data) } : blank;
-  const merged = { ...base, ...edits };
-  if (argsText !== null) merged.launch_arguments = parseArgs(argsText);
-  // A new member starts on the local Machine with its first available AI.
-  const list = machines.data?.machines.filter((m) => m.revoked_at === null) ?? [];
-  const machine =
-    list.find((m) => m.machine_id === merged.machine_id) ??
-    (id ? undefined : (list.find((m) => m.is_local) ?? list[0]));
-  const harness =
-    merged.harness_id ||
-    (
-      harnesses.data?.harnesses.find((h) => h.availability === 'available') ??
-      harnesses.data?.harnesses[0]
-    )?.harness_id ||
-    '';
-  const draft: Draft = { ...merged, machine_id: machine?.machine_id ?? merged.machine_id };
-  draft.harness_id = harness;
+  const { draft, list, machine, harness } = harnessDraft(
+    base,
+    edits,
+    argsText,
+    id,
+    machines.data?.machines ?? [],
+    harnesses.data?.harnesses ?? [],
+  );
   const models = useModelCatalog(
     { request_id: 'member', workspace: ref, machine_id: draft.machine_id, harness_id: harness },
     !!draft.machine_id && !!harness,
@@ -78,7 +71,16 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
 
   const changed = fields.filter((key) => !same(draft[key], base[key]));
   const dirty = !!upload || (id ? changed.length > 0 : true);
-  const set = (patch: Partial<Draft>) => setEdits((current) => ({ ...current, ...patch }));
+  const set = (patch: Partial<Draft>) => {
+    if (!id && patch.harness_id && patch.harness_id !== harness) {
+      setArgsText(null);
+      patch = {
+        ...patch,
+        ...harnessDefaults(patch.harness_id, machine, harnesses.data?.harnesses),
+      };
+    }
+    setEdits((current) => ({ ...current, ...patch }));
+  };
   const reset = () => {
     setEdits({});
     setArgsText(null);
@@ -115,7 +117,6 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
         agent: agentRef,
         avatar: upload,
       });
-      // Anything edited while the save was on its way stays as a change.
       setEdits((current) =>
         Object.fromEntries(
           Object.entries(current).filter(

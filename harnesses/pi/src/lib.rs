@@ -1,7 +1,5 @@
 #![forbid(unsafe_code)]
 
-//! Pi Harness adapter over Pi's native RPC/JSONL protocol.
-
-mod adapter;
-
-pub use adapter::{HARNESS_ID, PiHarness};
+//! Embedded JavaScript adapter, hosted by Machine through the shared contract.
+pub const HARNESS_ID: &str = "pi";
+lankide_harness::harness_plugin!(PiHarness, "pi", "Pi", include_str!("../plugin.js"));

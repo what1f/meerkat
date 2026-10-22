@@ -1,77 +1,16 @@
-use crate::{HarnessError, HarnessErrorCode};
+use crate::HarnessError;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-/// Seed a private native configuration directory without copying session history.
-/// Existing local files remain authoritative, including refreshed credentials.
-pub fn prepare_config_overlay(
-    destination: &Path,
-    source: Option<&Path>,
-    files: &[&str],
-) -> Result<(), HarnessError> {
-    let prepare = || -> io::Result<()> {
-        fs::create_dir_all(destination)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(destination, fs::Permissions::from_mode(0o700))?;
-        }
-        let Some(source) = source else { return Ok(()) };
-        for name in files {
-            let name = Path::new(name);
-            if name.components().count() != 1
-                || !matches!(
-                    name.components().next(),
-                    Some(std::path::Component::Normal(_))
-                )
-            {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "invalid config file name",
-                ));
-            }
-            let target = destination.join(name);
-            if target.try_exists()? {
-                continue;
-            }
-            let bytes = match fs::read(source.join(name)) {
-                Ok(bytes) => bytes,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-                Err(error) => return Err(error),
-            };
-            let mut options = OpenOptions::new();
-            options.write(true).create_new(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                options.mode(0o600);
-            }
-            match options.open(&target) {
-                Ok(mut file) => {
-                    if let Err(error) = file.write_all(&bytes).and_then(|_| file.sync_all()) {
-                        let _ = fs::remove_file(&target);
-                        return Err(error);
-                    }
-                }
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-                Err(error) => return Err(error),
-            }
-        }
-        Ok(())
-    };
-    prepare().map_err(|error| {
-        HarnessError::new(
-            HarnessErrorCode::InvalidConfig,
-            format!("Could not prepare native configuration: {error}"),
-        )
-    })
-}
-
-pub fn user_config_directory(variable: &str, home_relative: &str) -> Option<PathBuf> {
-    std::env::var_os(variable)
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(home_relative)))
+fn create_native_directory(directory: &Path) -> io::Result<()> {
+    fs::create_dir_all(directory)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
 }
 
 /// Make Agent-authored skills available to a native project skill scanner.
@@ -130,4 +69,192 @@ fn link_directory(source: &Path, destination: &Path) -> io::Result<()> {
     {
         std::os::windows::fs::symlink_dir(source, destination)
     }
+}
+
+/// Refresh inherited configuration while keeping native sessions and local state.
+/// Credentials remain native shared files, so token refresh cannot be rolled back
+/// by copying an old snapshot over a freshly renewed token.
+pub(crate) fn refresh_config_overlay(
+    destination: &Path,
+    source: Option<&Path>,
+    files: &[&str],
+) -> Result<(), HarnessError> {
+    create_native_directory(destination)
+        .map_err(|e| HarnessError::invalid_config(e.to_string()))?;
+    let Some(source) = source else { return Ok(()) };
+    if source == destination {
+        return Ok(());
+    }
+    let manifest = destination.join(".lankide-inherited.json");
+    let previous: Vec<String> = fs::read(&manifest)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default();
+    let mut inherited = Vec::new();
+    for name in files {
+        if Path::new(name).components().count() != 1 {
+            return Err(HarnessError::invalid_config(
+                "Invalid native configuration filename",
+            ));
+        }
+        let origin = source.join(name);
+        let target = destination.join(name);
+        let apply = || -> io::Result<()> {
+            if !origin.exists() {
+                if previous.iter().any(|v| v == name) {
+                    let _ = fs::remove_file(&target);
+                }
+                return Ok(());
+            }
+            let credentials = matches!(*name, "auth.json" | ".credentials.json");
+            if credentials {
+                if target.exists() && !previous.iter().any(|v| v == name) {
+                    return Ok(());
+                }
+                if fs::symlink_metadata(&target).is_ok() {
+                    fs::remove_file(&target)?;
+                }
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(origin.canonicalize()?, &target)?;
+                #[cfg(not(unix))]
+                fs::copy(&origin, &target)?;
+            } else {
+                let temporary = destination.join(format!(".{}-{}", name, uuid::Uuid::new_v4()));
+                let mut options = OpenOptions::new();
+                options.write(true).create_new(true);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::OpenOptionsExt;
+                    options.mode(0o600);
+                }
+                let mut file = options.open(&temporary)?;
+                file.write_all(&fs::read(&origin)?)?;
+                file.sync_all()?;
+                fs::rename(temporary, &target)?;
+            }
+            Ok(())
+        };
+        apply().map_err(|e| {
+            HarnessError::invalid_config(format!("Could not refresh native configuration: {e}"))
+        })?;
+        if origin.exists() {
+            inherited.push(name.to_string());
+        }
+    }
+    fs::write(
+        manifest,
+        serde_json::to_vec(&inherited).expect("configuration names"),
+    )
+    .map_err(|e| HarnessError::invalid_config(e.to_string()))?;
+    Ok(())
+}
+
+pub(crate) fn link_native_resource(source: &Path, destination: &Path) -> Result<(), HarnessError> {
+    if let Ok(metadata) = fs::symlink_metadata(destination) {
+        if !metadata.file_type().is_symlink() {
+            return Ok(());
+        }
+        let target = source.canonicalize().ok();
+        if target.is_some() && fs::read_link(destination).ok() == target {
+            return Ok(());
+        }
+        fs::remove_file(destination).map_err(|e| HarnessError::invalid_config(e.to_string()))?;
+    }
+    if !source.exists() {
+        return Ok(());
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(
+            source
+                .canonicalize()
+                .map_err(|e| HarnessError::invalid_config(e.to_string()))?,
+            destination,
+        )
+        .map_err(|e| HarnessError::invalid_config(e.to_string()))?;
+    }
+    #[cfg(windows)]
+    {
+        if source.is_dir() {
+            std::os::windows::fs::symlink_dir(source, destination)
+                .map_err(|e| HarnessError::invalid_config(e.to_string()))?;
+        } else {
+            std::os::windows::fs::symlink_file(source, destination)
+                .map_err(|e| HarnessError::invalid_config(e.to_string()))?;
+        }
+    }
+    Ok(())
+}
+
+/// Rebase only path fields named by the adapter; commands and other settings stay untouched.
+pub(crate) fn rebase_native_config(
+    path: &Path,
+    source: &Path,
+    keys: &[&str],
+) -> Result<(), HarnessError> {
+    if keys.is_empty() || !path.is_file() {
+        return Ok(());
+    }
+    let apply = || -> Result<(), Box<dyn std::error::Error>> {
+        let text = fs::read_to_string(path)?;
+        if text.trim().is_empty() {
+            return Ok(());
+        }
+        let is_toml = path.extension().is_some_and(|v| v == "toml");
+        let mut value: serde_json::Value = if is_toml {
+            serde_json::to_value(toml::from_str::<toml::Value>(&text)?)?
+        } else if path.extension().is_some_and(|v| v == "json") {
+            serde_json::from_str(&text)?
+        } else {
+            return Ok(());
+        };
+        fn rebase(
+            value: &mut serde_json::Value,
+            source: &Path,
+            keys: &[&str],
+            selected: bool,
+        ) -> bool {
+            match value {
+                serde_json::Value::Object(entries) => {
+                    entries.iter_mut().fold(false, |changed, (key, value)| {
+                        rebase(value, source, keys, keys.contains(&key.as_str())) || changed
+                    })
+                }
+                serde_json::Value::Array(entries) => {
+                    entries.iter_mut().fold(false, |changed, value| {
+                        rebase(value, source, keys, selected) || changed
+                    })
+                }
+                serde_json::Value::String(text) if selected && !text.is_empty() => {
+                    let (prefix, relative) = text
+                        .strip_prefix('!')
+                        .map(|s| ("!", s))
+                        .unwrap_or(("", text.as_str()));
+                    if relative.starts_with('~')
+                        || relative.contains(':')
+                        || Path::new(relative).is_absolute()
+                    {
+                        return false;
+                    }
+                    *text = format!("{prefix}{}", source.join(relative).display());
+                    true
+                }
+                _ => false,
+            }
+        }
+        if rebase(&mut value, source, keys, false) {
+            let text = if is_toml {
+                toml::to_string(&value)?
+            } else {
+                serde_json::to_string_pretty(&value)?
+            };
+            fs::write(path, text)?;
+        }
+        Ok(())
+    };
+    apply().map_err(|error| {
+        HarnessError::invalid_config(format!(
+            "Could not preserve native configuration paths: {error}"
+        ))
+    })
 }

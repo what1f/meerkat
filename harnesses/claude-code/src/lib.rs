@@ -1,13 +1,10 @@
 #![forbid(unsafe_code)]
 
-//! Claude Code Harness adapter.
-//!
-//! `dcc` is a configurable CLI path for this adapter, never a separate
-//! Harness identity.
-
-mod adapter;
-mod mcp;
-
-pub use adapter::ClaudeCodeHarness;
-
+//! Embedded JavaScript adapter, hosted by Machine through the shared contract.
 pub const HARNESS_ID: &str = "claude_code";
+lankide_harness::harness_plugin!(
+    ClaudeCodeHarness,
+    "claude_code",
+    "Claude Code",
+    include_str!("../plugin.js")
+);

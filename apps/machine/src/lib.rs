@@ -172,7 +172,8 @@ pub async fn wait_for_shutdown() -> Result<ShutdownReason, AppError> {
 }
 
 pub async fn run(config: DaemonConfig) -> Result<(), AppError> {
-    let registrations = production_harnesses(&config);
+    let mut registrations = production_harnesses(&config);
+    load_harness_plugins(&config, &mut registrations)?;
     run_with_harnesses(config, registrations).await
 }
 
@@ -285,6 +286,79 @@ pub fn production_harnesses(config: &DaemonConfig) -> Vec<RegisteredHarness> {
             ),
         ),
     ]
+}
+
+/// Local JS packages may replace a bundled adapter or add a CLI harness.
+/// Loading validates declarations only; native discovery is Machine-owned.
+pub fn load_harness_plugins(
+    config: &DaemonConfig,
+    registrations: &mut Vec<RegisteredHarness>,
+) -> Result<(), AppError> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Manifest {
+        api_version: u32,
+        id: String,
+        name: String,
+        entry: PathBuf,
+        cli: PathBuf,
+    }
+    let directory = config.paths.home.join("harnesses");
+    let entries = match std::fs::read_dir(&directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let mut paths = entries
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(|e| e.path())
+        .collect::<Vec<_>>();
+    paths.sort();
+    let mut loaded = std::collections::BTreeSet::new();
+    for path in paths {
+        if !path.is_dir() {
+            continue;
+        }
+        let manifest: Manifest = serde_json::from_slice(&std::fs::read(path.join("plugin.json"))?)?;
+        if manifest.api_version != 1
+            || manifest.entry.is_absolute()
+            || manifest
+                .entry
+                .components()
+                .any(|p| !matches!(p, std::path::Component::Normal(_)))
+            || !loaded.insert(manifest.id.clone())
+        {
+            return Err(lankide_harness::HarnessError::invalid_config(
+                "Invalid or duplicate Harness plugin manifest",
+            )
+            .into());
+        }
+        let root = path.canonicalize()?;
+        let entry = path.join(manifest.entry).canonicalize()?;
+        if !entry.starts_with(root) {
+            return Err(lankide_harness::HarnessError::invalid_config(
+                "Harness plugin entry escapes its package",
+            )
+            .into());
+        }
+        let plugin = lankide_harness::JsHarnessFactory::new(
+            &manifest.id,
+            &manifest.name,
+            std::fs::read_to_string(entry)?,
+        )?;
+        let cli = config
+            .environment
+            .get("PATH")
+            .map(|p| resolve_executable(&manifest.cli, p))
+            .unwrap_or(manifest.cli);
+        registrations.retain(|item| item.factory.info().harness_id != manifest.id);
+        registrations.push(RegisteredHarness::new(
+            plugin,
+            harness_config(&manifest.id, cli, &config.environment),
+        ));
+    }
+    Ok(())
 }
 
 fn harness_config(
@@ -518,4 +592,10 @@ fn command_name(command: &str, args: &[&str]) -> Option<String> {
         .ok()?;
     let name = String::from_utf8(output.stdout).ok()?.trim().to_owned();
     (output.status.success() && !name.is_empty()).then_some(name)
+}
+
+impl From<lankide_harness::HarnessError> for AppError {
+    fn from(error: lankide_harness::HarnessError) -> Self {
+        Self::MachineHarness(error)
+    }
 }

@@ -497,6 +497,28 @@ impl Storage {
         t.commit()?;
         Ok(())
     }
+    pub fn record_outbound_reply(
+        &self,
+        message_id: i64,
+        reply_to: Option<i64>,
+    ) -> Result<Option<String>> {
+        let Some(reply_to) = reply_to else {
+            return Ok(None);
+        };
+        let mut connection = self.conn()?;
+        let transaction = connection.transaction()?;
+        let native_id: String = transaction.query_row(
+            "SELECT p.provider_message_id FROM messages m JOIN messages p ON p.chat_id=m.chat_id WHERE m.message_id=?1 AND m.direction='outbound' AND p.message_id=?2 AND p.send_status IN ('received','sent') AND p.provider_message_id IS NOT NULL",
+            params![message_id, reply_to], |row| row.get(0),
+        ).optional()?.ok_or_else(|| StorageError::Invalid("reply target unavailable in this conversation".into()))?;
+        transaction.execute(
+            "UPDATE messages SET reply_to_provider_message_id=?2 WHERE message_id=?1",
+            params![message_id, native_id],
+        )?;
+        transaction.commit()?;
+        Ok(Some(native_id))
+    }
+
     pub fn record_outbound_resources(
         &self,
         message_id: i64,

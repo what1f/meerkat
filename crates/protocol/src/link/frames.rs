@@ -21,6 +21,8 @@ pub struct AgentRuntimeProfile {
     pub name: String,
     pub role: String,
     pub bio: String,
+    #[serde(default)]
+    pub soul: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
@@ -186,6 +188,10 @@ pub struct HarnessInfo {
     pub model_catalog: Option<ModelCatalog>,
     pub model_catalog_error: String,
     pub capabilities: Vec<String>,
+    #[serde(default)]
+    pub default_environment_variables: Vec<EnvironmentVariable>,
+    #[serde(default)]
+    pub default_launch_arguments: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]

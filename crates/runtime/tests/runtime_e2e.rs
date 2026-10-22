@@ -209,7 +209,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
     let always_channel = ChannelId::new("always").map_err(err)?;
     let scheduled_channel = ChannelId::new("scheduled").map_err(err)?;
     let muted_channel = ChannelId::new("muted").map_err(err)?;
-    for event in [
+    for mut event in [
         message(
             &always_channel,
             "always_chat",
@@ -235,6 +235,9 @@ async fn scenario(db: &Path) -> Result<(), String> {
             "human",
         ),
     ] {
+        if let ProviderEventKind::Message(message) = &mut event.kind {
+            message.mentioned_agent_ids.clear();
+        }
         state_b.emit(event).await?;
         pull(&runtime, &workspace_b, 100).await?;
     }
@@ -312,6 +315,12 @@ async fn scenario(db: &Path) -> Result<(), String> {
         if let ProviderEventKind::Message(message) = &mut event.kind {
             message.mentioned_agent_ids.clear();
         }
+    }
+    if let ProviderEventKind::Message(message) = &mut later_two.kind {
+        message.reply_to_provider_message_id = Some("m1".into());
+    }
+    if let ProviderEventKind::Message(message) = &mut later_three.kind {
+        message.reply_to_provider_message_id = Some("missing-parent".into());
     }
     for event in [
         message(&channel, "chat_a", "m1", "first", &agent_a, "human"),
@@ -432,6 +441,40 @@ async fn scenario(db: &Path) -> Result<(), String> {
         "Runtime and Provider prompts compose into one Agent contract",
     )?;
     ensure(
+        rendered.contains("> 引用消息 [message_id=")
+            && rendered.contains("引用了另一条消息，原消息暂不可用"),
+        "quoted replies and unavailable quotes reach the Harness",
+    )?;
+    let contexts = state_a.runtime_contexts.lock().map_err(err)?.clone();
+    let delivered = &contexts
+        .first()
+        .ok_or("missing Provider context")?
+        .unread_snapshot;
+    let replies = delivered["chats"]
+        .as_array()
+        .ok_or("chats")?
+        .iter()
+        .flat_map(|chat| chat["recent_messages"].as_array().into_iter().flatten())
+        .collect::<Vec<_>>();
+    ensure(
+        replies.iter().any(|message| {
+            message["content"] == "later two"
+                && message["reply_to"]["content"] == "first"
+                && message["reply_to_message_id"].is_i64()
+        }),
+        "structured unread includes the canonical quote",
+    )?;
+    for expected in [
+        include_str!("fixtures/go-character.md"),
+        include_str!("fixtures/go-memory.md"),
+        include_str!("fixtures/go-completion.md"),
+    ] {
+        ensure(
+            assignments[0].system_prompt.contains(expected.trim()),
+            "complete Go behavior contract reaches the Harness",
+        )?;
+    }
+    ensure(
         assignments[0].tools.len() == 8,
         "standard and dynamic tools",
     )?;
@@ -491,10 +534,26 @@ async fn scenario(db: &Path) -> Result<(), String> {
         .await
         .map_err(err)?;
     ensure(tool_first == tool_repeat, "tool callback idempotency")?;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if state_a
+                .log
+                .lock()
+                .map_err(err)?
+                .iter()
+                .any(|v| v == "auto_reaction")
+            {
+                return Ok::<_, String>(());
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .map_err(err)??;
     let log = state_a.log.lock().map_err(err)?.clone();
     ensure(
-        log.iter().position(|v| v == "auto_reaction") < log.iter().position(|v| v == "machine"),
-        "auto reaction precedes dispatch",
+        log.iter().position(|v| v == "auto_reaction") > log.iter().position(|v| v == "machine"),
+        "read acknowledgement follows accepted delivery",
     )?;
     let cursors_after_first = runtime
         .storage()
@@ -1256,6 +1315,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             name: "Attempt Agent".into(),
             role: String::new(),
             bio: String::new(),
+            soul: String::new(),
         }),
         harness: Some(HarnessConfig::default()),
         session: Some(SessionDirective::default()),
@@ -3497,6 +3557,7 @@ fn agent_config(
             name: agent.to_string(),
             role: "tester".into(),
             bio: "runtime e2e".into(),
+            soul: "test".into(),
         },
         machine_id: "fixture-machine".into(),
         harness: HarnessConfig {

@@ -336,6 +336,94 @@ async fn pinned_tls_machine_receives_attachment_over_its_machine_link() -> Resul
 }
 
 #[tokio::test]
+async fn pinned_tls_busy_machine_receives_attachment_steer_without_blocking_responses() -> Result<()>
+{
+    use lankide_client::ManagementClient;
+    let mut settings = config();
+    settings.harness_capabilities.push("steer".into());
+    let mut rig = SystemRig::start(RigConfig {
+        auto_start_machine: false,
+        local_discovery: true,
+        ..settings
+    })
+    .await?;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+    let address = listener.local_addr()?.to_string();
+    drop(listener);
+    let access = rig
+        .management()
+        .set_remote_access(Some(address.clone()))
+        .await?;
+    let code = rig.management().create_pairing_code().await?;
+    lankide_machine::pair_with_pin(
+        &lankide_machine::MachineDaemonPaths::for_home(rig.machine_home())?,
+        &format!("wss://{address}"),
+        &code.code,
+        access.cert_sha256.as_deref(),
+    )
+    .await?;
+    rig.start_paired_machine()?;
+    rig.wait_machine_online().await?;
+    let team = rig.workspace("team").await?;
+    let agent = team
+        .agent("bruce")
+        .harness(Script::reply("seen securely").held())
+        .create()
+        .await?;
+    team.mention(&agent, "images", "alice", "start a held run")
+        .await?;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while agent.harness_inputs()?.is_empty() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        Result::<()>::Ok(())
+    })
+    .await??;
+    let bytes = image(1_200_000);
+    let resource = team.image_message(&agent, "images", bytes.clone()).await?;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while agent.received_steers()?.is_empty()
+            || agent.inbox_states()?.iter().any(|s| s == "pending")
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        Result::<()>::Ok(())
+    })
+    .await??;
+    agent.release_run().await?;
+    rig.settle().await?;
+    let path = agent
+        .resource_directory()?
+        .join(format!("{}-photo.png", resource.resource_id));
+    assert_eq!(std::fs::read(&path)?, bytes);
+    assert_eq!(hash(&std::fs::read(&path)?), resource.sha256);
+    assert_eq!(agent.harness_inputs()?.len(), 1);
+    let steers = agent.received_steers()?;
+    assert_eq!(steers.len(), 1);
+    assert!(steers[0].to_string().contains(path.to_str().unwrap()));
+    assert_eq!(agent.executions().await?.len(), 1);
+    assert!(!path.with_extension("part").exists());
+    assert_eq!(team.outbound(&agent, "images").len(), 1);
+    let http = reqwest::Client::builder()
+        .no_proxy()
+        .danger_accept_invalid_certs(true)
+        .build()?;
+    for path in [
+        format!("/resources/{}", resource.resource_id),
+        format!("/api/v1/resources/{}?workspace=team", resource.resource_id),
+    ] {
+        assert_eq!(
+            http.get(format!("https://{address}{path}"))
+                .send()
+                .await?
+                .status(),
+            404
+        );
+    }
+    rig.close().await
+}
+
+#[tokio::test]
 async fn repeated_attachments_reach_the_same_machine_with_their_own_contents() -> Result<()> {
     let rig = SystemRig::start(config()).await?;
     let team = rig.workspace("team").await?;

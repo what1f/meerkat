@@ -106,6 +106,11 @@ pub trait ProviderHostInstance: sealed::Sealed + Send + Sync {
         agent_id: AgentId,
         spec: AgentRuntimeSpec,
     ) -> ProviderFuture<'_, String>;
+    fn context_index(
+        &self,
+        agent_id: AgentId,
+        spec: AgentRuntimeSpec,
+    ) -> ProviderFuture<'_, String>;
     fn tools(
         &self,
         agent_id: AgentId,
@@ -381,6 +386,15 @@ impl<P: Provider> ProviderHost<P> {
             .system_prompt(self.runtime_context(id, spec))
             .await
     }
+    pub async fn context_index(
+        &self,
+        id: AgentId,
+        spec: AgentRuntimeSpec,
+    ) -> Result<String, ProviderError> {
+        self.provider
+            .context_index(self.runtime_context(id, spec))
+            .await
+    }
     pub async fn tools(
         &self,
         id: AgentId,
@@ -651,6 +665,13 @@ impl<P: Provider> ProviderHostInstance for ProviderHost<P> {
         Box::pin(ProviderHost::system_prompt(self, agent_id, spec))
     }
 
+    fn context_index(
+        &self,
+        agent_id: AgentId,
+        spec: AgentRuntimeSpec,
+    ) -> ProviderFuture<'_, String> {
+        Box::pin(ProviderHost::context_index(self, agent_id, spec))
+    }
     fn tools(
         &self,
         agent_id: AgentId,

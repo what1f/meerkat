@@ -765,6 +765,18 @@ pub(crate) fn agent_runtime_config(
             Ok((channel.clone(), policy))
         })
         .collect::<Result<BTreeMap<_, _>, RuntimeError>>()?;
+    let config_fingerprint = lowercase_sha256(
+        serde_json::json!({
+            "harness": agent.harness_id,
+            "model": agent.model,
+            "thinking": agent.thinking,
+            "cli": agent.cli_path,
+            "environment": agent.env,
+            "launch_arguments": agent.launch_arguments,
+        })
+        .to_string()
+        .as_bytes(),
+    );
     let session = SessionDirective {
         logical_session_id: agent
             .session_config
@@ -777,19 +789,25 @@ pub(crate) fn agent_runtime_config(
             .session_config
             .get("native_session_id")
             .and_then(serde_json::Value::as_str)
-            .map(str::to_owned),
-        config_fingerprint: lowercase_sha256(
-            serde_json::json!({
-                "harness": agent.harness_id,
-                "model": agent.model,
-                "thinking": agent.thinking,
-                "cli": agent.cli_path,
-                "environment": agent.env,
-                "launch_arguments": agent.launch_arguments,
+            .filter(|_| {
+                agent
+                    .session_config
+                    .get("native_session_fingerprint")
+                    .and_then(serde_json::Value::as_str)
+                    .is_none_or(|id| id == config_fingerprint)
+                    && agent
+                        .session_config
+                        .get("native_session_harness")
+                        .and_then(serde_json::Value::as_str)
+                        .is_none_or(|id| id == agent.harness_id)
+                    && agent
+                        .session_config
+                        .get("native_session_machine")
+                        .and_then(serde_json::Value::as_str)
+                        .is_none_or(|id| id == agent.machine_id)
             })
-            .to_string()
-            .as_bytes(),
-        ),
+            .map(str::to_owned),
+        config_fingerprint: config_fingerprint.clone(),
     };
     Ok(AgentRuntimeConfig {
         agent_id: agent.agent_id.clone(),
@@ -817,6 +835,7 @@ pub(crate) fn agent_runtime_config(
             name: agent.name,
             role: agent.role,
             bio: agent.bio,
+            soul: agent.soul,
         },
         machine_id: agent.machine_id,
         harness: HarnessConfig {

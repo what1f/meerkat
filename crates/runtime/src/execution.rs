@@ -1,6 +1,110 @@
 use super::*;
 
 impl Runtime {
+    pub(crate) async fn acknowledge_delivery(&self, execution_id: i64) -> Result<(), RuntimeError> {
+        let execution = self.storage.execution(execution_id).await?;
+        let snapshot = self.storage.snapshot(execution.snapshot_id).await?;
+        for chat in &snapshot.chats {
+            if let Some(message) = chat.recent_messages.last() {
+                self.observe_message(
+                    &snapshot.workspace_id,
+                    &snapshot.agent_id,
+                    &chat.chat.channel_id,
+                    &chat.chat.provider_chat_id,
+                    message.message_id,
+                )
+                .await?;
+            }
+        }
+        Ok(())
+    }
+    pub(crate) async fn observe_message(
+        &self,
+        workspace: &WorkspaceId,
+        agent_id: &AgentId,
+        channel_id: &ChannelId,
+        chat_id: &str,
+        message_id: i64,
+    ) -> Result<(), RuntimeError> {
+        if !self
+            .storage
+            .record_chat_observation(workspace, agent_id, message_id, now_millis())
+            .await?
+        {
+            return Ok(());
+        }
+        let provider = self.provider(workspace)?;
+        let agent = provider.agents.read().await.get(agent_id).cloned();
+        if !provider.channels.read().await.iter().any(|channel| {
+            &channel.id == channel_id && channel.abilities.contains(&ChannelAbility::Reaction)
+        }) {
+            return Ok(());
+        }
+        if let Some(agent) = agent
+            && let Some(auto_reaction) = agent.auto_reaction
+        {
+            let host = self.host(workspace).await?;
+            let spec = AutoReactionSpec {
+                auto_reaction,
+                channel_id: channel_id.clone(),
+                chat_id: chat_id.to_owned(),
+                trigger_messages: vec![
+                    MessageId::new(message_id)
+                        .map_err(|e| RuntimeError::InvalidCore(e.to_string()))?,
+                ],
+                provider_agent_config: agent.provider_agent_config,
+            };
+            let agent_id = agent_id.clone();
+            let mut tasks = self
+                .background_tasks
+                .lock()
+                .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
+            while tasks.try_join_next().is_some() {}
+            tasks.spawn(async move {
+                if let Err(error) = host.auto_reaction(agent_id.clone(), spec).await {
+                    log::error!("[runtime] agent={agent_id} read acknowledgement failed: {error}");
+                }
+            });
+        }
+        Ok(())
+    }
+
+    async fn related_context(&self, snapshot: &SnapshotView) -> Result<String, RuntimeError> {
+        let mut counts = BTreeMap::<String, usize>::new();
+        let mut output = String::new();
+        for (chat, message) in self
+            .storage
+            .observed_chats(&snapshot.workspace_id, &snapshot.agent_id)
+            .await?
+        {
+            if snapshot
+                .chats
+                .iter()
+                .any(|current| current.chat.chat_id == chat.chat_id)
+            {
+                continue;
+            }
+            let count = counts.entry(chat.channel_id.to_string()).or_default();
+            if *count >= 3 {
+                continue;
+            }
+            *count += 1;
+            output.push_str(&format!(
+                "\n- {}（channel_id={}，chat_id={}，最近查看 message_id={}）：{}",
+                chat.chat_name,
+                chat.channel_id,
+                chat.provider_chat_id,
+                message.message_id,
+                message.content.chars().take(80).collect::<String>()
+            ));
+        }
+        if output.is_empty() {
+            Ok(output)
+        } else {
+            Ok(format!("\n\n关联上下文索引（需要时主动读取）：{output}"))
+        }
+    }
+
     /// Builds Provider-owned prompt and capabilities from the same runtime
     /// context that will be sent to Machine.
     pub async fn dynamic_execution_input(
@@ -26,10 +130,12 @@ impl Runtime {
             &agents,
             &provider_prompt,
         );
+        let context_index = host.context_index(agent_id.clone(), spec.clone()).await?;
         let tools = host.tools(agent_id.clone(), spec.clone()).await?;
         let cli_commands = host.cli_commands(agent_id, spec).await?;
         Ok(DynamicExecutionInput {
             system_prompt,
+            context_index,
             tools: tools
                 .into_iter()
                 .map(protocol_tool)
@@ -226,7 +332,12 @@ impl Runtime {
             initial_delivery: Some(Delivery {
                 delivery_id: created.delivery_id,
                 kind: DeliveryKind::Initial as i32,
-                rendered_markdown: render_snapshot(&created.snapshot),
+                rendered_markdown: format!(
+                    "{}{}{}",
+                    render_snapshot(&created.snapshot),
+                    self.related_context(&created.snapshot).await?,
+                    dynamic.context_index
+                ),
                 snapshot_id: created.snapshot_id,
                 trigger_reasons: trigger_reasons(&created.snapshot),
                 resources: snapshot_resources(&created.snapshot),
@@ -280,6 +391,7 @@ impl Runtime {
             self.storage
                 .mark_delivery_delivered(created.delivery_id, now)
                 .await?;
+            self.acknowledge_delivery(created.execution_id).await?;
         }
         match completion.outcome {
             MachineOutcome::Failed { code } => {
@@ -507,6 +619,7 @@ impl Runtime {
 #[derive(Clone, Debug, PartialEq)]
 pub struct DynamicExecutionInput {
     pub system_prompt: String,
+    pub context_index: String,
     pub tools: Vec<ProtocolToolDefinition>,
     pub cli_commands: Vec<CliCommand>,
 }
@@ -704,6 +817,9 @@ fn snapshot_json(snapshot: &SnapshotView) -> serde_json::Value {
 fn message_preview_json(message: &lankide_storage::MessageView) -> serde_json::Value {
     let mut value = message_json(message);
     value["content"] = serde_json::Value::String(truncate_message(&message.content));
+    if let Some(reply) = &message.reply_to {
+        value["reply_to"]["content"] = serde_json::Value::String(truncate_message(&reply.content));
+    }
     value
 }
 
@@ -722,6 +838,9 @@ pub(super) fn message_json(message: &lankide_storage::MessageView) -> serde_json
             "name": message.sender_name,
         },
         "content": message.content,
+        "reply_to_message_id": message.reply_to.as_ref().map(|reply| reply.message_id),
+        "reply_to": message.reply_to.as_ref().map(|reply| message_json(reply)),
+        "reply_unavailable": message.reply_to_provider_message_id.is_some() && message.reply_to.is_none(),
         "resources": message.resources.iter().map(|resource| serde_json::json!({
             "resource_id": resource.resource_id.get(),
             "file_name": resource.file_name,
@@ -767,8 +886,15 @@ fn render_snapshot(snapshot: &SnapshotView) -> String {
                 markdown.push_str(&message.sender_name);
             }
             markdown.push_str(": ");
+            if snapshot.created_at.saturating_sub(message.occurred_at) > 60_000 {
+                markdown.push_str(&format!(
+                    "[原始发送时间={}；此消息并非刚刚发送] ",
+                    message.occurred_at
+                ));
+            }
             markdown.push_str(&truncate_message(&message.content));
             render_attachment_links(&mut markdown, message);
+            render_reply(&mut markdown, message);
         }
         for (reason, message) in chat.trigger_reasons.iter().zip(&chat.trigger_messages) {
             if let DispatchReason::Reaction {
@@ -787,6 +913,7 @@ fn render_snapshot(snapshot: &SnapshotView) -> String {
                     truncate_message(&message.content),
                 ));
                 render_attachment_links(&mut markdown, message);
+                render_reply(&mut markdown, message);
             }
         }
         if chat.unread_count > chat.recent_messages.len() {
@@ -803,10 +930,29 @@ fn render_snapshot(snapshot: &SnapshotView) -> String {
             markdown.push_str("] ");
             markdown.push_str(&truncate_message(&mentioned.content));
             render_attachment_links(&mut markdown, mentioned);
+            render_reply(&mut markdown, mentioned);
         }
     }
     markdown.push_str("\n\n<system-reminder>以上是本轮冻结的未读会话。每个会话只展示最近几条内容；需要完整上下文时，用 chat_messages 主动读取。不要假装已经看过未展示的内容。</system-reminder>");
     markdown
+}
+
+fn render_reply(markdown: &mut String, message: &lankide_storage::MessageView) {
+    if let Some(reply) = &message.reply_to {
+        markdown.push_str(&format!(
+            "\n  > 引用消息 [message_id={}] {}: {}",
+            reply.message_id,
+            if reply.sender_name.trim().is_empty() {
+                &reply.sender_id
+            } else {
+                &reply.sender_name
+            },
+            truncate_message(&reply.content)
+        ));
+        render_attachment_links(markdown, reply);
+    } else if message.reply_to_provider_message_id.is_some() {
+        markdown.push_str("\n  > 引用了另一条消息，原消息暂不可用。不要猜测引用内容。");
+    }
 }
 
 fn render_attachment_links(markdown: &mut String, message: &lankide_storage::MessageView) {
@@ -876,12 +1022,17 @@ fn truncate_message(content: &str) -> String {
 
 fn snapshot_resources(snapshot: &SnapshotView) -> Vec<ResourceRef> {
     let mut resources = BTreeMap::new();
-    for message in snapshot
-        .chats
-        .iter()
-        .flat_map(|chat| chat.recent_messages.iter().chain(&chat.trigger_messages))
-    {
-        for resource in &message.resources {
+    for message in snapshot.chats.iter().flat_map(|chat| {
+        chat.recent_messages
+            .iter()
+            .chain(&chat.trigger_messages)
+            .chain(chat.mentioned_message.iter())
+    }) {
+        for resource in message
+            .resources
+            .iter()
+            .chain(message.reply_to.iter().flat_map(|reply| &reply.resources))
+        {
             resources
                 .entry(resource.resource_id.get())
                 .or_insert_with(|| ResourceRef {

@@ -338,6 +338,10 @@ pub struct HarnessCatalogItem {
     pub description: String,
     pub availability: HarnessAvailability,
     pub supported_thinking_levels: Vec<String>,
+    #[serde(default)]
+    pub default_environment_variables: Vec<EnvironmentVariable>,
+    #[serde(default)]
+    pub default_launch_arguments: Vec<String>,
 }
 
 /// Management inventory uses string enums; Machine link inventory keeps numeric fields.
@@ -352,6 +356,10 @@ pub struct HarnessInfo {
     pub model_catalog: Option<ModelCatalog>,
     pub model_catalog_error: String,
     pub capabilities: Vec<String>,
+    #[serde(default)]
+    pub default_environment_variables: Vec<EnvironmentVariable>,
+    #[serde(default)]
+    pub default_launch_arguments: Vec<String>,
 }
 impl TryFrom<crate::link::HarnessInfo> for HarnessInfo {
     type Error = crate::Status;
@@ -365,6 +373,8 @@ impl TryFrom<crate::link::HarnessInfo> for HarnessInfo {
             model_catalog: value.model_catalog,
             model_catalog_error: value.model_catalog_error,
             capabilities: value.capabilities,
+            default_environment_variables: value.default_environment_variables,
+            default_launch_arguments: value.default_launch_arguments,
         })
     }
 }

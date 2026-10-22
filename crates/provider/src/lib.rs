@@ -83,6 +83,10 @@ pub trait Provider: Send + Sync + 'static {
     fn system_prompt<'a>(&'a self, _: AgentRuntimeContext) -> ProviderFuture<'a, String> {
         Box::pin(async { Ok(String::new()) })
     }
+    /// Bounded per-turn references. Never append these changing values to system_prompt.
+    fn context_index<'a>(&'a self, _: AgentRuntimeContext) -> ProviderFuture<'a, String> {
+        Box::pin(async { Ok(String::new()) })
+    }
     fn tools<'a>(&'a self, _: AgentRuntimeContext) -> ProviderFuture<'a, Vec<ToolDefinition>> {
         Box::pin(async { Ok(Vec::new()) })
     }

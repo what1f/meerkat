@@ -49,7 +49,7 @@ impl ModelRef {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NativeModel {
     pub id: String,
     pub name: String,
@@ -316,6 +316,7 @@ pub enum HarnessErrorCode {
     Unavailable,
     SpawnFailed,
     BindFailed,
+    SessionNotFound,
     InvalidEvent,
     StreamInterrupted,
     InvalidState,
@@ -399,8 +400,32 @@ impl fmt::Display for HarnessError {
 
 impl std::error::Error for HarnessError {}
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct HarnessDefaults {
+    #[serde(default)]
+    pub environment: BTreeMap<String, String>,
+    #[serde(default)]
+    pub launch_arguments: Vec<String>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct HarnessTestPlan {
+    pub request: SessionRequest,
+    pub input: String,
+}
+
 pub trait HarnessFactory: Send + Sync {
     fn info(&self) -> &HarnessInfo;
+    fn defaults(&self) -> HarnessDefaults {
+        HarnessDefaults::default()
+    }
+    fn test<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, HarnessTestPlan> {
+        Box::pin(async move {
+            Ok(HarnessTestPlan {
+                request,
+                input: "Hello! Please reply with a short greeting.".into(),
+            })
+        })
+    }
     fn probe<'a>(&'a self, config: &'a HarnessConfig) -> HarnessFuture<'a, ProbeResult>;
     fn models<'a>(&'a self, _config: &'a HarnessConfig) -> HarnessFuture<'a, Vec<NativeModel>> {
         Box::pin(async {

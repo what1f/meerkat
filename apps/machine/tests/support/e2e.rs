@@ -712,6 +712,7 @@ fn assign(
                 name: agent.into(),
                 role: "worker".into(),
                 bio: String::new(),
+                soul: String::new(),
             }),
             harness: Some(HarnessConfig {
                 launch_arguments: Default::default(),

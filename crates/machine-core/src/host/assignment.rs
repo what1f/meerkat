@@ -288,6 +288,15 @@ async fn prepare_assignment(
     let agent_home = agent_directory(&inner.root, &workspace.workspace_id, &agent.agent_id)?;
     std::fs::create_dir_all(&agent_home)?;
     let agent_home = agent_home.canonicalize()?;
+    // Publish the configured personality verbatim before the Harness loads
+    // workspace instructions. Atomic replacement never follows a file symlink.
+    {
+        use std::io::Write;
+        let mut file = tempfile::NamedTempFile::new_in(&agent_home)?;
+        file.write_all(profile.soul.as_bytes())?;
+        file.persist(agent_home.join("AGENTS.md"))
+            .map_err(|error| MachineError::Io(error.error))?;
+    }
     let context = AgentRunContext {
         execution: Some(execution.clone()),
         execution_token: assign.execution_token.clone(),
@@ -314,6 +323,7 @@ async fn prepare_assignment(
         let path = crate::resolve_content_file(&agent_home, file)?;
         input = std::fs::read_to_string(path)?;
     }
+    preload_memory_index(&agent_home, &mut input)?;
     let default_config = inner
         .defaults
         .get(&wire_config.harness_id)
@@ -326,7 +336,8 @@ async fn prepare_assignment(
         &execution,
         &mut native_config,
     )?;
-    let proxy = super::proxy::AttemptProxy::start(inner.clone(), context.clone())?;
+    let proxy =
+        super::proxy::AttemptProxy::start(inner.clone(), context.clone(), agent_home.clone())?;
     native_config
         .environment
         .retain(|key, _| !key.starts_with("LANKIDE_RUNTIME_"));
@@ -401,10 +412,12 @@ async fn prepare_assignment(
             None
         },
     };
+    let mut context_lost = false;
     let session = if resume {
         match factory.resume(request.clone()).await {
             Ok(session) => session,
-            Err(error) if error.code == HarnessErrorCode::InvalidState => {
+            Err(error) if error.code == HarnessErrorCode::SessionNotFound => {
+                context_lost = true;
                 factory
                     .start(SessionRequest {
                         native_session_id: None,
@@ -419,6 +432,9 @@ async fn prepare_assignment(
     };
     let session: Arc<dyn HarnessSession> = session.into();
     let entry = session.entry();
+    if context_lost {
+        input.insert_str(0, "<system-reminder>此前原生会话无法恢复。请读取本轮记忆索引，并按需查询持久化消息、任务记录；不要假装记得未恢复的内容。</system-reminder>\n\n");
+    }
     let stream = match session.execute(ExecuteRequest { input }).await {
         Ok(stream) => stream,
         Err(error) => {
@@ -457,6 +473,7 @@ async fn prepare_assignment(
     let started = tokio::time::Instant::now();
     let (progress_tx, progress_rx) = watch::channel(started);
     let (terminated_tx, terminated_rx) = watch::channel(None);
+    let delivery_lock = Arc::new(tokio::sync::Mutex::new(()));
     let can_cancel = capabilities.contains(&lankide_harness::HarnessCapability::Cancel);
     inner.active.lock().await.insert(
         key.clone(),
@@ -469,6 +486,8 @@ async fn prepare_assignment(
             session: session.clone(),
             agent_home: agent_home.clone(),
             context: context.clone(),
+            delivery_lock: delivery_lock.clone(),
+            accepting_deliveries: true,
             accepting_tool_results: true,
             last_event_sequence: 0,
         },
@@ -521,6 +540,7 @@ async fn prepare_assignment(
         session,
         stream,
         terminated_rx,
+        delivery_lock,
         proxy,
     ));
     Ok(())
@@ -604,4 +624,43 @@ fn public_error(error: &MachineError) -> String {
         MachineError::Harness(error) => error.failure.detail.clone(),
         _ => "The execution could not be prepared".into(),
     }
+}
+
+/// Restore the Go input contract: reload only the bounded memory index each turn.
+fn preload_memory_index(agent_home: &Path, input: &mut String) -> Result<(), MachineError> {
+    use std::io::Read;
+    const MAX_BYTES: usize = 4 * 1024;
+    let index = agent_home.join("memory/MEMORY.md");
+    if !index.try_exists()? {
+        return Ok(());
+    }
+    let index = crate::resolve_content_file(agent_home, "memory/MEMORY.md")?;
+    let mut bytes = Vec::new();
+    std::fs::File::open(index)?
+        .take((MAX_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    let truncated = bytes.len() > MAX_BYTES;
+    bytes.truncate(MAX_BYTES);
+    // Cut on a UTF-8 boundary rather than introducing a broken trailing character.
+    while std::str::from_utf8(&bytes).is_err_and(|error| error.error_len().is_none()) {
+        bytes.pop();
+    }
+    let index = std::str::from_utf8(&bytes)
+        .map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "memory index must be valid UTF-8",
+            )
+        })?
+        .trim();
+    if index.is_empty() {
+        return Ok(());
+    }
+    input.push_str("\n\n<system-reminder>\n你的长期记忆索引（memory/MEMORY.md）：\n");
+    input.push_str(index);
+    if truncated {
+        input.push_str("\n\n索引超过本轮预载上限，这里只显示前缀。需要时直接读取 memory/MEMORY.md 及其指向的详细文件。");
+    }
+    input.push_str("\n要长期记住新事实，必须实际写入 memory/<topic>.md，并在 memory/MEMORY.md 更新一行自足的索引；只在回复中说‘记住了’不会持久化。不要写入密码、令牌或密钥。\n当前消息、任务或用户明确说明的新事实与记忆冲突时，以当前可验证状态为准，并更新过时记忆。\n</system-reminder>");
+    Ok(())
 }

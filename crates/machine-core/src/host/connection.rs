@@ -231,12 +231,28 @@ async fn pump_link<
 }
 
 async fn make_hello(inner: &Inner) -> MachineHello {
-    let harnesses = STANDARD_HARNESS_IDS
+    let mut ids: Vec<&str> = STANDARD_HARNESS_IDS.to_vec();
+    let mut extra: Vec<_> = inner
+        .factories
+        .keys()
+        .map(String::as_str)
+        .filter(|id| !ids.contains(id))
+        .collect();
+    extra.sort_unstable();
+    ids.extend(extra);
+    let harnesses = ids
         .iter()
         .map(|id| {
             let factory = inner.factories.get(*id);
             let probe = inner.probes.get(*id);
+            let defaults = factory.map(|f| f.defaults()).unwrap_or_default();
             HarnessInfo {
+                default_environment_variables: defaults
+                    .environment
+                    .into_iter()
+                    .map(|(name, value)| lankide_protocol::EnvironmentVariable { name, value })
+                    .collect(),
+                default_launch_arguments: defaults.launch_arguments,
                 capabilities: probe
                     .map(|probe| {
                         probe
@@ -342,7 +358,11 @@ async fn dispatch(
             tasks.push(task);
         }
         Some(runtime_frame::Frame::DeliverSteer(steer)) => {
-            handle_steer(&inner, steer).await;
+            let task_inner = inner.clone();
+            let task = tokio::spawn(async move { handle_steer(&task_inner, steer).await });
+            let mut tasks = inner.assignment_tasks.lock().await;
+            tasks.retain(|task| !task.is_finished());
+            tasks.push(task);
         }
         Some(runtime_frame::Frame::CancelExecution(cancel)) => {
             handle_cancel(&inner, cancel.execution, cancel.reason, cancel.force_close).await;
@@ -382,6 +402,8 @@ async fn dispatch(
                 let mut state = inner.state.lock().await;
                 state.pending_events.remove(&key);
                 state.accepted_assignments.remove(&key);
+                state.accepted_steers.remove(&key);
+                state.uploaded_resources.remove(&key);
                 state.save(&inner.state_path)?;
             }
         }

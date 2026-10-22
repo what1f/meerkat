@@ -70,6 +70,15 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                 ("NATIVE_START_RECORD".into(), record.display().to_string()),
                 ("PI_NATIVE_FAULT".into(), "success".into()),
                 (
+                    "PI_TEST_VERSION".into(),
+                    if existing_native_skills {
+                        "0.99.0"
+                    } else {
+                        "0.83.0"
+                    }
+                    .into(),
+                ),
+                (
                     "PI_CODING_AGENT_DIR".into(),
                     native_config.display().to_string(),
                 ),
@@ -109,6 +118,8 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
         );
         for run in 0..2 {
             if run == 1 {
+                fs::write(native_config.join("settings.json"), "{\"user_setting\":2}")?;
+                fs::write(native_config.join("config.toml"), "# refreshed settings\n")?;
                 fs::create_dir_all(agent.join("skills/new-skill"))?;
                 fs::write(
                     agent.join("skills/new-skill/SKILL.md"),
@@ -122,12 +133,15 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                     working_directory: agent.clone(),
                     system_prompt: "Follow the project instructions.".into(),
                     native_session_id: None,
-                    tools: vec![ToolDefinition {
-                        name: "report".into(),
-                        description: "Report the result.".into(),
-                        input_schema: json!({"type":"object"}),
-                        output_schema: json!({"type":"object"}),
-                    }],
+                    tools: ["report", "message_send", "attention_set", "chat_messages"]
+                        .into_iter()
+                        .map(|name| ToolDefinition {
+                            name: name.into(),
+                            description: format!("Use {name}"),
+                            input_schema: json!({"type":"object"}),
+                            output_schema: json!({"type":"object"}),
+                        })
+                        .collect(),
                 })
                 .await?;
             let mut events = session
@@ -145,6 +159,19 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
             })
             .await??;
             session.close().await?;
+            let private = agent.join(".lankide").join(id).join("native-home");
+            let settings = if id == "codex" {
+                "config.toml"
+            } else {
+                "settings.json"
+            };
+            assert_eq!(
+                fs::read_to_string(private.join(settings))?,
+                fs::read_to_string(native_config.join(settings))?
+            );
+            assert!(!native_config.join("sessions").exists());
+            assert!(!native_config.join("projects").exists());
+            assert!(!native_config.join("skills/bug-triage").exists());
             assert_eq!(
                 fs::read_to_string(native_skills.join("bug-triage/SKILL.md"))?,
                 skill
@@ -191,14 +218,14 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                     ] {
                         assert!(!argv.contains(&flag));
                     }
-                    for flag in ["--no-extensions", "--extension", "--no-themes"] {
+                    for flag in ["--extension", "--no-themes"] {
                         assert!(argv.contains(&flag));
                     }
                     let index = argv.iter().position(|arg| *arg == "--skill").unwrap();
                     assert_eq!(Path::new(argv[index + 1]), agent.join("skills"));
                     assert_eq!(
                         launch["environment"]["PI_CODING_AGENT_DIR"].as_str(),
-                        native_config.to_str()
+                        agent.join(".lankide").join(id).join("native-home").to_str()
                     );
                 }
                 "claude_code" => {
@@ -206,23 +233,27 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                         .iter()
                         .position(|arg| *arg == "--permission-mode")
                         .unwrap();
+                    assert_eq!(launch["environment"]["ENABLE_TOOL_SEARCH"], "true");
                     assert_eq!(argv[index + 1], "bypassPermissions");
                     assert!(!argv.contains(&"--setting-sources"));
                     assert!(!argv.contains(&"--strict-mcp-config"));
                     assert!(!argv.contains(&"--allowedTools"));
+                    assert!(argv.contains(&"--append-system-prompt"));
+                    assert!(!argv.contains(&"--system-prompt"));
                     let index = argv.iter().position(|arg| *arg == "--mcp-config").unwrap();
                     let mcp: Value = serde_json::from_str(&fs::read_to_string(argv[index + 1])?)?;
                     assert!(mcp["mcpServers"]["lankide"].is_object());
+                    assert_eq!(mcp["mcpServers"]["lankide"]["alwaysLoad"], true);
                     assert_eq!(
                         launch["environment"]["CLAUDE_CONFIG_DIR"].as_str(),
-                        native_config.to_str()
+                        agent.join(".lankide").join(id).join("native-home").to_str()
                     );
                 }
                 "codex" => {
                     assert_eq!(argv, ["app-server", "--listen", "stdio://"]);
                     assert_eq!(
                         launch["environment"]["CODEX_HOME"].as_str(),
-                        native_config.to_str()
+                        agent.join(".lankide").join(id).join("native-home").to_str()
                     );
                 }
                 _ => unreachable!(),
@@ -241,6 +272,59 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                 assert_eq!(params["sandbox"], "danger-full-access");
                 assert!(params.get("permissions").is_none());
                 assert_eq!(params["dynamicTools"][0]["name"], "report");
+                assert_eq!(params["dynamicTools"][0]["deferLoading"], true);
+                for tool in params["dynamicTools"].as_array().unwrap().iter().skip(1) {
+                    assert_eq!(tool["deferLoading"], false);
+                }
+            }
+        }
+        if id == "claude_code" {
+            for entry in recorded.iter().filter(|v| v.get("mcp_tools").is_some()) {
+                let tools = entry["mcp_tools"].as_array().unwrap();
+                assert_eq!(tools.len(), 4);
+                for tool in tools {
+                    assert_eq!(
+                        tool["_meta"]["anthropic/alwaysLoad"],
+                        tool["name"] != "report"
+                    );
+                }
+            }
+            assert_eq!(
+                recorded
+                    .iter()
+                    .filter(|v| v.get("mcp_tools").is_some())
+                    .count(),
+                2
+            );
+        }
+        if id == "pi" {
+            let probes: Vec<_> = recorded
+                .iter()
+                .filter(|v| v.get("extension_tools").is_some())
+                .collect();
+            assert_eq!(probes.len(), 2);
+            for probe in probes {
+                let tools = probe["extension_tools"].as_array().unwrap();
+                assert_eq!(tools.len(), 4);
+                if existing_native_skills {
+                    assert!(
+                        tools
+                            .iter()
+                            .any(|t| t["name"] == "lankide_0_report" && t["exposure"] == "deferred")
+                    );
+                    assert!(
+                        probe["active"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .any(|t| t == "tool_search")
+                    );
+                } else {
+                    assert!(tools.iter().all(|t| t["name"] != "lankide_0_report"));
+                    assert_eq!(probe["discovered"][0]["name"], "report");
+                    assert_eq!(probe["described"]["input_schema"]["type"], "object");
+                    assert_eq!(probe["invoked"]["tool_name"], "report");
+                }
             }
         }
         if id == "pi" {
@@ -272,7 +356,7 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
         }
         assert_eq!(
             fs::read_to_string(native_config.join("config.toml"))?,
-            "# project settings\n"
+            "# refreshed settings\n"
         );
     }
     Ok(())

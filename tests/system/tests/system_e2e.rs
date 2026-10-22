@@ -73,7 +73,8 @@ async fn s7_1_a_message_received_without_steer_waits_for_the_next_run() -> Resul
             .iter()
             .all(|reply| reply.kind == OutboundKind::Reply)
     );
-    assert_ne!(replies[0].reply_to, replies[1].reply_to);
+    assert_eq!(replies[0].reply_to.as_deref(), Some("incoming-1"));
+    assert_eq!(replies[1].reply_to.as_deref(), Some("incoming-2"));
     let executions = bruce.executions().await?;
     assert_eq!(executions.len(), 2, "{executions:?}");
     assert_eq!(executions[0].trigger_messages, ["first"]);
@@ -86,6 +87,64 @@ async fn s7_1_a_message_received_without_steer_waits_for_the_next_run() -> Resul
         executions
             .iter()
             .all(|execution| execution.state == "succeeded")
+    );
+    rig.close().await
+}
+
+#[tokio::test]
+async fn human_mentions_and_direct_messages_steer_one_active_run_without_replay() -> Result<()> {
+    let mut settings = config();
+    settings.harness_capabilities.push("steer".into());
+    let rig = SystemRig::start(settings).await?;
+    let team = rig.workspace("team").await?;
+    let agent = team
+        .agent("clark")
+        .harness(Script::reply("done").held())
+        .create()
+        .await?;
+    agent
+        .group_attention(lankide_protocol::AttentionMode::Always)
+        .await?;
+    team.mention(&agent, "group", "alice", "start working")
+        .await?;
+    agent.wait_until_running().await?;
+    team.mention(&agent, "group", "alice", "adjust the task")
+        .await?;
+    team.direct_message(&agent, "alice", "check the private note too")
+        .await?;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if agent.received_steers()?.len() == 2
+                && agent.inbox_states()?.iter().all(|state| state != "pending")
+            {
+                break Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await??;
+    let steers = agent.received_steers()?;
+    assert!(
+        steers
+            .iter()
+            .any(|value| value["input"].as_str().unwrap().contains("adjust the task"))
+    );
+    assert!(steers.iter().any(|value| {
+        value["input"]
+            .as_str()
+            .unwrap()
+            .contains("check the private note too")
+    }));
+    agent.release_run().await?;
+    rig.settle().await?;
+    assert_eq!(agent.executions().await?.len(), 1);
+    assert_eq!(agent.received_steers()?.len(), 2);
+    assert_eq!(team.outbound(&agent, "group").len(), 1);
+    assert!(
+        agent
+            .inbox_states()?
+            .iter()
+            .all(|state| state == "consumed")
     );
     rig.close().await
 }
@@ -556,5 +615,59 @@ async fn canonical_agent_messages_use_display_names_and_platform_echoes_do_not_w
         "platform echo must not wake the recipient again"
     );
     assert_eq!(a.harness_inputs()?.len(), 1, "sender must not wake itself");
+    rig.close().await
+}
+
+#[tokio::test]
+async fn accepted_steer_keeps_an_undelivered_group_message_for_the_next_run() -> Result<()> {
+    let mut settings = config();
+    settings.harness_capabilities.push("steer".into());
+    let rig = SystemRig::start(settings).await?;
+    let team = rig.workspace("team").await?;
+    let agent = team
+        .agent("clark")
+        .harness(Script::reply("done").held())
+        .create()
+        .await?;
+    agent
+        .group_attention(lankide_protocol::AttentionMode::Always)
+        .await?;
+    team.mention(&agent, "group", "alice", "start working")
+        .await?;
+    agent.wait_until_running().await?;
+    team.group_message("group", "alice", "ordinary message still needs handling")
+        .await?;
+    team.mention(&agent, "group", "alice", "urgent adjustment")
+        .await?;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let states = agent.inbox_states()?;
+            if agent.received_steers()?.len() == 1
+                && states.last().is_some_and(|s| s == "delivered")
+            {
+                assert_eq!(states[1], "pending");
+                break Result::<()>::Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await??;
+    agent.release_run().await?;
+    rig.settle().await?;
+    let runs = agent.executions().await?;
+    assert_eq!(runs.len(), 2);
+    assert_eq!(
+        runs[1].trigger_messages,
+        ["ordinary message still needs handling"]
+    );
+    let inputs = agent.harness_inputs()?;
+    assert_eq!(inputs.len(), 2);
+    assert!(inputs[1].contains("ordinary message still needs handling"));
+    assert!(
+        !inputs[1].contains("urgent adjustment"),
+        "accepted steer became unread again"
+    );
+    assert_eq!(agent.received_steers()?.len(), 1);
+    assert!(agent.inbox_states()?.iter().all(|s| s == "consumed"));
     rig.close().await
 }

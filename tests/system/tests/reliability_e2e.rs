@@ -261,6 +261,82 @@ async fn lost_initial_delivery_receipt_replays_completion_without_rerun() -> Res
 }
 
 #[tokio::test]
+async fn lost_steer_receipt_replays_before_completion_without_rerun() -> Result<()> {
+    let mut settings = config();
+    settings.harness_capabilities.push("steer".into());
+    let rig = SystemRig::start(RigConfig {
+        network_proxy: true,
+        local_discovery: false,
+        ..settings
+    })
+    .await?;
+    let team = rig.workspace("team").await?;
+    let agent = team
+        .agent("bruce")
+        .harness(Script::ReplyBeforeTerminal {
+            text: "done".into(),
+        })
+        .create()
+        .await?;
+    let proxy = rig.proxy.as_ref().unwrap();
+    team.direct_message(&agent, "alice", "hello").await?;
+    agent
+        .wait_for(|runs, _| runs.len() == 1 && runs[0].state == "running")
+        .await?;
+    wait(async || {
+        if agent.harness_inputs()?.is_empty() {
+            return Ok(false);
+        }
+        Ok(agent
+            .native_controls()?
+            .iter()
+            .any(|c| c["op"] == "reply_sent"))
+    })
+    .await?;
+    wait(async || Ok(agent.inbox_states()?.iter().all(|s| s == "delivered"))).await?;
+    proxy.discard_machine_frame("delivery_result");
+    team.direct_message(&agent, "alice", "additional human instruction")
+        .await?;
+    wait(async || Ok(agent.received_steers()?.len() == 1)).await?;
+    wait(async || {
+        Ok(rig.machine_state()?["accepted_steers"]
+            .as_object()
+            .is_some_and(|receipts| !receipts.is_empty()))
+    })
+    .await?;
+    assert_eq!(agent.inbox_states()?.last().unwrap(), "pending");
+    proxy.cut();
+    wait(async || Ok(!rig.machine_online().await?)).await?;
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    agent.release_run().await?;
+    wait(async || {
+        Ok(rig.machine_state()?["pending_events"]
+            .as_object()
+            .unwrap()
+            .values()
+            .any(|events| {
+                events
+                    .as_object()
+                    .unwrap()
+                    .values()
+                    .any(|e| e["kind"] == lankide_protocol::ExecutionEventKind::Completed as i32)
+            }))
+    })
+    .await?;
+    proxy.restore();
+    rig.settle().await?;
+    assert_eq!(
+        team.dm_transcript(&agent, "alice"),
+        ["hello", "done", "additional human instruction"]
+    );
+    assert_eq!(agent.received_steers()?.len(), 1);
+    assert!(agent.inbox_states()?.iter().all(|s| s == "consumed"));
+    assert_eq!(agent.executions().await?.len(), 1);
+    assert_eq!(agent.harness_inputs()?.len(), 1);
+    rig.close().await
+}
+
+#[tokio::test]
 async fn runtime_crash_during_preparation_releases_batch_for_next_run() -> Result<()> {
     let mut rig = SystemRig::start(config()).await?;
     let gate = rig.hold_preparation();

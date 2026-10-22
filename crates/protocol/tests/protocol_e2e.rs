@@ -1184,6 +1184,8 @@ fn machine_hello() -> MachineHello {
         os: "macos".into(),
         arch: "aarch64".into(),
         harnesses: vec![HarnessInfo {
+            default_environment_variables: Vec::new(),
+            default_launch_arguments: Vec::new(),
             capabilities: vec!["resume".into(), "steer".into(), "cancel".into()],
             model_catalog: None,
             model_catalog_error: String::new(),
@@ -1243,6 +1245,7 @@ fn assignment() -> AssignExecution {
             name: "Researcher".into(),
             role: "Analyst".into(),
             bio: "Finds primary evidence".into(),
+            soul: "Keep the original personality.\n".into(),
         }),
         harness: Some(HarnessConfig {
             launch_arguments: Default::default(),

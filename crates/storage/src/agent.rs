@@ -172,6 +172,7 @@ fn delete_agent_state(
         "unread_snapshots",
         "agent_inbox_items",
         "agent_chat_cursors",
+        "agent_chat_observations",
         "agent_chat_attention",
         "chat_receivers",
         "agent_named_secrets",

@@ -29,6 +29,7 @@ pub(super) async fn run_events(
     session: Arc<dyn HarnessSession>,
     mut stream: lankide_harness::AgentEventStream,
     mut terminated: tokio::sync::watch::Receiver<Option<AgentEventKind>>,
+    delivery_lock: Arc<tokio::sync::Mutex<()>>,
     proxy: super::proxy::AttemptProxy,
 ) {
     let mut last_sequence = 0_u64;
@@ -92,6 +93,16 @@ pub(super) async fn run_events(
                     }
                 }
 
+                if let AgentEventKind::NativeSessionBound { native_session_id } = &event.kind {
+                    let mut state = inner.state.lock().await;
+                    if let Some(entry) = state.sessions.get_mut(&session_key) {
+                        entry.native_session_id = native_session_id.clone();
+                    }
+                    if let Err(error) = state.save(&inner.state_path) {
+                        stop_after_persistence_failure(&inner, &error);
+                        return;
+                    }
+                }
                 last_sequence += 1;
                 event.sequence = last_sequence;
                 if let Some(active) = inner.active.lock().await.get_mut(&key) {
@@ -177,6 +188,12 @@ pub(super) async fn run_events(
             }
         }
     }
+    // Publish accepted delivery receipts before the terminal event so Runtime
+    // commits the expanded message boundary, even when steer finishes the run.
+    let _delivery_guard = delivery_lock.lock().await;
+    if let Some(active) = inner.active.lock().await.get_mut(&key) {
+        active.accepting_deliveries = false;
+    }
     if inner
         .active
         .lock()
@@ -256,6 +273,14 @@ async fn emit_event(
     event: &AgentEvent,
 ) -> std::io::Result<()> {
     let (kind, mut payload) = protocol_event(event);
+    if matches!(event.kind, AgentEventKind::NativeSessionBound { .. }) {
+        if let Some(active) = inner.active.lock().await.get(key) {
+            let entry = active.session.entry();
+            let mut value: serde_json::Value = serde_json::from_slice(&payload)?;
+            value["config_fingerprint"] = entry.config_fingerprint.into();
+            payload = serde_json::to_vec(&value)?;
+        }
+    }
     let failure = match &event.kind {
         AgentEventKind::Failed {
             failure: Some(failure),

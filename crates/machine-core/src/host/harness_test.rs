@@ -70,23 +70,23 @@ async fn test(
                 .prefix("lankide-harness-test-")
                 .tempdir()?,
         );
+        let plan = factory
+            .test(SessionRequest {
+                permission_policy: PermissionPolicy::FullAccess,
+                config,
+                working_directory: directory
+                    .as_ref()
+                    .expect("test directory")
+                    .path()
+                    .to_path_buf(),
+                system_prompt: "Reply briefly to the greeting. Do not use tools.".into(),
+                tools: Vec::new(),
+                native_session_id: None,
+            })
+            .await?;
         session = Some(
             factory
-                .start_before(
-                    SessionRequest {
-                        permission_policy: PermissionPolicy::FullAccess,
-                        config,
-                        working_directory: directory
-                            .as_ref()
-                            .expect("test directory")
-                            .path()
-                            .to_path_buf(),
-                        system_prompt: "Reply briefly to the greeting. Do not use tools.".into(),
-                        tools: Vec::new(),
-                        native_session_id: None,
-                    },
-                    deadline.into_std(),
-                )
+                .start_before(plan.request, deadline.into_std())
                 .await?,
         );
         if tokio::time::Instant::now() >= deadline {
@@ -95,9 +95,7 @@ async fn test(
         let mut events = session
             .as_ref()
             .expect("test session")
-            .execute(ExecuteRequest {
-                input: "Hello! Please reply with a short greeting.".into(),
-            })
+            .execute(ExecuteRequest { input: plan.input })
             .await?;
         while let Some(event) = events.next().await {
             match event?.kind {

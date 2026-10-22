@@ -46,7 +46,8 @@ Usage:
   ./scripts/reset-agent-context.sh [options]
 
 Reset one Rust Lankide workspace so the next Agent turn starts without local
-conversation, unread, execution, tool, attachment, or Harness session history.
+conversation, long-term memory, unread, execution, tool, attachment, or Harness
+session history.
 
 Options:
   -H, --home PATH       Lankide home to reset. If omitted, use LANKIDE_HOME or
@@ -280,7 +281,7 @@ validate_database() {
   if ! schema_version="$(sqlite3 -readonly "$database" "PRAGMA user_version;" 2>/dev/null)"; then
     die "could not read Runtime database: $database"
   fi
-  [ "$schema_version" = "1" ] || die "unsupported Runtime database schema $schema_version; this reset contract requires schema 1"
+  [ "$schema_version" = "2" ] || die "unsupported Runtime database schema $schema_version; this reset contract requires schema 2"
 
   if ! integrity="$(sqlite3 -readonly "$database" "PRAGMA integrity_check;" 2>/dev/null)"; then
     die "could not check Runtime database integrity: $database"
@@ -290,7 +291,7 @@ validate_database() {
   for table in \
     workspaces workspace_named_secrets agent_named_secrets provider_kv \
     resource_metadata workspace_resource_counters agents agent_file_deletions people channels chats messages reactions \
-    agent_inbox_items agent_chat_cursors agent_chat_attention unread_snapshots \
+    agent_inbox_items agent_chat_cursors agent_chat_attention agent_chat_observations unread_snapshots \
     unread_snapshot_chats unread_snapshot_messages unread_snapshot_triggers executions \
     execution_attempts execution_events steer_deliveries execution_attempt_authorizations \
     execution_attempt_capabilities execution_deliveries execution_delivery_items \
@@ -317,10 +318,10 @@ load_workspace_records() {
   agent_ids="$(printf '%s' "$agent_records_json" | jq -r '.[].agent_id')"
 
   target_execution_ids_json="$(sqlite3 -readonly -json "$database" \
-    "SELECT execution_id FROM executions WHERE workspace_id='$workspace_id' ORDER BY execution_id;" | jq -c '[.[].execution_id]')"
+    "SELECT execution_id FROM executions WHERE workspace_id='$workspace_id' ORDER BY execution_id;" | jq -sc '[.[][] | .execution_id]')"
 
   keep_resource_ids_json="$(sqlite3 -readonly -json "$database" \
-    "SELECT DISTINCT resource_id FROM resource_metadata WHERE workspace_id='$workspace_id' AND (resource_id=(SELECT cover_resource_id FROM workspaces WHERE workspace_id='$workspace_id') OR resource_id IN (SELECT CAST(avatar AS INTEGER) FROM agents WHERE workspace_id='$workspace_id' AND avatar IS NOT NULL AND avatar <> '' AND avatar NOT GLOB '*[^0-9]*')) ORDER BY resource_id;" | jq -c '[.[].resource_id]')"
+    "SELECT DISTINCT resource_id FROM resource_metadata WHERE workspace_id='$workspace_id' AND (resource_id=(SELECT cover_resource_id FROM workspaces WHERE workspace_id='$workspace_id') OR resource_id IN (SELECT CAST(avatar AS INTEGER) FROM agents WHERE workspace_id='$workspace_id' AND avatar IS NOT NULL AND avatar <> '' AND avatar NOT GLOB '*[^0-9]*') OR resource_id IN (SELECT json_extract(avatar_json,'\$.resource_id') FROM people WHERE workspace_id='$workspace_id' AND avatar_json IS NOT NULL)) ORDER BY resource_id;" | jq -sc '[.[][] | .resource_id]')"
   keep_resource_ids="$(printf '%s' "$keep_resource_ids_json" | jq -r '.[]')"
   keep_resource_names="$keep_resource_ids"
   avatar_values_json="$(sqlite3 -readonly -json "$database" \
@@ -401,7 +402,7 @@ validate_filesystem_scope() {
 
   for agent_id in $agent_ids; do
     agent_home="$workspace_root/agents/$agent_id"
-    for path in "$agent_home/.lankide" "$agent_home/resources" "$agent_home/tool-results"; do
+    for path in "$agent_home/.lankide" "$agent_home/resources" "$agent_home/tool-results" "$agent_home/memory"; do
       if [ -e "$path" ] || [ -L "$path" ]; then
         reject_symlink "$path"
       fi
@@ -414,15 +415,34 @@ workspace_sql() {
 }
 
 configuration_hash() {
-  sqlite3 -readonly "$database" <<'SQL' | shasum -a 256 | awk '{print $1}'
+  local agent_columns
+  # Bindings and execution failures are disposable state. Hash all settings
+  # and every field belonging to other workspaces.
+  agent_columns="$(sqlite3 "$database" "SELECT group_concat(CASE
+    WHEN name='session_config_json' THEN
+      'CASE WHEN workspace_id=' || quote($(workspace_sql)) || ' THEN json_remove(session_config_json,
+       ''\$.native_session_id'', ''\$.native_session_harness'',
+       ''\$.native_session_machine'', ''\$.native_session_fingerprint'')
+       ELSE session_config_json END'
+    WHEN name IN ('pause_reason','failure_fingerprint') THEN
+      'CASE WHEN workspace_id=' || quote($(workspace_sql)) || ' THEN NULL ELSE ' || name || ' END'
+    WHEN name='failure_streak' THEN
+      'CASE WHEN workspace_id=' || quote($(workspace_sql)) || ' THEN 0 ELSE failure_streak END'
+    ELSE '\"' || replace(name, '\"', '\"\"') || '\"' END, ',')
+    FROM pragma_table_info('agents');")" || die "could not inspect Agent configuration columns"
+  [ -n "$agent_columns" ] || die "Agent configuration columns are missing"
+  {
+    sqlite3 -readonly "$database" <<'SQL'
 .dump workspaces
 .dump workspace_named_secrets
 .dump agent_named_secrets
 .dump provider_kv
 .dump workspace_resource_counters
-.dump agents
 .dump people
 SQL
+    sqlite3 -readonly -quote "$database" \
+      "SELECT $agent_columns FROM agents ORDER BY workspace_id,agent_id;"
+  } | shasum -a 256 | awk '{print $1}'
 }
 
 resource_configuration_hash() {
@@ -711,6 +731,7 @@ quarantine_agent_files() {
     move_path_to_backup "$agent_home/.lankide" "$backup_agent/.lankide"
     move_path_to_backup "$agent_home/resources" "$backup_agent/resources"
     move_path_to_backup "$agent_home/tool-results" "$backup_agent/tool-results"
+    move_path_to_backup "$agent_home/memory" "$backup_agent/memory"
     if [ -d "$backup_agent/.lankide" ]; then
       mkdir -p "$agent_home/.lankide"
       chmod 700 "$agent_home/.lankide"
@@ -718,6 +739,10 @@ quarantine_agent_files() {
     if [ -d "$backup_agent/resources" ]; then
       mkdir -p "$agent_home/resources"
       chmod 700 "$agent_home/resources"
+    fi
+    if [ -d "$backup_agent/memory" ]; then
+      mkdir -p "$agent_home/memory"
+      chmod 700 "$agent_home/memory"
     fi
     if [ -d "$backup_agent/tool-results" ]; then
       mkdir -p "$agent_home/tool-results"
@@ -771,6 +796,8 @@ clear_machine_state() {
         | if has("accepted_assignments") then
             .accepted_assignments |= with_entries(select(selected_execution))
           else . end
+        | if has("accepted_steers") then .accepted_steers |= with_entries(select(selected_execution)) else . end
+        | if has("uploaded_resources") then .uploaded_resources |= with_entries(select(selected_execution)) else . end
         | if has("pending_events") then
             .pending_events |= with_entries(select(selected_execution))
           else . end
@@ -822,13 +849,21 @@ DELETE FROM unread_snapshot_chats
 DELETE FROM unread_snapshots WHERE workspace_id=$w;
 DELETE FROM agent_inbox_items WHERE workspace_id=$w;
 DELETE FROM reactions WHERE workspace_id=$w;
+DELETE FROM agent_chat_observations WHERE workspace_id=$w;
 DELETE FROM agent_chat_cursors WHERE workspace_id=$w;
 DELETE FROM agent_chat_attention WHERE workspace_id=$w;
 DELETE FROM messages
  WHERE EXISTS (SELECT 1 FROM chats c WHERE c.chat_id=messages.chat_id AND c.workspace_id=$w);
+DELETE FROM chat_receivers
+ WHERE EXISTS (SELECT 1 FROM chats c WHERE c.chat_id=chat_receivers.chat_id AND c.workspace_id=$w);
 DELETE FROM chats WHERE workspace_id=$w;
 DELETE FROM channels WHERE workspace_id=$w;
 DELETE FROM resource_metadata WHERE workspace_id=$w AND resource_id NOT IN ($resource_ids_sql);
+UPDATE agents SET session_config_json=json_remove(session_config_json,
+ '\$.native_session_id', '\$.native_session_harness',
+ '\$.native_session_machine', '\$.native_session_fingerprint'),
+ pause_reason=NULL, failure_fingerprint=NULL, failure_streak=0
+ WHERE workspace_id=$w;
 COMMIT;
 PRAGMA wal_checkpoint(TRUNCATE);
 VACUUM;
@@ -863,10 +898,10 @@ verify_workspace_files() {
   local agent_id agent_home target_resources entry name
   for agent_id in $agent_ids; do
     agent_home="$workspace_root/agents/$agent_id"
-    for target_resources in "$agent_home/.lankide" "$agent_home/resources" "$agent_home/tool-results"; do
+    for target_resources in "$agent_home/.lankide" "$agent_home/resources" "$agent_home/tool-results" "$agent_home/memory"; do
       if [ -d "$target_resources" ]; then
         if find "$target_resources" -mindepth 1 -print -quit | grep -q .; then
-          die "workspace-local Harness state remains under $target_resources"
+          die "workspace-local Agent history remains under $target_resources"
         fi
       fi
     done
@@ -886,11 +921,15 @@ verify_zero_state() {
   local w resource_ids_sql
   w="$(workspace_sql)"
   resource_ids_sql="$(resource_ids_sql_value)"
+  check_zero native_session_bindings "SELECT count(*) FROM agents, json_each(agents.session_config_json) binding WHERE workspace_id=$w AND binding.key IN ('native_session_id','native_session_harness','native_session_machine','native_session_fingerprint');"
+  check_zero agent_failures "SELECT count(*) FROM agents WHERE workspace_id=$w AND (pause_reason IS NOT NULL OR failure_fingerprint IS NOT NULL OR failure_streak<>0);"
   check_zero channels "SELECT count(*) FROM channels WHERE workspace_id=$w;"
   check_zero chats "SELECT count(*) FROM chats WHERE workspace_id=$w;"
+  check_zero chat_receivers "SELECT count(*) FROM chat_receivers r JOIN chats c USING(chat_id) WHERE c.workspace_id=$w;"
   check_zero messages "SELECT count(*) FROM messages m JOIN chats c USING(chat_id) WHERE c.workspace_id=$w;"
   check_zero reactions "SELECT count(*) FROM reactions WHERE workspace_id=$w;"
   check_zero inbox_items "SELECT count(*) FROM agent_inbox_items WHERE workspace_id=$w;"
+  check_zero chat_observations "SELECT count(*) FROM agent_chat_observations WHERE workspace_id=$w;"
   check_zero chat_cursors "SELECT count(*) FROM agent_chat_cursors WHERE workspace_id=$w;"
   check_zero chat_attention "SELECT count(*) FROM agent_chat_attention WHERE workspace_id=$w;"
   check_zero unread_snapshots "SELECT count(*) FROM unread_snapshots WHERE workspace_id=$w;"

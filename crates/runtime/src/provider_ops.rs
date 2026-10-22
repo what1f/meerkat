@@ -26,6 +26,10 @@ impl Runtime {
             self.storage
                 .record_outbound_resources(spec.message_id.get(), resources.clone())
                 .await?;
+            let reply_to_provider_message_id = self
+                .storage
+                .record_outbound_reply(spec.message_id.get(), spec.reply_to.map(|id| id.get()))
+                .await?;
             let result = self
                 .host(workspace_id)
                 .await?
@@ -81,7 +85,7 @@ impl Runtime {
                         kind: ProviderEventKind::Message(lankide_provider::MessageEvent {
                             provider_message_id: native_id.clone(),
                             content: spec.content.clone(),
-                            reply_to_provider_message_id: None,
+                            reply_to_provider_message_id,
                             mentioned_agent_ids,
                             attachments: spec
                                 .attachments

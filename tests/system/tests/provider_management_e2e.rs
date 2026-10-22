@@ -544,6 +544,12 @@ async fn bot_creators_join_once_with_real_profiles_and_custom_positions() -> Res
             tokio::time::sleep(Duration::from_millis(10)).await;
         }}).await?;
         let prompt = started["system_prompt"].as_str().ok_or("system prompt")?;
+        for section in ["## 身份", "## 约束", "## 气质", "## 长期记忆", "## 每轮工作", "## 群聊关注", "## 飞书 IM", "## IM", "## 完成本轮"] {
+            assert!(prompt.contains(section), "missing prompt section: {section}");
+        }
+        assert!(prompt.contains(include_str!("../../../crates/runtime/tests/fixtures/go-character.md").trim()));
+        assert!(prompt.contains(include_str!("../../../providers/feishu/tests/fixtures/go-expression.md").trim()));
+
         assert!(prompt.contains(&format!("Name: Bob；Role: Team Member；Custom position: Team Leader；ID: {}",bob["person_id"].as_str().unwrap())));
         assert!(prompt.contains(&format!("Name: Alice；Role: Team Lead；Custom position: Team Leader；ID: {}", first[0]["person_id"].as_str().unwrap())));
         assert!(prompt.contains("Signature: Make things simple"));

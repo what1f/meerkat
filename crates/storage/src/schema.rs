@@ -65,11 +65,19 @@ fn initialize_schema(c: &mut Connection) -> Result<()> {
             transaction.pragma_update(None, "user_version", 1)?;
             transaction.commit()?;
         }
-        1 => {}
+        1 | 2 => {}
         version => return Err(StorageError::UnsupportedSchemaVersion(version)),
+    }
+    if version < 2 {
+        let transaction = c.transaction()?;
+        transaction.execute_batch(OBSERVATION_SCHEMA)?;
+        transaction.pragma_update(None, "user_version", 2)?;
+        transaction.commit()?;
     }
     Ok(())
 }
+
+const OBSERVATION_SCHEMA: &str = r#"CREATE TABLE IF NOT EXISTS agent_chat_observations(workspace_id TEXT NOT NULL,agent_id TEXT NOT NULL,chat_id INTEGER NOT NULL REFERENCES chats(chat_id),message_id INTEGER NOT NULL REFERENCES messages(message_id),observed_at INTEGER NOT NULL,PRIMARY KEY(workspace_id,agent_id,chat_id),FOREIGN KEY(workspace_id,agent_id) REFERENCES agents(workspace_id,agent_id));"#;
 
 const BASELINE_SCHEMA: &str = r#"
 CREATE TABLE workspaces(workspace_id TEXT PRIMARY KEY,name TEXT NOT NULL,provider_id TEXT NOT NULL,provider_config_json TEXT NOT NULL,desired_state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,rules TEXT NOT NULL DEFAULT '',cover_resource_id INTEGER,setup_status TEXT NOT NULL DEFAULT 'pending',setup_error_code TEXT,provider_state_json TEXT NOT NULL DEFAULT '{}');

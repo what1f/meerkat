@@ -32,7 +32,9 @@ impl Drop for PendingGuard {
         }
     }
 }
-struct LocalTransport {
+pub(super) struct LocalTransport {
+    agent_home: Option<PathBuf>,
+    pub(super) attachment_lock: tokio::sync::Mutex<()>,
     inner: Arc<Inner>,
     context: AgentRunContext,
     stopped: watch::Receiver<bool>,
@@ -48,6 +50,62 @@ impl CapabilityTransport for LocalTransport {
         if context != self.context || *self.stopped.borrow() {
             return Err(Status::unauthenticated("attempt_finished_or_invalid"));
         }
+        if payload.len() > agent::MAX_CALL_BYTES {
+            return Err(Status::resource_exhausted("capability_payload_too_large"));
+        }
+        let payload = if let Some(home) = &self.agent_home {
+            super::files::prepare(self, method, &context, home, payload).await?
+        } else {
+            payload
+        };
+        self.forward(method, context, payload).await
+    }
+}
+impl LocalTransport {
+    pub(super) async fn cached_upload(&self, key: &str) -> Option<ResourceRef> {
+        let execution = self.context.execution.as_ref()?;
+        self.inner
+            .state
+            .lock()
+            .await
+            .uploaded_resources
+            .get(&crate::state::assignment_key(
+                execution.execution_id,
+                execution.attempt,
+            ))
+            .and_then(|entries| entries.get(key))
+            .cloned()
+    }
+    pub(super) async fn remember_upload(
+        &self,
+        key: String,
+        resource: ResourceRef,
+    ) -> Result<(), Status> {
+        let execution = self
+            .context
+            .execution
+            .as_ref()
+            .ok_or_else(|| Status::unauthenticated("missing_execution"))?;
+        let mut state = self.inner.state.lock().await;
+        state
+            .uploaded_resources
+            .entry(crate::state::assignment_key(
+                execution.execution_id,
+                execution.attempt,
+            ))
+            .or_default()
+            .insert(key, resource);
+        state
+            .save(&self.inner.state_path)
+            .map_err(|_| Status::internal("persist_attachment"))
+    }
+
+    pub(super) async fn forward(
+        &self,
+        method: &str,
+        context: AgentRunContext,
+        payload: Vec<u8>,
+    ) -> Result<Vec<u8>, Status> {
         if payload.len() > agent::MAX_CALL_BYTES {
             return Err(Status::resource_exhausted("capability_payload_too_large"));
         }
@@ -121,7 +179,11 @@ pub(super) struct AttemptProxy {
     task: tokio::task::JoinHandle<()>,
 }
 impl AttemptProxy {
-    pub fn start(inner: Arc<Inner>, context: AgentRunContext) -> Result<Self, MachineError> {
+    pub fn start(
+        inner: Arc<Inner>,
+        context: AgentRunContext,
+        agent_home: PathBuf,
+    ) -> Result<Self, MachineError> {
         use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
         let execution = context
             .execution
@@ -142,6 +204,8 @@ impl AttemptProxy {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
         let (stopped, rx) = watch::channel(false);
         let transport = LocalTransport {
+            agent_home: Some(agent_home),
+            attachment_lock: tokio::sync::Mutex::new(()),
             inner,
             context,
             stopped: rx,
@@ -312,6 +376,8 @@ pub(super) async fn download_resource(
     let (path, temporary) = crate::resources::download_paths(resource, directory)?;
     let (_stop, stopped) = watch::channel(false);
     let peer = AgentProxy(LocalTransport {
+        agent_home: None,
+        attachment_lock: tokio::sync::Mutex::new(()),
         inner,
         context: context.clone(),
         stopped,

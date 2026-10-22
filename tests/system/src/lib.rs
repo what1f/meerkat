@@ -1326,7 +1326,8 @@ impl Agent<'_> {
             Err(error) => return Err(error.into()),
         };
         Ok(text
-            .lines()
+            .split_inclusive('\n')
+            .filter(|line| line.ends_with('\n'))
             .map(serde_json::from_str)
             .collect::<std::result::Result<_, _>>()?)
     }

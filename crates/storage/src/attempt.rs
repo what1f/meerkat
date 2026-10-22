@@ -595,6 +595,12 @@ impl Storage {
             "UPDATE execution_attempts SET last_event_sequence=?3,state=CASE WHEN ?4='started' THEN 'running' ELSE state END,native_session_id=CASE WHEN ?4='native_session_bound' THEN coalesce(json_extract(CAST(?5 AS TEXT),'$.native_session_id'),native_session_id) ELSE native_session_id END WHERE execution_id=?1 AND attempt=?2",
             params![event.execution_id, event.attempt, event.sequence as i64, event.kind, event.payload],
         )?;
+        if event.kind == "native_session_bound" {
+            transaction.execute(
+                "UPDATE agents SET session_config_json=json_set(session_config_json,'$.native_session_id',json_extract(CAST(?2 AS TEXT),'$.native_session_id'),'$.native_session_harness',harness_id,'$.native_session_machine',machine_id,'$.native_session_fingerprint',json_extract(CAST(?2 AS TEXT),'$.config_fingerprint')) WHERE (workspace_id,agent_id)=(SELECT workspace_id,agent_id FROM executions WHERE execution_id=?1) AND length(json_extract(CAST(?2 AS TEXT),'$.native_session_id'))>0",
+                params![event.execution_id, event.payload],
+            )?;
+        }
         if matches!(event.kind.as_str(), "failed" | "cancelled") {
             let payload: Value = serde_json::from_slice(&event.payload).unwrap_or(Value::Null);
             if let Some(failure) = payload.get("failure").filter(|value| value.is_object()) {

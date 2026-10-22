@@ -1,10 +1,4 @@
-import {
-  useQuery,
-  useQueries,
-  useMutation,
-  useQueryClient,
-  useIsMutating,
-} from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useIsMutating } from '@tanstack/react-query';
 import type * as DTO from '../api/generated';
 import { call } from '../api/client';
 import { keys } from './keys';
@@ -108,16 +102,5 @@ export function useStartAgentOnboarding() {
       await client.cancelQueries({ queryKey: progressKey(input) });
       client.setQueryData(progressKey(input), state);
     },
-  });
-}
-export function useHarnessTrials(inputs: DTO.TestHarnessRequest[]) {
-  return useQueries({
-    queries: inputs.map((input) => ({
-      queryKey: [...keys.onboarding, 'harness_trial', input],
-      queryFn: ({ signal }: { signal: AbortSignal }) => call('test_harness', input, signal),
-      // Settled answers are kept: event invalidation must not run the test again.
-      enabled: (query: { state: { data: unknown } }) => query.state.data === undefined,
-      retry: false,
-    })),
   });
 }

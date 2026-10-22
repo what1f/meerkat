@@ -178,6 +178,8 @@ pub struct MessageView {
     pub content: String,
     pub mentions: Vec<AgentId>,
     pub reply_to_provider_message_id: Option<String>,
+    /// One-level quote, resolved only within the same stored conversation.
+    pub reply_to: Option<Box<MessageView>>,
     pub resources: Vec<ResourceView>,
     pub occurred_at: i64,
 }
@@ -356,7 +358,26 @@ fn reaction_origin(value: ReactionOrigin) -> &'static str {
     }
 }
 fn load_message(c: &Connection, message_id: i64) -> Result<MessageView> {
+    load_message_with_reply(c, message_id, true)
+}
+
+fn load_message_with_reply(
+    c: &Connection,
+    message_id: i64,
+    include_reply: bool,
+) -> Result<MessageView> {
     let tuple:StoredMessageRow=c.query_row("SELECT provider_message_id,sender_kind,sender_id,sender_name,content_markdown,mentions_json,reply_to_provider_message_id,resources_json,occurred_at FROM messages WHERE message_id=?1",[message_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?)))?;
+    let reply_id: Option<i64> = if include_reply && tuple.6.is_some() {
+        c.query_row(
+            "SELECT coalesce((SELECT p.message_id FROM messages p WHERE p.chat_id=m.chat_id AND p.provider_message_id=m.reply_to_provider_message_id AND p.message_id<m.message_id AND p.send_status IN ('received','sent')), (SELECT p.message_id FROM message_provider_parts parts JOIN messages p ON p.message_id=parts.message_id WHERE parts.chat_id=m.chat_id AND parts.provider_message_id=m.reply_to_provider_message_id AND p.chat_id=m.chat_id AND p.message_id<m.message_id AND p.send_status IN ('received','sent'))) FROM messages m WHERE m.message_id=?1",
+            [message_id], |row| row.get(0),
+        )?
+    } else {
+        None
+    };
+    let reply_to = reply_id
+        .map(|id| load_message_with_reply(c, id, false).map(Box::new))
+        .transpose()?;
     Ok(MessageView {
         message_id,
         provider_message_id: tuple.0,
@@ -366,10 +387,24 @@ fn load_message(c: &Connection, message_id: i64) -> Result<MessageView> {
         content: tuple.4.unwrap_or_default(),
         mentions: serde_json::from_str(&tuple.5)?,
         reply_to_provider_message_id: tuple.6,
+        reply_to,
         resources: serde_json::from_str(&tuple.7)?,
         occurred_at: tuple.8,
     })
 }
+fn load_chat_ref(c: &Connection, chat_id: i64) -> Result<ChatRefView> {
+    let (workspace,provider,channel,channel_name,provider_chat_id,chat_name): (String,String,String,String,String,String) = c.query_row("SELECT c.workspace_id,w.provider_id,c.channel_id,ch.name,c.provider_chat_id,coalesce(c.name,'') FROM chats c JOIN workspaces w USING(workspace_id) JOIN channels ch ON ch.workspace_id=c.workspace_id AND ch.channel_id=c.channel_id WHERE c.chat_id=?1",[chat_id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?)))?;
+    Ok(ChatRefView {
+        chat_id,
+        workspace_id: wid(workspace)?,
+        provider_id: pid(provider)?,
+        channel_id: cid(channel)?,
+        channel_name,
+        provider_chat_id,
+        chat_name,
+    })
+}
+
 pub(super) fn load_snapshot(c: &Connection, snapshot_id: i64) -> Result<SnapshotView> {
     let (workspace, agent, created_at): (String, String, i64) = c.query_row(
         "SELECT workspace_id,agent_id,created_at FROM unread_snapshots WHERE snapshot_id=?1",
@@ -860,6 +895,37 @@ impl Storage {
             |row| row.get(0),
         )?)
     }
+    /// Observation is separate from the consumption cursor: failed runs can retry.
+    pub fn record_chat_observation(
+        &self,
+        workspace: &WorkspaceId,
+        agent: &AgentId,
+        message_id: i64,
+        now: i64,
+    ) -> Result<bool> {
+        Ok(self.conn()?.execute("INSERT INTO agent_chat_observations(workspace_id,agent_id,chat_id,message_id,observed_at) SELECT ?1,?2,m.chat_id,m.message_id,?4 FROM messages m JOIN chats c USING(chat_id) WHERE m.message_id=?3 AND c.workspace_id=?1 ON CONFLICT(workspace_id,agent_id,chat_id) DO UPDATE SET message_id=excluded.message_id,observed_at=excluded.observed_at WHERE excluded.message_id>agent_chat_observations.message_id",params![workspace.as_str(),agent.as_str(),message_id,now])? == 1)
+    }
+    pub fn observed_chats(
+        &self,
+        workspace: &WorkspaceId,
+        agent: &AgentId,
+    ) -> Result<Vec<(ChatRefView, MessageView)>> {
+        let connection = self.read_conn()?;
+        let mut statement = connection.prepare("SELECT o.chat_id,o.message_id FROM agent_chat_observations o WHERE o.workspace_id=?1 AND o.agent_id=?2 ORDER BY o.observed_at DESC LIMIT 30")?;
+        let ids = statement
+            .query_map(params![workspace.as_str(), agent.as_str()], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        ids.into_iter()
+            .map(|(chat_id, message_id)| {
+                Ok((
+                    load_chat_ref(&connection, chat_id)?,
+                    load_message(&connection, message_id)?,
+                ))
+            })
+            .collect()
+    }
     pub fn snapshot_chat_messages(
         &self,
         snapshot_id: i64,
@@ -910,19 +976,24 @@ impl Storage {
                 "INSERT INTO unread_snapshot_chats(snapshot_id,chat_id,read_from_message_id,read_to_message_id,unread_count,trigger_summary) SELECT snapshot_id,?2,(SELECT read_to_message_id FROM agent_chat_cursors WHERE workspace_id=s.workspace_id AND agent_id=s.agent_id AND chat_id=?2),?3,0,'' FROM unread_snapshots s WHERE snapshot_id=?1",
                 params![snapshot_id, chat_id, latest_read],
             )?;
-            let execution_id = transaction.query_row(
-                "SELECT execution_id FROM executions WHERE snapshot_id=?1 ORDER BY execution_id DESC LIMIT 1",
-                [snapshot_id], |row| row.get(0),
-            )?;
-            crate::execution::expand_execution_chat_boundary(
-                &transaction,
-                execution_id,
-                snapshot_id,
-                chat_id,
-                *latest_read,
-                now,
-            )?;
+            for id in &ids {
+                transaction.execute(
+                    "INSERT OR IGNORE INTO unread_snapshot_messages(snapshot_id,chat_id,message_id,position) VALUES(?1,?2,?3,?3)",
+                    params![snapshot_id,chat_id,id],
+                )?;
+            }
         }
+        let execution_id: i64 = transaction.query_row(
+            "SELECT execution_id FROM executions WHERE snapshot_id=?1 ORDER BY execution_id DESC LIMIT 1",
+            [snapshot_id], |row| row.get(0),
+        )?;
+        crate::execution::record_delivered_messages(
+            &transaction,
+            execution_id,
+            chat_id,
+            &ids,
+            now,
+        )?;
         transaction.commit()?;
         Ok(messages)
     }

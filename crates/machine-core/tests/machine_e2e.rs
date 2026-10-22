@@ -513,6 +513,10 @@ async fn machine_e2e() {
         .await;
         let reader_events = collect_terminal(&peer, &mut incoming_rx, 1, true).await;
         assert!(payloads(&reader_events).contains("content-from-file"));
+        assert_eq!(
+            fs::read_to_string(content_home.join("AGENTS.md")).unwrap(),
+            "  性格原文\n\nBe direct.\n"
+        );
         let diagnostics_path = workspace_root.join(".machine/diagnostics/1-1/diagnostics.json");
         let diagnostics: serde_json::Value =
             serde_json::from_slice(&fs::read(&diagnostics_path).expect("attempt diagnostics"))
@@ -532,7 +536,8 @@ async fn machine_e2e() {
             "content-from-tool-file",
         )
         .expect("tool content file");
-        peer.send(runtime_assign(
+        fs::write(content_home.join("AGENTS.md"), "stale personality").unwrap();
+        let mut updated_personality = runtime_assign(
             17,
             "reader",
             "session-reader",
@@ -540,9 +545,17 @@ async fn machine_e2e() {
             "message_send_file tool_wait",
             vec![],
             "",
-        ))
-        .await;
+        );
+        if let Some(runtime_frame::Frame::AssignExecution(assign)) = &mut updated_personality.frame
+        {
+            assign.agent.as_mut().unwrap().soul = "  Updated personality.\n".into();
+        }
+        peer.send(updated_personality).await;
         let arguments = wait_specific_tool_call(&peer, &mut incoming_rx, 17, "message_send").await;
+        assert_eq!(
+            fs::read_to_string(content_home.join("AGENTS.md")).unwrap(),
+            "  Updated personality.\n"
+        );
         assert_eq!(arguments["content"], "content-from-tool-file");
         assert!(arguments.get("content_file").is_none());
         peer.send(runtime_tool_result(execution(17), "call-1", "sent", vec![]))
@@ -590,6 +603,18 @@ async fn machine_e2e() {
             finish_local_tool_error(&peer, &mut incoming_rx, id, code).await;
         }
 
+        let memory = agent_directory(&workspace_root, "alpha_team", "agent_a")
+            .unwrap()
+            .join("memory");
+        fs::create_dir_all(&memory).unwrap();
+        fs::write(
+            memory.join("MEMORY.md"),
+            format!(
+                "Use the green release channel.\n{}DO_NOT_PRELOAD",
+                "中".repeat(1600)
+            ),
+        )
+        .unwrap();
         let resource = resource_ref(7, b"resource-body");
         peer.send(runtime_assign(
             2,
@@ -608,6 +633,25 @@ async fn machine_e2e() {
                 .iter()
                 .any(|event| event.kind == ExecutionEventKind::Completed as i32)
         );
+        assert!(
+            first_events
+                .iter()
+                .any(|event| String::from_utf8_lossy(&event.payload)
+                    .contains("Use the green release channel.")),
+            "memory index must reach the Harness input"
+        );
+        assert!(
+            first_events
+                .iter()
+                .any(|event| String::from_utf8_lossy(&event.payload)
+                    .contains("索引超过本轮预载上限"))
+        );
+        assert!(
+            !first_events
+                .iter()
+                .any(|event| String::from_utf8_lossy(&event.payload).contains("DO_NOT_PRELOAD"))
+        );
+        fs::remove_file(memory.join("MEMORY.md")).unwrap();
         let downloaded = agent_directory(&workspace_root, "alpha_team", "agent_a")
             .unwrap()
             .join("resources/7-brief.txt");
@@ -667,6 +711,15 @@ async fn machine_e2e() {
         })
         .await;
         wait_delivery(&mut incoming_rx, 3).await;
+        peer.send(RuntimeFrame {
+            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            frame: Some(runtime_frame::Frame::DeliverSteer(DeliverSteer {
+                execution: Some(execution(3)),
+                delivery: Some(delivery(33, "urgent")),
+            })),
+        })
+        .await;
+        wait_delivery(&mut incoming_rx, 3).await;
         peer.send(cancel(3)).await;
         peer.send(cancel(5)).await;
         // Parallel cancellation may publish either terminal first. Observe and
@@ -693,6 +746,47 @@ async fn machine_e2e() {
         })
         .await
         .expect("both cancelled attempts must stop");
+
+        // Treat the original steer receipts as lost. A terminal replay must
+        // carry the persisted acceptance first, without a Runtime retry request.
+        let connections = peer.state.hellos.lock().unwrap().len();
+        peer.disconnect();
+        wait_for(|| peer.state.hellos.lock().unwrap().len() > connections).await;
+        timeout(STEP, async {
+            let mut accepted = false;
+            loop {
+                let frame = incoming_rx.recv().await.expect("reconnected stream");
+                match frame.frame {
+                    Some(machine_frame::Frame::DeliveryResult(receipt))
+                        if receipt.delivery_id == 33 =>
+                    {
+                        assert!(receipt.accepted);
+                        accepted = true;
+                    }
+                    Some(machine_frame::Frame::ExecutionEvent(event))
+                        if event
+                            .execution
+                            .as_ref()
+                            .is_some_and(|run| run.execution_id == 3)
+                            && matches!(
+                                ExecutionEventKind::try_from(event.kind).unwrap(),
+                                ExecutionEventKind::Completed
+                                    | ExecutionEventKind::Cancelled
+                                    | ExecutionEventKind::Failed
+                            ) =>
+                    {
+                        assert!(
+                            accepted,
+                            "terminal replay overtook the accepted steer receipt"
+                        );
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .expect("steer acceptance and terminal must replay");
 
         peer.send(runtime_assign(
             6,
@@ -740,13 +834,15 @@ async fn machine_e2e() {
         for event in &replay_events[..replay_events.len() - 1] {
             ack(&peer, event).await;
         }
+        let connections = peer.state.hellos.lock().unwrap().len();
         peer.disconnect();
-        wait_for(|| peer.state.hellos.lock().expect("hello mutex").len() >= 2).await;
+        wait_for(|| peer.state.hellos.lock().expect("hello mutex").len() > connections).await;
         let replayed = wait_replayed_terminal(&mut incoming_rx, &replay_events).await;
         assert_eq!(replayed.sequence, terminal.sequence);
         ack(&peer, &replayed).await;
+        let connections = peer.state.hellos.lock().unwrap().len();
         peer.disconnect();
-        wait_for(|| peer.state.hellos.lock().expect("hello mutex").len() >= 3).await;
+        wait_for(|| peer.state.hellos.lock().expect("hello mutex").len() > connections).await;
         let replayed_after_ack = wait_replayed_terminal(&mut incoming_rx, &replay_events).await;
         assert_eq!(replayed_after_ack.sequence, terminal.sequence);
         peer.send(runtime_assign(
@@ -1201,6 +1297,7 @@ fn runtime_assign(
                 name: agent.into(),
                 role: "worker".into(),
                 bio: String::new(),
+                soul: "  性格原文\n\nBe direct.\n".into(),
             }),
             harness: Some(HarnessConfig {
                 launch_arguments: Default::default(),

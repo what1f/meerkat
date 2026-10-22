@@ -155,6 +155,23 @@ impl Runtime {
                     .iter()
                     .map(resource_view)
                     .collect::<Result<Vec<_>, _>>()?;
+                let steer_input = if event.sender.kind == EventSenderType::Human {
+                    Some(format!(
+                        "<system-reminder>人类发来了新消息，来自 channel_id={}，chat_id={}，原始时间={}。</system-reminder>\n{}: {}",
+                        event.channel_id,
+                        event.provider_chat_id,
+                        occurred_at,
+                        event.sender.name,
+                        message.content
+                    ))
+                } else {
+                    None
+                };
+                let steer_input = steer_input.map(|mut input| {
+                    for resource in &message.attachments { input.push_str(&format!("\n{} resource://{}",resource.file_name,resource.resource_id)); }
+                    input.push_str("\n<system-reminder>此会话还有待处理消息时，使用 chat_messages 读取完整内容后再决定如何处理。</system-reminder>");
+                    input
+                });
                 let result = self
                     .storage
                     .ingest_event(IngestEvent {
@@ -196,53 +213,35 @@ impl Runtime {
                         )
                         .await?;
                 }
-                // Keep new messages pending for the next execution. Injecting only
-                // their text into a running execution would not expand that run's
-                // readable messages, reply scope, or cursor boundary.
-                let steer_deliveries = Vec::new();
-                let auto_reaction_errors = Vec::new();
-                if !result.new_inbox_items.is_empty()
-                    && channel.abilities.contains(&ChannelAbility::Reaction)
-                {
-                    let message_id = MessageId::new(result.message_id)
-                        .map_err(|error| RuntimeError::InvalidCore(error.to_string()))?;
-                    let host = self.host(workspace_id).await?;
-                    for dispatch in dispatch.into_iter().filter(|dispatch| {
-                        result
-                            .new_inbox_items
-                            .iter()
-                            .any(|(agent_id, _)| agent_id == &dispatch.agent_id)
-                    }) {
-                        let Some(agent) = agents.get(&dispatch.agent_id) else {
-                            continue;
-                        };
-                        let Some(auto_reaction) = agent.auto_reaction.clone() else {
-                            continue;
-                        };
-                        let host = host.clone();
-                        let workspace_id = workspace_id.clone();
-                        let agent_id = agent.agent_id.clone();
-                        let spec = AutoReactionSpec {
-                            auto_reaction,
-                            channel_id: event.channel_id.clone(),
-                            chat_id: event.provider_chat_id.clone(),
-                            trigger_messages: vec![message_id],
-                            provider_agent_config: agent.provider_agent_config.clone(),
-                        };
-                        let mut tasks = self
-                            .background_tasks
-                            .lock()
-                            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
-                        while tasks.try_join_next().is_some() {}
-                        tasks.spawn(async move {
-                            if let Err(error) = host.auto_reaction(agent_id.clone(), spec).await {
-                                log::error!(
-                                    "[runtime] workspace={workspace_id} agent={agent_id} auto reaction failed: {error:?}"
-                                );
-                            }
+                let mut steer_deliveries = Vec::new();
+                if let Some(input) = steer_input {
+                    for (agent_id, inbox_id) in &result.new_inbox_items {
+                        let direct = dispatch.iter().any(|item| {
+                            &item.agent_id == agent_id
+                                && matches!(
+                                    item.trigger_reason,
+                                    DispatchReason::DirectMessage | DispatchReason::Mention
+                                )
                         });
+                        if direct {
+                            let rendered = format!("{input}\n[message_id={}]", result.message_id);
+                            if let Some(delivery) = self
+                                .storage
+                                .create_steer_delivery(
+                                    workspace_id,
+                                    agent_id,
+                                    *inbox_id,
+                                    &rendered,
+                                    now,
+                                )
+                                .await?
+                            {
+                                steer_deliveries.push(delivery);
+                            }
+                        }
                     }
                 }
+                let auto_reaction_errors = Vec::new();
                 Ok(CoordinatedEvent::Message {
                     result,
                     auto_reaction_errors,
@@ -543,9 +542,7 @@ fn message_dispatches(
         if policy == &AttentionPolicy::Mute {
             continue;
         }
-        let mentioned = message.mentioned_agent_ids.contains(&agent.agent_id)
-            && (channel.attention_levels.contains(&AttentionLevel::Mention)
-                || channel.default_attention == ChannelDefaultAttention::Mention);
+        let mentioned = message.mentioned_agent_ids.contains(&agent.agent_id);
         let (available_at, reason) =
             if channel.default_attention == ChannelDefaultAttention::DirectMessage {
                 if policy != &AttentionPolicy::Always {
@@ -554,7 +551,7 @@ fn message_dispatches(
                 (now, DispatchReason::DirectMessage)
             } else if mentioned {
                 (now, DispatchReason::Mention)
-            } else if matches!(sender.kind, EventSenderType::Agent | EventSenderType::Bot) {
+            } else if matches!(sender.kind, EventSenderType::Bot) {
                 continue;
             } else {
                 match policy {

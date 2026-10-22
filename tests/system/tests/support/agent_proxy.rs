@@ -101,30 +101,6 @@ pub fn run(binary: &str, input: &str) {
     // The JSON representation would exceed one WS frame without chunking.
     let bytes = vec![251_u8; 1_200_000];
     std::fs::write(&attachment, &bytes).unwrap();
-    let uploaded = cli(
-        binary,
-        vec![
-            "upload".into(),
-            "--file".into(),
-            attachment.display().to_string(),
-        ],
-    );
-    assert_eq!(
-        uploaded["media_type"], "text/plain",
-        "the file type decides how a platform shows it"
-    );
-    let downloaded_path = home.join("downloaded.txt");
-    let downloaded = cli(
-        binary,
-        vec![
-            "download".into(),
-            "--resource-id".into(),
-            uploaded["resource_id"].to_string(),
-            "--output".into(),
-            downloaded_path.display().to_string(),
-        ],
-    );
-    assert_eq!(std::fs::read(downloaded_path).unwrap(), bytes);
     let mut invalid_attachments = Vec::new();
     for key in [
         "path",
@@ -143,12 +119,12 @@ pub fn run(binary: &str, input: &str) {
             "invoke".into(),
             "message_send".into(),
             "--arguments-json".into(),
-            json!({"channel_id":channel,"chat_id":chat,"content":"![x](./out/green55.png)"})
+            json!({"channel_id":channel,"chat_id":chat,"content":"[![预览](./portrait.png)](./attachment.txt)"})
                 .to_string(),
         ],
     );
     let content_file = home.join("message.md");
-    std::fs::write(&content_file, "Sent with an attachment").unwrap();
+    std::fs::write(&content_file, "Sent with an attachment\n[Report](./attachment.txt)\n`[example](./missing-inline.txt)`\n```md\n![example](./missing-fenced.png)\n```").unwrap();
     let sent = cli(
         binary,
         vec![
@@ -159,14 +135,12 @@ pub fn run(binary: &str, input: &str) {
             chat.into(),
             "--content-file".into(),
             content_file.display().to_string(),
-            "--attachment".into(),
-            attachment.display().to_string(),
             "--reply-to".into(),
             message.into(),
             "--force".into(),
         ],
     );
-    let report = json!({"env":env,"capabilities":capabilities,"profile":profile,"updated":updated,"invoked":invoked,"content":content,"uploaded":uploaded,"downloaded":downloaded,"sent":sent,"invalid_attachments":invalid_attachments,"local_markdown":local_markdown});
+    let report = json!({"env":env,"capabilities":capabilities,"profile":profile,"updated":updated,"invoked":invoked,"content":content,"sent":sent,"invalid_attachments":invalid_attachments,"local_markdown":local_markdown});
     let path = home.join("proxy-report.json");
     std::fs::write(
         path.with_extension("tmp"),

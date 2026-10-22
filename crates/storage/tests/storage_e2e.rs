@@ -117,7 +117,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
 
     let storage = Storage::open(config.clone()).map_err(|error| error.to_string())?;
     registered_machine::register(&storage, &["fixture-machine", "machine-a", "machine-b"]).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 1);
+    assert_eq!(storage.schema_version().unwrap(), 2);
     assert_eq!(storage.sqlite_settings().unwrap().journal_mode, "wal");
     assert!(storage.sqlite_settings().unwrap().foreign_keys);
 
@@ -1063,6 +1063,29 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
         failed_late.reply_to_provider_message_id.as_deref(),
         Some("provider-message-1")
     );
+    let quoted = failed_late
+        .reply_to
+        .as_ref()
+        .expect("resolved same-chat quote");
+    assert_eq!(quoted.message_id, first.message_id);
+    assert_eq!(quoted.content, frozen_first.content);
+    assert_eq!(quoted.resources, frozen_first.resources);
+    assert!(
+        quoted.reply_to.is_none(),
+        "quotes must not recursively expand"
+    );
+    let history = storage
+        .snapshot_chat_messages(failed.snapshot_id, &channel_id, "chat-a", None, 100, 4_001)
+        .unwrap();
+    assert_eq!(
+        history
+            .iter()
+            .find(|message| message.message_id == late.message_id)
+            .unwrap()
+            .reply_to,
+        failed_late.reply_to
+    );
+
     assert_eq!(
         failed
             .snapshot
@@ -1934,7 +1957,7 @@ fn placement_changes_preserve_queued_work_and_invalidates_old_authorizations() {
     storage.close().unwrap();
     let storage = Storage::open(config.clone()).unwrap();
     registered_machine::register(&storage, &["fixture-machine", "machine-a", "machine-b"]).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 1);
+    assert_eq!(storage.schema_version().unwrap(), 2);
     assert_eq!(storage.inbox_items(&workspace, &agent).unwrap().len(), 1);
     let run = storage
         .create_execution_with_auth(
@@ -2026,10 +2049,31 @@ fn baseline_reopens_and_unsupported_versions_are_refused() {
     let config = DatabaseConfig::new(home.path().join("runtime.db"));
     let storage = Storage::open(config.clone()).unwrap();
     registered_machine::register(&storage, &["fixture-machine", "machine-a", "machine-b"]).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 1);
+    assert_eq!(storage.schema_version().unwrap(), 2);
     storage.close().unwrap();
     Storage::open(config.clone()).unwrap().close().unwrap();
-    for version in [-1, 2, 15, 20, 21] {
+    // Reopen an existing v1 installation and preserve its machine registrations.
+    let connection = rusqlite::Connection::open(&config.path).unwrap();
+    let machines: i64 = connection
+        .query_row("SELECT count(*) FROM machines", [], |row| row.get(0))
+        .unwrap();
+    connection
+        .execute_batch("DROP TABLE agent_chat_observations; PRAGMA user_version=1;")
+        .unwrap();
+    drop(connection);
+    let upgraded = Storage::open(config.clone()).unwrap();
+    assert_eq!(upgraded.schema_version().unwrap(), 2);
+    upgraded.close().unwrap();
+    let connection = rusqlite::Connection::open(&config.path).unwrap();
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM machines", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        machines
+    );
+    drop(connection);
+    for version in [-1, 3, 15, 20, 21] {
         let connection = rusqlite::Connection::open(&config.path).unwrap();
         connection
             .pragma_update(None, "user_version", version)
@@ -2109,5 +2153,469 @@ fn direct_conversations_stay_separate_after_reopening() {
         assert_eq!(run.snapshot.chats.len(), 1);
         assert_eq!(run.snapshot.chats[0].chat.chat_id, messages[index].chat_id);
     }
+    storage.close().unwrap();
+}
+
+#[test]
+fn quoted_messages_resolve_in_their_own_chat_including_attachment_parts() {
+    let home = tempfile::tempdir().unwrap();
+    let storage = Storage::open(DatabaseConfig::new(home.path().join("quotes.db"))).unwrap();
+    registered_machine::register(&storage, &["fixture-machine"]).unwrap();
+    let workspace = WorkspaceId::new("quotes").unwrap();
+    let provider = ProviderId::new("feishu").unwrap();
+    let channel = ChannelId::new("group_chat").unwrap();
+    let agent = AgentId::new("reader").unwrap();
+    storage
+        .create_workspace(WorkspaceSpec {
+            id: workspace.clone(),
+            name: "Quotes".into(),
+            provider_id: provider.clone(),
+            provider_config: json!({}),
+            provider_secret: json!({}),
+            active: true,
+            now: 1,
+        })
+        .unwrap();
+    storage
+        .create_agent(AgentSpec {
+            machine_id: "fixture-machine".into(),
+            workspace_id: workspace.clone(),
+            id: agent.clone(),
+            name: "Reader".into(),
+            now: 1,
+        })
+        .unwrap();
+    let ingest = |chat: &str, native: &str, body: &str, parent: Option<&str>, now: i64| {
+        let mut incoming = event(
+            &workspace,
+            &provider,
+            &channel,
+            chat,
+            native,
+            body,
+            now,
+            vec![dispatch(&agent, DispatchReason::DirectMessage, now)],
+        );
+        incoming.message.reply_to_provider_message_id = parent.map(str::to_owned);
+        storage.ingest_event(incoming).unwrap()
+    };
+    let first = ingest("a", "same-native-id", "parent in A", None, 2);
+    let other = ingest("b", "same-native-id", "parent in B", None, 3);
+    let reply_a = ingest("a", "reply-a", "answer A", Some("same-native-id"), 4);
+    let reply_b = ingest("b", "reply-b", "answer B", Some("same-native-id"), 5);
+    let missing = ingest("c", "reply-c", "answer C", Some("same-native-id"), 6);
+    let sent = storage
+        .begin_send(SendRequest {
+            workspace_id: workspace.clone(),
+            channel_id: channel.clone(),
+            provider_chat_id: "a".into(),
+            request_key: "reply-with-file".into(),
+            sender_agent_id: agent.clone(),
+            content: "sent answer with a file".into(),
+            now: 7,
+        })
+        .unwrap();
+    assert!(
+        storage
+            .record_outbound_reply(sent.message_id, Some(other.message_id))
+            .is_err()
+    );
+    assert_eq!(
+        storage
+            .record_outbound_reply(sent.message_id, Some(first.message_id))
+            .unwrap()
+            .as_deref(),
+        Some("same-native-id")
+    );
+    storage
+        .finish_message_send(
+            sent.message_id,
+            SendOutcome::Sent {
+                provider_message_id: "sent-card".into(),
+            },
+            vec!["sent-card".into(), "sent-file".into()],
+            vec![],
+            8,
+        )
+        .unwrap();
+    let file_reply = ingest(
+        "a",
+        "reply-to-file",
+        "about your attachment",
+        Some("sent-file"),
+        9,
+    );
+    let execution = storage
+        .create_execution(&workspace, &agent, "quotes", 10)
+        .unwrap()
+        .unwrap();
+    let load = |id| {
+        storage
+            .snapshot_message(execution.snapshot_id, id)
+            .unwrap()
+            .unwrap()
+    };
+    assert_eq!(
+        load(reply_a.message_id)
+            .reply_to
+            .as_ref()
+            .unwrap()
+            .message_id,
+        first.message_id
+    );
+    assert_eq!(
+        load(reply_b.message_id)
+            .reply_to
+            .as_ref()
+            .unwrap()
+            .message_id,
+        other.message_id
+    );
+    assert!(load(missing.message_id).reply_to.is_none());
+    let outbound = load(sent.message_id);
+    assert_eq!(
+        outbound.reply_to.as_ref().unwrap().message_id,
+        first.message_id
+    );
+    let nested = load(file_reply.message_id);
+    let quote = nested.reply_to.as_ref().unwrap();
+    assert_eq!(quote.message_id, sent.message_id);
+    assert!(quote.reply_to.is_none());
+    let history = storage
+        .snapshot_chat_messages(
+            execution.snapshot_id,
+            &channel,
+            "a",
+            Some(sent.message_id),
+            1,
+            11,
+        )
+        .unwrap();
+    assert_eq!(history[0].message_id, reply_a.message_id);
+    assert_eq!(history[0].reply_to.as_ref().unwrap().content, "parent in A");
+}
+
+#[test]
+fn accepted_steer_expands_scope_once_and_rejected_steer_remains_pending() {
+    steer_gap_scenario(false);
+}
+#[test]
+fn reading_messages_between_steers_consumes_only_the_returned_messages() {
+    steer_gap_scenario(true);
+}
+fn steer_gap_scenario(read_gap: bool) {
+    let home = tempfile::tempdir().unwrap();
+    let config = DatabaseConfig::new(home.path().join("steer.db"));
+    let storage = Storage::open(config.clone()).unwrap();
+    registered_machine::register(&storage, &["fixture-machine"]).unwrap();
+    let workspace = WorkspaceId::new("steer").unwrap();
+    let agent = AgentId::new("clark").unwrap();
+    let provider = ProviderId::new("fixture").unwrap();
+    let channel = ChannelId::new("group_chat").unwrap();
+    storage
+        .create_workspace(WorkspaceSpec {
+            id: workspace.clone(),
+            name: "Steer".into(),
+            provider_id: provider.clone(),
+            provider_config: json!({}),
+            provider_secret: json!({}),
+            active: true,
+            now: 1,
+        })
+        .unwrap();
+    storage
+        .insert_new_agent_record(agent_record(&workspace, &agent, "bot-clark", 2), &json!({}))
+        .unwrap();
+    storage
+        .ingest_event(event(
+            &workspace,
+            &provider,
+            &channel,
+            "first",
+            "one",
+            "start",
+            3,
+            vec![dispatch(&agent, DispatchReason::Mention, 3)],
+        ))
+        .unwrap();
+    let run = storage
+        .create_execution(&workspace, &agent, "unread", 4)
+        .unwrap()
+        .unwrap();
+    storage
+        .offer_execution_attempt(run.execution_id, 1, "fixture-machine", "instance", 1000, 4)
+        .unwrap();
+    storage
+        .accept_execution_attempt(run.execution_id, 1, true, 4)
+        .unwrap();
+    storage.mark_delivery_delivered(run.delivery_id, 4).unwrap();
+    let gap = storage
+        .ingest_event(event(
+            &workspace,
+            &provider,
+            &channel,
+            "second",
+            "ordinary",
+            "unread ordinary message",
+            5,
+            vec![dispatch(&agent, DispatchReason::Mention, 5)],
+        ))
+        .unwrap();
+    let late = storage
+        .ingest_event(event(
+            &workspace,
+            &provider,
+            &channel,
+            "second",
+            "two",
+            "new instruction",
+            5,
+            vec![dispatch(&agent, DispatchReason::Mention, 5)],
+        ))
+        .unwrap();
+    let inbox = late.new_inbox_items[0].1;
+    let steer = storage
+        .create_steer_delivery(&workspace, &agent, inbox, "new instruction", 5)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        storage
+            .create_steer_delivery(&workspace, &agent, inbox, "new instruction", 5)
+            .unwrap()
+            .unwrap()
+            .delivery_id,
+        steer.delivery_id
+    );
+    assert!(
+        !storage
+            .snapshot_contains_message(run.snapshot_id, &channel, "second", late.message_id)
+            .unwrap()
+    );
+    assert!(
+        storage
+            .mark_steer_delivery_result(
+                -steer.delivery_id,
+                run.execution_id,
+                1,
+                "fixture-machine",
+                "instance",
+                false,
+                6
+            )
+            .unwrap()
+    );
+    assert_eq!(
+        storage
+            .inbox_items(&workspace, &agent)
+            .unwrap()
+            .into_iter()
+            .find(|i| i.inbox_item_id == inbox)
+            .unwrap()
+            .state,
+        InboxState::Pending
+    );
+    // Accept a newer steer first; an older receipt must not shrink the snapshot.
+    let newer = storage
+        .ingest_event(event(
+            &workspace,
+            &provider,
+            &channel,
+            "second",
+            "newer",
+            "latest instruction",
+            6,
+            vec![dispatch(&agent, DispatchReason::Mention, 6)],
+        ))
+        .unwrap();
+    let newer_steer = storage
+        .create_steer_delivery(
+            &workspace,
+            &agent,
+            newer.new_inbox_items[0].1,
+            "latest instruction",
+            6,
+        )
+        .unwrap()
+        .unwrap();
+    assert!(
+        storage
+            .mark_steer_delivery_result(
+                -newer_steer.delivery_id,
+                run.execution_id,
+                1,
+                "fixture-machine",
+                "instance",
+                true,
+                6
+            )
+            .unwrap()
+    );
+    assert!(
+        storage
+            .mark_steer_delivery_result(
+                -steer.delivery_id,
+                run.execution_id,
+                1,
+                "fixture-machine",
+                "instance",
+                true,
+                7
+            )
+            .unwrap()
+    );
+    assert!(
+        !storage
+            .mark_steer_delivery_result(
+                -steer.delivery_id,
+                run.execution_id,
+                1,
+                "fixture-machine",
+                "instance",
+                true,
+                8
+            )
+            .unwrap()
+    );
+    assert!(
+        storage
+            .snapshot_contains_message(run.snapshot_id, &channel, "second", late.message_id)
+            .unwrap()
+    );
+    assert_eq!(
+        storage
+            .snapshot_chat_messages(
+                run.snapshot_id,
+                &channel,
+                "second",
+                Some(newer.message_id),
+                1,
+                8
+            )
+            .unwrap()[0]
+            .content,
+        "new instruction"
+    );
+    let updated = storage.snapshot(run.snapshot_id).unwrap();
+    assert_eq!(
+        updated
+            .chats
+            .iter()
+            .find(|chat| chat.chat.provider_chat_id == "second")
+            .unwrap()
+            .recent_messages
+            .last()
+            .unwrap()
+            .message_id,
+        newer.message_id
+    );
+    assert!(
+        storage
+            .record_chat_observation(&workspace, &agent, late.message_id, 8)
+            .unwrap()
+    );
+    assert!(
+        !storage
+            .record_chat_observation(&workspace, &agent, late.message_id, 9)
+            .unwrap()
+    );
+    assert_eq!(
+        storage.observed_chats(&workspace, &agent).unwrap()[0]
+            .1
+            .message_id,
+        late.message_id
+    );
+    assert_eq!(
+        storage
+            .inbox_items(&workspace, &agent)
+            .unwrap()
+            .into_iter()
+            .find(|i| i.inbox_item_id == gap.new_inbox_items[0].1)
+            .unwrap()
+            .state,
+        InboxState::Pending
+    );
+    if read_gap {
+        let messages = storage
+            .snapshot_chat_messages(
+                run.snapshot_id,
+                &channel,
+                "second",
+                Some(late.message_id),
+                1,
+                9,
+            )
+            .unwrap();
+        assert_eq!(messages[0].message_id, gap.message_id);
+    }
+    assert!(
+        storage
+            .complete_execution(run.execution_id, "done", 10)
+            .unwrap()
+    );
+    let next = storage
+        .create_execution(&workspace, &agent, "unread", 11)
+        .unwrap();
+    if read_gap {
+        assert!(next.is_none());
+    } else {
+        let next = next.expect("unread ordinary message must still be scheduled");
+        assert_eq!(next.inbox_item_ids, vec![gap.new_inbox_items[0].1]);
+        assert_eq!(next.snapshot.chats[0].unread_count, 1);
+        assert_eq!(
+            next.snapshot.chats[0]
+                .recent_messages
+                .iter()
+                .map(|m| m.message_id)
+                .collect::<Vec<_>>(),
+            vec![gap.message_id]
+        );
+        storage
+            .offer_execution_attempt(
+                next.execution_id,
+                1,
+                "fixture-machine",
+                "instance",
+                1000,
+                11,
+            )
+            .unwrap();
+        storage
+            .accept_execution_attempt(next.execution_id, 1, true, 11)
+            .unwrap();
+        storage
+            .mark_delivery_delivered(next.delivery_id, 11)
+            .unwrap();
+        storage
+            .complete_execution(next.execution_id, "handled gap", 11)
+            .unwrap();
+    }
+    let rejected = storage
+        .ingest_event(event(
+            &workspace,
+            &provider,
+            &channel,
+            "first",
+            "three",
+            "next",
+            12,
+            vec![dispatch(&agent, DispatchReason::Mention, 12)],
+        ))
+        .unwrap();
+    let second = storage
+        .create_execution(&workspace, &agent, "unread", 13)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        second.snapshot.chats[0]
+            .recent_messages
+            .last()
+            .unwrap()
+            .message_id,
+        rejected.message_id
+    );
+    storage
+        .fail_execution(second.execution_id, "test_cleanup", 14)
+        .unwrap();
+    storage.delete_agent(&workspace, &agent).unwrap();
     storage.close().unwrap();
 }

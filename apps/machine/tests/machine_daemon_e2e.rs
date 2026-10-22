@@ -28,3 +28,29 @@ fn daemon_business_scenario() {
         "daemon scenario entrypoint did not run"
     );
 }
+
+#[test]
+fn local_javascript_adapter_is_loaded_without_spawning_its_cli() {
+    let home = tempfile::tempdir().unwrap();
+    let package = home.path().join("harnesses/custom");
+    std::fs::create_dir_all(&package).unwrap();
+    std::fs::write(
+        package.join("plugin.json"),
+        r#"{"apiVersion":1,"id":"custom","name":"Custom","entry":"plugin.js","cli":"absent-cli"}"#,
+    )
+    .unwrap();
+    std::fs::write(package.join("plugin.js"),r#"defineHarness({apiVersion:1,id:'custom',defaults:{environment:{WINDOW:'70'},launch_arguments:['--window','70']}})"#).unwrap();
+    let config = lankide_machine::DaemonConfig::for_home(home.path()).unwrap();
+    let mut registrations = Vec::new();
+    lankide_machine::load_harness_plugins(&config, &mut registrations).unwrap();
+    assert_eq!(registrations.len(), 1);
+    assert_eq!(registrations[0].factory.info().harness_id, "custom");
+    assert_eq!(
+        registrations[0].factory.defaults().environment["WINDOW"],
+        "70"
+    );
+    assert_eq!(
+        registrations[0].probe_config.cli_path,
+        std::path::Path::new("absent-cli")
+    );
+}

@@ -11,8 +11,26 @@ def write_record(value):
 
 write_record({"argv": sys.argv[1:], "cwd": os.getcwd(), "environment": {key: os.environ[key] for key in ("HOME", "PI_CODING_AGENT_DIR", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "LANKIDE_AGENT_SOCKET") if key in os.environ}})
 if "--version" in sys.argv:
-    print("native-fixture")
+    print(os.environ.get("PI_TEST_VERSION", "native-fixture"))
     sys.exit(0)
+
+if "--extension" in sys.argv and os.environ.get("PI_TEST_VERSION"):
+    import subprocess, base64
+    from pathlib import Path
+    source=Path(sys.argv[sys.argv.index("--extension")+1]).read_bytes()
+    code="""
+const tools=[], handlers=[], active=['read']; let invoked;
+const pi={registerTool:t=>tools.push(t),on:(name,fn)=>handlers.push(fn),getActiveTools:()=>active,setActiveTools:values=>{active.splice(0,active.length,...values)}};
+const module=await import('data:text/javascript;base64,SOURCE');module.default(pi);
+for (const handler of handlers) await handler();
+const wrapper=tools.find(t=>t.name==='lankide_tools');let discovered,described;
+if(wrapper){const context={ui:{input:async (_title,payload)=>{invoked=JSON.parse(payload);return JSON.stringify({success:true,structured_content:{ok:true}})}}};
+ discovered=JSON.parse((await wrapper.execute('list',{argv:['list']},null,null,context)).content[0].text);
+ described=JSON.parse((await wrapper.execute('describe',{argv:['describe','report']},null,null,context)).content[0].text);
+ await wrapper.execute('call',{argv:['call','report','{"value":1}']},null,null,context);}
+console.log(JSON.stringify({extension_tools:tools.map(t=>({name:t.name,exposure:t.exposure,parameters:t.parameters})),active,discovered,described,invoked}));
+""".replace('SOURCE',base64.b64encode(source).decode())
+    write_record(json.loads(subprocess.check_output(['node','--input-type=module','-e',code],text=True)))
 
 mode = os.environ.get("PI_NATIVE_FAULT", "agent_end")
 for line in sys.stdin:

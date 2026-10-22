@@ -38,7 +38,7 @@ fn main() {
         .append(true)
         .open(&controls_path)
         .expect("control journal");
-    writeln!(controls, "{}", json!({"op": first["op"], "native_session_id": first["request"]["native_session_id"], "pid": std::process::id(), "argv": std::env::args().skip(1).collect::<Vec<_>>(), "config": first["request"]["config"], "system_prompt": first["request"]["system_prompt"], "directory": std::env::current_dir().expect("cwd"), "tools": first["request"]["tools"]})).expect("record session start");
+    controls.write_all(format!("{}\n", json!({"op": first["op"], "native_session_id": first["request"]["native_session_id"], "pid": std::process::id(), "argv": std::env::args().skip(1).collect::<Vec<_>>(), "config": first["request"]["config"], "system_prompt": first["request"]["system_prompt"], "directory": std::env::current_dir().expect("cwd"), "tools": first["request"]["tools"]})).as_bytes()).expect("record session start");
     let script: Script =
         serde_json::from_str(&std::env::var("LANKIDE_SYSTEM_SCRIPT").expect("Agent script"))
             .expect("script JSON");
@@ -65,7 +65,9 @@ fn main() {
                 .append(true)
                 .open(&controls_path)
                 .expect("control journal");
-            writeln!(controls, "{}", json!({"op": command["op"]})).expect("record native control");
+            controls
+                .write_all(format!("{}\n", json!({"op": command["op"]})).as_bytes())
+                .expect("record native control");
             if command["op"] == "steer" {
                 let path = std::env::var("LANKIDE_SYSTEM_STEERS").expect("steer journal");
                 let mut journal = std::fs::OpenOptions::new()
@@ -361,13 +363,35 @@ fn main() {
                         .split('）')
                         .next()
                         .expect("chat");
-                    let message = chat_input
-                        .rsplit("[message_id=")
-                        .next()
-                        .expect("snapshot message")
-                        .split(']')
-                        .next()
-                        .expect("message");
+                    let self_name = first["request"]["system_prompt"]
+                        .as_str()
+                        .unwrap_or("")
+                        .lines()
+                        .find_map(|line| line.strip_prefix("- 姓名："));
+                    let messages = chat_input
+                        .lines()
+                        .filter_map(|line| {
+                            if !line.starts_with("- ") && !line.starts_with("有人 @ 你：") {
+                                return None;
+                            }
+                            let (_, rest) = line.split_once("[message_id=")?;
+                            let (id, body) = rest.split_once("] ")?;
+                            let trigger =
+                                line.starts_with("有人 @ 你：") || line.contains(" 回应了 ");
+                            Some((id, body, trigger))
+                        })
+                        .collect::<Vec<_>>();
+                    let message = messages
+                        .iter()
+                        .rev()
+                        .find(|(_, body, trigger)| {
+                            *trigger
+                                || !self_name
+                                    .is_some_and(|name| body.starts_with(&format!("{name}: ")))
+                        })
+                        .or_else(|| messages.last())
+                        .expect("snapshot message row")
+                        .0;
                     if matches!(
                         script,
                         Script::LinkReply { .. } | Script::BufferedReply { .. }

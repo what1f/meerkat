@@ -536,3 +536,170 @@ fn require(condition: bool, message: &str) -> Result<(), String> {
 fn display(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
+
+#[tokio::test]
+async fn javascript_plugin_defaults_resume_rotation_and_explicit_test_plan() {
+    use lankide_harness::JsHarnessFactory;
+    let factory = JsHarnessFactory::new("custom", "Custom CLI", r#"
+        defineHarness({apiVersion:1,id:'custom',defaults:{environment:{WINDOW:'80'},launch_arguments:['--window','80']},
+          start(){return {native_session_id:'original'};},
+          resume(request){if(request.native_session_id!=='original')failure('invalid_state','Missing prior binding');return {native_session_id:'replacement'};},
+          execute(){ctx.bindSession('late-binding');ctx.emit({kind:'completed',final_output:'OK'});},
+          close(){},test(request){request.config.model.model_id='fast';return {request,input:'Probe'};}
+        });
+    "#).unwrap();
+    assert_eq!(factory.defaults().environment["WINDOW"], "80");
+    let directory =
+        std::env::temp_dir().join(format!("lankide-plugin-contract-{}", std::process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let request = SessionRequest {
+        permission_policy: Default::default(),
+        config: HarnessConfig {
+            harness_id: "custom".into(),
+            cli_path: "/bin/true".into(),
+            environment: BTreeMap::new(),
+            launch_arguments: Vec::new(),
+            model: ModelRef::new("selected", "Selected"),
+            thinking_level: String::new(),
+            config_fingerprint: "binding".into(),
+        },
+        working_directory: directory.clone(),
+        system_prompt: "Instructions".into(),
+        tools: Vec::new(),
+        native_session_id: None,
+    };
+    let plan = factory.test(request.clone()).await.unwrap();
+    assert_eq!(plan.request.config.model.model_id, "fast");
+    assert_eq!(plan.input, "Probe");
+    let first = factory.start(request.clone()).await.unwrap();
+    assert_eq!(first.entry().native_session_id, "original");
+    first.close().await.unwrap();
+    let resumed = factory
+        .resume(SessionRequest {
+            native_session_id: Some("original".into()),
+            ..request
+        })
+        .await
+        .unwrap();
+    assert_eq!(resumed.entry().native_session_id, "replacement");
+    let mut events = resumed
+        .execute(ExecuteRequest {
+            input: "Continue".into(),
+        })
+        .await
+        .unwrap();
+    assert!(matches!(
+        events.next().await.unwrap().unwrap().kind,
+        AgentEventKind::Started
+    ));
+    assert!(
+        matches!(events.next().await.unwrap().unwrap().kind,AgentEventKind::NativeSessionBound{native_session_id} if native_session_id=="replacement")
+    );
+    assert!(
+        matches!(events.next().await.unwrap().unwrap().kind,AgentEventKind::NativeSessionBound{native_session_id} if native_session_id=="late-binding")
+    );
+    assert!(matches!(
+        events.next().await.unwrap().unwrap().kind,
+        AgentEventKind::Completed { .. }
+    ));
+    assert_eq!(resumed.entry().native_session_id, "late-binding");
+    resumed.close().await.unwrap();
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[tokio::test]
+async fn javascript_plugin_deadline_interrupts_a_stuck_hook_and_rejects_global_writes() {
+    use lankide_harness::JsHarnessFactory;
+    let directory =
+        std::env::temp_dir().join(format!("lankide-plugin-guard-{}", std::process::id()));
+    fs::create_dir_all(directory.join("agent")).unwrap();
+    fs::create_dir_all(directory.join("user")).unwrap();
+    fs::write(directory.join("user/config"), "keep").unwrap();
+    let request = SessionRequest {
+        permission_policy: Default::default(),
+        config: HarnessConfig {
+            harness_id: "guard".into(),
+            cli_path: "/bin/true".into(),
+            model: ModelRef::new("m", "m"),
+            thinking_level: String::new(),
+            environment: BTreeMap::new(),
+            launch_arguments: vec![],
+            config_fingerprint: "guard".into(),
+        },
+        working_directory: directory.join("agent"),
+        system_prompt: String::new(),
+        tools: Vec::new(),
+        native_session_id: None,
+    };
+    let stuck = JsHarnessFactory::new(
+        "guard",
+        "Guard",
+        "defineHarness({apiVersion:1,id:'guard',start(){while(true){}}})",
+    )
+    .unwrap();
+    let started = std::time::Instant::now();
+    let result = stuck
+        .start_before(request.clone(), started + Duration::from_millis(60))
+        .await;
+    assert!(matches!(result,Err(error) if error.code==HarnessErrorCode::Timeout));
+    assert!(started.elapsed() < Duration::from_secs(2));
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(directory.join("user"), directory.join("agent/escape")).unwrap();
+        let guarded=JsHarnessFactory::new("guard","Guard","defineHarness({apiVersion:1,id:'guard',start(r){ctx.write(r.working_directory+'/escape/config','changed');return {native_session_id:'x'};}})").unwrap();
+        assert!(guarded.start(request).await.is_err());
+        assert_eq!(
+            fs::read_to_string(directory.join("user/config")).unwrap(),
+            "keep"
+        );
+    }
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[tokio::test]
+async fn changing_the_native_config_source_refreshes_inherited_resources() {
+    use lankide_harness::JsHarnessFactory;
+    let directory =
+        std::env::temp_dir().join(format!("lankide-plugin-resources-{}", std::process::id()));
+    let agent = directory.join("agent");
+    fs::create_dir_all(&agent).unwrap();
+    for source in ["first", "second"] {
+        fs::create_dir_all(directory.join(source).join("skills")).unwrap();
+        fs::write(directory.join(source).join("skills/marker"), source).unwrap();
+    }
+    let plugin=JsHarnessFactory::new("resources","Resources",r#"defineHarness({apiVersion:1,id:'resources',start(r){ctx.prepare({directory:r.working_directory+'/private',sourceVariable:'PLUGIN_BASE',sourceRelative:'unused',files:[],resources:['skills']});return {native_session_id:'id'};},close(){}})"#).unwrap();
+    for source in ["first", "second"] {
+        let session = plugin
+            .start(SessionRequest {
+                permission_policy: Default::default(),
+                config: HarnessConfig {
+                    harness_id: "resources".into(),
+                    cli_path: "/bin/true".into(),
+                    model: ModelRef::new("m", "m"),
+                    thinking_level: String::new(),
+                    environment: BTreeMap::from([(
+                        "PLUGIN_BASE".into(),
+                        directory.join(source).display().to_string(),
+                    )]),
+                    launch_arguments: vec![],
+                    config_fingerprint: source.into(),
+                },
+                working_directory: agent.clone(),
+                system_prompt: String::new(),
+                tools: vec![],
+                native_session_id: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(agent.join("private/skills/marker")).unwrap(),
+            source
+        );
+        session.close().await.unwrap();
+    }
+    assert_eq!(
+        fs::read_to_string(directory.join("first/skills/marker")).unwrap(),
+        "first"
+    );
+    fs::remove_dir_all(directory).unwrap();
+}

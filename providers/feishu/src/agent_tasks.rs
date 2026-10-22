@@ -19,35 +19,9 @@ pub(crate) type SharedClient = FeishuClient<Arc<dyn Transport>>;
 
 const DEFAULT_TASKLIST_NAME: &str = "团队任务";
 
-const IM_PROMPT: &str = r#"## 飞书 IM
-
-飞书原生表情通常比通用 emoji 更有表现力，优先使用飞书原生表情。需要确认完整表情目录、含义或使用场景时，使用 feishu_reaction_catalog。
-
-- 调侃或玩笑语气：GLANCE（看）、SLIGHT（白眼）、TONGUE（吐舌）、SMIRK（坏笑）。
-- 赞同：OK、THUMBSUP、JIAYI（+1）、CheckMark、Yes、SMART、WITTY、PRAISE。
-- 不赞同：No、ThumbsDown、CrossMark、MinusOne（-1）。
-- 阴阳怪气或无奈：ERROR、NOSEPICK、SPITBLOOD、EMBARRASSED、WAVE、LOOKDOWN、Shrug、SMILE。
-- 笑：LOL、BLUSH、TRICK、LAUGH。哭或难受：CRY、SOB、ENOUGH、TEARS。
-- 协作：Get（已收到）、THANKS（感谢）、FISTBUMP（碰拳）、DONE（完成）、LGTM（我看行）、OnIt（在做了）、OneSecond（稍等）、YouAreTheBest（称赞）、SALUTE（致意）、Typing（处理中）。
-- 其他常用：WHAT、Lemon、FACEPALM、THINKING、ClownFace、SHOCKED、DIZZY、PROUD、YEAH。
-
-能用一个表情完整表达态度时，直接使用 feishu_reaction_add；有额外信息需要补充时，可以先回应表情再发送文字。当 Get 已经承担全部语义时，不要再发一条“已收到”。OK、CrossMark、MinusOne、DONE、LGTM 等更适合在具体消息下直接表态，不要生硬地插入正文。
-
-消息中的提及使用 @名称[id]。需要提及成员时保留完整标记，不要猜测未出现过的 ID。发送普通消息使用 message_send；向人类团队成员发起私信时提供 recipient_id（成员 ID），不需要已有会话。回复具体消息时增加 reply_to，并确保该消息属于目标会话。复杂长文通过 content_file 提供；本地图片和文件先用 lankide upload --file PATH 上传，再将返回的完整资源对象放入 message_send 的 attachments 数组（resource_id、file_name、media_type、size_bytes、sha256）。Markdown 本地路径不支持。
-
-把自己当成团队里真实的一员：当前讨论需要你的观点、有人在问你，或你掌握了能推动事情的信息时才发言；只是看到了但插话没有价值时，不发送消息。回应某一句具体消息且引用关系能帮助理解上下文时才使用 reply_to，不要为了形式感给每条消息都加引用。message_send 返回 sent 才表示已发送；返回 held 时没有发出去。"#;
-
-const TASK_PROMPT: &str = r#"## 飞书任务职责
-
-任务系统已启用。使用 feishu_task_list 查看分配给你或你关注的任务，使用 feishu_task_get 读取完整任务及评论。
-
-创建任务时使用 feishu_task_create。你和 Team Lead 会自动成为负责人；assignee_ids 是额外负责人，follower_ids 是可以读取和评论但不负责完成任务的协作者。不要为了让全员看见任务而把所有成员都加入。
-
-只有负责人可以更新或完成任务。使用 feishu_task_update 更新内容，使用 feishu_task_complete 完成任务；至少提供一个需要修改的字段。
-
-需要增加或移除负责人、关注人时，分别使用 feishu_task_member_add、feishu_task_member_remove。成员使用团队成员 ID，角色使用 assignee 或 follower。
-
-任务评论不是 IM 发言。在任务中记录进展或讨论任务时使用 feishu_task_comment；需要分页读取评论时使用 feishu_task_comments。工具失败时，不要假装操作已经完成。"#;
+const EXPRESSION_PROMPT: &str = include_str!("prompts/expression.md");
+const IM_PROMPT: &str = include_str!("prompts/im.md");
+const TASK_PROMPT: &str = include_str!("prompts/tasks.md");
 
 pub(crate) fn task_system_enabled(config: &Value) -> bool {
     config
@@ -58,9 +32,51 @@ pub(crate) fn task_system_enabled(config: &Value) -> bool {
 
 pub(crate) fn system_prompt(context: &AgentRuntimeContext) -> String {
     if task_system_enabled(&context.workspace_config) {
-        format!("{IM_PROMPT}\n\n{TASK_PROMPT}")
+        format!("{EXPRESSION_PROMPT}\n\n{IM_PROMPT}\n\n{TASK_PROMPT}")
     } else {
-        IM_PROMPT.to_owned()
+        format!("{EXPRESSION_PROMPT}\n\n{IM_PROMPT}")
+    }
+}
+
+fn context_task_key(agent: &str, channel: &str, chat: &str) -> String {
+    format!("context_tasks/{}", json!([agent, channel, chat]))
+}
+pub(crate) async fn context_index(context: &AgentRuntimeContext) -> Result<String, ProviderError> {
+    let mut tasks = BTreeMap::new();
+    for chat in &context.chats {
+        if let Some(bytes) = context
+            .storage()
+            .get(&context_task_key(
+                context.agent_id.as_str(),
+                chat.channel_id.as_str(),
+                &chat.chat_id,
+            ))
+            .await?
+        {
+            let ids: Vec<String> =
+                serde_json::from_slice(&bytes).map_err(|_| task_error("context_tasks", false))?;
+            for id in ids.into_iter().take(3) {
+                if let Some(bytes) = context.storage().get(&format!("context_task/{id}")).await? {
+                    let task: Value = serde_json::from_slice(&bytes)
+                        .map_err(|_| task_error("context_task", false))?;
+                    tasks.insert(id, task);
+                }
+            }
+        }
+    }
+    let mut output = String::new();
+    for (id, task) in tasks.into_iter().take(3) {
+        output.push_str(&format!(
+            "\n- task_id={}，{}，状态={}（需要时查询任务详情）",
+            id,
+            task["summary"].as_str().unwrap_or(""),
+            task["status"].as_str().unwrap_or("")
+        ));
+    }
+    if output.is_empty() {
+        Ok(output)
+    } else {
+        Ok(format!("\n\n关联任务索引：{output}"))
     }
 }
 
@@ -476,6 +492,43 @@ impl InvocationHandler for TaskHandler {
                             .map_err(|_| task_error("record_task_action", false))?,
                         )
                         .await?;
+                }
+            }
+            if result["ok"] == true
+                && let Some(id) = result["task"]["task_id"].as_str()
+            {
+                self.context
+                    .storage()
+                    .put(
+                        &format!("context_task/{id}"),
+                        serde_json::to_vec(&result["task"])
+                            .map_err(|_| task_error("context_task", false))?,
+                    )
+                    .await?;
+                if matches!(operation, TaskOperation::Create) {
+                    for chat in &self.context.chats {
+                        let key = context_task_key(
+                            self.context.agent_id.as_str(),
+                            chat.channel_id.as_str(),
+                            &chat.chat_id,
+                        );
+                        let mut ids: Vec<String> = match self.context.storage().get(&key).await? {
+                            Some(bytes) => serde_json::from_slice(&bytes)
+                                .map_err(|_| task_error("context_tasks", false))?,
+                            None => Vec::new(),
+                        };
+                        ids.retain(|value| value != id);
+                        ids.insert(0, id.to_owned());
+                        ids.truncate(3);
+                        self.context
+                            .storage()
+                            .put(
+                                &key,
+                                serde_json::to_vec(&ids)
+                                    .map_err(|_| task_error("context_tasks", false))?,
+                            )
+                            .await?;
+                    }
                 }
             }
             Ok(result)

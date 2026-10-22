@@ -44,6 +44,22 @@ impl Drop for ReleaseSignal {
 }
 
 impl Database {
+    pub(crate) async fn acknowledge_delivery(
+        &self,
+        execution_id: i64,
+    ) -> std::result::Result<(), RuntimeError> {
+        let application = self
+            .signals
+            .application
+            .lock()
+            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?
+            .upgrade();
+        if let Some(inner) = application {
+            let runtime = crate::application::RuntimeApplication { inner }.runtime()?;
+            runtime.acknowledge_delivery(execution_id).await?;
+        }
+        Ok(())
+    }
     pub(crate) fn new(storage: Arc<Storage>) -> Self {
         Self {
             storage,
@@ -398,6 +414,7 @@ database_methods! {
     true begin_execution_send(execution_id: i64, request: SendRequest) -> SendAttemptView [] (execution_id,request);
     true bind_sent_chat(message_id: i64, native_chat: &str) -> () [let native_chat=native_chat.to_owned();] (message_id,&native_chat);
     true prepare_direct_chat(workspace: &WorkspaceId, agent: &AgentId, channel: &ChannelId, channel_name: &str, person: &PersonId, now: i64) -> String [let workspace=workspace.clone(); let agent=agent.clone(); let channel=channel.clone(); let channel_name=channel_name.to_owned(); let person=person.clone();] (&workspace,&agent,&channel,&channel_name,&person,now);
+    true record_outbound_reply(message_id: i64, reply_to: Option<i64>) -> Option<String> [] (message_id,reply_to);
     true record_outbound_resources(message_id: i64, resources: Vec<ResourceView>) -> () [] (message_id,resources);
     true finish_tool_invocation(
         r: &ToolInvocationRequest,
@@ -520,6 +537,7 @@ database_methods! {
         let w = w.to_owned();
         let a = a.to_owned();
     ] (&w, &a);
+    true create_steer_delivery(workspace_id: &WorkspaceId, agent_id: &AgentId, inbox_item_id: i64, rendered_markdown: &str, now: i64) -> Option<SteerDelivery> [let workspace_id=workspace_id.clone();let agent_id=agent_id.clone();let rendered_markdown=rendered_markdown.to_owned();] (&workspace_id,&agent_id,inbox_item_id,&rendered_markdown,now);
     false pending_steer_deliveries(
         machine_id: &str,
         machine_instance_id: &str,
@@ -725,6 +743,8 @@ database_methods! {
         let workspace_id = workspace_id.to_owned();
         let error_code = error_code.map(ToOwned::to_owned);
     ] (&workspace_id, status, error_code.as_deref(), now);
+    true record_chat_observation(workspace: &WorkspaceId, agent: &AgentId, message_id: i64, now: i64) -> bool [let workspace=workspace.clone();let agent=agent.clone();] (&workspace,&agent,message_id,now);
+    false observed_chats(workspace: &WorkspaceId, agent: &AgentId) -> Vec<(ChatRefView, MessageView)> [let workspace=workspace.clone();let agent=agent.clone();] (&workspace,&agent);
     false snapshot(snapshot_id: i64) -> SnapshotView [] (snapshot_id);
     true record_chat_receiver(workspace: &WorkspaceId, agent: &AgentId, channel: &ChannelId, chat: &str) -> () [
         let workspace=workspace.clone(); let agent=agent.clone(); let channel=channel.clone(); let chat=chat.to_owned();

@@ -637,6 +637,9 @@ impl Provider for FeishuProvider {
         })
     }
 
+    fn context_index<'a>(&'a self, context: AgentRuntimeContext) -> ProviderFuture<'a, String> {
+        Box::pin(async move { crate::agent_tasks::context_index(&context).await })
+    }
     fn system_prompt<'a>(&'a self, context: AgentRuntimeContext) -> ProviderFuture<'a, String> {
         Box::pin(async move { Ok(crate::agent_tasks::system_prompt(&context)) })
     }

@@ -1,4 +1,4 @@
-use lankide_harness::{HarnessError, HarnessErrorCode, ToolDefinition, ToolResultRequest};
+use crate::{HarnessError, HarnessErrorCode, ToolDefinition, ToolResultRequest};
 use serde_json::{Value, json};
 use std::fs;
 use std::io::{Read, Write};
@@ -8,6 +8,14 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+#[derive(Clone, serde::Deserialize)]
+pub(crate) struct McpTool {
+    #[serde(flatten)]
+    definition: ToolDefinition,
+    #[serde(default, rename = "_meta")]
+    metadata: Value,
+}
 
 pub(crate) struct McpCall {
     pub call_id: String,
@@ -36,7 +44,7 @@ impl McpStopHandle {
 }
 
 impl McpServer {
-    pub fn start(artifact_dir: &Path, tools: Vec<ToolDefinition>) -> Result<Self, HarnessError> {
+    pub fn start(artifact_dir: &Path, tools: Vec<McpTool>) -> Result<Self, HarnessError> {
         let listener = TcpListener::bind("127.0.0.1:0").map_err(io_error("bind MCP server"))?;
         let port = listener
             .local_addr()
@@ -96,11 +104,7 @@ impl Drop for McpServer {
     }
 }
 
-fn handle_connection(
-    mut stream: TcpStream,
-    tools: &[ToolDefinition],
-    calls: &mpsc::Sender<McpCall>,
-) {
+fn handle_connection(mut stream: TcpStream, tools: &[McpTool], calls: &mpsc::Sender<McpCall>) {
     let Some(body) = read_http_body(&mut stream) else {
         let _ = write_http(&mut stream, 400, None);
         return;
@@ -125,17 +129,18 @@ fn handle_connection(
             "serverInfo":{"name":"lankide","version":env!("CARGO_PKG_VERSION")}
         }),
         "tools/list" => json!({"tools":tools.iter().map(|tool| json!({
-            "name":tool.name,
-            "description":tool.description,
-            "inputSchema":tool.input_schema,
-            "outputSchema":tool.output_schema
+            "name":tool.definition.name,
+            "description":tool.definition.description,
+            "inputSchema":tool.definition.input_schema,
+            "outputSchema":tool.definition.output_schema,
+            "_meta":tool.metadata
         })).collect::<Vec<_>>() }),
         "tools/call" => {
             let name = request
                 .pointer("/params/name")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            if !tools.iter().any(|tool| tool.name == name) {
+            if !tools.iter().any(|tool| tool.definition.name == name) {
                 return write_rpc_error(&mut stream, id, -32602, "unknown tool");
             }
             let (result_sender, result_receiver) = mpsc::channel();

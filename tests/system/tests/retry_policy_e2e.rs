@@ -331,7 +331,7 @@ async fn messages_during_backoff_keep_their_own_batch() -> Result<()> {
     team.direct_message(&agent, "alice", "queued").await?;
     rig.settle().await?;
     let executions = agent.executions().await?;
-    assert_eq!(executions.len(), 3);
+    assert_eq!(executions.len(), 3, "{executions:#?}");
     assert_eq!(executions[0].trigger_messages, ["first"]);
     assert_eq!(executions[1].trigger_messages, ["first"]);
     assert_eq!(executions[2].trigger_messages, ["queued"]);

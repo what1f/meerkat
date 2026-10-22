@@ -332,6 +332,11 @@ async fn feishu_provider_exposes_im_reaction_and_optional_task_capabilities() {
         .await
         .expect("Feishu system prompt");
     assert!(prompt.contains("飞书 IM"));
+    assert!(prompt.contains(include_str!("fixtures/go-expression.md").trim()));
+    assert!(prompt.contains("message_send({\"channel_id\":\"<channel_id>\""));
+    assert!(prompt.contains("不要为了追上一个活跃群聊而机械地反复发送"));
+    assert!(prompt.contains("![图片](./output.png)"));
+    assert!(!prompt.contains("lankide upload"));
     assert!(prompt.contains("飞书任务"));
     assert!(prompt.contains("负责人"));
     assert!(!prompt.contains("Runtime"));
@@ -508,7 +513,14 @@ async fn feishu_task_flow_projects_the_typed_team_roster() {
     .await
     .expect("third Feishu Agent connection");
 
-    let runtime = standalone_runtime_spec("cli_alpha");
+    let mut runtime = standalone_runtime_spec("cli_alpha");
+    runtime.chats.push(lankide_provider::AgentRuntimeChat {
+        provider_id: lankide_core::ProviderId::new("feishu").unwrap(),
+        channel_id: lankide_core::ChannelId::new("group_chat").unwrap(),
+        channel_name: "Group".into(),
+        chat_id: "origin-chat".into(),
+        chat_name: "Origin".into(),
+    });
     let created = host
         .invoke_tool_in_context(
             agent_id.clone(),
@@ -523,6 +535,19 @@ async fn feishu_task_flow_projects_the_typed_team_roster() {
         .await
         .expect("create task");
     assert_eq!(created["ok"], true);
+    let context_index = host
+        .context_index(agent_id.clone(), runtime.clone())
+        .await
+        .expect("related task index");
+    assert!(context_index.contains("Typed roster task"));
+    assert!(context_index.contains(created["task"]["task_id"].as_str().unwrap()));
+    assert!(
+        host.context_index(other_agent_id.clone(), runtime.clone())
+            .await
+            .expect("other Agent index")
+            .is_empty()
+    );
+
     let task_id = created["task"]["task_id"]
         .as_str()
         .expect("created task id")

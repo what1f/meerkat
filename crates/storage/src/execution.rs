@@ -24,6 +24,7 @@ pub struct SteerDelivery {
     pub attempt: i64,
     pub machine_id: String,
     pub machine_instance_id: String,
+    pub resources: Vec<crate::ResourceView>,
     pub rendered_markdown: String,
     pub created_at: i64,
 }
@@ -140,6 +141,13 @@ fn steer_delivery_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SteerDelivery
         machine_instance_id: row.get(4)?,
         rendered_markdown: row.get(5)?,
         created_at: row.get(6)?,
+        resources: serde_json::from_str(&row.get::<_, String>(7)?).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                7,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
     })
 }
 fn state(c: &Connection, id: i64) -> Result<ExecutionState> {
@@ -159,11 +167,12 @@ pub(super) fn expand_execution_chat_boundary(
     read_to_message_id: i64,
     now: i64,
 ) -> Result<()> {
-    let read_from_message_id: Option<i64> = transaction.query_row(
-        "SELECT read_from_message_id FROM unread_snapshot_chats WHERE snapshot_id=?1 AND chat_id=?2",
+    let (read_from_message_id, current_boundary): (Option<i64>, i64) = transaction.query_row(
+        "SELECT read_from_message_id,read_to_message_id FROM unread_snapshot_chats WHERE snapshot_id=?1 AND chat_id=?2",
         params![snapshot_id, chat_id],
-        |row| row.get(0),
+        |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
+    let read_to_message_id = read_to_message_id.max(current_boundary);
     let unread_count: i64 = transaction.query_row(
         "SELECT count(*) FROM messages WHERE chat_id=?1 AND message_id>?2 AND message_id<=?3 AND send_status IN ('received','sent')",
         params![chat_id, read_from_message_id.unwrap_or(0), read_to_message_id],
@@ -238,6 +247,35 @@ pub(super) fn expand_execution_chat_boundary(
     Ok(())
 }
 
+// Sparse receipts must not claim messages in the gaps between delivered inputs.
+pub(super) fn record_delivered_messages(
+    transaction: &Transaction<'_>,
+    execution_id: i64,
+    chat_id: i64,
+    message_ids: &[i64],
+    now: i64,
+) -> Result<()> {
+    let delivery_id: i64 = transaction.query_row(
+        "SELECT delivery_id FROM execution_deliveries WHERE execution_id=?1 ORDER BY delivery_id DESC LIMIT 1",
+        [execution_id], |row| row.get(0),
+    )?;
+    for message_id in message_ids {
+        transaction.execute(
+            "INSERT OR IGNORE INTO execution_delivery_items(delivery_id,inbox_item_id) SELECT ?1,inbox_item_id FROM agent_inbox_items WHERE workspace_id=(SELECT workspace_id FROM executions WHERE execution_id=?2) AND agent_id=(SELECT agent_id FROM executions WHERE execution_id=?2) AND chat_id=?3 AND source_kind='message' AND source_id=?4 AND state='pending'",
+            params![delivery_id,execution_id,chat_id,message_id],
+        )?;
+        transaction.execute(
+            "UPDATE agent_inbox_items SET state='delivered',claimed_execution_id=?2,updated_at=?3 WHERE inbox_item_id IN(SELECT inbox_item_id FROM execution_delivery_items WHERE delivery_id=?1) AND source_kind='message' AND source_id=?4 AND state='pending'",
+            params![delivery_id,execution_id,now,message_id],
+        )?;
+        transaction.execute(
+            "INSERT INTO execution_delivery_chats(delivery_id,chat_id,read_to_message_id) VALUES(?1,?2,?3) ON CONFLICT(delivery_id,chat_id) DO UPDATE SET read_to_message_id=max(read_to_message_id,excluded.read_to_message_id)",
+            params![delivery_id,chat_id,message_id],
+        )?;
+    }
+    Ok(())
+}
+
 pub(super) fn commit_execution_transaction(
     transaction: &Transaction<'_>,
     execution_id: i64,
@@ -281,6 +319,10 @@ pub(super) fn commit_execution_transaction(
         .collect::<std::result::Result<Vec<_>, _>>()?;
     drop(statement);
     for (chat_id, read_to_message_id) in cursors {
+        let read_to_message_id: i64 = transaction.query_row(
+            "SELECT min(?4,coalesce(min(source_id)-1,?4)) FROM agent_inbox_items WHERE workspace_id=?1 AND agent_id=?2 AND chat_id=?3 AND source_kind='message' AND state='pending'",
+            params![workspace_id,agent_id,chat_id,read_to_message_id], |row| row.get(0),
+        )?;
         transaction.execute("INSERT INTO agent_chat_cursors VALUES(?1,?2,?3,?4,?5) ON CONFLICT(workspace_id,agent_id,chat_id) DO UPDATE SET read_to_message_id=max(read_to_message_id,excluded.read_to_message_id),updated_at=excluded.updated_at", params![workspace_id,agent_id,chat_id,read_to_message_id,now])?;
     }
     transaction.execute("UPDATE agent_inbox_items SET state='consumed',updated_at=?2 WHERE claimed_execution_id=?1 AND state='delivered'", params![execution_id,now])?;
@@ -501,7 +543,7 @@ impl Storage {
                 |r| r.get(0),
             )?;
             let from:Option<i64>=t.query_row("SELECT read_to_message_id FROM agent_chat_cursors WHERE workspace_id=?1 AND agent_id=?2 AND chat_id=?3",params![w.as_str(),a.as_str(),ch],|r|r.get(0)).optional()?.flatten();
-            let unread_count:i64=t.query_row("SELECT count(*) FROM messages WHERE chat_id=?1 AND message_id>?2 AND message_id<=?3 AND send_status IN ('received','sent')",params![ch,from.unwrap_or(0),to],|r|r.get(0))?;
+            let unread_count:i64=t.query_row("SELECT count(*) FROM messages m WHERE chat_id=?1 AND message_id>?2 AND message_id<=?3 AND send_status IN ('received','sent') AND NOT EXISTS(SELECT 1 FROM agent_inbox_items i WHERE i.workspace_id=?4 AND i.agent_id=?5 AND i.source_kind='message' AND i.source_id=m.message_id AND i.state='consumed')",params![ch,from.unwrap_or(0),to,w.as_str(),a.as_str()],|r|r.get(0))?;
             t.execute(
                 "INSERT INTO unread_snapshot_chats VALUES(?1,?2,?3,?4,?5,?6)",
                 params![sid, ch, from, to, unread_count, summary],
@@ -526,11 +568,12 @@ impl Storage {
                     }
                 },
             );
-            let mut recent=t.prepare("SELECT message_id FROM messages WHERE chat_id=?1 AND message_id>?2 AND message_id<=?3 AND send_status IN ('received','sent') ORDER BY message_id DESC LIMIT ?4")?;
+            let mut recent=t.prepare("SELECT message_id FROM messages m WHERE chat_id=?1 AND message_id>?2 AND message_id<=?3 AND send_status IN ('received','sent') AND NOT EXISTS(SELECT 1 FROM agent_inbox_items i WHERE i.workspace_id=?5 AND i.agent_id=?6 AND i.source_kind='message' AND i.source_id=m.message_id AND i.state='consumed') ORDER BY message_id DESC LIMIT ?4")?;
             let mut recent_ids = recent
-                .query_map(params![ch, from.unwrap_or(0), to, 3], |r| {
-                    r.get::<_, i64>(0)
-                })?
+                .query_map(
+                    params![ch, from.unwrap_or(0), to, 3, w.as_str(), a.as_str()],
+                    |r| r.get::<_, i64>(0),
+                )?
                 .collect::<std::result::Result<Vec<_>, _>>()?;
             recent_ids.reverse();
             drop(recent);
@@ -696,7 +739,7 @@ impl Storage {
             params![execution_id,attempt,inbox_item_id,machine_id,machine_instance_id,rendered_markdown,now],
         )?;
         let delivery = transaction.query_row(
-            "SELECT steer_delivery_id,execution_id,attempt,machine_id,machine_instance_id,rendered_markdown,created_at FROM steer_deliveries WHERE execution_id=?1 AND attempt=?2 AND inbox_item_id=?3",
+            "SELECT steer_delivery_id,execution_id,attempt,machine_id,machine_instance_id,rendered_markdown,created_at,(SELECT m.resources_json FROM agent_inbox_items i JOIN messages m ON m.message_id=i.source_id WHERE i.inbox_item_id=steer_deliveries.inbox_item_id) FROM steer_deliveries WHERE execution_id=?1 AND attempt=?2 AND inbox_item_id=?3",
             params![execution_id, attempt, inbox_item_id],
             steer_delivery_row,
         )?;
@@ -710,7 +753,7 @@ impl Storage {
     ) -> Result<Vec<SteerDelivery>> {
         let connection = self.read_conn()?;
         let mut statement = connection.prepare(
-            "SELECT s.steer_delivery_id,s.execution_id,s.attempt,s.machine_id,s.machine_instance_id,s.rendered_markdown,s.created_at FROM steer_deliveries s JOIN executions e USING(execution_id) JOIN execution_attempts a ON a.execution_id=s.execution_id AND a.attempt=s.attempt WHERE s.machine_id=?1 AND s.machine_instance_id=?2 AND s.state='pending' AND e.attempt=s.attempt AND e.state IN('assigning','running','recovering') AND a.state IN('offered','accepted','running') ORDER BY s.steer_delivery_id",
+            "SELECT s.steer_delivery_id,s.execution_id,s.attempt,s.machine_id,s.machine_instance_id,s.rendered_markdown,s.created_at,(SELECT m.resources_json FROM agent_inbox_items i JOIN messages m ON m.message_id=i.source_id WHERE i.inbox_item_id=s.inbox_item_id) FROM steer_deliveries s JOIN executions e USING(execution_id) JOIN execution_attempts a ON a.execution_id=s.execution_id AND a.attempt=s.attempt WHERE s.machine_id=?1 AND s.machine_instance_id=?2 AND s.state='pending' AND e.attempt=s.attempt AND e.state IN('assigning','running','recovering') AND a.state IN('offered','accepted','running') ORDER BY s.steer_delivery_id",
         )?;
         Ok(statement
             .query_map(params![machine_id, machine_instance_id], steer_delivery_row)?
@@ -734,6 +777,21 @@ impl Storage {
             params![delivery_id,execution_id,attempt,machine_id,machine_instance_id,state, accepted, now],
         )? == 1;
         if changed && accepted {
+            let (snapshot_id, chat_id, message_id): (i64, i64, i64) = transaction.query_row(
+                "SELECT e.snapshot_id,i.chat_id,i.source_id FROM steer_deliveries s JOIN executions e USING(execution_id) JOIN agent_inbox_items i USING(inbox_item_id) WHERE s.steer_delivery_id=?1", [delivery_id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
+            transaction.execute(
+                "INSERT OR IGNORE INTO unread_snapshot_chats(snapshot_id,chat_id,read_from_message_id,read_to_message_id,unread_count,trigger_summary) SELECT snapshot_id,?2,(SELECT read_to_message_id FROM agent_chat_cursors WHERE workspace_id=s.workspace_id AND agent_id=s.agent_id AND chat_id=?2),?3,0,'human_steer' FROM unread_snapshots s WHERE snapshot_id=?1",
+                params![snapshot_id,chat_id,message_id])?;
+            // Extend lookup scope, but acknowledge only the input actually sent.
+            transaction.execute(
+                "UPDATE unread_snapshot_chats SET read_to_message_id=max(read_to_message_id,?3),unread_count=(SELECT count(*) FROM messages WHERE chat_id=?2 AND message_id>coalesce(read_from_message_id,0) AND message_id<=max(read_to_message_id,?3) AND send_status IN ('received','sent')) WHERE snapshot_id=?1 AND chat_id=?2",
+                params![snapshot_id, chat_id, message_id],
+            )?;
+            transaction.execute(
+                "INSERT OR IGNORE INTO unread_snapshot_messages(snapshot_id,chat_id,message_id,position) VALUES(?1,?2,?3,?3)",
+                params![snapshot_id, chat_id, message_id],
+            )?;
+            record_delivered_messages(&transaction, execution_id, chat_id, &[message_id], now)?;
             transaction.execute(
                 "UPDATE agent_inbox_items SET state='delivered',claimed_execution_id=?2,updated_at=?3 WHERE inbox_item_id=(SELECT inbox_item_id FROM steer_deliveries WHERE steer_delivery_id=?1) AND state='pending'",
                 params![delivery_id, execution_id, now],

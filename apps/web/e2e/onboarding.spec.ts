@@ -49,13 +49,18 @@ async function begin(page: Page, baseURL: string) {
   await step(page, 1);
   return before;
 }
-// Choose the scripted AI once its test settles, then name the first member.
+// Choose an available AI, then name the first member.
 async function chooseAiAndCreate(page: Page) {
+  const probes: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().endsWith('/api/v1/test_harness')) probes.push(request.url());
+  });
   await step(page, 2);
-  // The web rig's scripted AI cannot answer a test yet; either result settles the row.
-  await expect(page.getByTestId('harness-pi')).toHaveAttribute('data-test', /^(ok|fail)$/);
+  await expect(page.getByTestId('harness-pi')).toBeVisible();
+  await page.getByTestId('harness-pi').click();
   await next(page).click();
   await step(page, 3);
+  expect(probes).toEqual([]);
   await expect(next(page)).toBeDisabled();
   await page.getByTestId('onboarding-member-name').fill('Alpha');
   await next(page).click();
@@ -156,8 +161,7 @@ test('Skipping the connection also skips the first member', async ({ page, baseU
   offline = false;
   await retry.click();
   await expect(retry).toHaveCount(0);
-  // The web rig's scripted AI cannot answer a test yet; either result settles the row.
-  await expect(page.getByTestId('harness-pi')).toHaveAttribute('data-test', /^(ok|fail)$/);
+  await expect(page.getByTestId('harness-pi')).toBeVisible();
   await next(page).click();
   await expect(page).toHaveURL(/#\/members$/);
 });

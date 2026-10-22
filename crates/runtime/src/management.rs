@@ -758,6 +758,8 @@ impl RuntimeApplication {
             .into_iter()
             .flat_map(|machine| machine.harnesses)
             .map(|harness| HarnessCatalogItem {
+                default_environment_variables: harness.default_environment_variables,
+                default_launch_arguments: harness.default_launch_arguments,
                 harness_id: harness.harness_id,
                 display_name: harness.display_name,
                 description: harness.reason,

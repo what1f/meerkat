@@ -12,7 +12,7 @@ pub(crate) fn standard_tool_definitions() -> Vec<ToolDefinition> {
         (
             "message_send",
             "Send to a conversation you belong to. Read it with chat_messages first. Or start a direct message with a human team member using recipient_id.",
-            r#"{"type":"object","oneOf":[{"required":["channel_id","chat_id"]},{"required":["recipient_id"]}],"anyOf":[{"required":["content"]},{"required":["content_file"]},{"required":["attachments"]}],"properties":{"recipient_id":{"type":"string","description":"人类团队成员 ID；发送私信时使用，与 channel_id/chat_id 二选一。"},"channel_id":{"type":"string"},"chat_id":{"type":"string"},"content":{"type":"string"},"content_file":{"type":"string"},"attachments":{"description":"先用 lankide upload --file PATH 上传本地文件，再原样传入返回的资源对象。Markdown 本地路径不支持。","type":"array","minItems":1,"items":{"type":"object","required":["resource_id","file_name","media_type","size_bytes","sha256"],"properties":{"resource_id":{"type":"integer","minimum":1},"file_name":{"type":"string"},"media_type":{"type":"string"},"size_bytes":{"type":"integer","minimum":0},"sha256":{"type":"string"}},"additionalProperties":false}},"reply_to":{"type":"integer"},"force":{"type":"boolean","description":"强制发送。使用前必须读取当前可获取的最新消息，重新判断待发送内容。仅当内容仍然有效、此刻有必要发出，且继续等待会妨碍沟通时使用。禁止因发送被拒绝、图省事或机械重试而启用；尚未读取新消息时不得使用。"}},"additionalProperties":false}"#,
+            r#"{"type":"object","oneOf":[{"required":["channel_id","chat_id"]},{"required":["recipient_id"]}],"anyOf":[{"required":["content"]},{"required":["content_file"]}],"properties":{"recipient_id":{"type":"string","description":"人类团队成员 ID；发送私信时使用，与 channel_id/chat_id 二选一。"},"channel_id":{"type":"string"},"chat_id":{"type":"string"},"content":{"type":"string","description":"Message Markdown. Embed local files as ![image](./output.png) or [report](./report.pdf); files are sent automatically."},"content_file":{"type":"string"},"reply_to":{"type":"integer"},"force":{"type":"boolean","description":"强制发送。使用前必须读取当前可获取的最新消息，重新判断待发送内容。仅当内容仍然有效、此刻有必要发出，且继续等待会妨碍沟通时使用。禁止因发送被拒绝、图省事或机械重试而启用；尚未读取新消息时不得使用。"}},"additionalProperties":false}"#,
         ),
         (
             "message_recall",
@@ -307,11 +307,6 @@ impl RuntimeApplication {
         }
         let runtime = self.runtime()?;
         let validated = runtime.validate_run_context(context, now_millis()).await?;
-        if unsupported_local_markdown(&request.content_markdown) {
-            return Ok(invalid_send_result(
-                "本地图片和文件请先使用 lankide upload --file PATH，再将返回的完整资源对象放入 attachments。",
-            ));
-        }
         let direct_person = request
             .chat_id
             .strip_prefix("person:")
@@ -615,6 +610,24 @@ impl RuntimeApplication {
                     "This content is not available for the current task.".into(),
                 )
             })?;
+        if message.sender_id != validated.agent.provider_sender_id
+            && message.sender_id != validated.agent_id.as_str()
+        {
+            let identity = runtime
+                .database()
+                .provider_message(&validated.workspace_id, message_id)
+                .await?
+                .ok_or_else(|| RuntimeError::Application("Message is unavailable.".into()))?;
+            runtime
+                .observe_message(
+                    &validated.workspace_id,
+                    &validated.agent_id,
+                    &identity.channel_id,
+                    &identity.provider_chat_id,
+                    message_id,
+                )
+                .await?;
+        }
         Ok(ContentResult {
             content_id: request.content_id,
             content_markdown: message.content.clone(),
@@ -770,6 +783,21 @@ async fn invoke_standard_tool(
                     now_millis(),
                 )
                 .await?;
+            if let Some(message) = messages.iter().rev().find(|message| {
+                message.sender_id != validated.agent.provider_sender_id
+                    && message.sender_id != validated.agent_id.as_str()
+            }) {
+                application
+                    .runtime()?
+                    .observe_message(
+                        &validated.workspace_id,
+                        &validated.agent_id,
+                        &channel,
+                        chat_id,
+                        message.message_id,
+                    )
+                    .await?;
+            }
             serde_json::json!({
                 "channel_id": channel.as_str(),
                 "chat_id": chat_id,
@@ -792,7 +820,7 @@ async fn invoke_standard_tool(
             {
                 return Ok(Some(invalid_send_input(
                     &request.invocation_id,
-                    "attachments 请填写上传后返回的资源对象数组。",
+                    "请在 content 中使用 Markdown 文件或图片链接。",
                 )));
             }
             let resources = object
@@ -810,7 +838,7 @@ async fn invoke_standard_tool(
                 Err(_) => {
                     return Ok(Some(invalid_send_input(
                         &request.invocation_id,
-                        "attachments 中每项须为上传返回的完整资源对象：resource_id、file_name、media_type、size_bytes、sha256。请先使用 lankide upload --file PATH。",
+                        "请在 content 中使用 Markdown 文件或图片链接。",
                     )));
                 }
             };
@@ -818,12 +846,6 @@ async fn invoke_standard_tool(
                 .get("content")
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or_default();
-            if unsupported_local_markdown(content) {
-                return Ok(Some(invalid_send_input(
-                    &request.invocation_id,
-                    "本地图片和文件请先使用 lankide upload --file PATH，再将返回的完整资源对象放入 attachments。",
-                )));
-            }
             if content.is_empty() && resources.is_empty() {
                 return Ok(Some(capability_error(
                     request.invocation_id.clone(),
@@ -1186,22 +1208,6 @@ fn invalid_send_input(invocation_id: &str, message: &str) -> CapabilityInvokeRes
     result
 }
 
-fn unsupported_local_markdown(content: &str) -> bool {
-    content.match_indices("](").any(|(index, _)| {
-        let target = content[index + 2..].trim_start().trim_start_matches('<');
-        [
-            "/",
-            "./",
-            "../",
-            "~/",
-            "file://",
-            "resource://",
-            "attachment://",
-        ]
-        .iter()
-        .any(|prefix| target.starts_with(prefix))
-    })
-}
 fn invalid_send_result(message: &str) -> ProtocolSendMessageResult {
     ProtocolSendMessageResult {
         accepted: false,
