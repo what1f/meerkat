@@ -66,6 +66,9 @@ ChecklistRow.New = function New({ placeholder, onAdd, ...rest }: ChecklistRowNew
         </span>
         <input
           value={text}
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
           placeholder={placeholder}
           aria-label={placeholder}
           onChange={(e) => setText(e.target.value)}

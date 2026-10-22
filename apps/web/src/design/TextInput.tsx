@@ -23,6 +23,9 @@ export function TextInput({
   return (
     <input
       {...rest}
+      autoCorrect="off"
+      autoCapitalize="off"
+      spellCheck={false}
       className={css.root}
       value={value}
       onChange={(e) => onChange(e.target.value)}

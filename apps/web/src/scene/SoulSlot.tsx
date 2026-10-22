@@ -18,7 +18,7 @@ export function SoulSlot({
   ...rest
 }: SoulSlotProps) {
   return (
-    <label {...rest} className={css.root} data-long={value.length > 60}>
+    <label {...rest} className={css.root} data-long={value.length > 60} data-reading-surface="">
       <span className={css.engrave}>{label}</span>
       <span className={css.well}>
         <span className={css.slip}>

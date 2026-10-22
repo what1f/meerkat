@@ -21,6 +21,9 @@ export function SearchField({
       <Icon name="search" />
       <input
         {...rest}
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
         type="search"
         value={value}
         onChange={(e) => onChange(e.target.value)}

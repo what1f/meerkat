@@ -19,6 +19,9 @@ export function DocArea({ value, onChange, placeholder, minRows = 3, ...rest }: 
   return (
     <textarea
       {...rest}
+      autoCorrect="off"
+      autoCapitalize="off"
+      spellCheck={false}
       ref={ref}
       className={css.root}
       value={value}

@@ -130,6 +130,6 @@
 }
 
 .root[data-reading='true'] :is(.figure, .sticker, .tab, .drawer),
-.root[data-reading='true'] .body > :not(.deck, :focus-within) {
+.root[data-reading='true'] .body > :not(.deck, [data-reading-surface]) {
   opacity: 0.35;
 }

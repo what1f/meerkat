@@ -10,7 +10,7 @@ use std::sync::{
 };
 use tauri::{
     Manager, Url, WebviewUrl, WebviewWindowBuilder,
-    menu::{Menu, MenuItem, Submenu},
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
 };
 use tauri_plugin_opener::OpenerExt;
 
@@ -231,13 +231,47 @@ fn main() {
             )?;
             let menu = Menu::with_items(
                 app,
-                &[&Submenu::with_id_and_items(
-                    app,
-                    "lankide",
-                    "Lankide",
-                    true,
-                    &[&settings, &open, &quit],
-                )?],
+                &[
+                    &Submenu::with_id_and_items(
+                        app,
+                        "lankide",
+                        "Lankide",
+                        true,
+                        &[&settings, &open, &quit],
+                    )?,
+                    &Submenu::with_items(
+                        app,
+                        if chinese { "编辑" } else { "Edit" },
+                        true,
+                        &[
+                            &PredefinedMenuItem::undo(
+                                app,
+                                Some(if chinese { "撤销" } else { "Undo" }),
+                            )?,
+                            &PredefinedMenuItem::redo(
+                                app,
+                                Some(if chinese { "重做" } else { "Redo" }),
+                            )?,
+                            &PredefinedMenuItem::separator(app)?,
+                            &PredefinedMenuItem::cut(
+                                app,
+                                Some(if chinese { "剪切" } else { "Cut" }),
+                            )?,
+                            &PredefinedMenuItem::copy(
+                                app,
+                                Some(if chinese { "复制" } else { "Copy" }),
+                            )?,
+                            &PredefinedMenuItem::paste(
+                                app,
+                                Some(if chinese { "粘贴" } else { "Paste" }),
+                            )?,
+                            &PredefinedMenuItem::select_all(
+                                app,
+                                Some(if chinese { "全选" } else { "Select All" }),
+                            )?,
+                        ],
+                    )?,
+                ],
             )?;
             app.set_menu(menu)?;
             app.add_capability(

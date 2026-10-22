@@ -56,6 +56,9 @@ export function InlineText({
       </button>
     );
   const input = {
+    autoCorrect: 'off',
+    autoCapitalize: 'off',
+    spellCheck: false,
     onClick,
     value: live ? value : draft,
     placeholder,
