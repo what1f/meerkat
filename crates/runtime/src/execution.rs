@@ -61,7 +61,14 @@ impl Runtime {
                 .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
             while tasks.try_join_next().is_some() {}
             tasks.spawn(async move {
-                if let Err(error) = host.auto_reaction(agent_id.clone(), spec).await {
+                let started = std::time::Instant::now();
+                let result = host.auto_reaction(agent_id.clone(), spec).await;
+                log::info!(
+                    "agent={agent_id} message={message_id} read_reaction_request_ms={} success={}",
+                    started.elapsed().as_millis(),
+                    result.is_ok()
+                );
+                if let Err(error) = result {
                     log::error!("[runtime] agent={agent_id} read acknowledgement failed: {error}");
                 }
             });
@@ -115,6 +122,7 @@ impl Runtime {
     ) -> Result<DynamicExecutionInput, RuntimeError> {
         self.require_active(workspace_id)?;
         let host = self.host(workspace_id).await?;
+        let preparation_started = std::time::Instant::now();
         let provider_prompt = host.system_prompt(agent_id.clone(), spec.clone()).await?;
         let workspace = self.storage.workspace_record(workspace_id).await?;
         let humans = self
@@ -131,8 +139,14 @@ impl Runtime {
             &provider_prompt,
         );
         let context_index = host.context_index(agent_id.clone(), spec.clone()).await?;
+        let tools_started = std::time::Instant::now();
         let tools = host.tools(agent_id.clone(), spec.clone()).await?;
-        let cli_commands = host.cli_commands(agent_id, spec).await?;
+        let tools_ms = tools_started.elapsed().as_millis();
+        let cli_commands = host.cli_commands(agent_id.clone(), spec).await?;
+        log::info!(
+            "workspace={workspace_id} agent={agent_id} input_preparation_ms={} tools_ms={tools_ms}",
+            preparation_started.elapsed().as_millis()
+        );
         Ok(DynamicExecutionInput {
             system_prompt,
             context_index,
