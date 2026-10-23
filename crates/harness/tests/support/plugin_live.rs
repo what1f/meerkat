@@ -22,6 +22,7 @@ pub async fn run(factory: &dyn HarnessFactory, cli: PathBuf, model: &str, effort
             .as_nanos()
     );
     let request = SessionRequest {
+        cli_version: None,
         config:HarnessConfig{harness_id:factory.info().harness_id.clone(),cli_path:cli,
             model:ModelRef::new(model,model),thinking_level:effort.into(),launch_arguments:Vec::new(),
             environment:BTreeMap::new(),config_fingerprint:nonce.clone()},

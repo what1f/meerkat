@@ -61,6 +61,7 @@ function input(text) {
   });
 }
 defineHarness({
+  reuseSession: true,
   apiVersion: 1,
   id: "claude_code",
   displayName: "Claude Code",
@@ -121,12 +122,16 @@ defineHarness({
   },
   start: (value) => open(value, false),
   resume: (value) => open(value, true),
+  rebind(value) { request = value; },
   execute(value) {
-    if (processId) ctx.terminate(processId);
     active = true;
     terminal = false;
     output = "";
     started(nativeId);
+    if (processId) {
+      input(value.input);
+      return;
+    }
     const args = [
       "-p",
       "--output-format",
@@ -192,6 +197,8 @@ defineHarness({
     if (processId) ctx.terminate(processId);
   },
   onExit(packet) {
+    if (packet.process === processId && !active)
+      failure("stream_interrupted", packet.detail || "Claude process exited");
     if (packet.process === processId && active && !terminal) {
       active = false;
       failed(packet.detail || "Claude process exited", "stream_interrupted");
@@ -235,7 +242,6 @@ defineHarness({
         usage(v.usage?.input_tokens, v.usage?.output_tokens);
         completed(v.result || output);
       }
-      ctx.closeStdin(processId);
     }
   },
 });

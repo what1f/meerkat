@@ -72,6 +72,7 @@ async fn test(
         );
         let plan = factory
             .test(SessionRequest {
+                cli_version: None,
                 permission_policy: PermissionPolicy::FullAccess,
                 config,
                 working_directory: directory

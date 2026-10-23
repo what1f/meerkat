@@ -54,13 +54,24 @@ function open(value, resume) {
     approvalPolicy: "never",
     sandbox: "danger-full-access",
     developerInstructions: request.system_prompt,
-    dynamicTools: request.tools.map((t) => ({
-      type: "function",
-      name: t.name,
-      description: t.description,
-      inputSchema: t.input_schema,
-      deferLoading: !["message_send", "attention_set", "chat_messages"].includes(t.name),
-    })),
+    dynamicTools: [
+      {
+        type: "namespace",
+        name: "lankide",
+        description: "Lankide workspace tools",
+        tools: request.tools.map((t) => ({
+          type: "function",
+          name: t.name,
+          description: t.description,
+          inputSchema: t.input_schema,
+          deferLoading: ![
+            "message_send",
+            "attention_set",
+            "chat_messages",
+          ].includes(t.name),
+        })),
+      },
+    ].filter((namespace) => namespace.tools.length > 0),
   };
   if (resume) {
     params.threadId = request.native_session_id;
@@ -73,6 +84,7 @@ function open(value, resume) {
   return { native_session_id: nativeId };
 }
 defineHarness({
+  reuseSession: true,
   apiVersion: 1,
   id: "codex",
   displayName: "Codex",
@@ -134,6 +146,7 @@ defineHarness({
   },
   start: (value) => open(value, false),
   resume: (value) => open(value, true),
+  rebind(value) { request = value; },
   execute(value) {
     active = true;
     output = "";
@@ -193,6 +206,8 @@ defineHarness({
     if (processId) ctx.terminate(processId);
   },
   onExit(packet) {
+    if (packet.process === processId && !active)
+      failure("stream_interrupted", packet.detail || "Codex process exited");
     if (packet.process === processId && active) {
       active = false;
       failed(packet.detail || "Codex process exited", "stream_interrupted");

@@ -256,6 +256,7 @@ fn session_request(
     native_session_id: Option<String>,
 ) -> SessionRequest {
     SessionRequest {
+        cli_version: None,
         permission_policy: Default::default(),
         config:config.clone(), working_directory:workspace.to_path_buf(),
         system_prompt:"Protocol test only. Only perform the explicitly requested local file operation. Do not inspect unrelated files, environment, memory, or external services. Only call a Tool when the current user message explicitly asks for that Tool; otherwise answer with text only.".to_owned(),

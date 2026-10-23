@@ -16,6 +16,7 @@ interface ToolDefinition {
   output_schema: Json;
 }
 interface SessionRequest {
+  cli_version?: string | null;
   config: HarnessConfig;
   working_directory: string;
   system_prompt: string;
@@ -45,6 +46,8 @@ interface NativeModel {
   thinking_levels: string[];
 }
 interface HarnessPlugin {
+  reuseSession?: boolean;
+  rebind?(request: SessionRequest): void;
   apiVersion: 1;
   id: string;
   displayName: string;
@@ -111,6 +114,7 @@ declare const ctx: {
     record?: { path: string; limit: number };
   }): number;
   send(process: number, message: Json): void;
+  record(process: number, options: {path: string; limit: number}): void;
   receive(timeout: number): Packet | null;
   terminate(process: number): void;
   closeStdin(process: number): void;

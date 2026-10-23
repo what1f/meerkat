@@ -196,6 +196,7 @@ struct NativeProcess {
     child: Child,
     stdin: Option<ChildStdin>,
     journal: Option<PathBuf>,
+    recorder: Arc<Mutex<Record>>,
 }
 impl NativeProcess {
     fn terminate(&mut self) {
@@ -343,7 +344,7 @@ impl Worker {
                     let bridge=host.clone();ctx.globals().set("__host",Function::new(ctx.clone(),move|op:String,input:String|->String{let result=serde_json::from_str(&input).map_err(json_error).and_then(|v|bridge.operation(&op,v));match result {Ok(value)=>json!({"ok":value}).to_string(),Err(e)=>json!({"error":e}).to_string()}}).map_err(js_error)?).map_err(js_error)?;
                     ctx.eval::<(),_>(include_str!("sdk.js")).map_err(js_error)?;
                     ctx.eval::<(),_>(source.as_ref()).map_err(|error|context_error(&ctx,error))?;
-                    let metadata: String=ctx.eval("JSON.stringify({id:harness.id,apiVersion:harness.apiVersion,defaults:harness.defaults||{}})").map_err(js_error)?;
+                    let metadata: String=ctx.eval("JSON.stringify({id:harness.id,apiVersion:harness.apiVersion,defaults:harness.defaults||{},reuseSession:harness.reuseSession===true})").map_err(js_error)?;
                     let metadata:Value=serde_json::from_str(&metadata).map_err(json_error)?;
                     *state.metadata.lock().unwrap()=metadata.clone();
                     if metadata["id"]!=info.harness_id||metadata["apiVersion"]!=1{return Err(HarnessError::invalid_config("Plugin API version or identity mismatch"));}
@@ -468,6 +469,24 @@ struct PluginSession {
     tool_lock: tokio::sync::Mutex<()>,
 }
 impl HarnessSession for PluginSession {
+    fn reusable(&self) -> bool {
+        self.worker.shared.metadata.lock().unwrap()["reuseSession"] == true
+    }
+    fn rebind<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, ()> {
+        Box::pin(async move {
+            if !self.reusable()
+                || self.entry().health != SessionHealth::Healthy
+                || self.worker.shared.active.lock().unwrap().is_some()
+            {
+                return Err(HarnessError::new(
+                    HarnessErrorCode::InvalidState,
+                    "Session is not reusable",
+                ));
+            }
+            self.worker.call("rebind", json!(request)).await?;
+            Ok(())
+        })
+    }
     fn entry(&self) -> SessionEntry {
         self.worker.shared.entry.lock().unwrap().clone()
     }
@@ -831,6 +850,19 @@ impl Host {
                 stdin.flush().map_err(io)?;
                 Ok(Value::Null)
             }
+            "record" => {
+                let processes = self.shared.processes.lock().unwrap();
+                let process = processes
+                    .get(&(v["process"].as_u64().unwrap_or(0) as u32))
+                    .ok_or_else(|| {
+                        HarnessError::new(
+                            HarnessErrorCode::InvalidState,
+                            "Native process unavailable",
+                        )
+                    })?;
+                *process.recorder.lock().unwrap() = Record::new(v["options"].clone());
+                Ok(Value::Null)
+            }
             "receive" => {
                 let millis = v["timeout"].as_u64().unwrap_or(100).min(100);
                 let event = self
@@ -962,20 +994,22 @@ impl Host {
         journal(self.journal.as_deref(), "spawned", pid);
         let stdin = child.stdin.take();
         let stdout = child.stdout.take().unwrap();
+        let recorder = Arc::new(Mutex::new(Record::new(
+            v.get("record").cloned().unwrap_or(Value::Null),
+        )));
         self.shared.processes.lock().unwrap().insert(
             pid,
             NativeProcess {
                 child,
                 stdin,
                 journal: self.journal.clone(),
+                recorder: recorder.clone(),
             },
         );
         self.shared.pid.store(pid, Ordering::Release);
         let tx = self.tx.clone();
-        let record = v.get("record").cloned().unwrap_or(Value::Null);
         let process_state = self.shared.clone();
         thread::spawn(move || {
-            let mut recorder = Record::new(record);
             let mut reader = BufReader::new(stdout);
             loop {
                 let mut line = Vec::new();
@@ -993,7 +1027,7 @@ impl Host {
                         let raw = String::from_utf8_lossy(&line);
                         let message = serde_json::from_str::<Value>(&raw)
                             .unwrap_or_else(|_| json!({"invalid_output":raw}));
-                        recorder.append(&message);
+                        recorder.lock().unwrap().append(&message);
                         if tx.send(json!({"process":pid,"message":message})).is_err() {
                             return;
                         }
@@ -1043,7 +1077,7 @@ fn private_write(path: &Path, bytes: &[u8]) -> Result<(), HarnessError> {
 fn journal(path: Option<&Path>, action: &str, pid: u32) {
     if let Some(path) = path {
         if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
-            let _ = writeln!(file, "{action}\t{pid}");
+            let _ = file.write_all(format!("{action}\t{pid}\n").as_bytes());
         }
     }
 }

@@ -1,6 +1,6 @@
 use lankide_harness::{
     AgentEventKind, ExecuteRequest, HarnessCapability, HarnessConfig, HarnessFactory, ModelRef,
-    SessionRequest, ToolDefinition,
+    SessionRequest, ToolDefinition, ToolResultRequest,
 };
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, fs, os::unix::fs::PermissionsExt, path::Path, time::Duration};
@@ -102,7 +102,7 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
             probe.availability,
             lankide_harness::HarnessAvailability::Available
         );
-        let capabilities = probe.capabilities;
+        let capabilities = probe.capabilities.clone();
         assert_eq!(
             capabilities,
             [
@@ -126,38 +126,67 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                     "Authored after the first run.",
                 )?;
             }
-            let session = factory
-                .start(SessionRequest {
-                    permission_policy: Default::default(),
-                    config: config.clone(),
-                    working_directory: agent.clone(),
-                    system_prompt: "Follow the project instructions.".into(),
-                    native_session_id: None,
-                    tools: ["report", "message_send", "attention_set", "chat_messages"]
-                        .into_iter()
-                        .map(|name| ToolDefinition {
-                            name: name.into(),
-                            description: format!("Use {name}"),
-                            input_schema: json!({"type":"object"}),
-                            output_schema: json!({"type":"object"}),
-                        })
-                        .collect(),
-                })
-                .await?;
-            let mut events = session
-                .execute(ExecuteRequest {
-                    input: "Use the bug-triage skill.".into(),
-                })
-                .await?;
-            tokio::time::timeout(Duration::from_secs(5), async {
-                while let Some(event) = events.next().await {
-                    if matches!(event?.kind, AgentEventKind::Completed { .. }) {
-                        return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
-                    }
+            let request = SessionRequest {
+                cli_version: probe.version.clone(),
+                permission_policy: Default::default(),
+                config: config.clone(),
+                working_directory: agent.clone(),
+                system_prompt: "Follow the project instructions.".into(),
+                native_session_id: None,
+                tools: ["report", "message_send", "attention_set", "chat_messages"]
+                    .into_iter()
+                    .map(|name| ToolDefinition {
+                        name: name.into(),
+                        description: format!("Use {name}"),
+                        input_schema: json!({"type":"object"}),
+                        output_schema: json!({"type":"object"}),
+                    })
+                    .collect(),
+            };
+            let session = factory.start(request.clone()).await?;
+            assert!(session.reusable());
+            let native_id = session.entry().native_session_id;
+            for turn in 0..2 {
+                if turn > 0 {
+                    session.rebind(request.clone()).await?;
+                    assert_eq!(session.entry().native_session_id, native_id);
                 }
-                Err("native turn ended without completing".into())
-            })
-            .await??;
+                let mut events = session
+                    .execute(ExecuteRequest {
+                        input: "Use the bug-triage skill.".into(),
+                    })
+                    .await?;
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    while let Some(event) = events.next().await {
+                        let event = event?;
+                        if let AgentEventKind::ToolStarted {
+                            tool_call_id,
+                            tool_name,
+                            arguments,
+                        } = &event.kind
+                        {
+                            assert_eq!(id, "codex");
+                            assert_eq!(tool_name, "report");
+                            assert_eq!(arguments["value"], "namespace-roundtrip");
+                            session
+                                .tool_result(ToolResultRequest {
+                                    tool_call_id: tool_call_id.clone(),
+                                    success: true,
+                                    content_markdown: "namespace-roundtrip".into(),
+                                    structured_content: json!({}),
+                                    resources: Vec::new(),
+                                    error: None,
+                                })
+                                .await?;
+                        }
+                        if matches!(event.kind, AgentEventKind::Completed { .. }) {
+                            return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
+                        }
+                    }
+                    Err("native turn ended without completing".into())
+                })
+                .await??;
+            }
             session.close().await?;
             let private = agent.join(".lankide").join(id).join("native-home");
             let settings = if id == "codex" {
@@ -195,7 +224,21 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                         .any(|arg| arg == "--version" || arg == "--help")
             })
             .collect();
-        assert_eq!(launches.len(), 2);
+        assert_eq!(
+            launches.len(),
+            2,
+            "two turns must share each native process"
+        );
+        assert_eq!(
+            recorded
+                .iter()
+                .filter(|entry| entry["argv"]
+                    .as_array()
+                    .is_some_and(|args| args.iter().any(|arg| arg == "--version")))
+                .count(),
+            1,
+            "sessions use the version the Machine detected"
+        );
         for launch in launches {
             assert_eq!(
                 Path::new(launch["cwd"].as_str().unwrap()).canonicalize()?,
@@ -271,9 +314,13 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                 assert_eq!(params["approvalPolicy"], "never");
                 assert_eq!(params["sandbox"], "danger-full-access");
                 assert!(params.get("permissions").is_none());
-                assert_eq!(params["dynamicTools"][0]["name"], "report");
-                assert_eq!(params["dynamicTools"][0]["deferLoading"], true);
-                for tool in params["dynamicTools"].as_array().unwrap().iter().skip(1) {
+                let namespace = &params["dynamicTools"][0];
+                assert_eq!(namespace["type"], "namespace");
+                assert_eq!(namespace["name"], "lankide");
+                let tools = namespace["tools"].as_array().unwrap();
+                assert_eq!(tools[0]["name"], "report");
+                assert_eq!(tools[0]["deferLoading"], true);
+                for tool in tools.iter().skip(1) {
                     assert_eq!(tool["deferLoading"], false);
                 }
             }

@@ -100,6 +100,7 @@ const ctx = {
   mcpResult: (result) => host("mcpResult", result),
   spawn: (options) => host("spawn", options),
   send: (process, message) => host("send", { process, message }),
+  record: (process, options) => host("record", { process, options }),
   terminate: (process) => host("terminate", process),
   closeStdin: (process) => host("closeStdin", process),
   receive: (timeout) => host("receive", { timeout }),

@@ -114,7 +114,7 @@ function open(value, resume) {
     return { ...t, nativeName };
   });
   const extensionPath = paths.root + "/extension-" + ctx.uuid() + ".ts";
-  const version = tools.length ? probeVersion(request.config).version : null;
+  const version = request.cli_version;
   ctx.write(extensionPath, extension(tools, supportsToolSearch(version)));
   const args = [
     "--mode",
@@ -173,6 +173,7 @@ function inject(id, value) {
   });
 }
 defineHarness({
+  reuseSession: true,
   apiVersion: 1,
   id: "pi",
   displayName: "Pi",
@@ -209,6 +210,13 @@ defineHarness({
   },
   start: (value) => open(value, false),
   resume: (value) => open(value, true),
+  rebind(value) {
+    request = value;
+    const env = request.config.environment;
+    if (env.LANKIDE_PI_RECORD_PATH)
+      ctx.record(processId, { path: env.LANKIDE_PI_RECORD_PATH,
+        limit: Number(env.LANKIDE_PI_RECORD_MAX_BYTES) || 4 * 1024 * 1024 });
+  },
   execute(value) {
     active = true;
     output = "";
@@ -217,7 +225,7 @@ defineHarness({
     uiRequests.clear();
     results.clear();
     started(nativeId);
-    send("prompt", { message: value.input });
+    rpc("prompt", { message: value.input });
   },
   steer: (value) => rpc("steer", { message: value.input }),
   toolResult(value) {
@@ -242,6 +250,8 @@ defineHarness({
     if (processId) ctx.terminate(processId);
   },
   onExit(packet) {
+    if (packet.process === processId && !active)
+      failure("stream_interrupted", packet.detail || "Pi process exited");
     if (packet.process === processId && active) {
       active = false;
       failed(packet.detail || "Pi process exited", "stream_interrupted");

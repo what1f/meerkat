@@ -97,6 +97,14 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
             & 0o777,
         0o700
     );
+    let context_path = PathBuf::from(env["LANKIDE_RUN_CONTEXT"].as_str().unwrap());
+    assert_eq!(
+        std::fs::metadata(&context_path)?.permissions().mode() & 0o777,
+        0o600
+    );
+    let context: serde_json::Value = serde_json::from_slice(&std::fs::read(&context_path)?)?;
+    assert_eq!(context["socket"], socket.to_string_lossy().as_ref());
+    assert_eq!(context["execution_token"], env["LANKIDE_EXECUTION_TOKEN"]);
     let old_context = AgentRunContext {
         execution: Some(ExecutionRef {
             execution_id: env["LANKIDE_EXECUTION_ID"].as_str().unwrap().parse()?,
@@ -166,6 +174,10 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     bruce.release_run().await?;
     rig.settle().await?;
     assert!(!socket.exists(), "attempt socket was not removed");
+    assert!(
+        !context_path.exists(),
+        "attempt credentials were not removed"
+    );
     assert!(
         local.list_capabilities(old_context.clone()).await.is_err(),
         "open connections must stop working"

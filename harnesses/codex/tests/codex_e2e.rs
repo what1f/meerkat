@@ -253,6 +253,7 @@ fn session_request(
     native_session_id: Option<String>,
 ) -> SessionRequest {
     SessionRequest {
+        cli_version: None,
         permission_policy: Default::default(),
         config: config.clone(),
         working_directory: cwd.to_path_buf(),
@@ -491,6 +492,7 @@ async fn codex_default_home_is_agent_local() {
         let session = timeout(
             Duration::from_secs(30),
             factory.start(SessionRequest {
+                cli_version: None,
                 permission_policy: Default::default(),
                 config: config.clone(),
                 working_directory: cwd.clone(),

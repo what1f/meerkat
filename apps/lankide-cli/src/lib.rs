@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 const CHUNK_BYTES: usize = 64 * 1024;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct RunConfig {
     pub socket: PathBuf,
     pub agent_home: PathBuf,
@@ -21,6 +21,26 @@ pub struct RunConfig {
 
 impl RunConfig {
     pub fn from_environment() -> Result<Self, CliError> {
+        if let Some(path) = std::env::var_os("LANKIDE_RUN_CONTEXT") {
+            let path = PathBuf::from(path);
+            let home = PathBuf::from(required_env("LANKIDE_AGENT_HOME")?);
+            if !path.is_absolute() || path != home.join(".lankide/run-context.json") {
+                return Err(CliError::Config("invalid execution context path"));
+            }
+            let metadata = std::fs::symlink_metadata(&path)?;
+            if !metadata.is_file() || metadata.file_type().is_symlink() {
+                return Err(CliError::Config("invalid execution context file"));
+            }
+            let config: Self = serde_json::from_slice(&std::fs::read(path)?)
+                .map_err(|_| CliError::Config("execution context is unavailable"))?;
+            if config.agent_home != home {
+                return Err(CliError::Config(
+                    "execution context has a different Agent home",
+                ));
+            }
+            config.context()?;
+            return Ok(config);
+        }
         let socket = required_env("LANKIDE_AGENT_SOCKET")?.into();
         let agent_home = required_env("LANKIDE_AGENT_HOME")?.into();
         let execution_id = required_env("LANKIDE_EXECUTION_ID")?

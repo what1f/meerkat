@@ -33,9 +33,18 @@ for line in sys.stdin:
         if method == "initialize":
             emit({"id": command["id"], "result": {}})
         elif method in ("thread/start", "thread/resume"):
+            for spec in command["params"].get("dynamicTools", []):
+                if spec["type"] == "namespace":
+                    assert spec["name"] and spec["tools"]
+                else:
+                    assert not spec.get("deferLoading"), "deferred tool requires namespace"
             emit({"id": command["id"], "result": {"thread": {"id": command["params"].get("threadId", "native-thread")}}})
         elif method == "turn/start":
             emit({"id": command["id"], "result": {"turn": {"id": "native-turn"}}})
+            emit({"id": "namespace-call", "method": "item/tool/call", "params": {"threadId": "native-thread", "turnId": "native-turn", "callId": "report-call", "namespace": "lankide", "tool": "report", "arguments": {"value": "namespace-roundtrip"}}})
+        elif command.get("id") == "namespace-call":
+            assert command["result"]["success"] is True
+            assert "namespace-roundtrip" in command["result"]["contentItems"][0]["text"]
             emit({"method": "turn/completed", "params": {"turn": {"id": "native-turn", "status": "completed"}}})
     elif command.get("type") == "user":
         session_flag = "--resume" if "--resume" in sys.argv else "--session-id"

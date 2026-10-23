@@ -36,6 +36,7 @@ async fn streamed_turn_keeps_bounded_final_record() -> Result<(), Box<dyn std::e
     let factory = PiHarness::new();
     let session = factory
         .start(SessionRequest {
+            cli_version: None,
             permission_policy: Default::default(),
             config: HarnessConfig {
                 launch_arguments: Default::default(),
@@ -148,6 +149,7 @@ async fn resume_accepts_large_history_and_the_canonical_working_directory()
     )?;
     fs::set_permissions(&cli, fs::Permissions::from_mode(0o700))?;
     let request = SessionRequest {
+        cli_version: None,
         permission_policy: Default::default(),
         config: HarnessConfig {
             harness_id: "pi".into(),

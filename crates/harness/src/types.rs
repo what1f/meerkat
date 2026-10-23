@@ -175,6 +175,9 @@ pub struct SessionRequest {
     pub system_prompt: String,
     pub tools: Vec<ToolDefinition>,
     pub native_session_id: Option<String>,
+    /// Version of `config.cli_path` as last detected by the Machine.
+    #[serde(default)]
+    pub cli_version: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -466,6 +469,14 @@ pub trait HarnessFactory: Send + Sync {
 
 pub trait HarnessSession: Send + Sync {
     fn entry(&self) -> SessionEntry;
+    /// Opt in only when the native transport supports multiple completed turns.
+    fn reusable(&self) -> bool {
+        false
+    }
+    /// Refresh attempt-local state before an idle session is reused.
+    fn rebind<'a>(&'a self, _request: SessionRequest) -> HarnessFuture<'a, ()> {
+        Box::pin(async { Ok(()) })
+    }
     /// The isolated native process group, including tools spawned by the CLI.
     /// Capture this before cancellation: an adapter may reap the parent early.
     fn process_group_id(&self) -> Option<u32> {

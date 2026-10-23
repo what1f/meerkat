@@ -51,6 +51,7 @@ pub(super) async fn handle_delete_agent_files(
         for terminated in cancellations {
             super::liveness::wait_for_stop(terminated, inner.liveness.cancel_grace).await;
         }
+        super::sessions::close(inner, &key).await;
         let directory = agent_directory(&inner.root, &agent.workspace_id, &agent.agent_id)?;
         match std::fs::remove_dir_all(&directory) {
             Ok(()) => Ok(()),
@@ -348,6 +349,10 @@ async fn prepare_assignment(
             proxy.path.display().to_string(),
         ),
         (
+            "LANKIDE_RUN_CONTEXT".into(),
+            proxy.context_path.display().to_string(),
+        ),
+        (
             "LANKIDE_EXECUTION_ID".into(),
             execution.execution_id.to_string(),
         ),
@@ -400,7 +405,12 @@ async fn prepare_assignment(
         == Some(SessionAction::ResumeOrStart)
         && requested_native.is_some()
         && capabilities.contains(&lankide_harness::HarnessCapability::Resume);
+    let cli_version = inner
+        .cli_versions
+        .version(factory.as_ref(), &native_config)
+        .await;
     let request = SessionRequest {
+        cli_version,
         permission_policy: Default::default(),
         config: native_config,
         working_directory: agent_home.clone(),
@@ -412,10 +422,26 @@ async fn prepare_assignment(
             None
         },
     };
+    let identity = super::sessions::identity(&request, &session_key, &profile.soul);
+    let cached = if resume {
+        super::sessions::take(
+            &inner,
+            &agent_key,
+            &identity,
+            requested_native.as_deref(),
+            &request,
+        )
+        .await
+    } else {
+        super::sessions::close(&inner, &agent_key).await;
+        None
+    };
     let mut context_lost = false;
-    let session = if resume {
+    let session: Arc<dyn HarnessSession> = if let Some(session) = cached {
+        session
+    } else if resume {
         match factory.resume(request.clone()).await {
-            Ok(session) => session,
+            Ok(session) => session.into(),
             Err(error) if error.code == HarnessErrorCode::SessionNotFound => {
                 context_lost = true;
                 factory
@@ -424,13 +450,13 @@ async fn prepare_assignment(
                         ..request
                     })
                     .await?
+                    .into()
             }
             Err(error) => return Err(error.into()),
         }
     } else {
-        factory.start(request).await?
+        factory.start(request).await?.into()
     };
-    let session: Arc<dyn HarnessSession> = session.into();
     let entry = session.entry();
     if context_lost {
         input.insert_str(0, "<system-reminder>此前原生会话无法恢复。请读取本轮记忆索引，并按需查询持久化消息、任务记录；不要假装记得未恢复的内容。</system-reminder>\n\n");
@@ -482,6 +508,7 @@ async fn prepare_assignment(
             cancel: cancel_tx.clone(),
             progress: progress_tx,
             agent_key,
+            session_identity: identity,
             capabilities,
             session: session.clone(),
             agent_home: agent_home.clone(),
@@ -530,8 +557,9 @@ async fn prepare_assignment(
         },
     )
     .await;
-    tokio::spawn(run_events(
-        inner,
+    // Shutdown waits for this task, which saves the terminal state last.
+    let events = tokio::spawn(run_events(
+        inner.clone(),
         key,
         session_key,
         execution,
@@ -543,6 +571,9 @@ async fn prepare_assignment(
         delivery_lock,
         proxy,
     ));
+    let mut tasks = inner.assignment_tasks.lock().await;
+    tasks.retain(|task| !task.is_finished());
+    tasks.push(events);
     Ok(())
 }
 

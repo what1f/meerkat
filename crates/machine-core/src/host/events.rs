@@ -229,7 +229,24 @@ pub(super) async fn run_events(
         )
     });
     drop(proxy);
-    let _ = session.close().await;
+    let reusable = matches!(terminal_event.kind, AgentEventKind::Completed { .. })
+        && session.reusable()
+        && session.entry().health == lankide_harness::SessionHealth::Healthy;
+    let idle = if reusable {
+        inner
+            .active
+            .lock()
+            .await
+            .get(&key)
+            .map(|active| (active.agent_key.clone(), active.session_identity.clone()))
+    } else {
+        None
+    };
+    if let Some((agent_key, identity)) = idle {
+        super::sessions::retain(&inner, agent_key, identity, session.clone()).await;
+    } else {
+        let _ = session.close().await;
+    }
     // Persist and enqueue the terminal event before removing the execution
     // from the active inventory. Otherwise a heartbeat can report the attempt
     // missing while Runtime is still waiting to commit its terminal event.

@@ -1253,6 +1253,321 @@ async fn machine_e2e() {
     temp_cleanup.expect("temp cleanup");
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn idle_sessions_reuse_rotate_credentials_expire_and_close() {
+    let temp = tempfile::Builder::new()
+        .prefix("lk-warm-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let socket = temp.path().join("run");
+    let root = temp.path().join("workspaces");
+    let agent_home = agent_directory(&root, "alpha_team", "warm").unwrap();
+    fs::create_dir_all(&agent_home).unwrap();
+    let log = agent_home.canonicalize().unwrap().join("session.jsonl");
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let peer = Peer::new(tx);
+    let (server_stop, stopped) = oneshot::channel();
+    let server = tokio::spawn(ws::serve_local(
+        socket.clone(),
+        peer.clone(),
+        TransportConfig::default(),
+        async {
+            let _ = stopped.await;
+        },
+    ));
+    wait_socket(&socket).await;
+    let source = format!(
+        r#"
+      const log = {};
+      let request;
+      function record(kind, extra) {{
+        let prior = ""; try {{ prior = ctx.read(log); }} catch {{}}
+        ctx.write(log, prior + JSON.stringify({{kind, ...extra}}) + "\n");
+      }}
+      function open(r) {{ request = r; const id = r.native_session_id || ctx.uuid(); ctx.bindSession(id); record("open", {{id}}); return {{native_session_id:id}}; }}
+      defineHarness({{
+        apiVersion:1, id:"pi", displayName:"Pi", reuseSession:true,
+        probe() {{ return {{info:{{harness_id:"pi",display_name:"Pi"}},availability:"available",version:"1",capabilities:["resume"]}}; }},
+        models() {{ return []; }},
+        start:open, resume:open,
+        rebind(r) {{ request = r; record("rebind"); }},
+        execute() {{
+          record("execute", JSON.parse(ctx.read(request.config.environment.LANKIDE_RUN_CONTEXT)));
+          completed("OK");
+        }},
+        close() {{ record("close"); }}
+      }});
+    "#,
+        serde_json::to_string(&log).unwrap()
+    );
+    let factory = lankide_harness::JsHarnessFactory::new("pi", "Pi", source).unwrap();
+    let mut machine = Machine::new(MachineConfig {
+        machine_id: "warm-machine".into(),
+        instance_id: "warm-instance".into(),
+        workspace_root: root.display().to_string(),
+        reconnect: Default::default(),
+    })
+    .with_device_credential(lankide_protocol::link::discover(&socket).unwrap().1)
+    .with_capability_cli("/usr/bin/true")
+    .with_session_idle_timeout(Duration::from_secs(2));
+    machine
+        .register_harness(RegisteredHarness::new(
+            factory,
+            NativeHarnessConfig {
+                harness_id: "pi".into(),
+                model: ModelRef::new("fixture", "fixture"),
+                cli_path: "/usr/bin/true".into(),
+                thinking_level: "low".into(),
+                config_fingerprint: "probe".into(),
+                launch_arguments: vec![],
+                environment: Default::default(),
+            },
+        ))
+        .unwrap();
+    let (machine_stop, stopped) = oneshot::channel();
+    let host = tokio::spawn(machine.run(socket, async {
+        let _ = stopped.await;
+    }));
+    let records = || -> Vec<serde_json::Value> {
+        fs::read_to_string(&log)
+            .unwrap_or_default()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    };
+    for (id, fingerprint) in [(101, "fp"), (102, "fp")] {
+        peer.send(runtime_assign(
+            id,
+            "warm",
+            "logical-warm",
+            fingerprint,
+            "hello",
+            vec![],
+            "",
+        ))
+        .await;
+        let events = collect_terminal(&peer, &mut rx, id, true).await;
+        assert_eq!(
+            events.last().unwrap().kind,
+            ExecutionEventKind::Completed as i32
+        );
+        assert!(
+            !agent_directory(&root, "alpha_team", "warm")
+                .unwrap()
+                .join(".lankide/run-context.json")
+                .exists()
+        );
+    }
+    let entries = records();
+    assert_eq!(entries.iter().filter(|e| e["kind"] == "open").count(), 1);
+    assert_eq!(entries.iter().filter(|e| e["kind"] == "rebind").count(), 1);
+    let executions: Vec<_> = entries.iter().filter(|e| e["kind"] == "execute").collect();
+    assert_eq!(executions[0]["execution_id"], 101);
+    assert_eq!(executions[1]["execution_id"], 102);
+    assert_ne!(
+        executions[0]["execution_token"],
+        executions[1]["execution_token"]
+    );
+    assert_ne!(executions[0]["socket"], executions[1]["socket"]);
+    wait_for(|| records().iter().any(|e| e["kind"] == "close")).await;
+    for (id, fingerprint) in [(103, "fp"), (104, "changed")] {
+        peer.send(runtime_assign(
+            id,
+            "warm",
+            "logical-warm",
+            fingerprint,
+            "hello",
+            vec![],
+            "",
+        ))
+        .await;
+        let events = collect_terminal(&peer, &mut rx, id, true).await;
+        assert_eq!(
+            events.last().unwrap().kind,
+            ExecutionEventKind::Completed as i32
+        );
+    }
+    assert_eq!(records().iter().filter(|e| e["kind"] == "open").count(), 3);
+    machine_stop.send(()).unwrap();
+    timeout(STEP, host).await.unwrap().unwrap().unwrap();
+    assert_eq!(records().iter().filter(|e| e["kind"] == "close").count(), 3);
+    server_stop.send(()).unwrap();
+    timeout(STEP, server).await.unwrap().unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cli_versions_are_detected_saved_and_refreshed() {
+    let temp = tempfile::Builder::new()
+        .prefix("lk-ver-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let socket = temp.path().join("run");
+    let root = temp.path().join("workspaces");
+    let agent_home = agent_directory(&root, "alpha_team", "ver").unwrap();
+    fs::create_dir_all(&agent_home).unwrap();
+    let log = agent_home.canonicalize().unwrap().join("plugin.jsonl");
+    let bin = temp.path().join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let install = |name: &str, version: &str| {
+        let path = bin.join(name);
+        fs::write(
+            &path,
+            format!(
+                "#!/bin/sh\necho \"$0\" >> {}\necho \"{version}\"\n",
+                bin.join("probes.log").display()
+            ),
+        )
+        .unwrap();
+        let mut perms = fs::metadata(&path).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+        fs::set_permissions(&path, perms).unwrap();
+        path
+    };
+    let default_cli = install("pi", "pi 1.0");
+    let custom_cli = install("pi-custom", "pi 7.0");
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let peer = Peer::new(tx);
+    let (server_stop, stopped) = oneshot::channel();
+    let server = tokio::spawn(ws::serve_local(
+        socket.clone(),
+        peer.clone(),
+        TransportConfig::default(),
+        async {
+            let _ = stopped.await;
+        },
+    ));
+    wait_socket(&socket).await;
+    let source = format!(
+        r#"
+      const log = {};
+      function record(kind, extra) {{
+        let prior = ""; try {{ prior = ctx.read(log); }} catch {{}}
+        ctx.write(log, prior + JSON.stringify({{kind, ...extra}}) + "\n");
+      }}
+      function open(r) {{
+        const id = r.native_session_id || ctx.uuid();
+        ctx.bindSession(id);
+        record("open", {{cli: r.config.cli_path, version: r.cli_version}});
+        return {{native_session_id:id}};
+      }}
+      defineHarness({{
+        apiVersion:1, id:"pi", displayName:"Pi", reuseSession:true,
+        probe(config) {{
+          return {{info:{{harness_id:"pi",display_name:"Pi"}},availability:"available",
+            version:probeVersion(config).version,capabilities:["resume"]}};
+        }},
+        models() {{ return []; }},
+        start:open, resume:open,
+        rebind() {{ record("rebind"); }},
+        execute() {{ completed("OK"); }},
+        close() {{}}
+      }});
+    "#,
+        serde_json::to_string(&log).unwrap()
+    );
+    let start_machine = || {
+        let factory = lankide_harness::JsHarnessFactory::new("pi", "Pi", source.clone()).unwrap();
+        let mut machine = Machine::new(MachineConfig {
+            machine_id: "ver-machine".into(),
+            instance_id: "ver-instance".into(),
+            workspace_root: root.display().to_string(),
+            reconnect: Default::default(),
+        })
+        .with_device_credential(lankide_protocol::link::discover(&socket).unwrap().1)
+        .with_capability_cli("/usr/bin/true");
+        machine
+            .register_harness(RegisteredHarness::new(
+                factory,
+                NativeHarnessConfig {
+                    harness_id: "pi".into(),
+                    model: ModelRef::new("fixture", "fixture"),
+                    cli_path: default_cli.clone(),
+                    thinking_level: "low".into(),
+                    config_fingerprint: "probe".into(),
+                    launch_arguments: vec![],
+                    environment: Default::default(),
+                },
+            ))
+            .unwrap();
+        let (stop, stopped) = oneshot::channel::<()>();
+        let host = tokio::spawn(machine.run(socket.clone(), async {
+            let _ = stopped.await;
+        }));
+        (stop, host)
+    };
+    let records = || -> Vec<serde_json::Value> {
+        fs::read_to_string(&log)
+            .unwrap_or_default()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    };
+    let probes = |cli: &Path| {
+        fs::read_to_string(bin.join("probes.log"))
+            .unwrap_or_default()
+            .lines()
+            .filter(|line| Path::new(line) == cli)
+            .count()
+    };
+    let opened = || -> Vec<String> {
+        records()
+            .iter()
+            .filter(|e| e["kind"] == "open")
+            .map(|e| e["version"].as_str().unwrap_or_default().to_owned())
+            .collect()
+    };
+    let assign = |id: i64, cli: Option<&Path>| {
+        let mut frame = runtime_assign(id, "ver", "logical-ver", "fp", "hello", vec![], "");
+        if let (Some(cli), Some(runtime_frame::Frame::AssignExecution(assignment))) =
+            (cli, frame.frame.as_mut())
+        {
+            assignment.harness.as_mut().unwrap().executable_path = cli.display().to_string();
+        }
+        frame
+    };
+
+    let (stop, host) = start_machine();
+    wait_for(|| peer.state.hellos.lock().unwrap().len() == 1).await;
+    peer.send(assign(201, None)).await;
+    collect_terminal(&peer, &mut rx, 201, true).await;
+    assert_eq!(probes(&default_cli), 1, "the startup check is reused");
+    assert_eq!(opened(), ["pi 1.0"]);
+
+    install("pi", "pi 1.1");
+    peer.send(assign(202, None)).await;
+    collect_terminal(&peer, &mut rx, 202, true).await;
+    assert_eq!(
+        probes(&default_cli),
+        2,
+        "a replaced executable is checked again"
+    );
+    assert_eq!(opened(), ["pi 1.0", "pi 1.1"]);
+
+    peer.send(assign(203, Some(&custom_cli))).await;
+    collect_terminal(&peer, &mut rx, 203, true).await;
+    assert_eq!(probes(&custom_cli), 1);
+    assert_eq!(opened().last().unwrap(), "pi 7.0");
+    stop.send(()).unwrap();
+    timeout(STEP, host).await.unwrap().unwrap().unwrap();
+    peer.disconnect();
+    let connections = peer.state.hellos.lock().unwrap().len();
+
+    let (stop, host) = start_machine();
+    wait_for(|| peer.state.hellos.lock().unwrap().len() > connections).await;
+    peer.send(assign(204, Some(&custom_cli))).await;
+    collect_terminal(&peer, &mut rx, 204, true).await;
+    assert_eq!(
+        probes(&custom_cli),
+        1,
+        "the saved version survives a restart"
+    );
+    assert_eq!(opened().last().unwrap(), "pi 7.0");
+    stop.send(()).unwrap();
+    timeout(STEP, host).await.unwrap().unwrap().unwrap();
+    server_stop.send(()).unwrap();
+    timeout(STEP, server).await.unwrap().unwrap().unwrap();
+}
+
 fn runtime_assign(
     id: i64,
     agent: &str,
@@ -1677,7 +1992,7 @@ async fn wait_assignment(
                 .as_ref()
                 .is_some_and(|value| value.execution_id == id)
         {
-            assert_eq!(result.accepted, accepted);
+            assert_eq!(result.accepted, accepted, "assignment result: {result:?}");
             return result;
         }
     }

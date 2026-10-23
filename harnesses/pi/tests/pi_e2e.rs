@@ -127,6 +127,7 @@ async fn pi_e2e() -> Result<(), String> {
     }
 
     let base_request = SessionRequest {
+        cli_version: None,
         permission_policy: Default::default(),
         config: config.clone(),
         working_directory: workspace.clone(),
@@ -187,6 +188,7 @@ async fn pi_e2e() -> Result<(), String> {
 
     let cancellable = factory
         .start(SessionRequest {
+            cli_version: None,
             permission_policy: Default::default(),
             config,
             working_directory: workspace,
@@ -278,6 +280,7 @@ async fn verify_scripted_fault_boundary(root: &Path) -> Result<(), String> {
     );
     let session = factory
         .start(SessionRequest {
+            cli_version: None,
             permission_policy: Default::default(),
             config: HarnessConfig {
                 launch_arguments: Default::default(),
@@ -343,6 +346,7 @@ async fn verify_abort_without_response(root: &Path, pid_journal: &Path) -> Resul
         );
         let session = PiHarness::new()
             .start(SessionRequest {
+                cli_version: None,
                 permission_policy: Default::default(),
                 config: HarnessConfig {
                     launch_arguments: Default::default(),
@@ -636,6 +640,7 @@ async fn s7_3_real_pi_uses_a_skill_authored_in_its_agent_home() -> Result<(), St
     )).map_err(|error| error.to_string())?;
     let session = PiHarness::new()
         .start(SessionRequest {
+            cli_version: None,
             permission_policy: Default::default(),
             config: HarnessConfig {
                 launch_arguments: Default::default(),

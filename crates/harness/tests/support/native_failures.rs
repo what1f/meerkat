@@ -100,6 +100,7 @@ pub async fn run(factory: &dyn HarnessFactory, adapter: &str) -> Result<()> {
             fs::write(config_dir.join(name), b"")?;
         }
         let request = SessionRequest {
+            cli_version: None,
             permission_policy: Default::default(),
             config: HarnessConfig {
                 launch_arguments: Default::default(),

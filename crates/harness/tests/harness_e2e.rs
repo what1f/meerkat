@@ -433,6 +433,7 @@ fn session_request(
     native_session_id: Option<String>,
 ) -> SessionRequest {
     SessionRequest {
+        cli_version: None,
         permission_policy: Default::default(),
         config: config.clone(),
         working_directory: work_root.to_owned(),
@@ -553,6 +554,7 @@ async fn javascript_plugin_defaults_resume_rotation_and_explicit_test_plan() {
         std::env::temp_dir().join(format!("lankide-plugin-contract-{}", std::process::id()));
     fs::create_dir_all(&directory).unwrap();
     let request = SessionRequest {
+        cli_version: None,
         permission_policy: Default::default(),
         config: HarnessConfig {
             harness_id: "custom".into(),
@@ -616,6 +618,7 @@ async fn javascript_plugin_deadline_interrupts_a_stuck_hook_and_rejects_global_w
     fs::create_dir_all(directory.join("user")).unwrap();
     fs::write(directory.join("user/config"), "keep").unwrap();
     let request = SessionRequest {
+        cli_version: None,
         permission_policy: Default::default(),
         config: HarnessConfig {
             harness_id: "guard".into(),
@@ -671,6 +674,7 @@ async fn changing_the_native_config_source_refreshes_inherited_resources() {
     for source in ["first", "second"] {
         let session = plugin
             .start(SessionRequest {
+                cli_version: None,
                 permission_policy: Default::default(),
                 config: HarnessConfig {
                     harness_id: "resources".into(),

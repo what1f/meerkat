@@ -175,6 +175,7 @@ impl LocalTransport {
 }
 pub(super) struct AttemptProxy {
     pub path: PathBuf,
+    pub context_path: PathBuf,
     stopped: watch::Sender<bool>,
     task: tokio::task::JoinHandle<()>,
 }
@@ -203,6 +204,23 @@ impl AttemptProxy {
         let listener = tokio::net::UnixListener::bind(&path)?;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
         let (stopped, rx) = watch::channel(false);
+        let context_path = agent_home.join(".lankide/run-context.json");
+        std::fs::create_dir_all(context_path.parent().unwrap())?;
+        let mut file = tempfile::NamedTempFile::new_in(context_path.parent().unwrap())?;
+        use std::io::Write;
+        file.write_all(
+            serde_json::to_string(&serde_json::json!({
+                "socket": path,
+                "agent_home": agent_home,
+                "execution_id": execution.execution_id,
+                "attempt": execution.attempt,
+                "execution_token": context.execution_token,
+            }))
+            .map_err(|_| MachineError::PersistenceFailed)?
+            .as_bytes(),
+        )?;
+        file.persist(&context_path)
+            .map_err(|error| MachineError::Io(error.error))?;
         let transport = LocalTransport {
             agent_home: Some(agent_home),
             attachment_lock: tokio::sync::Mutex::new(()),
@@ -221,6 +239,7 @@ impl AttemptProxy {
         });
         Ok(Self {
             path,
+            context_path,
             stopped,
             task,
         })
@@ -231,6 +250,7 @@ impl Drop for AttemptProxy {
         self.stopped.send_replace(true);
         self.task.abort();
         let _ = std::fs::remove_file(&self.path);
+        let _ = std::fs::remove_file(&self.context_path);
     }
 }
 pub(super) async fn response(inner: &Inner, chunk: CapabilityResponse) {

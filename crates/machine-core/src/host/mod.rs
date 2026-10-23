@@ -1,4 +1,5 @@
 mod assignment;
+mod cli_versions;
 mod connection;
 mod control;
 mod events;
@@ -8,6 +9,7 @@ mod harness_test;
 mod liveness;
 mod proxy;
 mod records;
+mod sessions;
 
 use self::connection::run_loop;
 use self::control::active_attempts;
@@ -180,6 +182,7 @@ impl Default for ExecutionLiveness {
 }
 
 pub struct Machine {
+    session_idle_timeout: Duration,
     liveness: ExecutionLiveness,
     output_records: OutputRecordPolicy,
     capability_cli: Option<PathBuf>,
@@ -193,6 +196,7 @@ pub struct Machine {
 impl Machine {
     pub fn new(config: MachineConfig) -> Self {
         Self {
+            session_idle_timeout: sessions::DEFAULT_IDLE_TIMEOUT,
             link_endpoint: None,
             cert_sha256: None,
             device_credential: String::new(),
@@ -219,6 +223,11 @@ impl Machine {
 
     pub fn with_execution_liveness(mut self, policy: ExecutionLiveness) -> Self {
         self.liveness = policy;
+        self
+    }
+
+    pub fn with_session_idle_timeout(mut self, timeout: Duration) -> Self {
+        self.session_idle_timeout = timeout;
         self
     }
 
@@ -314,8 +323,12 @@ impl Machine {
         let mut factories = HashMap::new();
         let mut probes = HashMap::new();
         let mut model_catalogs = HashMap::new();
+        let cli_versions = cli_versions::CliVersions::load(root.join(".machine/cli-versions.json"));
         for (harness_id, registration) in self.harnesses {
-            let mut probe = match registration.factory.probe(&registration.probe_config).await {
+            let mut probe = match cli_versions
+                .probe(registration.factory.as_ref(), &registration.probe_config)
+                .await
+            {
                 Ok(probe) => probe,
                 Err(error) => ProbeResult {
                     info: registration.factory.info().clone(),
@@ -375,6 +388,9 @@ impl Machine {
             .build()
             .map_err(|error| MachineError::Resource(error.to_string()))?;
         let inner = Arc::new(Inner {
+            cli_versions,
+            session_idle_timeout: self.session_idle_timeout,
+            idle_sessions: Mutex::new(HashMap::new()),
             resource_http,
             liveness: self.liveness,
             config: self.config,
@@ -407,6 +423,7 @@ impl Machine {
             inner: inner.clone(),
             join: Arc::new(Mutex::new(None)),
         };
+        tokio::spawn(cli_versions::watch(Arc::downgrade(&inner)));
         let task = tokio::spawn(run_loop(inner, stop_rx));
         *handle.join.lock().await = Some(task);
         Ok(handle)
@@ -492,6 +509,7 @@ impl MachineHandle {
                 let _ = task.await;
             }
         }
+        sessions::close_all(inner).await;
     }
 }
 
@@ -508,6 +526,7 @@ struct Cancellation {
 }
 
 struct ActiveExecution {
+    session_identity: String,
     terminated: watch::Receiver<Option<lankide_harness::AgentEventKind>>,
     cancel: watch::Sender<Option<Cancellation>>,
     progress: watch::Sender<tokio::time::Instant>,
@@ -528,6 +547,9 @@ struct StartingExecution {
 }
 
 struct Inner {
+    cli_versions: cli_versions::CliVersions,
+    session_idle_timeout: Duration,
+    idle_sessions: Mutex<HashMap<String, sessions::IdleSession>>,
     resource_http: reqwest::Client,
     liveness: ExecutionLiveness,
     output_records: OutputRecordPolicy,
