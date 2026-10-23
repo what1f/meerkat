@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { InlineText, Menu, useToast } from '../../design';
-import { Badge, Bench, Board, Hang, QrTag } from '../../scene';
+import { InlineText, useToast } from '../../design';
+import { Badge, Bench, Board, Hang, QrTag, blank, type SheetClose } from '../../scene';
 import { useT } from '../../lib/i18n';
 import { agentStatus, useDeleteAgent, useResumeAgent } from '../../lib/queries/agents';
 import { useWorkspace } from '../../lib/queries/workspaces';
@@ -12,10 +12,7 @@ import { MemberUnread } from './MemberUnread';
 import { useModelFace } from './MemberCard';
 import css from './MemberBench.module.css';
 
-export type TopBarConfig = {
-  title?: string;
-  back?: { label: string; onClick: () => void } | { label: string; menu: ReactNode };
-};
+export type TopBarConfig = { title?: string; close?: SheetClose };
 
 export function MemberBench({
   workspace,
@@ -66,25 +63,24 @@ export function MemberBench({
       return false;
     }
   };
-  const home = { label: t('common.members'), onClick: onBack };
-  const back = !(id ? m.dirty : creation.step === 'idle' && m.draft.name.trim())
-    ? home
-    : {
-        label: t('common.members'),
-        menu: (
-          <>
-            <Menu.Item onSelect={() => void commit().then((ok) => ok && id && onBack())}>
-              {id ? t('members.save') : t('members.create')}
-            </Menu.Item>
-            <Menu.Item onSelect={onBack}>{t('members.discard')}</Menu.Item>
-          </>
-        ),
-      };
+  const home = { onClose: onBack };
+  const unsaved = id ? m.dirty : creation.step === 'idle' && !!m.draft.name.trim();
+  // Unsaved edits keep the member out; the lit key saves them, the toast lets them go.
+  const close: SheetClose = unsaved
+    ? {
+        onClose: onBack,
+        blocked: () =>
+          toast({
+            message: t('members.unsaved'),
+            action: { label: t('members.discard'), onAction: onBack },
+          }),
+      }
+    : home;
 
-  if (m.notFound || m.failed || m.loading) return frame({ back: home }, <MemberUnread m={m} />);
+  if (m.notFound || m.failed || m.loading) return frame({ close: home }, <MemberUnread m={m} />);
   const body = (
     <Board layout="open">
-      <Bench>
+      <Bench {...blank}>
         <MemberConsole
           m={m}
           workspace={workspace}
@@ -103,7 +99,7 @@ export function MemberBench({
             void m.finish().then((done) => done && onCreated(created), fail)
           }
         />
-        <div className={css.stage}>
+        <div className={css.stage} {...blank}>
           <Hang swingKey={swing} faded={reading}>
             <AvatarPicker
               open={picking}
@@ -194,5 +190,5 @@ export function MemberBench({
       </Bench>
     </Board>
   );
-  return frame({ back }, body, 'open');
+  return frame({ close }, body);
 }

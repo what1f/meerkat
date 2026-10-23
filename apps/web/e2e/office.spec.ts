@@ -95,8 +95,12 @@ test.describe.serial('office', () => {
     await page.reload();
     await expect(seat(row(paired))).toBeVisible();
     await seat(row(paired)).click();
-    await expect(page).toHaveURL(new RegExp(`#/member/${member.agent}$`));
-    await page.goBack();
+    // The member opens over the office and is put back there.
+    await expect(page).toHaveURL(new RegExp(`#/office/member/${member.agent}$`));
+    await expect(page.getByTestId('sheet')).toBeVisible();
+    await expect(page.getByTestId('nav-office')).toHaveAttribute('aria-current', 'page');
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL(/#\/office$/);
   });
 
   test('renaming in place keeps the new name after a reload', async () => {

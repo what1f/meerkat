@@ -17,7 +17,7 @@ import css from './OfficePage.module.css';
 
 export type OfficePageProps = {
   workspaceId: string;
-  navigate: (page: { kind: 'member'; id: string }) => void;
+  navigate: (page: { kind: 'member'; id: string; from: 'office' }) => void;
   // Supplied by the app shell, which puts the top bar and body in place.
   frame: (bar: Record<string, never>, body: ReactNode) => ReactNode;
 };
@@ -146,7 +146,7 @@ export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePa
                   arriving={arrived === member}
                   // One move at a time, so a failed move always lands back where it started.
                   carry={update.isPending ? undefined : seatHandle(member)}
-                  onOpen={() => navigate({ kind: 'member', id: member })}
+                  onOpen={() => navigate({ kind: 'member', id: member, from: 'office' })}
                 />
               );
             })}

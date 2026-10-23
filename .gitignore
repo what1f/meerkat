@@ -25,3 +25,6 @@ output/
 # Web build outputs
 apps/web/node_modules/
 apps/web/dist/
+
+# Design prototype build output (node docs/design/preview/build.mjs)
+docs/design/prototype.html

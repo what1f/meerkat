@@ -11,11 +11,19 @@ export type AppShellProps = Omit<UIProps, 'className' | 'style'> & {
   topBar: ReactNode;
   children: ReactNode;
   board?: 'wall' | 'open';
+  // Held up over the page, which stays in view but out of reach.
+  sheet?: ReactNode;
 };
-export function AppShell({ dock, topBar, children, board, ...rest }: AppShellProps) {
+export function AppShell({ dock, topBar, children, board, sheet, ...rest }: AppShellProps) {
   const t = useT();
   return (
-    <div {...rest} className={css.root} data-board={board} data-desktop={isDesktopShell()}>
+    <div
+      {...rest}
+      className={css.root}
+      data-board={board}
+      data-desktop={isDesktopShell()}
+      data-sheet={sheet ? '' : undefined}
+    >
       {topBar}
       <PullCord
         label={t('common.theme')}
@@ -23,7 +31,8 @@ export function AppShell({ dock, topBar, children, board, ...rest }: AppShellPro
           setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark')
         }
       />
-      <main>{children}</main>
+      <main inert={!!sheet}>{children}</main>
+      {sheet}
       {dock}
     </div>
   );

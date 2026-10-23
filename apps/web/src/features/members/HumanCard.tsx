@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Badge, BadgeVerso, FlipCard, Bench, Board, Hang } from '../../scene';
+import { Badge, BadgeVerso, FlipCard, Bench, Board, Hang, blank } from '../../scene';
 import { BrandMark, EmptyState, InlineText, useToast } from '../../design';
 import { useT } from '../../lib/i18n';
 import { avatarUrl, resourceUrl } from '../../lib/assets';
@@ -87,9 +87,9 @@ export function HumanBench({
   const humans = useHumanMembers({ request_id: 'humans', workspace: { workspace_id: workspace } });
   const person = humans.data?.find((p) => p.person_id === id);
   return frame(
-    { back: { label: t('common.members'), onClick: onBack } },
+    { close: { onClose: onBack } },
     <Board layout="open">
-      <Bench>
+      <Bench {...blank}>
         {person ? (
           <HumanProfile key={id} workspace={workspace} person={person} />
         ) : humans.isPending ? (
@@ -101,7 +101,6 @@ export function HumanBench({
         )}
       </Bench>
     </Board>,
-    'open',
   );
 }
 

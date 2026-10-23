@@ -46,9 +46,17 @@ export function Board({ layout, holes = 'on', lead, children, ...rest }: BoardPr
     return () => observer.disconnect();
   });
   return (
-    <section {...rest} ref={ref} className={css.root} data-layout={layout} data-holes={holes}>
+    // The bare board is empty space: a click on it can put a sheet away.
+    <section
+      {...rest}
+      ref={ref}
+      className={css.root}
+      data-layout={layout}
+      data-holes={holes}
+      data-blank=""
+    >
       {lead}
-      <div ref={itemsRef} className={css.items}>
+      <div ref={itemsRef} className={css.items} data-blank="">
         {children}
       </div>
     </section>

@@ -111,7 +111,9 @@
 }
 
 .drawer {
+  overflow: hidden;
   margin: 0 18px;
+  border-radius: var(--r-tray);
 }
 
 .tray {

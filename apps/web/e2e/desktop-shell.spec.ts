@@ -70,9 +70,11 @@ for (const desktop of [false, true]) {
         expect(card.y + card.height).toBeLessThan(dock.y);
         await last.click();
         await expect(page.getByTestId('member-name')).toBeVisible();
-        const back = page.locator('header').getByRole('button', { name: /^(成员|Members)$/ });
-        expect((await back.boundingBox())!.x).toBe(desktop ? 92 : 24);
-        await back.click();
+        // The member is held up over the wall; Esc puts them back.
+        await expect(page.getByTestId('sheet')).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(page).toHaveURL(/#\/members$/);
+        await expect(page.getByTestId('member-name')).toBeHidden();
         if (desktop) {
           const drag = await page.locator('header[data-tauri-drag-region]').evaluate((header) => {
             const r = header.getBoundingClientRect();
@@ -198,7 +200,7 @@ for (const viewport of [
   { width: 1240, height: 820 },
   { width: 960, height: 660 },
 ]) {
-  test(`Desktop ${viewport.width}px: the back button, the resume notice and the drag bar of a paused member all work`, async ({
+  test(`Desktop ${viewport.width}px: putting a paused member away, the resume notice and the drag bar all work`, async ({
     browser,
     baseURL,
   }) => {
@@ -228,7 +230,7 @@ for (const viewport of [
       await expect(page.getByTestId('member-pause')).toBeEnabled();
       await page.goto('/#/members');
       await page.getByTestId(`member-card-${member.agent}`).click();
-      const resume = page.locator('main [data-tone] button');
+      const resume = page.getByTestId('sheet').locator('[data-tone] button');
       await expect(resume).toBeVisible();
       // The empty bar is still the drag handle.
       const drag = await page.locator('header[data-tauri-drag-region]').evaluate((header) => {
@@ -237,13 +239,9 @@ for (const viewport of [
         return hit === header;
       });
       expect(drag).toBe(true);
-      // While the notice is up and the member is paused, the back button keeps its lower edge.
-      const back = page
-        .locator('header')
-        .getByRole('button', { name: /Members|成员/, exact: true });
-      const box = (await back.boundingBox())!;
+      // While the notice is up and the member is paused, empty space beside them still puts them away.
       await expect(page.getByTestId('member-pause')).toBeEnabled();
-      await back.click({ position: { x: box.width / 2, y: box.height - 2 } });
+      await page.getByTestId('sheet').click({ position: { x: 12, y: viewport.height / 2 } });
       await expect(page).toHaveURL(/#\/members$/);
       // Opened again, the notice reaches into the title strip; its upper edge is still its own.
       await page.getByTestId(`member-card-${member.agent}`).click();

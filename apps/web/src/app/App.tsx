@@ -3,11 +3,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '../design';
 import { I18nProvider, useT } from '../lib/i18n';
 import { ThemeProvider } from '../lib/theme';
-import { AppShell, Dock, TeamSwitcher, TopBar, type TopBarProps } from '../shell';
+import { Sheet } from '../scene';
+import { AppShell, Dock, TeamSwitcher, TopBar } from '../shell';
 import { useWorkspaces } from '../lib/queries/workspaces';
 import { useManagementEvents } from '../lib/events';
 import { readStorage, writeStorage } from '../lib/storage';
-import { navigate, pageViews, usePage, type Page } from './routes';
+import { navigate, pageViews, usePage, type FrameBar, type Page } from './routes';
 const queryClient = new QueryClient();
 const DesignPreview = import.meta.env.DEV ? lazy(() => import('../dev/DesignPreview')) : null;
 export function App() {
@@ -58,8 +59,10 @@ function WorkspaceShell() {
   if (!valid && first) setSelected(first);
   const current = valid ? selected : (first ?? '');
   const pages = ['members', 'team', 'office', 'settings'] as const;
-  const active = page.kind === 'member' ? 'members' : page.kind;
-  const View = pageViews[page.kind];
+  // A member is held up over the page it was opened from, which stays the active one.
+  const under: Page = page.kind === 'member' ? { kind: page.from ?? 'members' } : page;
+  const active = under.kind;
+  const View = pageViews[under.kind];
   const selectWorkspace = (id: string) => {
     setSelected(id);
     writeStorage('workspace', id);
@@ -67,7 +70,30 @@ function WorkspaceShell() {
   const title = pages.includes(active as (typeof pages)[number])
     ? t(`common.${active as (typeof pages)[number]}`)
     : undefined;
-  const frame = (bar: TopBarProps, body: ReactNode, board?: 'wall' | 'open') => (
+  // Putting a member away returns to where they were opened; reopening keeps that place.
+  const sheetNavigate = (next: Page) =>
+    go(
+      next.kind === 'members'
+        ? under
+        : next.kind === 'member' && page.kind === 'member' && page.from
+          ? { ...next, from: page.from }
+          : next,
+    );
+  const Detail = page.kind === 'member' ? pageViews.member : undefined;
+  const sheet = Detail && (
+    <Detail
+      workspaceId={current}
+      page={page}
+      navigate={sheetNavigate}
+      selectWorkspace={selectWorkspace}
+      frame={({ close }, body) => (
+        <Sheet key={page.kind === 'member' ? page.id : ''} close={close}>
+          {body}
+        </Sheet>
+      )}
+    />
+  );
+  const frame = ({ close: _, ...bar }: FrameBar, body: ReactNode, board?: 'wall' | 'open') => (
     <AppShell
       board={board}
       dock={
@@ -97,6 +123,7 @@ function WorkspaceShell() {
         />
       }
       topBar={<TopBar {...bar} />}
+      sheet={sheet}
     >
       {body}
     </AppShell>
@@ -104,7 +131,7 @@ function WorkspaceShell() {
   return View ? (
     <View
       workspaceId={current}
-      page={page}
+      page={under}
       navigate={go}
       selectWorkspace={selectWorkspace}
       frame={frame}

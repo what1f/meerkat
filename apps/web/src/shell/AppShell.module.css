@@ -31,14 +31,15 @@
   padding-bottom: var(--dock-clearance);
 }
 
-/* The transparent bar adds no stacking context. Live board controls keep their hit area. */
-.root[data-board] > header {
+/* The transparent bar adds no stacking context. Live board controls keep their hit area.
+   A sheet is a board too, laid over the page. */
+.root:is([data-board], [data-sheet]) > header {
   position: absolute;
   inset: 0 0 auto;
   pointer-events: none;
 }
 
-.root[data-board] > header::before {
+.root:is([data-board], [data-sheet]) > header::before {
   position: absolute;
   inset: 0;
   z-index: var(--z-drag);
@@ -46,15 +47,15 @@
   content: '';
 }
 
-.root[data-board][data-desktop='true'] > header::before {
+.root:is([data-board], [data-sheet])[data-desktop='true'] > header::before {
   pointer-events: auto;
 }
 
-.root[data-board] > header > * {
+.root:is([data-board], [data-sheet]) > header > * {
   pointer-events: auto;
 }
 
-.root[data-board] > header > button {
+.root:is([data-board], [data-sheet]) > header > button {
   position: relative;
   z-index: var(--z-bar);
 }
@@ -70,6 +71,16 @@
 
 .root[data-board='wall'] > main {
   --bar-h: var(--safe-area);
+}
+
+/* Raised items on the page beneath stay beneath the sheet. */
+.root[data-sheet] > main {
+  isolation: isolate;
+}
+
+/* The bar lifts out of the flow under a sheet; the page beneath stays where it was. */
+.root[data-sheet]:not([data-board]) > main {
+  padding-top: var(--safe-area);
 }
 
 :root:is([data-window-fullscreen='true'], :fullscreen) .root[data-desktop='true'] > header {

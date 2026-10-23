@@ -1,5 +1,4 @@
 import * as H from '../../shell';
-import { Menu } from '../../design';
 import { Spec, State } from '../Spec';
 const team = (
   <H.TeamSwitcher
@@ -36,22 +35,6 @@ export function ShellSection() {
       <Spec name="TopBar" surface="surface">
         <State label="title">
           <H.TopBar title="Members" />
-        </State>
-        <State label="back">
-          <H.TopBar back={{ label: 'Settings', onClick: () => {} }} />
-        </State>
-        <State label="back menu">
-          <H.TopBar
-            back={{
-              label: 'Lankide',
-              menu: (
-                <>
-                  <Menu.Item onSelect={() => {}}>Save</Menu.Item>
-                  <Menu.Item onSelect={() => {}}>Discard</Menu.Item>
-                </>
-              ),
-            }}
-          />
         </State>
       </Spec>
       <Spec name="Dock" frame>

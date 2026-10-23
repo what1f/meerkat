@@ -68,6 +68,23 @@ test('B3a.1: a new member is created from the board and saved', async ({ page })
   await expect(card.locator('img[src^="data:image/jpeg;base64,"]')).toBeVisible();
 });
 
+test('a member with unsaved edits is put back only once the edits are let go', async ({ page }) => {
+  const member = { workspace: 'members_put_back', agent: 'hedy' };
+  await rig({ op: 'create_workspace', workspace: member.workspace });
+  await rig({ op: 'create_agent', ...member });
+  await open(page, member.workspace, 'members');
+  await page.getByTestId(`member-card-${member.agent}`).click();
+  await page.getByTestId('member-name').fill('Hedy Lamarr');
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(new RegExp(`#/member/${member.agent}$`));
+  await page
+    .getByRole('status')
+    .getByRole('button', { name: /放弃更改|Discard changes/ })
+    .click();
+  await expect(page).toHaveURL(/#\/members$/);
+  await expect(page.getByTestId(`member-card-${member.agent}`)).not.toContainText('Hedy Lamarr');
+});
+
 test('B3a.2: a renamed member keeps its name and model after a reload', async ({ page }) => {
   const member = { workspace: 'members_edit', agent: 'grace' };
   await rig({ op: 'create_workspace', workspace: member.workspace });
