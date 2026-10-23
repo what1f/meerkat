@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Scope caching to development entrypoints, including their nested Cargo calls.
+# Do not change global Cargo configuration or the release build environment.
+if command -v kache >/dev/null 2>&1; then
+  ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+  export RUSTC_WRAPPER=kache
+  export CARGO_INCREMENTAL=0
+  # Dependency compiles run outside the repository, so pass an absolute config.
+  export KACHE_CONFIG="$ROOT_DIR/.kache.toml"
+fi
+
+exec "$@"

@@ -7,26 +7,26 @@ default:
 
 dev:
     ./scripts/verify-production-boundary
-    cargo build --locked --bin lankided --bin lankide-machine --bin lankide
-    cargo run --locked -p lankide-desktop
+    ./scripts/with-dev-cache cargo build --locked --bin lankided --bin lankide-machine --bin lankide
+    ./scripts/with-dev-cache cargo run --locked -p lankide-desktop
 
 web-dev:
     pnpm -C apps/web dev
 
 web-types:
-    cargo run --locked -p lankide-web-types -- apps/web/src/lib/api/generated
+    ./scripts/with-dev-cache cargo run --locked -p lankide-web-types -- apps/web/src/lib/api/generated
 
 check:
     just web-check
-    ./scripts/verify-web-types
+    ./scripts/with-dev-cache ./scripts/verify-web-types
     ./scripts/verify-open-source
     ./scripts/verify-production-boundary
     cargo fmt --all --check
-    cargo check --workspace --all-targets --locked
+    ./scripts/with-dev-cache cargo check --workspace --all-targets --locked
     ./scripts/verify-e2e-contracts
 
 test:
-    ./scripts/verify-all --gate hermetic
+    ./scripts/with-dev-cache ./scripts/verify-all --gate hermetic
 
 build-release:
     ./scripts/build-release
@@ -64,5 +64,5 @@ web-check:
 
 web-e2e:
     pnpm -C apps/web build
-    cargo build --locked -p lankide-system-e2e --bins
+    ./scripts/with-dev-cache cargo build --locked -p lankide-system-e2e --bins
     pnpm -C apps/web e2e

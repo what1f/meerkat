@@ -1,0 +1,10 @@
+[cache]
+local_only = true
+local_max_size = "10GiB"
+
+# Development and packaged release outputs share target/. Never let the cache
+# daemon delete target directories or build units on this project's behalf.
+auto_clean_orphaned_targets = false
+auto_clean_idle_targets_days = 0
+auto_clean_unused_units_days = 0
+auto_recover_min_free_bytes = 0
