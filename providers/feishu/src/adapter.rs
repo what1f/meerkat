@@ -658,7 +658,6 @@ impl Provider for FeishuProvider {
                 state.auth,
             )?);
             if crate::agent_tasks::task_system_enabled(&context.workspace_config) {
-                let _identity_guard = self.identity_lock.lock().await;
                 tools.extend(
                     crate::agent_tasks::tools(
                         &context,
@@ -1263,6 +1262,24 @@ async fn receiving_agent(
     })
 }
 
+async fn cached_chat(
+    context: &InitContext,
+    client: &Arc<SharedClient>,
+    auth: Auth,
+    chat_id: &str,
+) -> Result<crate::dto::ChatRecord, crate::events::SinkError> {
+    let key = format!("im/chat/{chat_id}");
+    if let Some(bytes) = context.storage().get(&key).await? {
+        return Ok(serde_json::from_slice(&bytes)?);
+    }
+    let chat = client.get_chat(chat_id, auth).await?;
+    context
+        .storage()
+        .put(&key, serde_json::to_vec(&chat)?)
+        .await?;
+    Ok(chat)
+}
+
 async fn normalized_event_to_provider(
     context: &InitContext,
     client: &Arc<SharedClient>,
@@ -1373,14 +1390,18 @@ async fn normalized_event_to_provider(
             let mut provider_data =
                 serde_json::to_value(&message).map_err(crate::events::SinkError::from)?;
             if message.channel_id == "group_chat" {
-                let chat = client
-                    .get_chat(&message.chat_id, auth)
-                    .await
-                    .map_err(crate::events::SinkError::from)?;
+                let chat = cached_chat(context, client, auth, &message.chat_id).await?;
                 if !chat.name.trim().is_empty() {
                     provider_data["chat_name"] = serde_json::json!(chat.name);
                 }
             }
+            context
+                .storage()
+                .put(
+                    &format!("im/message_chat/{}", message.provider_message_id),
+                    message.chat_id.as_bytes().to_vec(),
+                )
+                .await?;
             let receiving_agent_id = receiving_agent(context, &message.app_id).await?;
             Ok(Some(ProviderEvent {
                 receiving_agent_id,
@@ -1415,23 +1436,31 @@ async fn normalized_event_to_provider(
                 serde_json::to_value(&reaction).map_err(crate::events::SinkError::from)?;
             let action = reaction.action;
             // Feishu reaction callbacks omit chat identity, and the message
-            // lookup omits the chat kind. Resolve both through the same App
-            // before choosing a channel or recipient.
-            let target = client
-                .get_message(&reaction.target_provider_message_id, auth)
-                .await
-                .map_err(crate::events::SinkError::from)?;
-            let chat = client
-                .get_chat(&target.chat_id, auth)
-                .await
-                .map_err(crate::events::SinkError::from)?;
+            // lookup omits the chat kind. Reuse durable mappings, and resolve
+            // unknown targets through the receiving App.
+            let key = format!("im/message_chat/{}", reaction.target_provider_message_id);
+            let chat_id = if let Some(bytes) = context.storage().get(&key).await? {
+                String::from_utf8(bytes).map_err(|_| {
+                    crate::events::SinkError::permanent("invalid message chat cache")
+                })?
+            } else {
+                let target = client
+                    .get_message(&reaction.target_provider_message_id, auth)
+                    .await?;
+                context
+                    .storage()
+                    .put(&key, target.chat_id.as_bytes().to_vec())
+                    .await?;
+                target.chat_id
+            };
+            let chat = cached_chat(context, client, auth, &chat_id).await?;
             let direct = chat.chat_mode == "p2p";
             let receiving_agent_id = if direct {
                 receiving_agent(context, &reaction.app_id).await?
             } else {
                 None
             };
-            let provider_chat_id = target.chat_id;
+            let provider_chat_id = chat_id;
             Ok(Some(ProviderEvent {
                 receiving_agent_id,
                 channel_id: channel(if direct { "private_chat" } else { "group_chat" }),
@@ -1446,25 +1475,46 @@ async fn normalized_event_to_provider(
                 provider_data,
             }))
         }
-        NormalizedEvent::ChatUpdated(update) => Ok(Some(ProviderEvent {
-            receiving_agent_id: None,
-            channel_id: channel("group_chat"),
-            provider_chat_id: update.chat_id.clone(),
-            sender: EventSender {
-                id: "feishu:system".to_owned(),
-                kind: EventSenderType::System,
-                name: "Feishu".to_owned(),
-            },
-            kind: ProviderEventKind::Custom(lankide_provider::CustomEvent {
-                mentioned_agent_ids: Vec::new(),
-                reason: "chat_updated".to_owned(),
-                target_agent_ids: Vec::new(),
-                subject_id: update.chat_id.clone(),
-                subject_name: update.name.clone(),
-                data: serde_json::to_value(&update).map_err(crate::events::SinkError::from)?,
-            }),
-            provider_data: serde_json::to_value(&update).map_err(crate::events::SinkError::from)?,
-        })),
+        NormalizedEvent::ChatUpdated(update) => {
+            let key = format!("im/chat/{}", update.chat_id);
+            let name_changed =
+                serde_json::from_slice::<Value>(&update.raw)?["event"]["after_change"]["name"]
+                    .as_str()
+                    .is_some_and(|name| !name.trim().is_empty());
+            if name_changed && let Some(bytes) = context.storage().get(&key).await? {
+                let mut chat: crate::dto::ChatRecord = serde_json::from_slice(&bytes)?;
+                chat.name = update.name.clone();
+                context
+                    .storage()
+                    .put(&key, serde_json::to_vec(&chat)?)
+                    .await?;
+            }
+            Ok(Some(ProviderEvent {
+                receiving_agent_id: None,
+                channel_id: channel("group_chat"),
+                provider_chat_id: update.chat_id.clone(),
+                sender: EventSender {
+                    id: "feishu:system".to_owned(),
+                    kind: EventSenderType::System,
+                    name: "Feishu".to_owned(),
+                },
+                kind: ProviderEventKind::Custom(lankide_provider::CustomEvent {
+                    mentioned_agent_ids: Vec::new(),
+                    reason: "chat_updated".to_owned(),
+                    target_agent_ids: Vec::new(),
+                    subject_id: update.chat_id.clone(),
+                    subject_name: update.name.clone(),
+                    data: serde_json::to_value(&update).map_err(crate::events::SinkError::from)?,
+                }),
+                provider_data: {
+                    let mut data = serde_json::to_value(&update)?;
+                    if name_changed {
+                        data["chat_name"] = serde_json::json!(update.name);
+                    }
+                    data
+                },
+            }))
+        }
         NormalizedEvent::Task(task) => {
             if crate::agent_tasks::task_system_enabled(context.workspace_config()) {
                 context

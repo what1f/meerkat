@@ -88,7 +88,6 @@ pub(crate) async fn tools(
     if !task_system_enabled(&context.workspace_config) {
         return Ok(Vec::new());
     }
-    let access = TaskAccess::from_context(context, client.clone(), auth).await?;
     [
         TaskOperation::List,
         TaskOperation::Get,
@@ -106,7 +105,6 @@ pub(crate) async fn tools(
             operation,
             client.clone(),
             auth,
-            access.clone(),
             context.clone(),
             action_lock.clone(),
         )
@@ -418,7 +416,6 @@ fn definition(
     operation: TaskOperation,
     client: Arc<SharedClient>,
     auth: Auth,
-    access: TaskAccess,
     context: AgentRuntimeContext,
     action_lock: Arc<tokio::sync::Mutex<()>>,
 ) -> Result<ToolDefinition, ProviderError> {
@@ -431,7 +428,6 @@ fn definition(
             operation,
             client,
             auth,
-            access,
             context,
             action_lock,
         }),
@@ -444,7 +440,6 @@ struct TaskHandler {
     operation: TaskOperation,
     client: Arc<SharedClient>,
     auth: Auth,
-    access: TaskAccess,
 }
 
 impl InvocationHandler for TaskHandler {
@@ -452,9 +447,9 @@ impl InvocationHandler for TaskHandler {
         let operation = self.operation;
         let client = self.client.clone();
         let auth = self.auth;
-        let access = self.access.clone();
         Box::pin(async move {
             let _guard = self.action_lock.lock().await;
+            let access = TaskAccess::from_context(&self.context, client.clone(), auth).await?;
             let result = execute(operation, &client, auth, &access, input.clone())
                 .await
                 .or_else(|error| Ok(tool_error(&error)))?;

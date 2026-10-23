@@ -368,6 +368,65 @@ fn reaction(id: &str) -> Value {
         "event":{"message_id":format!("om_{id}"),"operator_type":"user","user_id":{"open_id":"ou_alice","union_id":"on_alice"},"reaction_type":{"emoji_type":"THUMBSUP"},"action_time":"2000"}})
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cached_group_name_survives_restart_and_follows_events() {
+    let server = FeishuServer::start();
+    let services = Services::new("feishu");
+    let host = event_host(&server, &services).await;
+    server.deliver("cli_beta", team_message("cached-first"));
+    let (_, ack) = tokio::time::timeout(Duration::from_secs(3), host.next_event())
+        .await
+        .unwrap()
+        .unwrap()
+        .into_parts();
+    ack.accept();
+    host.shutdown().await.unwrap();
+    let host = ProviderHost::new(
+        FeishuProvider::new(),
+        services.workspace.clone(),
+        json!({"api_endpoint":server.http.endpoint,"task_system_enabled":false}),
+        services.host(),
+    )
+    .unwrap();
+    host.init().await.unwrap();
+    host.create_agent(
+        AgentId::new("beta").unwrap(),
+        agent_spec(json!({"app_id":"cli_beta"})),
+    )
+    .await
+    .unwrap();
+    server.fail_requests("/open-apis/im/v1/chats/oc_team", 503, usize::MAX);
+    for (id, after) in [
+        ("rename", json!({"name":"Renamed team"})),
+        ("other", json!({"description":"changed"})),
+    ] {
+        server.deliver("cli_beta", json!({"schema":"2.0","header":{"event_id":id,"event_type":"im.chat.updated_v1","app_id":"cli_beta","tenant_key":"tenant"},"event":{"chat_id":"oc_team","after_change":after}}));
+        let (_, ack) = tokio::time::timeout(Duration::from_secs(3), host.next_event())
+            .await
+            .unwrap()
+            .unwrap()
+            .into_parts();
+        ack.accept();
+    }
+    server.deliver("cli_beta", team_message("cached-next"));
+    let (event, ack) = tokio::time::timeout(Duration::from_secs(3), host.next_event())
+        .await
+        .unwrap()
+        .unwrap()
+        .into_parts();
+    assert_eq!(event.provider_data["chat_name"], "Renamed team");
+    ack.accept();
+    host.shutdown().await.unwrap();
+    assert_eq!(
+        server
+            .requests()
+            .iter()
+            .filter(|r| r.path.split('?').next() == Some("/open-apis/im/v1/chats/oc_team"))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_temporary_im_outage_delivers_the_reaction_and_next_message_once() {
     let server = FeishuServer::start();
     let services = Services::new("feishu");
@@ -406,6 +465,19 @@ async fn a_temporary_im_outage_delivers_the_reaction_and_next_message_once() {
     );
     host.shutdown().await.unwrap();
     assert_eq!(server.acknowledgements(), 3);
+    let requests = server.requests();
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| r.path.split('?').next() == Some("/open-apis/im/v1/chats/oc_team"))
+            .count(),
+        1
+    );
+    assert!(
+        !requests
+            .iter()
+            .any(|r| r.path.split('?').next() == Some("/open-apis/im/v1/messages/om_before"))
+    );
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_lasting_im_outage_skips_the_event_and_delivers_later_messages() {
@@ -418,8 +490,8 @@ async fn a_lasting_im_outage_skips_the_event_and_delivers_later_messages() {
         .unwrap()
         .unwrap();
     delivery.into_parts().1.accept();
-    server.fail_requests("/open-apis/im/v1/messages/om_before", 503, usize::MAX);
-    server.deliver("cli_beta", reaction("before"));
+    server.fail_requests("/open-apis/im/v1/messages/om_unknown", 503, usize::MAX);
+    server.deliver("cli_beta", reaction("unknown"));
     server.deliver("cli_beta", team_message("after"));
     let (event, receipt) = tokio::time::timeout(Duration::from_secs(5), host.next_event())
         .await
@@ -1201,6 +1273,22 @@ async fn task_host(
             && request.header("authorization") == "Bearer tenant-cli_beta"
             && request.json()["members"] == json!([{"id":"cli_beta","type":"app","role":"editor"}])
     }));
+    let reads = || {
+        server
+            .requests()
+            .iter()
+            .filter(|r| r.path.starts_with("/open-apis/task/"))
+            .count()
+    };
+    let before = reads();
+    for _ in 0..2 {
+        let tools = host
+            .tools(AgentId::new("beta").unwrap(), task_spec())
+            .await
+            .unwrap();
+        assert!(tools.iter().any(|tool| tool.id == "feishu_task_create"));
+    }
+    assert_eq!(reads(), before, "preparing tools must not access task APIs");
     host
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
