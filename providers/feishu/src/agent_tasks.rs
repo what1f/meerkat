@@ -20,7 +20,6 @@ pub(crate) type SharedClient = FeishuClient<Arc<dyn Transport>>;
 const DEFAULT_TASKLIST_NAME: &str = "团队任务";
 
 const EXPRESSION_PROMPT: &str = include_str!("prompts/expression.md");
-const IM_PROMPT: &str = include_str!("prompts/im.md");
 const TASK_PROMPT: &str = include_str!("prompts/tasks.md");
 
 pub(crate) fn task_system_enabled(config: &Value) -> bool {
@@ -32,9 +31,9 @@ pub(crate) fn task_system_enabled(config: &Value) -> bool {
 
 pub(crate) fn system_prompt(context: &AgentRuntimeContext) -> String {
     if task_system_enabled(&context.workspace_config) {
-        format!("{EXPRESSION_PROMPT}\n\n{IM_PROMPT}\n\n{TASK_PROMPT}")
+        format!("{EXPRESSION_PROMPT}\n\n{TASK_PROMPT}")
     } else {
-        format!("{EXPRESSION_PROMPT}\n\n{IM_PROMPT}")
+        EXPRESSION_PROMPT.to_owned()
     }
 }
 

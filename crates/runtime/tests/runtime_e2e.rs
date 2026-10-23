@@ -434,6 +434,16 @@ async fn scenario(db: &Path) -> Result<(), String> {
                 .system_prompt
                 .contains("Name: agent_a；Role: Agent；ID: agent_a")
             && assignments[0].system_prompt.contains("## 每轮工作")
+            && assignments[0].system_prompt.contains("## IM")
+            && assignments[0]
+                .system_prompt
+                .contains("message_send 是你唯一在 IM 里发送消息的方式")
+            && assignments[0]
+                .system_prompt
+                .contains("不要为了追上一个活跃群聊而机械地反复发送")
+            && assignments[0]
+                .system_prompt
+                .contains("![图片](./output.png)")
             && assignments[0]
                 .system_prompt
                 .contains("provider prompt for agent_a")

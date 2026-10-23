@@ -333,9 +333,8 @@ async fn feishu_provider_exposes_im_reaction_and_optional_task_capabilities() {
         .expect("Feishu system prompt");
     assert!(prompt.contains("飞书 IM"));
     assert!(prompt.contains(include_str!("fixtures/go-expression.md").trim()));
-    assert!(prompt.contains("message_send({\"channel_id\":\"<channel_id>\""));
-    assert!(prompt.contains("不要为了追上一个活跃群聊而机械地反复发送"));
-    assert!(prompt.contains("![图片](./output.png)"));
+    // Runtime owns the shared IM rules; Feishu adds only its own sections.
+    assert!(!prompt.contains("message_send 是你唯一在 IM 里发送消息的方式"));
     assert!(!prompt.contains("lankide upload"));
     assert!(prompt.contains("飞书任务"));
     assert!(prompt.contains("负责人"));
