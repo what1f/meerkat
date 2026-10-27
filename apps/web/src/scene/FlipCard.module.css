@@ -14,6 +14,10 @@
 
 .face {
   backface-visibility: hidden;
+
+  /* Hide the face turned away when the card is edge-on, about 100ms into the pop curve.
+     Some WebKit renderers ignore backface-visibility. */
+  transition: visibility 0s linear 0.1s;
 }
 
 /* The back sits a pixel off the front so WebKit never shows the front's layers through it. */
@@ -21,4 +25,10 @@
   position: absolute;
   inset: 0;
   transform: rotateY(180deg) translateZ(1px);
+}
+
+/* The face turned away. */
+.root[data-flipped='true'] > .face:first-child,
+.root:not([data-flipped='true']) > .face + .face {
+  visibility: hidden;
 }

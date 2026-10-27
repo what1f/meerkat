@@ -24,7 +24,11 @@ export function Dialog({
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
+    if (open && !dialog.open) {
+      dialog.showModal();
+      // Start on the dialog itself, so no control wears a focus ring before the user tabs.
+      dialog.focus();
+    }
     if (!open && dialog.open) dialog.close();
   }, [open]);
   return (
@@ -32,6 +36,7 @@ export function Dialog({
       {...rest}
       ref={ref}
       className={css.root}
+      tabIndex={-1}
       data-size={size}
       aria-labelledby={id}
       onCancel={(e) => {

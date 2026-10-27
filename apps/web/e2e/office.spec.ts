@@ -70,7 +70,13 @@ test.describe.serial('office', () => {
     await expect(command).toContainText(`wss://127.0.0.1:${port} `);
     await command.getByRole('button', { name: 'Copy' }).click();
     const copied = await page.evaluate(() => navigator.clipboard.readText());
-    expect(copied).toBe(await command.textContent());
+    // The screen shortens long arguments; the copy carries all of them.
+    expect(copied).toMatch(
+      new RegExp(
+        `^lankide-machine pair wss://127\\.0\\.0\\.1:${port} \\S+ --cert-sha256 [0-9a-f]{64}$`,
+      ),
+    );
+    await expect(command).toContainText('…');
     paired = (await rig({ op: 'pair_machine', command: copied })).machine_id!;
     const name = (await api('get_machine_catalog')).machines.find(
       (m: { machine_id: string }) => m.machine_id === paired,
@@ -156,7 +162,10 @@ test.describe.serial('office', () => {
     const first = (await command.textContent())!;
     await later.clock.fastForward('10:00');
     await expect(command).not.toHaveText(first);
-    const renewed = (await command.textContent())!;
+    // The screen shortens long arguments, so take the command from the copy button.
+    await command.getByRole('button', { name: /^Cop(y|ied)$/ }).click();
+    const renewed = await later.evaluate(() => navigator.clipboard.readText());
+    expect(renewed).toMatch(/^lankide-machine pair wss:\/\/127\.0\.0\.1:\d+ \S+ --cert-sha256 /);
     const machine = (await rig({ op: 'pair_machine', command: renewed })).machine_id!;
     await expect(later.getByTestId('pair-state')).toHaveAttribute('data-connected', 'true');
     await expect(later.getByTestId(`machine-row-${machine}`)).toBeVisible();

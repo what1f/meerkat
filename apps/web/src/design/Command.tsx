@@ -7,6 +7,8 @@ export type CommandProps = Omit<UIProps, 'className' | 'style'> & {
   copyLabel: string;
   copiedLabel: string;
 };
+// Long arguments such as fingerprints show their ends; copying always takes the full text.
+const maxPart = 32;
 export function Command({ text, copyLabel, copiedLabel, ...rest }: CommandProps) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -17,7 +19,11 @@ export function Command({ text, copyLabel, copiedLabel, ...rest }: CommandProps)
         {text.split(' ').map((part, i) => (
           <Fragment key={i}>
             {i > 0 && ' '}
-            <span>{part}</span>
+            {part.length > maxPart ? (
+              <span title={part}>{`${part.slice(0, 4)}…${part.slice(-4)}`}</span>
+            ) : (
+              <span>{part}</span>
+            )}
           </Fragment>
         ))}
       </code>

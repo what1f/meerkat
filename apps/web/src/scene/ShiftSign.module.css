@@ -79,6 +79,10 @@
   border-radius: var(--r-input-lg);
   box-shadow: var(--card-shadow);
   backface-visibility: hidden;
+
+  /* Hide the face turned away when the sign is edge-on, about 100ms into the pop curve.
+     Some WebKit renderers ignore backface-visibility. */
+  transition: visibility 0s linear 0.1s;
 }
 
 .face + .face {
@@ -145,4 +149,10 @@
   80% {
     transform: rotate(-0.3deg);
   }
+}
+
+/* The face turned away. */
+.root[data-on='false'] .face:first-child,
+.root:not([data-on='false']) .face + .face {
+  visibility: hidden;
 }

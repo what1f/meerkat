@@ -1,7 +1,7 @@
 # Design
 
-- [design-system.md](design-system.md): visual language, tokens, components, copy
-  rules, and the current gaps against them.
+- [design-system.md](design-system.md): visual language, surfaces, tokens,
+  components, board objects, figures, and copy rules.
 - [onboarding.md](onboarding.md): first-run flow, user story, screen-by-screen
   decisions, and implementation plan.
 - `onboarding/`: approved onboarding mockups (generated concept art, not

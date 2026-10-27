@@ -966,13 +966,13 @@ body.grabbing, body.grabbing * { cursor: grabbing !important; }
 .thumb.on { color: var(--ink); font-weight: 500; }
 .thumb.on .w { box-shadow: 0 0 0 2px var(--accent), 0 0 0 5px var(--accent-soft); }
 .thumb .w i { display: block; }
-.mini { flex: 1; display: flex; }
+.mini { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 12px 0 6px; }
 .mini.l { background: #f1f2f6; } .mini.d { background: #101115; }
-.mini .s { width: 26px; padding: 8px 4px; display: flex; flex-direction: column; gap: 3px; }
-.mini .s i { height: 3px; border-radius: 2px; background: currentColor; opacity: .18; }
-.mini .c { flex: 1; margin: 4px 4px 4px 0; border-radius: 4px; }
-.mini.l .c { background: #fff; color: #1b1d26; } .mini.d .c { background: #17181d; color: #fff; }
-.mini.l .s { color: #1b1d26; } .mini.d .s { color: #fff; }
+.mini .s { display: flex; gap: 4px; }
+.mini .s i { width: 12px; height: 16px; border-radius: 2px; }
+.mini .c { width: 28px; height: 6px; border-radius: 999px; }
+.mini.l .s i, .mini.l .c { background: #fff; box-shadow: 0 1px 2px rgba(20,22,40,.05); }
+.mini.d .s i, .mini.d .c { background: #17181d; box-shadow: 0 0 0 .5px rgba(255,255,255,.07); }
 
 /* Avatar picker */
 .picker { grid-template-columns: repeat(6, 40px); }
@@ -1453,14 +1453,14 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
 <p class="lead">和现状相比改了什么。现状见 <a href="current.html" style="color:var(--accent)">current.html</a>。</p>
 <div class="card-doc">
   <table class="change">
-    <tr><td>导航</td><td>侧栏「成员 / 团队 / 设置」，工作区切换器在页头右侧</td><td>没有侧栏。窗口底部浮着一条毛玻璃导航坞：最前面是团队名，点开切换团队，后面是「成员 / 团队 / 工区」三个图标，悬停显示名字。设置在应用菜单里，⌘, 打开。洞洞板从窗口顶边铺到底边，红绿灯直接落在板上</td></tr>
+    <tr><td>导航</td><td>侧栏「成员 / 团队 / 设置」，工作区切换器在页头右侧</td><td>没有侧栏。窗口底部浮着一条毛玻璃导航坞：最前面是团队名，点开切换团队，后面是「成员 / 团队 / 工区」三个图标，悬停显示名字。设置是团队菜单的最后一项，也可以用 ⌘, 打开。洞洞板从窗口顶边铺到底边，红绿灯直接落在板上</td></tr>
     <tr><td>成员</td><td>296 × 360 名片，悬停出编辑和删除；编辑弹窗 980 宽，左表单右预览，底部保存</td><td>一面洞洞板，没有页面标题。工卡用挂绳挂在挂钩上，指针经过时轻晃；第一张是你自己，空挂钩就是添加。按住工卡拖动可以调整顺序，其他卡会让位；你自己的卡固定在第一位。点开后板上挂出一台暖白色的操控台，工卡挂在右边当预览，头像、名字、岗位、介绍直接在卡上改。操控台顶上站着 TA 的形象，角上贴着已读表情；中间的黑色屏幕显示 AI、模型、工区和思考强度，点开是四列选择器：工区、AI、模型、思考，后一列由前一列决定，能搜索，思考强度是一根挡杆，档位数随模型变化。性格是插在槽里的一张卡，长了就藏进槽里，点一下抽出来写。高级从操控台底下拉出抽屉。改动要同步到飞书，所以改了才出现「保存」；没保存就返回，会问保存还是放弃。私聊、暂停、删除和「保存」是操控台下沿的一排实体按键，「保存」有改动时亮绿灯</td></tr>
     <tr><td>首次引导</td><td>四步向导，带步骤条，要填工作区 ID、Agent ID 等</td><td>五屏，同一面洞洞板，每屏挂上一样东西：欢迎页是一张工位和一段飞书对话；连接时二维码挂成吊牌，扫完原地翻成你的工卡；选 AI 在操控台屏幕上自动测一次；第一位成员只填名字，「高级设置」拉出操控台。登录只扫这一次，以后加成员不再扫码。Telegram 只粘贴管理 bot 的 Token；你的工卡先是空白的，扫码确认第一位成员时顺带认出你，空白卡翻成你的工卡。之后每加一位成员都要扫码确认。终点是 TA 在飞书里回你第一句话</td></tr>
     <tr><td>添加成员</td><td>820 宽弹窗，四步，填 Agent ID、显示名称、工区、Agent、模型、思考等级</td><td>没有弹窗：点板上挂着的空卡套，一张空白工卡飞到前面，随机头像，直接写名字，按回车或「添加」。卡挂回板上，原地显示创建进度</td></tr>
     <tr><td>预览与测试</td><td>编辑弹窗右侧的静态名片预览；没有测试</td><td>工卡本身就是预览，改什么立刻看到。对话以后做成单独的私聊页，从顶栏的消息图标进入</td></tr>
     <tr><td>表情</td><td>表单里一个 36 px 圆按钮，弹出 20 格网格</td><td>操控台角上的一张贴纸，点开换；不回复时没有贴纸，下沿多一个笑脸键，选了表情就贴回角上</td></tr>
     <tr><td>团队</td><td>设置分组里套 IM 面板，再套任务面板；底部保存按钮</td><td>同一面洞洞板：团队名写在贴在板子上方的纸条上，点了就能改；挂着一块「上班／下班」的牌子，点一下翻面；下班后成员都不回消息，工区里只剩空椅子，屏幕全黑；规约写在挂着的吊牌上；任务清单是夹在木质写字板上的真实清单，能勾、能加，停用后变回虚线空位。挂牌、吊牌、清单都能拖到别的孔上。飞书账号移到你自己的工卡上</td></tr>
-    <tr><td>你自己</td><td>团队页里的飞书身份卡</td><td>扫码登录的人就是负责人，名字、头像、岗位都从飞书同步，这里不编辑。挂绳是品牌蓝紫色，成员的是黑色，别的都一样。工卡和成员一样能拖动排序。点一下工卡翻到背面，背面只有飞书标志和「同步资料」「切换账号」两栏，不显示组织名；正面没有卡底，点别处翻回来；不能删除</td></tr>
+    <tr><td>你自己</td><td>团队页里的飞书身份卡</td><td>为团队创建过成员的飞书账号都会加入团队，每人一张工卡。名字和头像从飞书同步，岗位可以改。挂绳是品牌蓝紫色，成员的是黑色，别的都一样。工卡和成员一样能拖动排序。点一下工卡翻到背面，背面只有飞书标志和「同步资料」「编辑岗位」两栏，不显示组织名；「编辑岗位」把工卡放大，岗位直接在卡上改；正面没有卡底，点别处翻回来；不能删除</td></tr>
     <tr><td>运行状态</td><td>在「设置 → 状态」，红绿描边按钮</td><td>团队页墙上的开关，开着时指示灯亮</td></tr>
     <tr><td>工区</td><td>在设置页里</td><td>从成员身后看过去的一排排工位。每个工区一段，标题是名字和状态点，段与段之间一条细线。成员各有一张桌子，有的是笔记本架在显示器旁，有的是显示器配 Mac mini，能对上工区机型就用同款。屏幕说明在做什么：回复中屏幕上在打字，需要处理时屏幕变红亮「!」，暂停时趴在桌上睡、屏幕变暗。离线的工区里成员都在睡，屏幕黑着。没有成员的工区不摆桌子。按住成员会被拎起来晃，放到另一排就换了工区。最后一行是添加</td></tr>
     <tr><td>浅色和深色</td><td>只在设置页里</td><td>右上角垂一根拉线，往下拉一下就开关灯，松手弹回去。设置页里的选项还在，可以跟随系统</td></tr>

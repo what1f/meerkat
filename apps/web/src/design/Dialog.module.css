@@ -107,3 +107,7 @@
 .root[data-confirm] > footer {
   width: 100%;
 }
+
+.root:focus-visible {
+  outline-style: none;
+}
