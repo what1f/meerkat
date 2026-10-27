@@ -47,7 +47,7 @@ export function FirstMemberStep({ flow }: { flow: Flow }) {
             }
           />
         </Hang>
-        {confirm && !flow.permissions && (
+        {confirm && (
           <QrTag
             data-testid="onboarding-confirm"
             state="wait"

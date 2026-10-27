@@ -17,6 +17,67 @@ fn callback(id: &str, message: Value) -> Value {
     json!({"schema":"2.0","header":{"event_id":id,"event_type":"im.message.receive_v1","app_id":"cli_beta","tenant_key":"tenant"},
         "event":{"sender":{"sender_type":"user","sender_id":{"open_id":"ou_alice","union_id":"on_alice"}},"message":message}})
 }
+
+#[tokio::test]
+async fn profile_updates_preserve_fields_that_were_not_changed() {
+    let server = FeishuServer::start();
+    let services = Services::new("feishu");
+    let bot = AgentId::new("beta").unwrap();
+    services.agent(&bot, "app_secret", "local-secret");
+    let host = ProviderHost::new(
+        FeishuProvider::new().without_event_source(),
+        services.workspace.clone(),
+        json!({"api_endpoint":format!("{}/",server.http.endpoint),"task_system_enabled":false}),
+        services.host(),
+    )
+    .unwrap();
+    host.init().await.unwrap();
+    let config = json!({"app_id":"cli_beta"});
+    host.create_agent(bot.clone(), agent_spec(config.clone()))
+        .await
+        .unwrap();
+
+    // An avatar-only update must not send empty name/description values.
+    let mut avatar = agent_spec(json!({
+        "app_id":"cli_beta", "avatar_bytes":[1,2,3], "avatar_file_name":"avatar.jpg"
+    }));
+    avatar.name.clear();
+    avatar.bio.clear();
+    host.update_agent(bot.clone(), config.clone(), avatar)
+        .await
+        .unwrap();
+    for (name, bio) in [("Renamed", ""), ("", "New description")] {
+        let mut profile = agent_spec(config.clone());
+        profile.name = name.into();
+        profile.bio = bio.into();
+        host.update_agent(bot.clone(), config.clone(), profile)
+            .await
+            .unwrap();
+    }
+    host.shutdown().await.unwrap();
+
+    let requests = server.requests();
+    let updates: Vec<_> = requests
+        .iter()
+        .filter(|request| request.path.ends_with("/base"))
+        .map(|request| request.json())
+        .collect();
+    assert_eq!(
+        updates,
+        vec![
+            json!({"avatar_url":"https://avatar.example/uploaded.jpg"}),
+            json!({"i18ns":[{"i18n_key":"zh_cn","name":"Renamed"}]}),
+            json!({"i18ns":[{"i18n_key":"zh_cn","description":"New description"}]}),
+        ]
+    );
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.path.ends_with("/publish"))
+            .count(),
+        3
+    );
+}
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_group_message_mentioning_a_bot_reaches_its_agent() {
     let server = FeishuServer::start();

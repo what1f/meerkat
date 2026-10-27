@@ -405,12 +405,9 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
         let response = self.peer.get_agent_avatar(request.into_inner()).await?;
         validate_request_id(&response.request_id)?;
         validate_agent_ref(response.agent.as_ref())?;
-        validate_avatar_file(
-            response
-                .avatar
-                .as_ref()
-                .ok_or_else(|| Status::internal("avatar file missing"))?,
-        )?;
+        if let Some(avatar) = response.avatar.as_ref() {
+            validate_avatar_file(avatar)?;
+        }
         Ok(Response::new(response))
     }
 

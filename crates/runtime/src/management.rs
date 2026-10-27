@@ -298,17 +298,18 @@ impl RuntimeApplication {
             .database()
             .agent_record(&workspace_id, &agent_id)
             .await?;
-        let avatar = self
-            .agent_profiles()
-            .read_avatar(&workspace_id, &agent_id, record.avatar.as_deref())?
-            .ok_or_else(|| RuntimeError::Application("Agent avatar is not set".into()))?;
+        let avatar = self.agent_profiles().read_avatar(
+            &workspace_id,
+            &agent_id,
+            record.avatar.as_deref(),
+        )?;
         Ok(GetAgentAvatarResponse {
             request_id: request.request_id,
             agent: Some(AgentRef {
                 workspace_id: workspace_id.to_string(),
                 agent_id: agent_id.to_string(),
             }),
-            avatar: Some(avatar_file(avatar)),
+            avatar: avatar.map(avatar_file),
         })
     }
 

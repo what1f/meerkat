@@ -368,6 +368,29 @@ impl FeishuServer {
             let app = app.strip_prefix("Bearer tenant-").unwrap();
             assert!(matches!(app, "cli_alpha" | "cli_beta" | "cli_gamma"));
             let data = match (request.method.as_str(), path) {
+                ("POST", "/open-apis/application/v7/app_avatar/upload") => {
+                    assert!(!request.part("avatar").is_empty());
+                    json!({"url":"https://avatar.example/uploaded.jpg"})
+                }
+                ("PATCH", "/open-apis/application/v7/applications/cli_beta/base") => {
+                    let body = request.json();
+                    if let Some(locales) = body["i18ns"].as_array() {
+                        for locale in locales {
+                            for field in ["name", "description"] {
+                                if let Some(value) = locale.get(field) {
+                                    assert!(
+                                        !value.as_str().unwrap().is_empty(),
+                                        "Feishu rejects empty {field}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    json!({})
+                }
+                ("POST", "/open-apis/application/v7/applications/cli_beta/publish") => {
+                    json!({"version_id":"profile_version"})
+                }
                 ("GET", "/open-apis/task/v2/tasklists") => {
                     json!({"items":state.tasklist.iter().cloned().collect::<Vec<_>>(),"has_more":false})
                 }

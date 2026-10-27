@@ -105,7 +105,10 @@ test('Feishu: official registration and permissions, then the first member answe
   await next(page).click();
   await expect(qr).toBeVisible();
   await expect.poll(() => qr.locator('svg').innerHTML()).not.toBe(first);
+  const registrationQr = await qr.locator('svg').innerHTML();
   await rig({ op: 'feishu_scan', workspace, state: 'complete' });
+  await expect(qr).toBeVisible();
+  await expect.poll(() => qr.locator('svg').innerHTML()).not.toBe(registrationQr);
   await expect(page.getByTestId('onboarding-permissions')).toBeVisible();
   await page
     .context()
@@ -118,7 +121,7 @@ test('Feishu: official registration and permissions, then the first member answe
   );
   await confirmation.close();
   await page.screenshot({ path: test.info().outputPath('permissions.png') });
-  await expect(qr).toHaveCount(0);
+  await expect(qr).toBeVisible();
   await expect(page.getByText(/Waiting for approval|等待审批/)).toBeVisible();
   await rig({ op: 'feishu_scan', workspace, state: 'approved' });
   await firstReply(page, baseURL!, workspace);

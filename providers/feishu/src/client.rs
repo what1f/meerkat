@@ -1688,15 +1688,24 @@ impl<T: Transport> Client<T> {
             "i18n_key".to_owned(),
             Value::String(language.trim().to_owned()),
         );
-        locale.insert("name".to_owned(), Value::String(display_name.to_owned()));
-        locale.insert(
-            "description".to_owned(),
-            Value::String(description.to_owned()),
-        );
+        // Empty profile fields mean "leave unchanged". Feishu rejects them
+        // when present, including on an avatar-only update.
+        if !display_name.trim().is_empty() {
+            locale.insert("name".to_owned(), Value::String(display_name.to_owned()));
+        }
+        if !description.trim().is_empty() {
+            locale.insert(
+                "description".to_owned(),
+                Value::String(description.to_owned()),
+            );
+        }
         // The Application v7 API names this list `i18ns` (the generated Go
         // SDK uses AppI18ns).  Keeping the wire spelling here avoids a
         // profile update that is accepted at HTTP level but silently ignored.
-        let mut body = json!({ "i18ns": [Value::Object(locale)] });
+        let mut body = json!({});
+        if locale.len() > 1 {
+            body["i18ns"] = json!([Value::Object(locale)]);
+        }
         if let Some(url) = avatar_url.filter(|value| !value.trim().is_empty()) {
             body["avatar_url"] = Value::String(url.to_owned());
         }

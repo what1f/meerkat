@@ -4394,6 +4394,14 @@ async fn local_agent_settings_scenario() {
 
 async fn agent_avatar_scenario() {
     let (temp, app, state) = profile_application().await;
+    let empty = app
+        .get_agent_avatar(lankide_protocol::GetAgentAvatarRequest {
+            request_id: "get-unset-agent-avatar".into(),
+            agent: profile_agent_ref(),
+        })
+        .await
+        .expect("an unset avatar is a normal empty result");
+    assert!(empty.avatar.is_none());
     let mut encoded = std::io::Cursor::new(Vec::new());
     image::DynamicImage::new_rgb8(2, 2)
         .write_to(&mut encoded, image::ImageFormat::Jpeg)

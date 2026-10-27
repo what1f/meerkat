@@ -162,10 +162,10 @@ export function MemberBench({
               }
             />
           </Hang>
-          {creation.step === 'confirm' && (
+          {(creation.step === 'confirm' || creation.step === 'permissions') && (
             <QrTag
               state="wait"
-              value={creation.qr}
+              value={creation.step === 'confirm' ? creation.qr : creation.url}
               brand="feishu"
               // Codes are renewed by the onboarding driver; there is nothing to refresh by hand yet.
               onRefresh={() => {}}

@@ -92,6 +92,14 @@ test('B3a.2: a renamed member keeps its name and model after a reload', async ({
   await open(page, member.workspace, `member/${member.agent}`);
   const name = page.getByTestId('member-name');
   await expect(name).not.toHaveValue('');
+  const avatar = await page.request.post('/api/v1/get_agent_avatar', {
+    data: { request_id: 'spec', agent: { workspace_id: member.workspace, agent_id: member.agent } },
+  });
+  expect(avatar.ok()).toBe(true);
+  expect((await avatar.json()).avatar).toBeNull();
+  await expect(
+    page.getByText(/Some settings can’t be loaded right now|部分设置暂时加载不出来/),
+  ).toHaveCount(0);
   await name.fill('Grace Hopper');
   await page.getByTestId('brain-picker').click();
   await page.getByRole('searchbox').fill('cobol-2');
@@ -300,8 +308,10 @@ test('B3a.7: a member created in a Feishu team waits for its app to be set up', 
 
   const qr = page.getByTestId('member-create-qr');
   await expect(qr).toHaveAttribute('data-state', 'wait');
+  const registrationQr = await qr.locator('svg').innerHTML();
   await rig({ op: 'feishu_scan', workspace, state: 'complete' });
-  await expect(qr).toBeHidden();
+  await expect(qr).toBeVisible();
+  await expect.poll(() => qr.locator('svg').innerHTML()).not.toBe(registrationQr);
   await expect(page.getByTestId('member-create-permissions')).toBeVisible();
   await page
     .context()
@@ -317,6 +327,7 @@ test('B3a.7: a member created in a Feishu team waits for its app to be set up', 
   await expect(page.getByText(/Waiting for approval|等待审批/)).toBeVisible();
   await expect(page.getByRole('button', { name: /^(打开|Open)$/ })).toHaveCount(0);
   await rig({ op: 'feishu_scan', workspace, state: 'approved' });
+  await expect(qr).toBeHidden();
 
   await page.getByRole('button', { name: /^(打开|Open)$/ }).click();
   await expect(page).toHaveURL(/#\/member\/m[0-9a-f]{12}$/);
