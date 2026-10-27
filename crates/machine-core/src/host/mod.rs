@@ -14,7 +14,6 @@ mod sessions;
 use self::connection::run_loop;
 use self::control::active_attempts;
 use self::events::restore_event;
-use crate::STANDARD_HARNESS_IDS;
 use crate::state::{PersistedState, SessionRecovery};
 use lankide_harness::{
     HarnessAvailability as NativeHarnessAvailability, HarnessConfig as NativeHarnessConfig,
@@ -252,9 +251,7 @@ impl Machine {
 
     pub fn register_harness(&mut self, harness: RegisteredHarness) -> Result<(), MachineError> {
         let harness_id = harness.factory.info().harness_id.clone();
-        if !STANDARD_HARNESS_IDS.contains(&harness_id.as_str())
-            || harness_id != harness.probe_config.harness_id
-        {
+        if harness_id.is_empty() || harness_id != harness.probe_config.harness_id {
             return Err(MachineError::InvalidHarnessRegistration(harness_id));
         }
         harness.probe_config.validate_executable()?;

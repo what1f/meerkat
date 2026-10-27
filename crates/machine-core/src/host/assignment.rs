@@ -3,7 +3,6 @@ use super::control::replay_assignment_pending;
 use super::events::run_events;
 use super::proxy::download_resource;
 use super::{ActiveExecution, Inner, MachineError, StartingExecution};
-use crate::STANDARD_HARNESS_IDS;
 use crate::resources::{agent_directory, replace_resource_links};
 use crate::state::{
     AssignmentLifecycle, PersistedAssignment, PersistedSession, SessionRecovery, assignment_key,
@@ -582,11 +581,6 @@ pub(super) fn native_config(
     fingerprint: &str,
     defaults: &NativeHarnessConfig,
 ) -> Result<NativeHarnessConfig, MachineError> {
-    if !STANDARD_HARNESS_IDS.contains(&config.harness_id.as_str()) {
-        return Err(MachineError::InvalidAssignment(
-            "unsupported_harness".into(),
-        ));
-    }
     if Path::new(&config.executable_path)
         .file_name()
         .and_then(|v| v.to_str())
