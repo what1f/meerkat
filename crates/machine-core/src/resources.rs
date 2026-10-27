@@ -217,8 +217,23 @@ pub(crate) fn replace_resource_links(markdown: &str, paths: &[(i64, PathBuf)]) -
     let mut output = markdown.to_owned();
     for (id, path) in paths {
         let local = path.display().to_string();
-        output = output.replace(&format!("resource://{id}"), &local);
-        output = output.replace(&format!("attachment://{id}"), &local);
+        for scheme in ["resource", "attachment"] {
+            let reference = format!("{scheme}://{id}");
+            let mut replaced = String::new();
+            let mut end = 0;
+            for (start, matched) in output.match_indices(&reference) {
+                let next = start + matched.len();
+                replaced.push_str(&output[end..start]);
+                if output.as_bytes().get(next).is_some_and(u8::is_ascii_digit) {
+                    replaced.push_str(matched);
+                } else {
+                    replaced.push_str(&local);
+                }
+                end = next;
+            }
+            replaced.push_str(&output[end..]);
+            output = replaced;
+        }
     }
     output
 }

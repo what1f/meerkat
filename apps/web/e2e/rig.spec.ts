@@ -311,6 +311,42 @@ test('page API member runs with empty environment and preserves its model throug
   }
 });
 
+test('Telegram member creation from the board starts onboarding', async ({ page, baseURL }) => {
+  const workspace = 'tg_members';
+  await rig({ op: 'create_workspace', workspace, provider: 'telegram' });
+  await page.addInitScript((ws) => {
+    localStorage.setItem('lankide.workspace', JSON.stringify(ws));
+  }, workspace);
+  await page.goto('/#/member/new');
+  await page.getByTestId('member-name').fill('Ada');
+  const created = page.waitForResponse((response) => response.url().endsWith('/create_agent'));
+  const started = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/advance_agent_onboarding') &&
+      response.request().postDataJSON().action === 'start',
+  );
+  await page.getByTestId('member-create').click();
+  const saved = await (await created).json();
+  const agent_id = saved.agent.agent_id;
+  expect(JSON.parse(saved.provider_agent_config_json)).toEqual({
+    mode: 'new',
+    bot_username: `${workspace}_${agent_id}_bot`,
+  });
+  const onboarding = await (await started).json();
+  expect(onboarding.status).toBe('action_required');
+  expect(onboarding.verification_uri).toContain(
+    `https://t.me/newbot/manager_bot/${workspace}_${agent_id}_bot`,
+  );
+  await expect(page.getByTestId('member-create-qr')).toHaveAttribute('data-state', 'wait');
+  await expect(page.getByText('Scan with Telegram to confirm')).toBeVisible();
+  const persisted = await api(baseURL!, 'get_agent', {
+    agent: { workspace_id: workspace, agent_id },
+  });
+  expect(JSON.parse(persisted.provider_agent_config_json).bot_username).toBe(
+    `${workspace}_${agent_id}_bot`,
+  );
+});
+
 test('page API Telegram member completes onboarding and receives its first owner DM reply', async ({
   baseURL,
 }) => {

@@ -1,6 +1,6 @@
 use lankide_harness::{
     AgentEventKind, ExecuteRequest, HarnessCapability, HarnessConfig, HarnessFactory, ModelRef,
-    SessionRequest, ToolDefinition, ToolResultRequest,
+    SessionRequest, ToolDefinition, ToolResultError, ToolResultRequest,
 };
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, fs, os::unix::fs::PermissionsExt, path::Path, time::Duration};
@@ -57,6 +57,14 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                 "Keep the native skill.",
             )?;
         }
+        let private = agent.join(".lankide").join(id).join("native-home");
+        fs::create_dir_all(&private)?;
+        let credential = if id == "claude_code" {
+            ".credentials.json"
+        } else {
+            "auth.json"
+        };
+        fs::write(private.join(credential), "agent-owned credential")?;
         let config = HarnessConfig {
             launch_arguments: Default::default(),
             harness_id: id.clone(),
@@ -165,17 +173,25 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                             arguments,
                         } = &event.kind
                         {
-                            assert_eq!(id, "codex");
+                            assert!(id == "codex" || id == "claude_code");
                             assert_eq!(tool_name, "report");
                             assert_eq!(arguments["value"], "namespace-roundtrip");
                             session
                                 .tool_result(ToolResultRequest {
                                     tool_call_id: tool_call_id.clone(),
-                                    success: true,
-                                    content_markdown: "namespace-roundtrip".into(),
+                                    success: id != "claude_code",
+                                    content_markdown: if id == "claude_code" {
+                                        String::new()
+                                    } else {
+                                        "namespace-roundtrip".into()
+                                    },
                                     structured_content: json!({}),
                                     resources: Vec::new(),
-                                    error: None,
+                                    error: (id == "claude_code").then(|| ToolResultError {
+                                        code: "permission_denied".into(),
+                                        message: "Access to this conversation was denied.".into(),
+                                        retryable: false,
+                                    }),
                                 })
                                 .await?;
                         }
@@ -188,7 +204,13 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                 .await??;
             }
             session.close().await?;
-            let private = agent.join(".lankide").join(id).join("native-home");
+            assert_eq!(
+                fs::read_to_string(private.join(credential))?,
+                "agent-owned credential"
+            );
+            let inherited: Vec<String> =
+                serde_json::from_slice(&fs::read(private.join(".lankide-inherited.json"))?)?;
+            assert!(!inherited.iter().any(|name| name == credential));
             let settings = if id == "codex" {
                 "config.toml"
             } else {

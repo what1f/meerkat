@@ -41,6 +41,7 @@ export function MemberBench({
   const ref = id ? { workspace_id: workspace, agent_id: id } : null;
   const status = m.agent ? agentStatus(m.agent, m.machine, team.data).status : undefined;
   const { creation } = m;
+  const channel = team.data?.provider_id === 'telegram' ? 'telegram' : 'feishu';
   const canCreate =
     !id &&
     (creation.step === 'idle' || creation.step === 'failed') &&
@@ -84,6 +85,7 @@ export function MemberBench({
         <MemberConsole
           m={m}
           workspace={workspace}
+          channel={channel}
           isNew={!id}
           status={status}
           reading={reading}
@@ -166,7 +168,7 @@ export function MemberBench({
             <QrTag
               state="wait"
               value={creation.step === 'confirm' ? creation.qr : creation.url}
-              brand="feishu"
+              brand={channel}
               // Codes are renewed by the onboarding driver; there is nothing to refresh by hand yet.
               onRefresh={() => {}}
               refreshLabel={t('members.refreshQr')}

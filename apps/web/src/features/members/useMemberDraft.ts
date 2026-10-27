@@ -6,7 +6,7 @@ import { useMachines } from '../../lib/queries/machines';
 import { useAgentOnboardingProgress, useStartAgentOnboarding } from '../../lib/queries/onboarding';
 import { avatarUrl } from '../../lib/assets';
 import { builtinUpload, defaultAvatar } from './avatars';
-import { creationOf, onboards, type Creation } from './creation';
+import { creationConfig, creationOf, onboards, type Creation } from './creation';
 import { formatArgs } from './args';
 import { harnessDefaults, harnessDraft } from './harnessDraft';
 import {
@@ -150,7 +150,7 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
           request_id: crypto.randomUUID(),
           agent: createdRef,
           attention: null,
-          provider_agent_config_json: setup ? '{"mode":"new","domain":"feishu"}' : '{}',
+          provider_agent_config_json: creationConfig(provider, workspace, newAgentId),
           provider_agent_secrets_json: '{}',
         });
         setCreated(true);

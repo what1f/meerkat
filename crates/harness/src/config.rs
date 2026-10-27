@@ -99,17 +99,17 @@ pub(crate) fn refresh_config_overlay(
         }
         let origin = source.join(name);
         let target = destination.join(name);
-        let apply = || -> io::Result<()> {
+        let apply = || -> io::Result<bool> {
             if !origin.exists() {
                 if previous.iter().any(|v| v == name) {
                     let _ = fs::remove_file(&target);
                 }
-                return Ok(());
+                return Ok(false);
             }
             let credentials = matches!(*name, "auth.json" | ".credentials.json");
             if credentials {
                 if target.exists() && !previous.iter().any(|v| v == name) {
-                    return Ok(());
+                    return Ok(false);
                 }
                 if fs::symlink_metadata(&target).is_ok() {
                     fs::remove_file(&target)?;
@@ -132,12 +132,12 @@ pub(crate) fn refresh_config_overlay(
                 file.sync_all()?;
                 fs::rename(temporary, &target)?;
             }
-            Ok(())
+            Ok(true)
         };
-        apply().map_err(|e| {
+        let applied = apply().map_err(|e| {
             HarnessError::invalid_config(format!("Could not refresh native configuration: {e}"))
         })?;
-        if origin.exists() {
+        if applied {
             inherited.push(name.to_string());
         }
     }

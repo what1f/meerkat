@@ -14,6 +14,7 @@ export type MemberDraftState = ReturnType<typeof useMemberDraft>;
 export function MemberConsole({
   m,
   workspace,
+  channel,
   isNew,
   status,
   reading,
@@ -26,6 +27,7 @@ export function MemberConsole({
 }: {
   m: MemberDraftState;
   workspace: string;
+  channel: 'feishu' | 'telegram';
   isNew: boolean;
   status: Status | undefined;
   reading: boolean;
@@ -60,7 +62,7 @@ export function MemberConsole({
       </Callout>
     ) : creation.step === 'confirm' ? (
       <Callout tone="quiet" leading={<Spinner />}>
-        {t('members.scanToCreate')}
+        {t(channel === 'telegram' ? 'members.scanToCreateTelegram' : 'members.scanToCreate')}
       </Callout>
     ) : creation.step === 'failed' ? (
       <Callout tone="attention">

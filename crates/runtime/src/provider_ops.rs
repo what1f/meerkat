@@ -68,36 +68,41 @@ impl Runtime {
                         }
                     }
                 }
-                self.coordinate_event_inner(
-                    workspace_id,
-                    ProviderEvent {
-                        receiving_agent_id: Some(agent_id.clone()),
-                        channel_id: spec.channel_id.clone(),
-                        provider_chat_id: result
-                            .provider_chat_id
-                            .clone()
-                            .unwrap_or_else(|| spec.chat_id.clone()),
-                        sender: lankide_provider::EventSender {
-                            id: agent_id.to_string(),
-                            kind: EventSenderType::Agent,
-                            name: String::new(),
+                let coordination = self
+                    .coordinate_event_inner(
+                        workspace_id,
+                        ProviderEvent {
+                            receiving_agent_id: Some(agent_id.clone()),
+                            channel_id: spec.channel_id.clone(),
+                            provider_chat_id: result
+                                .provider_chat_id
+                                .clone()
+                                .unwrap_or_else(|| spec.chat_id.clone()),
+                            sender: lankide_provider::EventSender {
+                                id: agent_id.to_string(),
+                                kind: EventSenderType::Agent,
+                                name: String::new(),
+                            },
+                            kind: ProviderEventKind::Message(lankide_provider::MessageEvent {
+                                provider_message_id: native_id.clone(),
+                                content: spec.content.clone(),
+                                reply_to_provider_message_id,
+                                mentioned_agent_ids,
+                                attachments: spec
+                                    .attachments
+                                    .iter()
+                                    .map(|item| item.resource.clone())
+                                    .collect(),
+                            }),
+                            provider_data: serde_json::json!({}),
                         },
-                        kind: ProviderEventKind::Message(lankide_provider::MessageEvent {
-                            provider_message_id: native_id.clone(),
-                            content: spec.content.clone(),
-                            reply_to_provider_message_id,
-                            mentioned_agent_ids,
-                            attachments: spec
-                                .attachments
-                                .iter()
-                                .map(|item| item.resource.clone())
-                                .collect(),
-                        }),
-                        provider_data: serde_json::json!({}),
-                    },
-                    now,
-                )
-                .await?;
+                        now,
+                    )
+                    .await;
+                match coordination {
+                    Ok(_) | Err(RuntimeError::WorkspacePaused(_)) => {}
+                    Err(error) => return Err(error),
+                }
             }
             Ok::<_, RuntimeError>(result)
         }

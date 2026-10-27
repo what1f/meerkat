@@ -356,6 +356,11 @@ async fn machine_e2e() {
         .resources
         .lock()
         .expect("resources mutex")
+        .insert(70, ("brief.txt".into(), b"resource-body".to_vec()));
+    peer.state
+        .resources
+        .lock()
+        .expect("resources mutex")
         .insert(8, ("tool.txt".into(), b"tool-resource".to_vec()));
     let (server_stop_tx, server_stop_rx) = oneshot::channel();
     let server_peer = peer.clone();
@@ -621,8 +626,8 @@ async fn machine_e2e() {
             "agent_a",
             "shared",
             "fp-1",
-            "read resource://7",
-            vec![resource],
+            "read resource://7 resource://70 attachment://7 attachment://70 resource://700 attachment://700",
+            vec![resource, resource_ref(70, b"resource-body")],
             "",
         ))
         .await;
@@ -651,6 +656,15 @@ async fn machine_e2e() {
                 .iter()
                 .any(|event| String::from_utf8_lossy(&event.payload).contains("DO_NOT_PRELOAD"))
         );
+        let agent_home = agent_directory(&workspace_root, "alpha_team", "agent_a")
+            .unwrap().canonicalize().unwrap();
+        let expected = format!(
+            "read {0} {1} {0} {1} resource://700 attachment://700",
+            agent_home.join("resources/7-brief.txt").display(),
+            agent_home.join("resources/70-brief.txt").display(),
+        );
+        assert!(first_events.iter().any(|event| String::from_utf8_lossy(&event.payload).contains(&expected)),
+            "both resource ID paths must reach the Harness without rewriting longer IDs: {}", payloads(&first_events));
         fs::remove_file(memory.join("MEMORY.md")).unwrap();
         let downloaded = agent_directory(&workspace_root, "alpha_team", "agent_a")
             .unwrap()

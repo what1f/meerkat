@@ -1,3 +1,5 @@
+#[path = "e2e/paused_send_e2e.rs"]
+mod paused_send_e2e;
 #[path = "../../../tests/support/registered_machine.rs"]
 mod registered_machine;
 #[path = "../../protocol/tests/support/ws.rs"]

@@ -51,8 +51,10 @@ impl McpServer {
             .map_err(io_error("read MCP address"))?
             .port();
         let config_path = artifact_dir.join(format!("mcp-{}.json", unique()));
+        let authorization = format!("Bearer {}", uuid::Uuid::new_v4());
         let config = json!({"mcpServers":{"lankide":{
-            "type":"http", "url":format!("http://127.0.0.1:{port}/mcp")
+            "type":"http", "url":format!("http://127.0.0.1:{port}/mcp"),
+            "headers":{"Authorization":authorization}
         }}});
         fs::write(
             &config_path,
@@ -70,7 +72,10 @@ impl McpServer {
                 if let Ok(stream) = stream {
                     let tools = tools.clone();
                     let sender = sender.clone();
-                    thread::spawn(move || handle_connection(stream, &tools, &sender));
+                    let authorization = authorization.clone();
+                    thread::spawn(move || {
+                        handle_connection(stream, &tools, &sender, &authorization)
+                    });
                 }
             }
         });
@@ -104,10 +109,18 @@ impl Drop for McpServer {
     }
 }
 
-fn handle_connection(mut stream: TcpStream, tools: &[McpTool], calls: &mpsc::Sender<McpCall>) {
-    let Some(body) = read_http_body(&mut stream) else {
-        let _ = write_http(&mut stream, 400, None);
-        return;
+fn handle_connection(
+    mut stream: TcpStream,
+    tools: &[McpTool],
+    calls: &mpsc::Sender<McpCall>,
+    authorization: &str,
+) {
+    let body = match read_http_body(&mut stream, authorization) {
+        Ok(body) => body,
+        Err(status) => {
+            let _ = write_http(&mut stream, status, None);
+            return;
+        }
     };
     let Ok(request) = serde_json::from_slice::<Value>(&body) else {
         let _ = write_http(&mut stream, 400, None);
@@ -157,11 +170,28 @@ fn handle_connection(mut stream: TcpStream, tools: &[McpTool], calls: &mpsc::Sen
                 return write_rpc_error(&mut stream, id, -32000, "tool bridge closed");
             }
             match result_receiver.recv() {
-                Ok(result) => json!({
-                    "content":[{"type":"text","text":result.content_markdown}],
-                    "structuredContent":result.structured_content,
-                    "isError":!result.success
-                }),
+                Ok(mut result) => {
+                    if let Some(error) = &result.error {
+                        if result.content_markdown.is_empty() {
+                            result.content_markdown = error.message.clone();
+                        }
+                        if result.structured_content.is_null()
+                            || result
+                                .structured_content
+                                .as_object()
+                                .is_some_and(|v| v.is_empty())
+                        {
+                            result.structured_content = json!({
+                                "code":error.code, "retryable":error.retryable
+                            });
+                        }
+                    }
+                    json!({
+                        "content":[{"type":"text","text":result.content_markdown}],
+                        "structuredContent":result.structured_content,
+                        "isError":!result.success
+                    })
+                }
                 Err(_) => return write_rpc_error(&mut stream, id, -32000, "tool call cancelled"),
             }
         }
@@ -176,39 +206,50 @@ fn write_rpc_error(stream: &mut TcpStream, id: Value, code: i64, message: &str) 
     let _ = write_http(stream, 200, Some(&response));
 }
 
-fn read_http_body(stream: &mut TcpStream) -> Option<Vec<u8>> {
+fn read_http_body(stream: &mut TcpStream, authorization: &str) -> Result<Vec<u8>, u16> {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let mut bytes = Vec::new();
     let mut chunk = [0_u8; 4096];
     let header_end = loop {
-        let count = stream.read(&mut chunk).ok()?;
+        let count = stream.read(&mut chunk).map_err(|_| 400_u16)?;
         if count == 0 {
-            return None;
+            return Err(400);
         }
         bytes.extend_from_slice(&chunk[..count]);
         if let Some(index) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
             break index + 4;
         }
         if bytes.len() > 64 * 1024 {
-            return None;
+            return Err(400);
         }
     };
     let headers = String::from_utf8_lossy(&bytes[..header_end]);
+    let authenticated =
+        headers
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .any(|(name, value)| {
+                name.eq_ignore_ascii_case("Authorization") && value.trim() == authorization
+            });
+    if !authenticated {
+        return Err(401);
+    }
     let length = headers
         .lines()
         .find_map(|line| {
             line.strip_prefix("Content-Length:")
                 .or_else(|| line.strip_prefix("content-length:"))
         })
-        .and_then(|value| value.trim().parse::<usize>().ok())?;
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .ok_or(400_u16)?;
     while bytes.len() < header_end + length {
-        let count = stream.read(&mut chunk).ok()?;
+        let count = stream.read(&mut chunk).map_err(|_| 400_u16)?;
         if count == 0 {
-            return None;
+            return Err(400);
         }
         bytes.extend_from_slice(&chunk[..count]);
     }
-    Some(bytes[header_end..header_end + length].to_vec())
+    Ok(bytes[header_end..header_end + length].to_vec())
 }
 
 fn write_http(stream: &mut TcpStream, status: u16, value: Option<&Value>) -> std::io::Result<()> {
@@ -216,6 +257,7 @@ fn write_http(stream: &mut TcpStream, status: u16, value: Option<&Value>) -> std
     let text = match status {
         200 => "OK",
         202 => "Accepted",
+        401 => "Unauthorized",
         _ => "Bad Request",
     };
     write!(

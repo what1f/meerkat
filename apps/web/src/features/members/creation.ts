@@ -11,7 +11,18 @@ export type Creation =
   | { step: 'ready'; id: string };
 
 // Channels that give each member its own app set it up while the member is created.
-export const onboards = (provider: string | undefined) => provider === 'feishu';
+export const onboards = (provider: string | undefined) =>
+  provider === 'feishu' || provider === 'telegram';
+
+export function creationConfig(provider: string | undefined, workspace: string, agent: string) {
+  return JSON.stringify(
+    provider === 'telegram'
+      ? { mode: 'new', bot_username: `${workspace}_${agent}_bot` }
+      : onboards(provider)
+        ? { mode: 'new', domain: 'feishu' }
+        : {},
+  );
+}
 
 export function creationOf(
   id: string,

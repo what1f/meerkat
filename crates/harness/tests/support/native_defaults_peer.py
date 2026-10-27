@@ -22,9 +22,24 @@ if "--help" in sys.argv:
     sys.exit(0)
 if os.environ["NATIVE_ADAPTER"] == "claude_code":
     import urllib.request
+    import http.client
     config=json.loads(Path(sys.argv[sys.argv.index("--mcp-config")+1]).read_text())
-    request=urllib.request.Request(config["mcpServers"]["lankide"]["url"],data=json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/list"}).encode(),headers={"Content-Type":"application/json"})
-    with urllib.request.urlopen(request) as response: write({"mcp_tools":json.load(response)["result"]["tools"]})
+    server = config["mcpServers"]["lankide"]
+    # Reject unauthenticated requests before decoding or waiting for a body.
+    import socket
+    from urllib.parse import urlparse
+    address = urlparse(server["url"])
+    for authorization in ("", "Authorization: Bearer wrong-token\r\n"):
+        with socket.create_connection((address.hostname, address.port), timeout=2) as connection:
+            connection.sendall(("POST /mcp HTTP/1.1\r\nHost: localhost\r\n" + authorization + "Content-Length: 100\r\n\r\n").encode())
+            assert connection.recv(4096).startswith(b"HTTP/1.1 401 Unauthorized")
+    headers = {"Content-Type": "application/json", "aUtHoRiZaTiOn": server["headers"]["Authorization"]}
+    connection = http.client.HTTPConnection(address.hostname, address.port, timeout=2)
+    connection.request("POST", "/mcp", body=json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/list"}), headers=headers)
+    response = connection.getresponse()
+    assert response.status == 200
+    write({"mcp_tools":json.load(response)["result"]["tools"]})
+    connection.close()
 for line in sys.stdin:
     command = json.loads(line)
     write({"command": command})
@@ -47,6 +62,12 @@ for line in sys.stdin:
             assert "namespace-roundtrip" in command["result"]["contentItems"][0]["text"]
             emit({"method": "turn/completed", "params": {"turn": {"id": "native-turn", "status": "completed"}}})
     elif command.get("type") == "user":
+        request = urllib.request.Request(server["url"], data=json.dumps({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"report","arguments":{"value":"namespace-roundtrip"}}}).encode(), headers=headers)
+        with urllib.request.urlopen(request) as response:
+            result = json.load(response)["result"]
+        assert result["isError"] is True
+        assert result["content"][0]["text"] == "Access to this conversation was denied."
+        assert result["structuredContent"] == {"code":"permission_denied", "retryable":False}
         session_flag = "--resume" if "--resume" in sys.argv else "--session-id"
         session = sys.argv[sys.argv.index(session_flag) + 1]
         emit({"type": "result", "session_id": session, "is_error": False, "result": "OK"})
