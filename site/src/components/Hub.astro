@@ -1,0 +1,311 @@
+---
+import { Image } from 'astro:assets';
+import icon from '../assets/brand/app-icon.png';
+import feishu from '../assets/brand/feishu.svg';
+import telegram from '../assets/brand/telegram.svg';
+import codex from '../assets/brand/codex.svg?raw';
+import claude from '../assets/brand/claude-code.svg?raw';
+import pi from '../assets/brand/pi.svg?raw';
+import { dicts, type Lang } from '../i18n';
+
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dicts[lang].hub;
+
+// Layout in a 1000 × 440 field: chat apps on the left, agents on the right.
+const W = 1000;
+const H = 440;
+const left = [
+  { y: 120, name: t.feishu, img: feishu.src },
+  { y: 220, name: 'Telegram', img: telegram.src },
+  { y: 320, more: true },
+];
+const right = [
+  { y: 70, name: 'Claude Code', svg: claude },
+  { y: 170, name: 'Codex', svg: codex },
+  { y: 270, name: 'Pi', svg: pi },
+  { y: 370, more: true },
+];
+const tileW = 216;
+const cx = W / 2;
+const cy = H / 2;
+const hubR = 70;
+const path = (x1: number, y1: number, x2: number, y2: number) => {
+  const mid = (x1 + x2) / 2;
+  return `M${x1} ${y1} C${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`;
+};
+const ins = left.map((l) => path(tileW, l.y, cx - hubR, cy));
+const outs = right.map((r) => path(cx + hubR, cy, W - tileW, r.y));
+const pct = (v: number, of: number) => `${(v / of) * 100}%`;
+---
+<section class="hub">
+  <div class="wrap">
+    <header class="head" data-reveal>
+      <h2 class="display section-title">{t.title}</h2>
+      <p class="lede">{t.lede}</p>
+    </header>
+
+    <div class="field" data-reveal aria-hidden="true">
+      <svg class="wires" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+        {[...ins, ...outs].map((d, i) => (
+          <path id={`wire-${lang}-${i}`} d={d} class:list={['wire', { dashed: i === ins.length - 1 || i === ins.length + outs.length - 1 }]} vector-effect="non-scaling-stroke" />
+        ))}
+        {[...ins.slice(0, -1).map((_, i) => i), ...outs.slice(0, -1).map((_, i) => ins.length + i)].map((i, k) => (
+          <>
+            <circle r="3.5" class="pulse">
+              <animateMotion dur="2.8s" repeatCount="indefinite" begin={`${k * 0.45}s`} keyPoints="0;1" keyTimes="0;1" calcMode="linear">
+                <mpath href={`#wire-${lang}-${i}`} />
+              </animateMotion>
+            </circle>
+            <circle r="3" class="pulse back">
+              <animateMotion dur="2.8s" repeatCount="indefinite" begin={`${k * 0.45 + 1.4}s`} keyPoints="1;0" keyTimes="0;1" calcMode="linear">
+                <mpath href={`#wire-${lang}-${i}`} />
+              </animateMotion>
+            </circle>
+          </>
+        ))}
+      </svg>
+
+      {left.map((l) => (
+        <div class:list={['tile', 'left', { more: l.more }]} style={`top:${pct(l.y, H)}`}>
+          {l.more ? <span class="dots" title={t.more}><i></i><i></i><i></i></span> : (
+            <>
+              <img src={l.img} alt="" width="28" height="28" />
+              <span>{l.name}</span>
+            </>
+          )}
+        </div>
+      ))}
+
+      <div class="core">
+        <span class="ring"></span>
+        <Image src={icon} alt="" width={280} height={280} class="core-icon" />
+        <b>Lankide</b>
+      </div>
+
+      {right.map((r) => (
+        <div class:list={['tile', 'right', { more: r.more }]} style={`top:${pct(r.y, H)}`}>
+          {r.more ? <span class="dots" title={t.more}><i></i><i></i><i></i></span> : (
+            <>
+              <span class="mark" set:html={r.svg} />
+              <span>{r.name}</span>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .hub {
+    padding: clamp(120px, 16vh, 180px) 0 0;
+  }
+
+  .head {
+    max-width: 760px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .head .lede {
+    margin-top: 14px;
+  }
+
+  .field {
+    position: relative;
+    max-width: 1000px;
+    aspect-ratio: 1000 / 440;
+    margin: clamp(40px, 6vh, 72px) auto 0;
+  }
+
+  .wires {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  .wire {
+    fill: none;
+    stroke: var(--line-strong);
+    stroke-width: 1.5;
+  }
+
+  .wire.dashed {
+    stroke-dasharray: 4 6;
+  }
+
+  .pulse {
+    fill: var(--accent);
+  }
+
+  .pulse.back {
+    fill: var(--ochre);
+  }
+
+  .tile {
+    position: absolute;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    width: 21.6%;
+    height: 64px;
+    padding: 0 20px;
+    font-size: 16px;
+    font-weight: 600;
+    background: var(--surface);
+    border-radius: 16px;
+    box-shadow: var(--shadow-2);
+    translate: 0 -50%;
+    transition: transform var(--d-base) var(--ease);
+  }
+
+  .tile:not(.more):hover {
+    transform: translateY(-2px);
+  }
+
+  .tile.left {
+    left: 0;
+  }
+
+  .tile.right {
+    right: 0;
+  }
+
+  .tile img,
+  .mark :global(svg) {
+    width: 28px;
+    height: 28px;
+    flex: none;
+  }
+
+  .tile.more {
+    justify-content: center;
+    background: none;
+    box-shadow: none;
+    outline: 1.5px dashed var(--line-strong);
+    outline-offset: -1.5px;
+  }
+
+  .dots {
+    display: flex;
+    gap: 5px;
+  }
+
+  .dots i {
+    width: 5px;
+    height: 5px;
+    background: var(--ink-4);
+    border-radius: 50%;
+  }
+
+  .core {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    display: grid;
+    justify-items: center;
+    translate: -50% -50%;
+  }
+
+  .core :global(.core-icon) {
+    position: relative;
+    width: 140px;
+    height: 140px;
+    border-radius: 32px;
+    box-shadow:
+      0 0 0 0.5px var(--edge),
+      0 2px 6px rgb(20 22 40 / 8%),
+      0 30px 50px -18px rgb(70 80 190 / 45%);
+  }
+
+  .core b {
+    position: absolute;
+    top: calc(100% + 14px);
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .ring {
+    position: absolute;
+    inset: -14px;
+    border-radius: 44px;
+    box-shadow: 0 0 0 1.5px var(--accent-soft);
+    animation: ring 3.2s var(--ease) infinite;
+  }
+
+  @keyframes ring {
+    0% {
+      opacity: 0.9;
+      transform: scale(0.92);
+    }
+
+    100% {
+      opacity: 0;
+      transform: scale(1.18);
+    }
+  }
+
+  @media (max-width: 880px) {
+    .field {
+      aspect-ratio: auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      max-width: 460px;
+    }
+
+    .wires {
+      display: none;
+    }
+
+    .tile,
+    .core {
+      position: static;
+      width: auto;
+      translate: none;
+    }
+
+    .core {
+      position: relative;
+      inset: auto;
+      grid-row: 2;
+      grid-column: 1 / -1;
+      padding: 24px 0 52px;
+    }
+
+    .core :global(.core-icon) {
+      width: 96px;
+      height: 96px;
+      border-radius: 22px;
+    }
+
+    .core b {
+      top: auto;
+      bottom: 14px;
+      font-size: 16px;
+    }
+
+    .ring {
+      display: none;
+    }
+
+    .tile {
+      height: 56px;
+      padding: 0 16px;
+      font-size: 15px;
+      white-space: nowrap;
+    }
+
+    .tile.left:nth-of-type(1) { grid-area: 1 / 1; }
+    .tile.left:nth-of-type(2) { grid-area: 1 / 2; }
+    .tile.left.more { display: none; }
+    .tile.right:nth-of-type(5) { grid-area: 3 / 1; }
+    .tile.right:nth-of-type(6) { grid-area: 3 / 2; }
+    .tile.right:nth-of-type(7) { grid-area: 4 / 1; }
+    .tile.right:nth-of-type(8) { grid-area: 4 / 2; height: 56px; }
+  }
+</style>

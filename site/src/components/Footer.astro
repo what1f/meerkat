@@ -1,0 +1,67 @@
+---
+import { Image } from 'astro:assets';
+import icon from '../assets/brand/app-icon.png';
+import Icon from './Icon.astro';
+import { dicts, pathFor, type Lang } from '../i18n';
+import { repo } from '../site';
+
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dicts[lang];
+const other: Lang = lang === 'zh' ? 'en' : 'zh';
+---
+<footer class="foot">
+  <div class="wrap row">
+    <div class="brand">
+      <Image src={icon} alt="" width={48} height={48} class="icon" />
+      <span>{t.footer.copyright}</span>
+    </div>
+    <nav class="links">
+      <a href={`${repo}/blob/main/LICENSE`} rel="noopener">{t.footer.license}</a>
+      <a href={repo} rel="noopener" aria-label="GitHub"><Icon name="github" size={16} /></a>
+      <a href={pathFor(other)} hreflang={dicts[other].htmlLang} lang={dicts[other].htmlLang}>{t.nav.switchTo}</a>
+    </nav>
+  </div>
+</footer>
+
+<style>
+  .foot {
+    padding: clamp(64px, 10vh, 96px) 0 40px;
+  }
+
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--ink-3);
+  }
+
+  .brand {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .brand :global(.icon) {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+  }
+
+  .links {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+  }
+
+  .links a {
+    transition: color var(--d-fast) var(--ease);
+  }
+
+  .links a:hover {
+    color: var(--ink);
+  }
+</style>

@@ -1,0 +1,26 @@
+---
+import Base from '../layouts/Base.astro';
+import Nav from './Nav.astro';
+import Hero from './Hero.astro';
+import Story from './Story.astro';
+import Start from './Start.astro';
+import Hub from './Hub.astro';
+import Rooms from './Rooms.astro';
+import Open from './Open.astro';
+import Footer from './Footer.astro';
+import type { Lang } from '../i18n';
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+---
+<Base lang={lang}>
+  <Nav lang={lang} />
+  <main>
+    <Hero lang={lang} />
+    <Story lang={lang} />
+    <Start lang={lang} />
+    <Hub lang={lang} />
+    <Rooms lang={lang} />
+    <Open lang={lang} />
+  </main>
+  <Footer lang={lang} />
+</Base>

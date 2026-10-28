@@ -1,0 +1,260 @@
+---
+import laptop from '../assets/office/desk-laptop.png';
+import mini from '../assets/office/desk-mini.png';
+import chair from '../assets/office/chair.png';
+import blanket from '../assets/office/props/blanket.webp';
+import zzz from '../assets/office/props/zzz.webp';
+import mug from '../assets/office/props/mug.webp';
+import plant from '../assets/office/props/plant.webp';
+import thought from '../assets/office/props/bubble-thought.webp';
+import code from '../assets/office/screens/code.webp';
+import chat from '../assets/office/screens/chat.webp';
+import dashboard from '../assets/office/screens/dashboard.webp';
+import done from '../assets/office/screens/done.webp';
+import search from '../assets/office/screens/search.webp';
+
+// A desk seen from behind: screen in the hole, desk, then the member in the chair.
+type Screen = 'code' | 'chat' | 'dashboard' | 'done' | 'search' | 'off';
+interface Props {
+  setup: 'laptop' | 'mini';
+  screen: Screen;
+  figure?: string;
+  pose?: 'work' | 'sleep' | 'cheer' | 'think';
+  label: string;
+}
+const { setup, screen, figure, pose = 'work', label } = Astro.props;
+const frames = import.meta.glob<{ default: ImageMetadata }>('../assets/figures/*/*.png', { eager: true });
+const frame = figure ? frames[`../assets/figures/${figure}/${pose}.png`]?.default : undefined;
+const shots = { code, chat, dashboard, done, search } as Record<string, ImageMetadata>;
+
+// Desk art is 440 wide, drawn at 220. Screen holes are corner quads in asset pixels;
+// each screen covers its hole plus 1px and is clipped to it, so no bezel gap shows.
+type Quad = [number, number][];
+const geometry: Record<'laptop' | 'mini', { src: ImageMetadata; height: number; screens: Quad[]; mug: [number, number]; plant?: [number, number] }> = {
+  laptop: {
+    src: laptop,
+    height: 283,
+    mug: [336, 112],
+    plant: [372, 96],
+    screens: [
+      [[145, 6], [297, 6], [296, 89], [146, 89]],
+      [[39, 41], [112, 37], [116, 84], [42, 90]],
+    ],
+  },
+  mini: {
+    src: mini,
+    height: 280,
+    mug: [104, 122],
+    screens: [[[127, 5], [315, 5], [315, 92], [127, 92]]],
+  },
+};
+const k = 0.5;
+const desk = geometry[setup];
+const top = 164 - 18 - desk.height * k;
+const box = (quad: Quad) => {
+  const xs = quad.map(([x]) => x * k);
+  const ys = quad.map(([, y]) => y * k);
+  const l = Math.min(...xs) - 1;
+  const t = Math.min(...ys) - 1;
+  const clip = quad
+    .map(([x, y], c) => `${x * k - l + [-1, 1, 1, -1][c]!}px ${y * k - t + [-1, -1, 1, 1][c]!}px`)
+    .join(',');
+  const w = Math.max(...xs) - l + 1;
+  const h = Math.max(...ys) - t + 1;
+  return `left:${l}px;top:${top + t}px;width:${w}px;height:${h}px;clip-path:polygon(${clip})`;
+};
+const at = ([x, y]: [number, number]) => `left:${x * k}px;top:${top + y * k}px`;
+const lit = screen !== 'off';
+---
+<div class="seat" data-screen={screen} title={label}>
+  <span class="floor"></span>
+  <span class="screen" style={box(desk.screens[0]!)}>
+    {lit && <img src={shots[screen]!.src} alt="" data-kind={screen} />}
+  </span>
+  {desk.screens[1] && (
+    <span class="screen side" style={box(desk.screens[1])}>
+      {lit && <img src={dashboard.src} alt="" />}
+    </span>
+  )}
+  <img class="desk" src={desk.src.src} alt="" width="220" />
+  {figure && lit && <img class="prop" src={mug.src} alt="" style={`${at(desk.mug)};width:16px`} />}
+  {desk.plant && <img class="prop" src={plant.src} alt="" style={`${at(desk.plant)};width:22px`} />}
+  {frame ? (
+    <img class="who" src={frame.src} alt={label} width="84.5" height="125" />
+  ) : (
+    <img class="who chair" src={chair.src} alt="" width="84.5" height="125" />
+  )}
+  {figure && !lit && <img class="blanket" src={blanket.src} alt="" />}
+  {figure && !lit && <img class="zz" src={zzz.src} alt="" />}
+  {pose === 'think' && <img class="thought" src={thought.src} alt="" />}
+</div>
+
+<style>
+  .seat {
+    position: relative;
+    flex: none;
+    width: 220px;
+    height: 164px;
+  }
+
+  .seat > * {
+    position: absolute;
+  }
+
+  .floor {
+    inset: 0;
+  }
+
+  .floor::before,
+  .floor::after {
+    position: absolute;
+    content: '';
+    background: radial-gradient(closest-side, rgb(20 22 40 / 20%), transparent);
+    border-radius: 50%;
+  }
+
+  .floor::before {
+    top: 134px;
+    right: 6px;
+    left: 6px;
+    height: 22px;
+    opacity: 0.55;
+  }
+
+  .floor::after {
+    top: 148px;
+    left: 78px;
+    width: 64px;
+    height: 14px;
+    opacity: 0.8;
+  }
+
+  .screen {
+    overflow: hidden;
+    background: var(--screen-off);
+  }
+
+  .screen img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top;
+  }
+
+  /* Code scrolls while someone types. */
+  .screen img[data-kind='code'] {
+    height: auto;
+    animation: scroll 9s linear infinite alternate;
+  }
+
+  .screen img[data-kind='search'] {
+    animation: drift 6s ease-in-out infinite alternate;
+  }
+
+  .desk {
+    bottom: 18px;
+    left: 0;
+    max-width: none;
+    filter: var(--furniture);
+  }
+
+  .prop {
+    filter: var(--furniture);
+  }
+
+  .who {
+    top: 37px;
+    left: 67.75px;
+    width: 84.5px;
+    height: 125px;
+    filter: var(--sitter);
+    transition: translate var(--d-slow) var(--ease-pop);
+  }
+
+  .seat:hover .who:not(.chair) {
+    translate: 0 -3px;
+  }
+
+  .chair {
+    rotate: 4deg;
+  }
+
+  .seat[data-screen='code'] .who {
+    animation: type 0.5s steps(2) infinite;
+  }
+
+  .seat[data-screen='done'] .who {
+    animation: hop 1.6s var(--ease) infinite;
+  }
+
+  .zz {
+    top: 38px;
+    left: 136px;
+    width: 22px;
+    opacity: 0;
+    animation: zz 3s ease-out infinite;
+  }
+
+  /* Asleep under a blanket in front of a dark screen. */
+  .blanket {
+    top: 57px;
+    left: 79px;
+    width: 62px;
+    filter: var(--sitter);
+    transform-origin: 50% 100%;
+    animation: breathe 3.6s ease-in-out infinite;
+  }
+
+  .seat[data-screen='off'] .who {
+    transform-origin: 50% 90%;
+    animation: breathe 3.6s ease-in-out infinite;
+  }
+
+  .thought {
+    top: 2px;
+    left: 140px;
+    width: 34px;
+    animation: bob 2.6s ease-in-out infinite;
+  }
+
+  @keyframes scroll {
+    to { transform: translateY(-60%); }
+  }
+
+  @keyframes drift {
+    to { transform: translateY(-14%); }
+  }
+
+  @keyframes type {
+    50% { transform: translateY(-1px); }
+  }
+
+  @keyframes hop {
+    0%, 60%, 100% { transform: none; }
+    70% { transform: translateY(-6px); }
+    80% { transform: none; }
+    88% { transform: translateY(-3px); }
+  }
+
+  @keyframes zz {
+    0% {
+      opacity: 0;
+      transform: translate(0, 6px) scale(0.6);
+    }
+
+    30% { opacity: 1; }
+
+    100% {
+      opacity: 0;
+      transform: translate(10px, -16px) scale(1.1);
+    }
+  }
+
+  @keyframes breathe {
+    50% { transform: scaleY(1.015) translateY(-0.5px); }
+  }
+
+  @keyframes bob {
+    50% { transform: translateY(-3px); }
+  }
+</style>

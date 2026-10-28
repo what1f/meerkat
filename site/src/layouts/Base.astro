@@ -1,0 +1,61 @@
+---
+import '../styles/global.css';
+import { dicts, pathFor, type Lang } from '../i18n';
+import icon from '../assets/brand/app-icon.png';
+import { getImage } from 'astro:assets';
+
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dicts[lang];
+const favicon = await getImage({ src: icon, width: 64, height: 64, format: 'png' });
+const touch = await getImage({ src: icon, width: 180, height: 180, format: 'png' });
+const other: Lang = lang === 'zh' ? 'en' : 'zh';
+const canonical = new URL(pathFor(lang), Astro.site);
+---
+<!doctype html>
+<html lang={t.htmlLang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{t.meta.title}</title>
+    <meta name="description" content={t.meta.description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="alternate" hreflang={dicts[other].htmlLang} href={new URL(pathFor(other), Astro.site)} />
+    <link rel="preload" href="/fonts/mono.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/sc.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="icon" type="image/png" href={favicon.src} />
+    <link rel="apple-touch-icon" href={touch.src} />
+    <meta name="theme-color" content="#f3f4f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#101115" media="(prefers-color-scheme: dark)" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={t.meta.title} />
+    <meta property="og:description" content={t.meta.description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={new URL('/og.png', Astro.site)} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script is:inline>
+      (() => {
+        const root = document.documentElement;
+        root.classList.add('js');
+        const saved = localStorage.getItem('lankide-theme');
+        root.dataset.theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      })();
+    </script>
+  </head>
+  <body>
+    <slot />
+    <script>
+      const seen = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (!e.isIntersecting) continue;
+            e.target.classList.add('is-in');
+            seen.unobserve(e.target);
+          }
+        },
+        { rootMargin: '0px 0px -12% 0px' },
+      );
+      document.querySelectorAll('[data-reveal]').forEach((el) => seen.observe(el));
+    </script>
+  </body>
+</html>

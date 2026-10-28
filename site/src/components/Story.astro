@@ -1,0 +1,1192 @@
+---
+import { Image } from 'astro:assets';
+import Icon from './Icon.astro';
+import icon from '../assets/brand/app-icon.png';
+import feishu from '../assets/brand/feishu.svg';
+import getR from '../assets/reactions/Get.png';
+import onit from '../assets/reactions/OnIt.png';
+import glance from '../assets/reactions/GLANCE.png';
+import reading from '../assets/reactions/StatusReading.png';
+import lgtm from '../assets/reactions/LGTM.png';
+import done from '../assets/reactions/DONE.png';
+import thumbs from '../assets/reactions/THUMBSUP.png';
+import muscle from '../assets/reactions/MUSCLE.png';
+import { dicts, type Lang } from '../i18n';
+import { byId, extras } from '../data/team';
+
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dicts[lang];
+const s = t.story;
+const { alpha, nova, echo, pixel } = byId as Record<string, NonNullable<(typeof byId)[string]>>;
+const role = (k: keyof typeof t.team.roles) => t.team.roles[k];
+const you = lang === 'zh' ? '你' : 'Y';
+const assignees = [pixel!, nova!, echo!];
+const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
+---
+<section class="story" id="story">
+  <div class="wrap head" data-reveal>
+    <h2 class="display section-title">{s.title}</h2>
+  </div>
+
+  <div class="wrap layout" data-story>
+        <ol class="captions">
+          {s.steps.map((text, i) => (
+            <li data-cap={i}>
+              <button type="button" data-goto={i}>
+                <span class="text">{text}</span>
+                <span class="bar"><i></i></span>
+              </button>
+            </li>
+          ))}
+        </ol>
+
+        <div class="frame" data-frame aria-hidden="true">
+          <div class="window" data-window>
+            <aside class="rail">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="self">{you}</span>
+              <span class="rail-icon on"><Icon name="chat" size={20} /></span>
+              <span class="rail-icon"><Icon name="calendar" size={20} /></span>
+              <span class="rail-icon"><Icon name="doc" size={20} /></span>
+              <span class="rail-icon"><Icon name="contacts" size={20} /></span>
+              <img class="rail-brand" src={feishu.src} alt="" width="22" height="22" />
+            </aside>
+
+            <div class="list">
+              <div class="search"><Icon name="search" size={14} />{s.search}</div>
+              <div class="chat-item on">
+                <Image class="chat-avatar" src={icon} alt="" width={80} height={80} />
+                <div class="chat-meta">
+                  <b>{s.group}</b>
+                  <span class="preview" data-preview>
+                    <span data-preview-a>Pixel: {s.pixel1}</span>
+                    <span data-preview-b>Alpha: {s.alpha2}</span>
+                  </span>
+                </div>
+                <time>{s.now}</time>
+              </div>
+              {s.chats.map((name, i) => (
+                <div class="chat-item">
+                  <Image class="chat-avatar round" src={[extras.atlas, extras.sprout, nova!.avatar][i]!} alt="" width={80} height={80} />
+                  <div class="chat-meta">
+                    <b>{name}</b>
+                    <span class="skeleton" style={`width:${[74, 52, 64][i]}%`}></span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div class="pane">
+              <header class="pane-head">
+                <Image class="pane-avatar" src={icon} alt="" width={80} height={80} />
+                <b>{s.group}</b>
+                <span class="stack">
+                  <span class="mini you">{you}</span>
+                  {[alpha!, nova!, echo!, pixel!].map((m) => (
+                    <Image class="mini" src={m.avatar} alt="" width={48} height={48} />
+                  ))}
+                </span>
+              </header>
+
+              <div class="thread" data-thread>
+                <div class="thread-in">
+                <div class="msg" data-at="-1">
+                  <div class="row">
+                    <Image class="avatar" src={pixel!.avatar} alt="" width={64} height={64} />
+                    <div class="body">
+                      <div class="who">Pixel <span class="tag">{role('design')}</span></div>
+                      <div class="bubble faint"><span class="skeleton" style="width:180px"></span></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="msg" data-sent>
+                  <div class="row mine">
+                    <div class="body">
+                      <div class="bubble me">{s.request}</div>
+                      <div class="reacts">
+                        <span class="react" data-at="1" style="--i:0"><img src={getR.src} alt="" />Alpha</span>
+                        <span class="react" data-at="1" style="--i:1"><img src={onit.src} alt="" />Nova</span>
+                        <span class="react" data-at="1" style="--i:2"><img src={glance.src} alt="" />Echo</span>
+                        <span class="react" data-at="1" style="--i:3"><img src={reading.src} alt="" />Pixel</span>
+                      </div>
+                    </div>
+                    <span class="avatar you">{you}</span>
+                  </div>
+                </div>
+
+                <div class="msg" data-at="2">
+                  <div class="row">
+                    <Image class="avatar" src={alpha!.avatar} alt="" width={64} height={64} />
+                    <div class="body">
+                      <div class="who">Alpha <span class="tag">{role('pm')}</span></div>
+                      <div class="bubble">{s.alpha1}</div>
+                      <div class="card task">
+                        <div class="card-title">{s.taskTitle}</div>
+                        {s.tasks.map((task, i) => (
+                          <div class="task-row" data-done-at={[3, 4, 4][i]}>
+                            <span class="box"><Icon name="check" size={12} /></span>
+                            <span class="task-name">{task}</span>
+                            <span class="assignee">
+                              <Image src={assignees[i]!.avatar} alt="" width={40} height={40} />
+                              {assignees[i]!.name}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <div class="reacts">
+                        <span class="react" data-at="3" style="--i:0"><img src={muscle.src} alt="" />Nova</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="msg" data-at="3">
+                  <div class="row">
+                    <Image class="avatar" src={pixel!.avatar} alt="" width={64} height={64} />
+                    <div class="body">
+                      <div class="who">Pixel <span class="tag">{role('design')}</span></div>
+                      <div class="bubble">{s.pixel1}</div>
+                      <div class="card swatches">
+                        {swatches.map((c) => (
+                          <span class="swatch"><i style={`background:${c}`}></i><span class="mono">{c}</span></span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="msg" data-at="3" style="--lag:420ms">
+                  <div class="row">
+                    <Image class="avatar" src={nova!.avatar} alt="" width={64} height={64} />
+                    <div class="body">
+                      <div class="who">Nova <span class="tag">{role('rd')}</span></div>
+                      <div class="bubble">{s.nova1}</div>
+                      <div class="card code">
+                        <div class="code-head">
+                          <Icon name="branch" size={14} />
+                          <span class="mono">feat/dark-mode</span>
+                          <span class="diff mono"><ins>+214</ins> <del>−37</del></span>
+                        </div>
+                        {s.files.map((f, i) => (
+                          <div class="file mono">
+                            <span>{f}</span>
+                            <span class="bars"><i style={`--w:${[46, 72][i]}%`}></i></span>
+                          </div>
+                        ))}
+                      </div>
+                      <div class="reacts">
+                        <span class="react" data-at="4" style="--i:0"><img src={lgtm.src} alt="" />Echo</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="msg" data-at="4">
+                  <div class="row">
+                    <Image class="avatar" src={echo!.avatar} alt="" width={64} height={64} />
+                    <div class="body">
+                      <div class="who">Echo <span class="tag">{role('qa')}</span></div>
+                      <div class="bubble">{s.echo1}</div>
+                      <div class="card checks">
+                        {s.checks.map((c, i) => (
+                          <div class="check" style={`--i:${i}`}>
+                            <span class="tick"><Icon name="check" size={11} /></span>
+                            {c}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="msg" data-at="5">
+                  <div class="row">
+                    <Image class="avatar" src={alpha!.avatar} alt="" width={64} height={64} />
+                    <div class="body">
+                      <div class="who">Alpha <span class="tag">{role('pm')}</span></div>
+                      <div class="bubble"><span class="at">{s.mention}</span> {s.alpha2}</div>
+                      <img class="sticker" src={done.src} alt="" width="72" height="72" />
+                      <div class="reacts">
+                        <span class="react" data-at="5" style="--i:4"><img src={thumbs.src} alt="" />{t.team.you}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                </div>
+              </div>
+
+              <footer class="composer" data-composer>
+                <div class="field">
+                  <span class="typed" data-typed data-text={s.request}></span>
+                  <span class="placeholder">{s.composer}</span>
+                  <span class="caret"></span>
+                </div>
+                <div class="tools">
+                  <Icon name="plus" size={16} />
+                  <Icon name="smile" size={16} />
+                  <span class="send"><Icon name="send" size={14} /></span>
+                </div>
+              </footer>
+            </div>
+          </div>
+        </div>
+  </div>
+</section>
+
+<style>
+  .story {
+    position: relative;
+    padding-top: clamp(64px, 10vh, 120px);
+  }
+
+  .head {
+    text-align: center;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(220px, 3fr) minmax(0, 8fr);
+    gap: clamp(24px, 4vw, 64px);
+    align-items: center;
+    margin-top: clamp(40px, 6vh, 72px);
+  }
+
+  /* Captions */
+  .captions {
+    display: grid;
+    gap: 0;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+
+  /* A thin rail runs down the left; the playing step's segment fills as it plays. */
+  .captions button {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding: 13px 0 13px 22px;
+    font-size: 16px;
+    line-height: 1.45;
+    color: var(--ink-3);
+    text-align: left;
+    cursor: pointer;
+    background: none;
+    border: none;
+    transition: color var(--d-base) var(--ease);
+  }
+
+  .captions button:hover,
+  [data-cap].past button {
+    color: var(--ink-2);
+  }
+
+  [data-cap].on button {
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .bar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 2px;
+    background: var(--line);
+  }
+
+  .bar i {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: var(--accent);
+    transform: scaleY(0);
+    transform-origin: 50% 0;
+  }
+
+  [data-cap].past .bar i {
+    background: var(--line-strong);
+    transform: none;
+  }
+
+  [data-cap].on .bar i {
+    animation: fill var(--dur, 4s) linear forwards;
+  }
+
+  .story.paused [data-cap].on .bar i {
+    animation-play-state: paused;
+  }
+
+  @keyframes fill {
+    to { transform: none; }
+  }
+
+  /* Frame and camera */
+  .frame {
+    position: relative;
+    aspect-ratio: 3 / 2;
+    overflow: hidden;
+    background:
+      radial-gradient(60% 70% at 20% 10%, var(--haze-a), transparent 70%),
+      radial-gradient(60% 70% at 90% 100%, var(--haze-b), transparent 70%),
+      var(--well);
+    border-radius: 24px;
+    box-shadow: var(--shadow-3);
+    isolation: isolate;
+  }
+
+  /* In close-up the cut top edge fades into the chat instead of slicing a message. */
+  .frame::after {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 64px;
+    pointer-events: none;
+    content: '';
+    background: linear-gradient(color-mix(in srgb, var(--well) 55%, var(--surface)), transparent);
+    opacity: 0;
+    transition: opacity 0.6s var(--ease);
+  }
+
+  .story:is([data-step='1'], [data-step='2'], [data-step='3'], [data-step='4']) .frame::after {
+    opacity: 1;
+  }
+
+  .window {
+    --tx: 0px;
+    --ty: 0px;
+    --s: 1;
+
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: grid;
+    grid-template-columns: 64px 232px 1fr;
+    width: 960px;
+    height: 640px;
+    overflow: hidden;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--ink);
+    background: var(--surface);
+    border-radius: 14px;
+    box-shadow: 0 0 0 0.5px var(--edge), 0 30px 60px -20px rgb(20 22 40 / 30%);
+    transform: translate(var(--tx), var(--ty)) scale(var(--s));
+    transform-origin: 0 0;
+    transition: transform 1.2s cubic-bezier(0.65, 0, 0.25, 1);
+    will-change: transform;
+  }
+
+  .rail {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+    padding-top: 14px;
+    color: var(--ink-3);
+    background: var(--well);
+    box-shadow: inset -0.5px 0 0 var(--line);
+  }
+
+  .lights {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+
+  .lights i {
+    width: 10px;
+    height: 10px;
+    background: #ff5f57;
+    border-radius: 50%;
+  }
+
+  .lights i:nth-child(2) {
+    background: #febc2e;
+  }
+
+  .lights i:nth-child(3) {
+    background: #28c840;
+  }
+
+  .self,
+  .you {
+    display: grid;
+    place-items: center;
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(160deg, #8a93e6, #626ccc);
+    border-radius: 50%;
+  }
+
+  .self {
+    width: 34px;
+    height: 34px;
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+
+  .rail-icon {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+  }
+
+  .rail-icon.on {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .rail-brand {
+    width: 22px;
+    margin-top: auto;
+    margin-bottom: 16px;
+  }
+
+  .list {
+    padding: 14px 10px;
+    box-shadow: inset -0.5px 0 0 var(--line);
+  }
+
+  .search {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    height: 30px;
+    padding: 0 10px;
+    margin-bottom: 12px;
+    font-size: 12.5px;
+    color: var(--ink-3);
+    background: var(--field);
+    border-radius: 8px;
+  }
+
+  .chat-item {
+    display: grid;
+    grid-template-columns: 40px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 10px;
+    border-radius: 10px;
+  }
+
+  .chat-item.on {
+    background: var(--accent-soft);
+  }
+
+  .chat-item :global(.chat-avatar) {
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
+  }
+
+  .chat-item :global(.chat-avatar.round) {
+    border-radius: 50%;
+  }
+
+  .chat-meta {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .chat-meta b {
+    font-size: 13.5px;
+    font-weight: 600;
+  }
+
+  .preview {
+    position: relative;
+    height: 18px;
+    overflow: hidden;
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+
+  .preview span {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: transform var(--d-slow) var(--ease), opacity var(--d-slow) var(--ease);
+  }
+
+  [data-preview-b] {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+
+  .story[data-step='5'] [data-preview-a] {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+
+  .story[data-step='5'] [data-preview-b] {
+    opacity: 1;
+    transform: none;
+  }
+
+  .chat-item time {
+    align-self: start;
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--ink-3);
+  }
+
+  .skeleton {
+    display: block;
+    height: 8px;
+    background: var(--field);
+    border-radius: 4px;
+  }
+
+  .pane {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: color-mix(in srgb, var(--well) 55%, var(--surface));
+  }
+
+  .pane-head {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    height: 56px;
+    padding: 0 20px;
+    background: var(--surface);
+    box-shadow: inset 0 -0.5px 0 var(--line);
+  }
+
+  .pane-head :global(.pane-avatar) {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+
+  .pane-head b {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .stack {
+    display: flex;
+    margin-left: auto;
+  }
+
+  .stack :global(.mini),
+  .stack .mini {
+    width: 24px;
+    height: 24px;
+    margin-left: -6px;
+    font-size: 11px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--surface);
+  }
+
+  /* The thread stacks from the bottom; a new message pushes the rest up. */
+  .thread {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .thread-in {
+    position: absolute;
+    right: 24px;
+    bottom: 0;
+    left: 24px;
+  }
+
+  .msg {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition:
+      grid-template-rows 0.7s var(--ease) var(--lag, 0ms),
+      opacity 0.5s var(--ease) var(--lag, 0ms);
+  }
+
+  .msg.on {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+
+  .msg > .row {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 9px 0;
+  }
+
+  .row.mine {
+    justify-content: flex-end;
+  }
+
+  .row :global(.avatar) {
+    flex: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+  }
+
+  .avatar.you {
+    font-size: 14px;
+  }
+
+  .body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+    max-width: 78%;
+  }
+
+  .mine .body {
+    align-items: flex-end;
+  }
+
+  .who {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+
+  .tag {
+    padding: 0 6px;
+    font-size: 10.5px;
+    line-height: 17px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 5px;
+  }
+
+  .bubble {
+    padding: 8px 12px;
+    background: var(--surface);
+    border-radius: 4px 12px 12px;
+    box-shadow: 0 0 0 0.5px var(--edge), 0 1px 2px rgb(20 22 40 / 4%);
+  }
+
+  .bubble.me {
+    background: var(--bubble-me);
+    border-radius: 12px 4px 12px 12px;
+    box-shadow: none;
+  }
+
+  .bubble.faint {
+    padding: 14px 12px;
+  }
+
+  .at {
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  .reacts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .react {
+    display: inline-flex;
+    gap: 5px;
+    align-items: center;
+    height: 28px;
+    padding: 0 10px 0 4px;
+    font-size: 12px;
+    color: var(--ink-2);
+    background: var(--surface);
+    border-radius: 999px;
+    box-shadow: 0 0 0 0.5px var(--line-strong);
+    opacity: 0;
+    transform: scale(0.4);
+    transition:
+      transform 0.5s var(--ease-pop),
+      opacity 0.2s var(--ease);
+    transition-delay: calc(var(--lag, 0ms) + 500ms + var(--i) * 260ms);
+  }
+
+  .react img {
+    width: 22px;
+    height: 22px;
+  }
+
+  .react.on {
+    opacity: 1;
+    transform: none;
+  }
+
+  .card {
+    width: min(300px, 100%);
+    padding: 12px 14px;
+    background: var(--surface);
+    border-radius: 12px;
+    box-shadow: 0 0 0 0.5px var(--edge), 0 6px 16px -10px rgb(20 22 40 / 30%);
+  }
+
+  .card-title {
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    box-shadow: inset 0 -0.5px 0 var(--line);
+  }
+
+  .task-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    height: 34px;
+  }
+
+  .box {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    color: transparent;
+    border-radius: 5px;
+    box-shadow: inset 0 0 0 1.5px var(--ink-4);
+    transition: all 0.35s var(--ease-pop);
+  }
+
+  .task-row.done .box {
+    color: #fff;
+    background: var(--ok);
+    box-shadow: none;
+  }
+
+  .task-name {
+    flex: 1;
+    transition: color var(--d-slow) var(--ease);
+  }
+
+  .task-row.done .task-name {
+    color: var(--ink-3);
+    text-decoration: line-through;
+  }
+
+  .assignee {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+
+  .assignee :global(img) {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+  }
+
+  .swatches {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+
+  .swatch {
+    display: grid;
+    gap: 6px;
+    font-size: 10.5px;
+    color: var(--ink-3);
+  }
+
+  .swatch i {
+    height: 36px;
+    border-radius: 8px;
+    box-shadow: inset 0 0 0 0.5px rgb(127 127 127 / 30%);
+  }
+
+  .code-head {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding-bottom: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
+  .diff {
+    margin-left: auto;
+    font-size: 11.5px;
+    font-weight: 500;
+  }
+
+  ins {
+    color: var(--ok);
+    text-decoration: none;
+  }
+
+  del {
+    color: #d14343;
+    text-decoration: none;
+  }
+
+  .file {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    height: 26px;
+    font-size: 11.5px;
+    color: var(--ink-2);
+  }
+
+  .bars {
+    width: 90px;
+    height: 4px;
+    overflow: hidden;
+    background: var(--field);
+    border-radius: 2px;
+  }
+
+  .bars i {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--ok);
+    border-radius: inherit;
+    transition: width 1.6s var(--ease) 0.9s;
+  }
+
+  .msg.on .bars i {
+    width: var(--w);
+  }
+
+  .checks {
+    display: grid;
+    gap: 6px;
+  }
+
+  .check {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 13px;
+  }
+
+  .tick {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    color: #fff;
+    background: var(--ok);
+    border-radius: 50%;
+    opacity: 0;
+    transform: scale(0.3);
+    transition: all 0.4s var(--ease-pop);
+    transition-delay: calc(600ms + var(--i) * 240ms);
+  }
+
+  .msg.on .tick {
+    opacity: 1;
+    transform: none;
+  }
+
+  .sticker {
+    width: 72px;
+    height: 72px;
+  }
+
+  .composer {
+    padding: 10px 20px 16px;
+  }
+
+  .field {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 10px 14px 4px;
+    font-size: 14px;
+    background: var(--surface);
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 0 0 0.5px var(--line-strong);
+  }
+
+  .placeholder {
+    position: absolute;
+    left: 14px;
+    color: var(--ink-3);
+  }
+
+  .typed:not(:empty) + .placeholder {
+    display: none;
+  }
+
+  .caret {
+    width: 1.5px;
+    height: 18px;
+    margin-left: 1px;
+    background: var(--accent);
+    animation: blink 1s steps(1) infinite;
+  }
+
+  .story:not([data-step='0']) .caret {
+    opacity: 0;
+    animation: none;
+  }
+
+  .tools {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    padding: 6px 14px 8px;
+    color: var(--ink-3);
+    background: var(--surface);
+    border-radius: 0 0 12px 12px;
+    box-shadow: 0 0 0 0.5px var(--line-strong);
+    clip-path: inset(0 -1px -1px);
+  }
+
+  .send {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    margin-left: auto;
+    color: var(--ink-3);
+    background: var(--field);
+    border-radius: 8px;
+    transition: all var(--d-base) var(--ease);
+  }
+
+  .story[data-typed-full][data-step='0'] .send {
+    color: #fff;
+    background: var(--accent);
+  }
+
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  /* Narrow screens: one caption above the frame. */
+  @media (max-width: 900px) {
+    .layout {
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+
+    .captions {
+      position: relative;
+      height: 44px;
+    }
+
+    .captions li {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      transition: opacity var(--d-slow) var(--ease);
+    }
+
+    .captions li.on {
+      opacity: 1;
+    }
+
+    .captions button {
+      padding-left: 0;
+      text-align: center;
+    }
+
+    .bar {
+      display: none;
+    }
+
+    .frame {
+      width: 100%;
+      aspect-ratio: 440 / 600;
+      max-width: 460px;
+      margin-inline: auto;
+    }
+
+    .window {
+      grid-template-columns: 1fr;
+      width: 440px;
+      height: 600px;
+    }
+
+    .rail,
+    .list {
+      display: none;
+    }
+
+    .story[data-step] .frame::after {
+      opacity: 0;
+    }
+
+    .body {
+      max-width: 86%;
+    }
+  }
+</style>
+
+<script>
+  const story = document.querySelector<HTMLElement>('.story');
+  const stage = story?.querySelector<HTMLElement>('[data-story]');
+  const frame = story?.querySelector<HTMLElement>('[data-frame]');
+  const win = story?.querySelector<HTMLElement>('[data-window]');
+  const thread = story?.querySelector<HTMLElement>('[data-thread]');
+  const typed = story?.querySelector<HTMLElement>('[data-typed]');
+  const sent = story?.querySelector<HTMLElement>('[data-sent]');
+  const composer = story?.querySelector<HTMLElement>('[data-composer]');
+
+  if (story && stage && frame && win && thread && typed && sent && composer) {
+    const caps = [...story.querySelectorAll<HTMLElement>('[data-cap]')];
+    const steps = caps.length;
+    // How long each step holds, in ms: the first lasts as long as the typing,
+    // each later one just past its own entrances; the last lingers before the loop.
+    const tick = 45;
+    const hold = [0, 2200, 2700, 3100, 2500, 4200];
+    hold[0] = (typed.dataset.text ?? '').length * tick + 1300;
+    const narrow = matchMedia('(max-width: 900px)');
+    const still = matchMedia('(prefers-reduced-motion: reduce)');
+    let step = -1;
+    let typing = 0;
+    let sending = 0;
+    let timer = 0;
+    let left = 0;
+    let since = 0;
+    let visible = false;
+
+    // The close-up keeps the chat and the top of the composer in view.
+    const chat = () => {
+      const pane = thread.parentElement!;
+      const x = pane.offsetLeft + 4;
+      const w = pane.offsetWidth - 8;
+      const h = w / 1.5;
+      const bottom = composer.offsetTop + 62;
+      return { x, y: bottom - h, w, h };
+    };
+
+    const aim = () => {
+      const wide = { x: 0, y: 0, w: win.offsetWidth };
+      const r = narrow.matches || step <= 0 || step >= steps - 1 ? wide : chat();
+      const scale = frame.clientWidth / r.w;
+      win.style.setProperty('--s', String(scale));
+      win.style.setProperty('--tx', `${-r.x * scale}px`);
+      win.style.setProperty('--ty', `${-r.y * scale}px`);
+    };
+
+    const type = () => {
+      const text = typed.dataset.text ?? '';
+      let i = 0;
+      typing = window.setInterval(() => {
+        i += 1;
+        typed.textContent = text.slice(0, i);
+        if (i >= text.length) {
+          clearInterval(typing);
+          story.setAttribute('data-typed-full', '');
+          // Hit send: the composer clears and the message lands in the thread.
+          sending = window.setTimeout(() => {
+            typed.textContent = '';
+            story.removeAttribute('data-typed-full');
+            sent.classList.add('on');
+          }, 450);
+        }
+      }, tick);
+    };
+
+    const show = (next: number) => {
+      step = next;
+      story.dataset.step = String(step);
+      story.querySelectorAll<HTMLElement>('[data-at]').forEach((el) => {
+        el.classList.toggle('on', Number(el.dataset.at) <= step);
+      });
+      story.querySelectorAll<HTMLElement>('[data-done-at]').forEach((el) => {
+        el.classList.toggle('done', Number(el.dataset.doneAt) <= step);
+      });
+      caps.forEach((el, i) => {
+        // Restart the progress fill even when the same caption comes back.
+        el.classList.remove('on');
+        void el.offsetWidth;
+        el.classList.toggle('on', i === step);
+        el.classList.toggle('past', i < step);
+        el.style.setProperty('--dur', `${hold[i]}ms`);
+      });
+      clearInterval(typing);
+      clearTimeout(sending);
+      typed.textContent = '';
+      story.removeAttribute('data-typed-full');
+      sent.classList.toggle('on', step >= 1);
+      if (step === 0 && !still.matches) type();
+      aim();
+    };
+
+    const schedule = (ms: number) => {
+      clearTimeout(timer);
+      left = ms;
+      since = performance.now();
+      timer = window.setTimeout(() => {
+        show((step + 1) % steps);
+        schedule(hold[step]!);
+      }, ms);
+    };
+
+    const pause = () => {
+      if (story.classList.contains('paused')) return;
+      clearTimeout(timer);
+      left = Math.max(0, left - (performance.now() - since));
+      story.classList.add('paused');
+    };
+
+    const resume = () => {
+      if (!visible || still.matches || document.hidden) return;
+      story.classList.remove('paused');
+      schedule(left);
+    };
+
+    caps.forEach((el, i) => {
+      el.querySelector('button')!.addEventListener('click', () => {
+        show(i);
+        left = hold[i]!;
+        if (!story.classList.contains('paused')) schedule(left);
+      });
+    });
+
+    story.classList.add('paused');
+    if (still.matches) show(steps - 1);
+    else {
+      show(0);
+      left = hold[0]!;
+      clearInterval(typing);
+    }
+
+    // Play only while the stage is on screen; start over from the top on first view.
+    let started = false;
+    new IntersectionObserver(
+      ([entry]) => {
+        visible = entry!.isIntersecting;
+        if (visible && !started && !still.matches) {
+          started = true;
+          show(0);
+          left = hold[0]!;
+        }
+        if (visible) resume();
+        else pause();
+      },
+      { threshold: 0.45 },
+    ).observe(frame);
+
+    document.addEventListener('visibilitychange', () => (document.hidden ? pause() : resume()));
+    new ResizeObserver(aim).observe(frame);
+    narrow.addEventListener('change', aim);
+  }
+</script>

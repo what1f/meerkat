@@ -1,0 +1,287 @@
+---
+import Badge from './Badge.astro';
+import Icon from './Icon.astro';
+import feishu from '../assets/brand/feishu.svg';
+import codex from '../assets/brand/codex.svg?raw';
+import claude from '../assets/brand/claude-code.svg?raw';
+import pi from '../assets/brand/pi.svg?raw';
+import { dicts, type Lang } from '../i18n';
+import { byId } from '../data/team';
+import { repo } from '../site';
+import QRCode from 'qrcode';
+
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dicts[lang];
+const o = t.onboard;
+const alpha = byId.alpha!;
+
+// A real code under the Feishu mark: scanning it opens the repository.
+// High error correction keeps it readable with the logo on top.
+const qr = QRCode.create(repo, { errorCorrectionLevel: 'H' }).modules;
+const n = qr.size;
+let modules = '';
+for (let y = 0; y < n; y++)
+  for (let x = 0; x < n; x++) if (qr.get(x, y)) modules += `M${x} ${y}h1v1h-1z`;
+
+const agents = [
+  { name: 'Claude Code', mark: claude, on: true },
+  { name: 'Codex', mark: codex, on: false },
+  { name: 'Pi', mark: pi, on: false },
+];
+---
+<section class="start">
+  <div class="wrap">
+    <header class="head" data-reveal>
+      <h2 class="display section-title">{o.title}</h2>
+      <p class="lede">{o.lede}</p>
+    </header>
+
+    <ol class="steps">
+      <li class="step" data-reveal style="--delay:0ms">
+        <div class="art board">
+          <div class="tag">
+            <span class="eyelet"></span>
+            <svg class="qr" viewBox={`-1 -1 ${n + 2} ${n + 2}`} shape-rendering="crispEdges" aria-hidden="true">
+              <path d={modules} />
+            </svg>
+            <img class="qr-logo" src={feishu.src} alt="" width="28" height="28" />
+            <span class="scan">{o.scan}</span>
+          </div>
+        </div>
+        <p class="caption"><span class="n">1</span>{o.steps[0]}</p>
+      </li>
+
+      <li class="step" data-reveal style="--delay:120ms">
+        <div class="art plain">
+          <div class="picker">
+            {agents.map((a) => (
+              <div class="agent" data-on={a.on}>
+                <span class="mark" set:html={a.mark} />
+                <span class="agent-name">{a.name}</span>
+                {a.on ? (
+                  <span class="found" title={o.found}><Icon name="check" size={12} /></span>
+                ) : (
+                  <span class="radio"></span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+        <p class="caption"><span class="n">2</span>{o.steps[1]}</p>
+      </li>
+
+      <li class="step" data-reveal style="--delay:240ms">
+        <div class="art board">
+          <Badge
+            name={o.name}
+            role={t.team.roles.pm}
+            avatar={alpha.avatar}
+            foot="claude-code"
+            status="ok"
+            scale={0.8}
+            strap={44}
+            tilt={-1.5}
+            style="left:50%;top:48px"
+          />
+        </div>
+        <p class="caption"><span class="n">3</span>{o.steps[2]}</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<style>
+  .start {
+    padding: clamp(96px, 14vh, 160px) 0 0;
+  }
+
+  .head {
+    max-width: 720px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .head .lede {
+    margin-top: 14px;
+  }
+
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(16px, 2.4vw, 28px);
+    padding: 0;
+    margin: clamp(40px, 6vh, 64px) 0 0;
+    list-style: none;
+  }
+
+  .art {
+    position: relative;
+    height: 300px;
+    overflow: hidden;
+    border-radius: 22px;
+    box-shadow: 0 0 0 0.5px var(--edge);
+  }
+
+  .art.board {
+    background: var(--board-face);
+  }
+
+  .art.board::before {
+    position: absolute;
+    inset: 0;
+    content: '';
+    background-image: var(--holes);
+    background-size: var(--pitch) var(--pitch);
+  }
+
+  .art.plain {
+    display: grid;
+    place-items: center;
+    background: var(--surface);
+  }
+
+  .caption {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    margin: 18px 0 0;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .n {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    font-size: 12px;
+    color: var(--ink-2);
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+
+  /* 1: a paper QR tag on a peg */
+  .tag {
+    position: absolute;
+    top: 36px;
+    left: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 184px;
+    padding: 30px 20px 14px;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 0 0 0.5px var(--edge), var(--hang-shadow);
+    translate: -50% 0;
+    rotate: 2deg;
+    transform-origin: 50% 0;
+  }
+
+  .step:hover .tag {
+    animation: swing 1.7s cubic-bezier(0.3, 0.7, 0.4, 1);
+  }
+
+  .eyelet {
+    position: absolute;
+    top: 9px;
+    width: 12px;
+    height: 12px;
+    background: var(--board);
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--peg), inset 0 1px 2px rgb(0 0 0 / 25%);
+  }
+
+  .qr {
+    width: 144px;
+    height: 144px;
+    fill: #15161a;
+  }
+
+  .qr-logo {
+    position: absolute;
+    top: calc(30px + 72px - 18px);
+    width: 36px;
+    height: 36px;
+    padding: 5px;
+    background: #fff;
+    border-radius: 9px;
+  }
+
+  .scan {
+    margin-top: 12px;
+    font-size: 12px;
+    color: rgb(27 29 38 / 55%);
+  }
+
+  /* 2: the agent picker */
+  .picker {
+    display: grid;
+    width: min(280px, 86%);
+    padding: 6px;
+    background: var(--well);
+    border-radius: 16px;
+    box-shadow: inset 0 0 0 0.5px var(--line);
+  }
+
+  .agent {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    height: 56px;
+    padding: 0 14px;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--ink-2);
+    border-radius: 12px;
+  }
+
+  .agent[data-on='true'] {
+    color: var(--ink);
+    background: var(--surface);
+    box-shadow: var(--shadow-2);
+  }
+
+  .mark :global(svg) {
+    width: 24px;
+    height: 24px;
+  }
+
+  .agent-name {
+    flex: 1;
+  }
+
+  .found {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    color: #fff;
+    background: var(--ok);
+    border-radius: 50%;
+  }
+
+  .radio {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1.5px var(--ink-4);
+  }
+
+  @keyframes swing {
+    14% { transform: rotate(2.2deg); }
+    36% { transform: rotate(-1.5deg); }
+    58% { transform: rotate(0.8deg); }
+    80% { transform: rotate(-0.3deg); }
+  }
+
+  @media (max-width: 860px) {
+    .steps {
+      grid-template-columns: 1fr;
+      max-width: 420px;
+      margin-inline: auto;
+    }
+  }
+</style>

@@ -1,0 +1,137 @@
+---
+import Seat from './Seat.astro';
+import Icon from './Icon.astro';
+import { dicts, type Lang } from '../i18n';
+
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dicts[lang].rooms;
+
+type Room = {
+  name: string;
+  icon: 'laptop' | 'mini' | 'studio';
+  online: boolean;
+  seats: { setup: 'laptop' | 'mini'; screen: 'code' | 'chat' | 'dashboard' | 'done' | 'search' | 'off'; figure?: string; pose?: 'work' | 'sleep' | 'cheer' | 'think'; label: string }[];
+};
+const rooms: Room[] = [
+  {
+    name: 'MacBook Pro',
+    icon: 'laptop',
+    online: true,
+    seats: [
+      { setup: 'laptop', screen: 'chat', figure: '07', label: 'Alpha' },
+      { setup: 'mini', screen: 'search', figure: '04', pose: 'think', label: 'Pixel' },
+    ],
+  },
+  {
+    name: 'Mac mini',
+    icon: 'mini',
+    online: true,
+    seats: [
+      { setup: 'mini', screen: 'code', figure: '01', label: 'Nova' },
+      { setup: 'laptop', screen: 'done', figure: '11', pose: 'cheer', label: 'Echo' },
+    ],
+  },
+  {
+    name: 'Ubuntu Server',
+    icon: 'studio',
+    online: false,
+    seats: [
+      { setup: 'laptop', screen: 'off', figure: '14', pose: 'sleep', label: 'Atlas' },
+    ],
+  },
+];
+---
+<section class="rooms">
+  <div class="wrap">
+    <header class="head" data-reveal>
+      <h2 class="display section-title">{t.title}</h2>
+      <p class="lede">{t.lede}</p>
+    </header>
+
+    <div class="office" data-reveal aria-hidden="true">
+      {rooms.map((room) => (
+        <div class="room" data-online={room.online}>
+          <div class="desks">
+            {room.seats.map((s) => <Seat {...s} />)}
+          </div>
+          <div class="device">
+            <Icon name={room.icon} size={18} />
+            <span>{room.name}</span>
+            <i class="dot"></i>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .rooms {
+    padding: clamp(120px, 16vh, 180px) 0 0;
+  }
+
+  .head {
+    max-width: 720px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .head .lede {
+    margin-top: 14px;
+  }
+
+  /* Each computer is a little cluster of desks on the page, named underneath. */
+  .office {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px clamp(32px, 5vw, 72px);
+    align-items: flex-end;
+    justify-content: center;
+    margin-top: clamp(48px, 7vh, 80px);
+  }
+
+  .room {
+    display: grid;
+    gap: 14px;
+    justify-items: center;
+  }
+
+  .desks {
+    display: flex;
+    gap: 12px;
+    zoom: 0.92;
+  }
+
+  .device {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink-2);
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    background: var(--ok);
+    border-radius: 50%;
+  }
+
+  .room[data-online='false'] .dot {
+    background: var(--idle);
+  }
+
+  @media (max-width: 760px) {
+    .desks {
+      zoom: 0.72;
+    }
+  }
+
+  @media (max-width: 420px) {
+    .desks {
+      zoom: 0.6;
+    }
+  }
+</style>

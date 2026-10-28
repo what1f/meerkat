@@ -1,0 +1,165 @@
+---
+// The light switch: a cord at the top right. Pull it to flip light and dark.
+interface Props { label: string }
+const { label } = Astro.props;
+---
+<button class="cord" type="button" aria-label={label} title={label} data-pull>
+  <span class="line"></span>
+  <span class="knob"></span>
+</button>
+
+<style>
+  .cord {
+    --pull: 0px;
+
+    position: fixed;
+    top: 0;
+    right: clamp(10px, 2vw, 22px);
+    z-index: 60;
+    width: 28px;
+    height: 72px;
+    padding: 0;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    background: none;
+    border: none;
+    transform-origin: 50% 0;
+  }
+
+  .cord[data-drag] {
+    cursor: grabbing;
+  }
+
+  .cord[data-drag] .line,
+  .cord[data-drag] .knob {
+    transition: none;
+  }
+
+  .cord:not([data-drag], [data-snap]):hover {
+    animation: sway 2.4s var(--ease) infinite;
+  }
+
+  .cord:focus-visible {
+    box-shadow: none;
+  }
+
+  .line {
+    position: absolute;
+    top: 0;
+    left: 13.25px;
+    width: 1.5px;
+    height: calc(48px + var(--pull));
+    background: linear-gradient(var(--ink-4), var(--ink-3));
+    transition: height 0.45s var(--ease-pop);
+  }
+
+  .knob {
+    position: absolute;
+    top: calc(45px + var(--pull));
+    left: 7px;
+    width: 14px;
+    height: 19px;
+    background: radial-gradient(circle at 36% 30%, #fff, #e6dfd1 55%, #b9ae99);
+    border-radius: 50% 50% 46% 46% / 42% 42% 58% 58%;
+    box-shadow: 0 3px 5px rgb(40 30 10 / 25%), inset 0 -1.5px 1.5px rgb(90 70 40 / 25%);
+    transition: top 0.45s var(--ease-pop);
+  }
+
+  .cord:focus-visible .knob {
+    box-shadow: 0 3px 5px rgb(40 30 10 / 25%), 0 0 0 3px var(--accent-soft);
+  }
+
+  .cord[data-snap] {
+    animation: snap 0.7s var(--ease-pop);
+  }
+
+  @keyframes snap {
+    0% { transform: translateY(8px); }
+    35% { transform: translateY(-3px) rotate(4deg); }
+    60% { transform: rotate(-3deg); }
+    80% { transform: rotate(1.5deg); }
+  }
+
+  @keyframes sway {
+    0%, 100% { transform: rotate(0); }
+    50% { transform: rotate(2.5deg); }
+  }
+
+  @media (max-width: 720px) {
+    .cord {
+      height: 60px;
+    }
+
+    .line {
+      height: calc(36px + var(--pull));
+    }
+
+    .knob {
+      top: calc(33px + var(--pull));
+    }
+  }
+</style>
+
+<script>
+  const cord = document.querySelector<HTMLButtonElement>('[data-pull]');
+  if (cord) {
+    // Pull past this many pixels and let go to flip; a plain click flips too.
+    const reach = 22;
+    let start = -1;
+    let pulled = 0;
+    let dragged = false;
+
+    const flip = () => {
+      const root = document.documentElement;
+      const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = next;
+      localStorage.setItem('lankide-theme', next);
+      cord.removeAttribute('data-snap');
+      void cord.offsetWidth;
+      cord.setAttribute('data-snap', '');
+    };
+
+    cord.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      start = e.clientY;
+      pulled = 0;
+      dragged = false;
+      cord.setPointerCapture(e.pointerId);
+    });
+
+    cord.addEventListener('pointermove', (e) => {
+      if (start < 0) return;
+      const dy = Math.max(0, e.clientY - start);
+      if (dy > 3 && !dragged) {
+        dragged = true;
+        cord.setAttribute('data-drag', '');
+        cord.removeAttribute('data-snap');
+      }
+      // The cord stretches freely at first, then resists.
+      pulled = dy < 40 ? dy : 40 + (dy - 40) * 0.25;
+      cord.style.setProperty('--pull', `${pulled}px`);
+    });
+
+    const release = () => {
+      if (start < 0) return;
+      start = -1;
+      cord.removeAttribute('data-drag');
+      cord.style.setProperty('--pull', '0px');
+      if (dragged && pulled >= reach) flip();
+    };
+
+    cord.addEventListener('animationend', () => cord.removeAttribute('data-snap'));
+    cord.addEventListener('pointerup', release);
+    cord.addEventListener('pointercancel', release);
+    cord.addEventListener('click', (e) => {
+      // A drag already decided; only a tap or the keyboard flips here.
+      if (dragged) {
+        dragged = false;
+        e.preventDefault();
+        return;
+      }
+      flip();
+    });
+  }
+</script>
