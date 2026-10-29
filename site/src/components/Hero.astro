@@ -68,8 +68,7 @@ const widths = [480, 720, 960, 1280];
   }
 
   .title {
-    font-size: clamp(44px, 4.7vw, 72px);
-    line-height: 1.12;
+    font-size: var(--fs-display);
   }
 
   .title span {
@@ -77,15 +76,10 @@ const widths = [480, 720, 960, 1280];
     white-space: nowrap;
   }
 
-  /* Mono Latin runs wide; each line of the English title stays on one line. */
-  :global(html[lang='en']) .title {
-    font-size: clamp(34px, 3.6vw, 56px);
-  }
-
   .sub {
     max-width: 24em;
-    margin: 24px 0 0;
-    font-size: clamp(18px, 1.6vw, 22px);
+    margin: 20px 0 0;
+    font-size: var(--fs-lede);
     line-height: 1.6;
     color: var(--ink-2);
     text-wrap: pretty;
@@ -95,7 +89,7 @@ const widths = [480, 720, 960, 1280];
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
-    margin-top: 40px;
+    margin-top: 36px;
   }
 
   .copy > * {

@@ -268,7 +268,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     display: block;
     width: 100%;
     padding: 13px 0 13px 22px;
-    font-size: 16px;
+    font-size: var(--fs-body);
     line-height: 1.45;
     color: var(--ink-3);
     text-align: left;
@@ -366,7 +366,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     width: 960px;
     height: 640px;
     overflow: hidden;
-    font-size: 13.5px;
+    font-size: var(--fs-small);
     line-height: 1.5;
     color: var(--ink);
     background: var(--surface);
@@ -417,7 +417,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     font-family: var(--font-display);
     font-weight: 600;
     color: #fff;
-    background: linear-gradient(160deg, #8a93e6, #626ccc);
+    background: var(--accent);
     border-radius: 50%;
   }
 
@@ -425,7 +425,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     width: 34px;
     height: 34px;
     margin-bottom: 8px;
-    font-size: 14px;
+    font-size: var(--fs-small);
   }
 
   .rail-icon {
@@ -459,7 +459,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     height: 30px;
     padding: 0 10px;
     margin-bottom: 12px;
-    font-size: 12.5px;
+    font-size: var(--fs-small);
     color: var(--ink-3);
     background: var(--field);
     border-radius: 8px;
@@ -495,7 +495,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
   }
 
   .chat-meta b {
-    font-size: 13.5px;
+    font-size: var(--fs-small);
     font-weight: 600;
   }
 
@@ -503,7 +503,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     position: relative;
     height: 18px;
     overflow: hidden;
-    font-size: 12px;
+    font-size: var(--fs-small);
     color: var(--ink-3);
   }
 
@@ -534,7 +534,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
   .chat-item time {
     align-self: start;
     margin-top: 2px;
-    font-size: 11px;
+    font-size: var(--fs-small);
     color: var(--ink-3);
   }
 
@@ -570,7 +570,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
   }
 
   .pane-head b {
-    font-size: 15px;
+    font-size: var(--fs-body);
     font-weight: 600;
   }
 
@@ -584,7 +584,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     width: 24px;
     height: 24px;
     margin-left: -6px;
-    font-size: 11px;
+    font-size: var(--fs-small);
     border-radius: 50%;
     box-shadow: 0 0 0 2px var(--surface);
   }
@@ -642,7 +642,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
   }
 
   .avatar.you {
-    font-size: 14px;
+    font-size: var(--fs-small);
   }
 
   .body {
@@ -661,13 +661,13 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     display: flex;
     gap: 6px;
     align-items: center;
-    font-size: 12px;
+    font-size: var(--fs-small);
     color: var(--ink-2);
   }
 
   .tag {
     padding: 0 6px;
-    font-size: 10.5px;
+    font-size: var(--fs-small);
     line-height: 17px;
     color: var(--accent);
     background: var(--accent-soft);
@@ -708,7 +708,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     align-items: center;
     height: 28px;
     padding: 0 10px 0 4px;
-    font-size: 12px;
+    font-size: var(--fs-small);
     color: var(--ink-2);
     background: var(--surface);
     border-radius: 999px;
@@ -742,7 +742,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
   .card-title {
     padding-bottom: 8px;
     margin-bottom: 4px;
-    font-size: 14px;
+    font-size: var(--fs-small);
     font-weight: 600;
     box-shadow: inset 0 -0.5px 0 var(--line);
   }
@@ -785,7 +785,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     display: flex;
     gap: 6px;
     align-items: center;
-    font-size: 12px;
+    font-size: var(--fs-small);
     color: var(--ink-2);
   }
 
@@ -804,7 +804,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
   .swatch {
     display: grid;
     gap: 6px;
-    font-size: 10.5px;
+    font-size: var(--fs-small);
     color: var(--ink-3);
   }
 
@@ -819,13 +819,13 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     gap: 8px;
     align-items: center;
     padding-bottom: 8px;
-    font-size: 12.5px;
+    font-size: var(--fs-small);
     font-weight: 600;
   }
 
   .diff {
     margin-left: auto;
-    font-size: 11.5px;
+    font-size: var(--fs-small);
     font-weight: 500;
   }
 
@@ -845,7 +845,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     align-items: center;
     justify-content: space-between;
     height: 26px;
-    font-size: 11.5px;
+    font-size: var(--fs-small);
     color: var(--ink-2);
   }
 
@@ -879,7 +879,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     display: flex;
     gap: 8px;
     align-items: center;
-    font-size: 13px;
+    font-size: var(--fs-small);
   }
 
   .tick {
@@ -916,7 +916,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     align-items: center;
     min-height: 44px;
     padding: 10px 14px 4px;
-    font-size: 14px;
+    font-size: var(--fs-small);
     background: var(--surface);
     border-radius: 12px 12px 0 0;
     box-shadow: 0 0 0 0.5px var(--line-strong);

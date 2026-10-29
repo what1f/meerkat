@@ -182,7 +182,7 @@ const latin = /^[\x00-\x7f]+$/.test(role);
     font-size: calc(32px * var(--u));
     font-weight: 700;
     color: #fff;
-    background: linear-gradient(160deg, #8a93e6, #626ccc);
+    background: var(--accent);
   }
 
   .dot {
@@ -198,7 +198,6 @@ const latin = /^[\x00-\x7f]+$/.test(role);
 
   .dot[data-status='busy'] {
     background: var(--busy);
-    animation: breathe 2.4s ease-in-out infinite;
   }
 
   .name {
@@ -220,9 +219,7 @@ const latin = /^[\x00-\x7f]+$/.test(role);
   }
 
   .role[data-latin='true'] {
-    font-size: calc(10.5px * var(--u));
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
+    font-size: calc(11.5px * var(--u));
   }
 
   .foot {
@@ -237,7 +234,7 @@ const latin = /^[\x00-\x7f]+$/.test(role);
     font-size: calc(11px * var(--u));
     color: var(--ink-3);
     white-space: nowrap;
-    border-top: 1px solid var(--line);
+    border-top: var(--hairline) solid var(--line-strong);
   }
 
   .foot img,

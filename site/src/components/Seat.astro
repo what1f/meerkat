@@ -217,6 +217,17 @@ const lit = screen !== 'off';
     animation: bob 2.6s ease-in-out infinite;
   }
 
+  /* Idle loops wait for a hover instead of running all the time. */
+  .seat :global(*),
+  .seat * {
+    animation-play-state: paused;
+  }
+
+  .seat:hover :global(*),
+  .seat:hover * {
+    animation-play-state: running;
+  }
+
   @keyframes scroll {
     to { transform: translateY(-60%); }
   }
