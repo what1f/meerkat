@@ -44,6 +44,14 @@ PRIVATE_PATTERNS = (
     re.compile(r"\bteam-[0-9a-f]{32,}\b"),
 )
 COPYLEFT_LICENSES = ("GPL", "AGPL", "SSPL")
+# Ignored dependency and build trees of the frontend packages.
+GENERATED = {
+    ROOT / "apps/web/node_modules",
+    ROOT / "apps/web/dist",
+    ROOT / "site/node_modules",
+    ROOT / "site/dist",
+    ROOT / "site/.astro",
+}
 
 
 def repository_entries():
@@ -51,9 +59,9 @@ def repository_entries():
     # (including directory symlinks) without following them.
     for directory, directories, files in os.walk(ROOT, followlinks=False):
         directories[:] = [name for name in directories if name not in {".git", "target"}
-                          and Path(directory) / name not in {ROOT / "apps/web/node_modules", ROOT / "apps/web/dist"}]
+                          and Path(directory) / name not in GENERATED]
         for name in directories + files:
-            if name in {".git", "target"} or Path(directory) / name in {ROOT / "apps/web/node_modules", ROOT / "apps/web/dist"}:
+            if name in {".git", "target"} or Path(directory) / name in GENERATED:
                 continue
             yield Path(directory) / name
 
