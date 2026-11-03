@@ -1,4 +1,5 @@
 ---
+import { getImage } from 'astro:assets';
 import laptop from '../assets/office/desk-laptop.png';
 import mini from '../assets/office/desk-mini.png';
 import chair from '../assets/office/chair.png';
@@ -65,28 +66,32 @@ const box = (quad: Quad) => {
 };
 const at = ([x, y]: [number, number]) => `left:${x * k}px;top:${top + y * k}px`;
 const lit = screen !== 'off';
+// The desk and figure art ships as PNG; serve it as WebP.
+const webp = async (m: ImageMetadata) => (await getImage({ src: m, format: 'webp' })).src;
+const deskSrc = await webp(desk.src);
+const whoSrc = await webp(frame ?? chair);
 ---
 <div class="seat" data-screen={screen} title={label}>
   <span class="floor"></span>
   <span class="screen" style={box(desk.screens[0]!)}>
-    {lit && <img src={shots[screen]!.src} alt="" data-kind={screen} />}
+    {lit && <img loading="lazy" decoding="async" src={shots[screen]!.src} alt="" data-kind={screen} />}
   </span>
   {desk.screens[1] && (
     <span class="screen side" style={box(desk.screens[1])}>
-      {lit && <img src={dashboard.src} alt="" />}
+      {lit && <img loading="lazy" decoding="async" src={dashboard.src} alt="" />}
     </span>
   )}
-  <img class="desk" src={desk.src.src} alt="" width="220" />
-  {figure && lit && <img class="prop" src={mug.src} alt="" style={`${at(desk.mug)};width:16px`} />}
-  {desk.plant && <img class="prop" src={plant.src} alt="" style={`${at(desk.plant)};width:22px`} />}
+  <img loading="lazy" decoding="async" class="desk" src={deskSrc} alt="" width="220" />
+  {figure && lit && <img loading="lazy" decoding="async" class="prop" src={mug.src} alt="" style={`${at(desk.mug)};width:16px`} />}
+  {desk.plant && <img loading="lazy" decoding="async" class="prop" src={plant.src} alt="" style={`${at(desk.plant)};width:22px`} />}
   {frame ? (
-    <img class="who" src={frame.src} alt={label} width="84.5" height="125" />
+    <img loading="lazy" decoding="async" class="who" src={whoSrc} alt={label} width="84.5" height="125" />
   ) : (
-    <img class="who chair" src={chair.src} alt="" width="84.5" height="125" />
+    <img loading="lazy" decoding="async" class="who chair" src={whoSrc} alt="" width="84.5" height="125" />
   )}
-  {figure && !lit && <img class="blanket" src={blanket.src} alt="" />}
-  {figure && !lit && <img class="zz" src={zzz.src} alt="" />}
-  {pose === 'think' && <img class="thought" src={thought.src} alt="" />}
+  {figure && !lit && <img loading="lazy" decoding="async" class="blanket" src={blanket.src} alt="" />}
+  {figure && !lit && <img loading="lazy" decoding="async" class="zz" src={zzz.src} alt="" />}
+  {pose === 'think' && <img loading="lazy" decoding="async" class="thought" src={thought.src} alt="" />}
 </div>
 
 <style>
