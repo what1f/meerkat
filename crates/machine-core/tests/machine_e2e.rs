@@ -383,12 +383,17 @@ async fn machine_e2e() {
     let capability_cli = cli_dir.join("meerkat");
     fs::write(
         &capability_cli,
-        "#!/bin/sh\nprintf '%s' \"$MEERKAT_EXECUTION_ID\"\n",
+        "#!/bin/sh\nif [ \"$1\" = exec ]; then shift; printf '%s\\n' \"$@\"; exit 0; fi\nprintf '%s' \"$MEERKAT_EXECUTION_ID\"\n",
     )
     .unwrap();
+    // The user's own lark-cli. Only the shim may start it, through `meerkat exec`.
+    let user_bin = PathBuf::from(artifact_user_bin());
+    fs::create_dir_all(&user_bin).unwrap();
+    fs::write(user_bin.join("lark-cli"), "#!/bin/sh\nexit 99\n").unwrap();
     {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&capability_cli, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::set_permissions(user_bin.join("lark-cli"), fs::Permissions::from_mode(0o700)).unwrap();
     }
     let mut machine = Machine::new(MachineConfig {
         machine_id: "fixture-machine".into(),
@@ -829,6 +834,12 @@ async fn machine_e2e() {
         assert!(
             harness_ops
                 .lines()
+                .any(|line| line.starts_with("lark_cli_shim\t")),
+            "an installed lark-cli is offered through the Meerkat shim"
+        );
+        assert!(
+            harness_ops
+                .lines()
                 .filter(|line| line.starts_with("start\t"))
                 .count()
                 >= 2
@@ -1247,6 +1258,7 @@ async fn machine_e2e() {
         let _ = fs::copy(&harness_log, artifact_root.join("harness.tsv"));
         let _ = fs::remove_file(&harness_log);
     }
+    let _ = fs::remove_dir_all(&user_bin);
     let temp_cleanup = fs::remove_dir_all(&temp).map_err(|error| error.to_string());
     let status = if outcome.is_ok() && cleanup.is_ok() && temp_cleanup.is_ok() {
         "passed"
@@ -1598,7 +1610,7 @@ fn runtime_assign(
     environment_variables.extend([
         meerkat_protocol::EnvironmentVariable {
             name: "PATH".into(),
-            value: "/no-user-executables".into(),
+            value: format!("/no-user-executables:{}", artifact_user_bin()),
         },
         meerkat_protocol::EnvironmentVariable {
             name: "MEERKAT_CLI".into(),
@@ -1666,11 +1678,20 @@ fn runtime_assign(
                     output_schema_json: "{}".into(),
                 },
             ],
-            cli_commands: vec![meerkat_protocol::CliCommand {
-                name: "inspect".into(),
-                description: "Inspect the current work".into(),
-                argv: vec![],
-            }],
+            cli_commands: vec![
+                meerkat_protocol::CliCommand {
+                    name: "inspect".into(),
+                    description: "Inspect the current work".into(),
+                    argv: vec![],
+                    wraps: String::new(),
+                },
+                meerkat_protocol::CliCommand {
+                    name: "feishu lark-cli".into(),
+                    description: "Feishu command line".into(),
+                    argv: vec![],
+                    wraps: "lark-cli".into(),
+                },
+            ],
             resources,
             execution_token: format!("token-{id}"),
             created_at: 1,
@@ -1694,6 +1715,16 @@ fn runtime_assign_with_harness(
         harness.executable_path = "/usr/bin/false".into();
     }
     frame
+}
+
+fn artifact_user_bin() -> String {
+    std::env::temp_dir()
+        .join(format!(
+            "meerkat-machine-core-user-bin-{}",
+            std::process::id()
+        ))
+        .display()
+        .to_string()
 }
 
 fn artifact_harness_log() -> String {

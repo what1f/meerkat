@@ -92,7 +92,7 @@ impl Services {
     pub fn host(self: &Arc<Self>) -> HostServices {
         HostServices {
             secret_reader: self.clone(),
-            secret_writer: Arc::new(DeniedSecretWriter),
+            secret_writer: self.clone(),
             storage: self.clone(),
             logger: self.clone(),
             resource_saver: self.clone(),
@@ -129,6 +129,25 @@ impl SecretReader for Services {
                 .map_err(error)?
                 .map(|value| SecretValue::new(value.expose_secret()))
                 .ok_or(ProviderError::SecretAccessDenied)
+        })
+    }
+}
+impl SecretWriter for Services {
+    fn write<'a>(&'a self, name: &'a str, value: SecretValue) -> ProviderFuture<'a, ()> {
+        Box::pin(async move {
+            let (agent_id, secret_name) = name
+                .strip_prefix("agent:")
+                .and_then(|scoped| scoped.split_once(':'))
+                .ok_or(ProviderError::SecretAccessDenied)?;
+            self.db
+                .put_agent_secret(
+                    &self.workspace,
+                    &AgentId::new(agent_id).unwrap(),
+                    secret_name,
+                    meerkat_storage::SecretValue::new(value.expose_secret()),
+                    1,
+                )
+                .map_err(error)
         })
     }
 }

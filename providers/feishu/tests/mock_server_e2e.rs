@@ -1792,3 +1792,329 @@ async fn mock_group_name_is_kept_in_the_readable_snapshot() {
     assert_eq!(snapshot.chats[0].chat.chat_name, "Design team");
     runtime.shutdown().await.unwrap();
 }
+
+struct LarkScene {
+    server: FeishuServer,
+    services: std::sync::Arc<Services>,
+    host: ProviderHost<FeishuProvider>,
+    alice: String,
+    bob: String,
+    guest: String,
+}
+
+async fn lark_scene() -> LarkScene {
+    let server = FeishuServer::start();
+    let services = Services::new("feishu");
+    let host = task_host(&server, &services).await;
+    let alice = services.get_or_create_person("on_alice").await.unwrap();
+    let mut people = Vec::new();
+    for (external, role) in [
+        ("on_bob", TeamRole::Member),
+        ("on_guest", TeamRole::External),
+    ] {
+        let person = services.get_or_create_person(external).await.unwrap();
+        services
+            .db
+            .set_person_team_role(&services.workspace, &person.person_id, role, 1)
+            .unwrap();
+        people.push(person.person_id.to_string());
+    }
+    LarkScene {
+        server,
+        services,
+        host,
+        alice: alice.person_id.to_string(),
+        bob: people.remove(0),
+        guest: people.remove(0),
+    }
+}
+
+impl LarkScene {
+    fn spec(&self, senders: &[&str]) -> AgentRuntimeSpec {
+        let messages = senders
+            .iter()
+            .map(|id| json!({"sender":{"kind":"human","id":id,"name":format!("Name {id}")}}))
+            .collect::<Vec<_>>();
+        AgentRuntimeSpec {
+            unread_snapshot: json!({"chats":[{"trigger_messages":messages}]}),
+            ..task_spec()
+        }
+    }
+
+    async fn run(&self, senders: &[&str], arguments: &[&str]) -> Value {
+        self.host
+            .invoke_cli_in_context(
+                AgentId::new("beta").unwrap(),
+                self.spec(senders),
+                "feishu lark-cli",
+                arguments.iter().map(|value| value.to_string()).collect(),
+            )
+            .await
+            .unwrap()
+    }
+
+    fn store_token(&self, person: &str, value: Value) {
+        self.services
+            .db
+            .put_agent_secret(
+                &self.services.workspace,
+                &AgentId::new("beta").unwrap(),
+                &format!("lark_user:{person}"),
+                meerkat_storage::SecretValue::new(value.to_string()),
+                1,
+            )
+            .unwrap();
+    }
+
+    fn token(&self, person: &str) -> Value {
+        let value = self
+            .services
+            .db
+            .read_secret(
+                &self.services.workspace,
+                &format!("agent:beta:lark_user:{person}"),
+            )
+            .unwrap()
+            .unwrap();
+        serde_json::from_str(value.expose_secret()).unwrap()
+    }
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
+}
+
+fn user_token(access: &str, refresh: &str, expires_in_ms: i64) -> Value {
+    json!({"access_token":access,"refresh_token":refresh,"expires_at":now_ms()+expires_in_ms,
+        "refresh_expires_at":now_ms()+86_400_000,"scopes":["docx:document:readonly","offline_access"]})
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lark_cli_is_offered_and_runs_as_the_agent_bot_without_the_app_secret() {
+    let scene = lark_scene().await;
+    let commands = scene
+        .host
+        .cli_commands(AgentId::new("beta").unwrap(), scene.spec(&[]))
+        .await
+        .unwrap();
+    assert!(
+        commands
+            .iter()
+            .any(|command| command.id == "feishu lark-cli" && command.wraps == "lark-cli")
+    );
+    let result = scene
+        .run(
+            &[],
+            &["im", "+messages-send", "--chat-id", "oc_1", "--text", "hi"],
+        )
+        .await;
+    scene.host.shutdown().await.unwrap();
+    assert_eq!(
+        result["arguments"],
+        json!(["im", "+messages-send", "--chat-id", "oc_1", "--text", "hi"])
+    );
+    assert_eq!(
+        result["environment"],
+        json!({
+            "LARKSUITE_CLI_APP_ID":"cli_beta",
+            "LARKSUITE_CLI_TENANT_ACCESS_TOKEN":"tenant-cli_beta",
+            "LARKSUITE_CLI_BRAND":"feishu",
+            "LARKSUITE_CLI_DEFAULT_AS":"bot",
+            "LARKSUITE_CLI_STRICT_MODE":"bot",
+            "LARKSUITE_CLI_NO_UPDATE_NOTIFIER":"1",
+            "LARKSUITE_CLI_NO_SKILLS_NOTIFIER":"1",
+        })
+    );
+    assert!(!result.to_string().contains("local-secret"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lark_cli_acts_only_for_a_team_member_in_the_conversation() {
+    let scene = lark_scene().await;
+    scene.store_token(&scene.alice, user_token("u-alice", "r-alice", 3_600_000));
+    scene.store_token(&scene.bob, user_token("u-bob", "r-bob", 3_600_000));
+    let (alice, bob, guest) = (
+        scene.alice.as_str(),
+        scene.bob.as_str(),
+        scene.guest.as_str(),
+    );
+
+    let only = scene
+        .run(&[alice], &["docs", "+fetch", "--as", "user"])
+        .await;
+    assert_eq!(
+        only["environment"]["LARKSUITE_CLI_USER_ACCESS_TOKEN"],
+        "u-alice"
+    );
+    assert_eq!(only["environment"]["LARKSUITE_CLI_STRICT_MODE"], "user");
+    assert!(
+        only["environment"]
+            .get("LARKSUITE_CLI_TENANT_ACCESS_TOKEN")
+            .is_none()
+    );
+    assert_eq!(only["arguments"], json!(["docs", "+fetch", "--as", "user"]));
+
+    let ambiguous = scene
+        .run(&[alice, bob], &["docs", "+fetch", "--as=user"])
+        .await;
+    let message = ambiguous["message"].as_str().unwrap();
+    assert!(message.contains(alice) && message.contains(bob));
+    assert!(ambiguous.get("environment").is_none());
+
+    let chosen = scene
+        .run(
+            &[alice, bob],
+            &["docs", "+fetch", "--as=user", "--person", bob],
+        )
+        .await;
+    assert_eq!(
+        chosen["environment"]["LARKSUITE_CLI_USER_ACCESS_TOKEN"],
+        "u-bob"
+    );
+    assert_eq!(chosen["arguments"], json!(["docs", "+fetch", "--as=user"]));
+
+    let absent = scene
+        .run(
+            &[alice],
+            &["docs", "+fetch", "--as", "user", &format!("--person={bob}")],
+        )
+        .await;
+    assert!(absent["message"].is_string() && absent.get("environment").is_none());
+
+    let outsider = scene
+        .run(&[guest], &["docs", "+fetch", "--as", "user"])
+        .await;
+    assert!(outsider["message"].is_string() && outsider.get("environment").is_none());
+    scene.host.shutdown().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lark_cli_refreshes_an_expiring_member_token_once() {
+    let scene = lark_scene().await;
+    scene.store_token(&scene.alice, user_token("u-old", "r-old", 60_000));
+    let alice = scene.alice.as_str();
+    let call = ["docs", "+fetch", "--as", "user"];
+    let senders = [alice];
+    let (first, second) = tokio::join!(scene.run(&senders, &call), scene.run(&senders, &call));
+    assert_eq!(
+        first["environment"]["LARKSUITE_CLI_USER_ACCESS_TOKEN"],
+        "u-refreshed-1"
+    );
+    assert_eq!(
+        second["environment"]["LARKSUITE_CLI_USER_ACCESS_TOKEN"],
+        "u-refreshed-1"
+    );
+    let refreshes = scene
+        .server
+        .requests()
+        .iter()
+        .filter(|request| request.path.starts_with("/oauth/v3/token"))
+        .count();
+    assert_eq!(refreshes, 1, "a single-use refresh token is spent once");
+    assert_eq!(scene.token(alice)["refresh_token"], "r-refreshed-1");
+
+    scene.store_token(alice, user_token("u-old", "r-revoked", 60_000));
+    let revoked = scene
+        .run(&[alice], &["docs", "+fetch", "--as", "user"])
+        .await;
+    assert!(revoked["message"].as_str().unwrap().contains("auth login"));
+    scene.host.shutdown().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lark_cli_login_sends_the_member_a_link_and_keeps_earlier_scopes() {
+    let scene = lark_scene().await;
+    scene.store_token(&scene.alice, user_token("u-old", "r-old", 3_600_000));
+    let alice = scene.alice.as_str();
+    let started = scene
+        .run(
+            &[alice],
+            &[
+                "auth",
+                "login",
+                "--scope",
+                "calendar:calendar:read",
+                "--json",
+            ],
+        )
+        .await;
+    assert!(started["message"].as_str().unwrap().contains(alice));
+    let device = scene
+        .server
+        .requests()
+        .into_iter()
+        .find(|request| request.path.starts_with("/oauth/v1/device_authorization"))
+        .unwrap();
+    let scope = url::form_urlencoded::parse(&device.body)
+        .find(|(key, _)| key == "scope")
+        .unwrap()
+        .1
+        .into_owned();
+    assert_eq!(
+        scope,
+        "calendar:calendar:read docx:document:readonly offline_access"
+    );
+    let link = scene
+        .server
+        .requests()
+        .into_iter()
+        .find(|request| {
+            request.method == "POST" && request.path.starts_with("/open-apis/im/v1/messages")
+        })
+        .unwrap();
+    assert!(link.path.contains("receive_id_type=open_id"));
+    assert_eq!(link.json()["receive_id"], "ou_alice");
+    assert!(
+        link.json()["content"]
+            .as_str()
+            .unwrap()
+            .contains("https://accounts.example/verify?code=U1")
+    );
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while scene.token(alice)["access_token"] != "u-granted" {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("the granted token is stored after the member authorizes");
+    assert_eq!(scene.server.device_polls(), 2);
+    let after = scene
+        .run(&[alice], &["docs", "+fetch", "--as", "user"])
+        .await;
+    assert_eq!(
+        after["environment"]["LARKSUITE_CLI_USER_ACCESS_TOKEN"],
+        "u-granted"
+    );
+    scene.host.shutdown().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lark_cli_refuses_commands_that_change_the_local_setup() {
+    let scene = lark_scene().await;
+    let alice = scene.alice.clone();
+    for arguments in [
+        vec!["auth", "logout"],
+        vec!["config", "init"],
+        vec!["--as", "user", "profile", "use", "work"],
+        vec!["auth", "login", "--domain", "calendar"],
+        vec!["auth", "login"],
+    ] {
+        let result = scene.run(&[&alice], &arguments).await;
+        assert!(
+            result["message"].is_string() && result.get("environment").is_none(),
+            "{arguments:?} is refused"
+        );
+    }
+    assert!(
+        !scene
+            .server
+            .requests()
+            .iter()
+            .any(|request| request.path.starts_with("/oauth/")),
+        "refused commands never reach Feishu"
+    );
+    scene.host.shutdown().await.unwrap();
+}

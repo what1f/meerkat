@@ -271,6 +271,11 @@ pub struct ToolDefinition {
 pub struct CliCommandDefinition {
     pub id: String,
     pub description: String,
+    /// User executable this command stands in for, e.g. `lark-cli`. Empty for
+    /// ordinary commands. Machine installs a same-named shim only when the
+    /// executable exists, and the command result becomes that program's
+    /// environment and arguments instead of output.
+    pub wraps: String,
     pub handler: Arc<dyn InvocationHandler>,
 }
 macro_rules! definition_debug {
@@ -280,7 +285,7 @@ macro_rules! definition_debug {
 }
 definition_debug!(InterfaceDefinition, id, input_schema, output_schema);
 definition_debug!(ToolDefinition, id, description, input_schema, output_schema);
-definition_debug!(CliCommandDefinition, id, description);
+definition_debug!(CliCommandDefinition, id, description, wraps);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MessageAttachment {

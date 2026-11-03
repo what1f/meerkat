@@ -246,7 +246,11 @@ impl RuntimeApplication {
                     });
                 }
             }
-        } else if let Some(name) = request.capability_name.strip_prefix("cli: ") {
+        } else if let Some(name) = request
+            .capability_name
+            .strip_prefix("cli: ")
+            .or_else(|| request.capability_name.strip_prefix("exec: "))
+        {
             let values = arguments
                 .as_array()
                 .ok_or_else(|| RuntimeError::Application("CLI arguments must be an array".into()))?

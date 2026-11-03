@@ -371,6 +371,7 @@ async fn prepare_assignment(
     let mut system_prompt = assign.system_prompt.clone();
     crate::capability_cli::inject(
         inner.capability_cli.as_deref(),
+        &inner.root.join(".machine/bin"),
         &mut native_config,
         &assign.cli_commands,
         &mut system_prompt,

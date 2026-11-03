@@ -204,6 +204,9 @@ struct State {
     parents: BTreeMap<String, String>,
     messages: BTreeMap<(String, String), Value>,
     chats: BTreeMap<String, String>,
+    oauth_scope: String,
+    device_polls: usize,
+    refreshes: usize,
 }
 pub struct FeishuServer {
     pub http: Server,
@@ -363,6 +366,53 @@ impl FeishuServer {
                 return Response::json(
                     json!({"code":0,"tenant_access_token":format!("tenant-{}", request.json()["app_id"].as_str().unwrap()),"expire":7200}),
                 );
+            }
+            if path == "/oauth/v1/device_authorization" {
+                assert!(request.header("authorization").starts_with("Basic "));
+                state.oauth_scope = form(&request)["scope"].clone();
+                return Response::json(json!({
+                    "device_code":"device-1","user_code":"U1",
+                    "verification_uri":"https://accounts.example/verify",
+                    "verification_uri_complete":"https://accounts.example/verify?code=U1",
+                    "expires_in":30,"interval":1
+                }));
+            }
+            if path == "/oauth/v3/token" {
+                if request
+                    .header("content-type")
+                    .starts_with("application/x-www-form-urlencoded")
+                {
+                    let fields = form(&request);
+                    assert_eq!(fields["device_code"], "device-1");
+                    assert_eq!(fields["client_secret"], "local-secret");
+                    state.device_polls += 1;
+                    if state.device_polls == 1 {
+                        let mut response = Response::json(json!({"error":"authorization_pending"}));
+                        response.status = 400;
+                        return response;
+                    }
+                    return Response::json(json!({
+                        "access_token":"u-granted","refresh_token":"r-granted",
+                        "expires_in":7200,"refresh_token_expires_in":604800,
+                        "scope":state.oauth_scope.clone()
+                    }));
+                }
+                let body = request.json();
+                assert_eq!(body["grant_type"], "refresh_token");
+                if body["refresh_token"] == "r-revoked" {
+                    let mut response =
+                        Response::json(json!({"code":20064,"error":"invalid_grant"}));
+                    response.status = 400;
+                    return response;
+                }
+                state.refreshes += 1;
+                let n = state.refreshes;
+                return Response::json(json!({
+                    "code":0,"access_token":format!("u-refreshed-{n}"),
+                    "refresh_token":format!("r-refreshed-{n}"),
+                    "expires_in":7200,"refresh_token_expires_in":604800,
+                    "scope":"docx:document:readonly offline_access"
+                }));
             }
             let app = request.header("authorization");
             let app = app.strip_prefix("Bearer tenant-").unwrap();
@@ -666,6 +716,9 @@ impl FeishuServer {
             .failures
             .insert(path.into(), (status, count));
     }
+    pub fn device_polls(&self) -> usize {
+        self.state.lock().unwrap().device_polls
+    }
     pub fn requests(&self) -> Vec<Request> {
         self.state.lock().unwrap().requests.clone()
     }
@@ -684,4 +737,10 @@ impl Drop for FeishuServer {
             result.unwrap();
         }
     }
+}
+
+fn form(request: &Request) -> BTreeMap<String, String> {
+    url::form_urlencoded::parse(&request.body)
+        .into_owned()
+        .collect()
 }

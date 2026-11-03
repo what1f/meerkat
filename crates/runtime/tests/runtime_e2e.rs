@@ -4070,6 +4070,7 @@ impl Provider for FakeProvider {
             Ok(vec![meerkat_provider::CliCommandDefinition {
                 id: "fixture".into(),
                 description: "Fixture command".into(),
+                wraps: String::new(),
                 handler: Arc::new(Echo),
             }])
         })

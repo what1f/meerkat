@@ -307,6 +307,7 @@ impl Provider for ConformanceProvider {
             Ok(vec![CliCommandDefinition {
                 id: "peer.inspect".into(),
                 description: "Inspect".into(),
+                wraps: String::new(),
                 handler: Arc::new(ScopedCliHandler {
                     agent_id: context.agent_id.to_string(),
                 }),

@@ -307,6 +307,75 @@ fn remove_local_avatars(
     Ok(())
 }
 
+/// A wrapped program prepared by its capability: run it, or explain why not.
+pub enum ExecOutcome {
+    Run {
+        program: String,
+        arguments: Vec<String>,
+        environment: Vec<(String, String)>,
+    },
+    Refused(String),
+}
+
+/// `meerkat exec 'exec: NAME' -- PROGRAM [ARGS...]`. The capability result
+/// holds credentials, so it is only ever turned into the program's
+/// environment and never printed.
+pub async fn prepare_exec_from_environment(args: &[String]) -> Result<ExecOutcome, CliError> {
+    let usage = || CliError::Usage("meerkat exec 'exec: NAME' -- PROGRAM [ARGS...]".to_owned());
+    let (name, rest) = args.split_first().ok_or_else(usage)?;
+    if !name.starts_with("exec: ") {
+        return Err(usage());
+    }
+    let (separator, rest) = rest.split_first().ok_or_else(usage)?;
+    let (program, arguments) = rest.split_first().ok_or_else(usage)?;
+    if separator != "--" {
+        return Err(usage());
+    }
+    let config = RunConfig::from_environment()?;
+    let mut client = wire::connect_uds(&config.socket, wire::DEFAULT_MAX_MESSAGE_BYTES)
+        .await
+        .map_err(|error| CliError::Transport(error.to_string()))?;
+    let result = client
+        .invoke_capability(wire::CapabilityInvokeRequest {
+            context: Some(config.context()?),
+            capability_name: name.clone(),
+            arguments_json: Value::from(arguments.to_vec()).to_string(),
+            invocation_id: unique_id(),
+        })
+        .await
+        .map_err(status)?
+        .into_inner();
+    if let Some(error) = result.error.filter(|_| !result.success) {
+        return Ok(ExecOutcome::Refused(error.message));
+    }
+    let value = parse_json_or_string(&result.structured_content_json);
+    if let Some(message) = value.get("message").and_then(Value::as_str) {
+        return Ok(ExecOutcome::Refused(message.to_owned()));
+    }
+    let decode = || CliError::Decode("missing program environment".to_owned());
+    let environment = value
+        .get("environment")
+        .and_then(Value::as_object)
+        .ok_or_else(decode)?
+        .iter()
+        .map(|(key, value)| Some((key.clone(), value.as_str()?.to_owned())))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(decode)?;
+    let arguments = value
+        .get("arguments")
+        .and_then(Value::as_array)
+        .ok_or_else(decode)?
+        .iter()
+        .map(|value| value.as_str().map(str::to_owned))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(decode)?;
+    Ok(ExecOutcome::Run {
+        program: program.clone(),
+        arguments,
+        environment,
+    })
+}
+
 async fn invoke(
     client: &mut wire::AgentClient,
     config: &RunConfig,
@@ -317,6 +386,12 @@ async fn invoke(
         .filter(|value| !value.starts_with('-'))
         .ok_or_else(|| CliError::Usage("meerkat invoke <capability> [--arguments-json JSON | --arguments-file PATH] [--invocation-id ID]".to_owned()))?
         .clone();
+    if name.starts_with("exec: ") {
+        return Err(CliError::Usage(format!(
+            "{} runs as its own program",
+            name.trim_start_matches("exec: ")
+        )));
+    }
     let options = Options::parse(
         &args[1..],
         &["--arguments-json", "--arguments-file", "--invocation-id"],
@@ -605,7 +680,7 @@ fn require_no_extra(args: &[String], expected: usize) -> Result<(), CliError> {
 }
 
 fn help() -> String {
-    "meerkat capabilities | profile [update --name NAME --role ROLE --bio BIO --avatar PATH] | invoke <capability> [--arguments-json JSON | --arguments-file PATH] | send (--channel ID --chat ID | --to PERSON_ID) (--content TEXT | --content-file PATH) [--reply-to MESSAGE_ID] [--attachment PATH] [--force] | content --kind KIND --id ID".to_owned()
+    "meerkat capabilities | profile [update --name NAME --role ROLE --bio BIO --avatar PATH] | invoke <capability> [--arguments-json JSON | --arguments-file PATH] | exec 'exec: NAME' -- PROGRAM [ARGS...] | send (--channel ID --chat ID | --to PERSON_ID) (--content TEXT | --content-file PATH) [--reply-to MESSAGE_ID] [--attachment PATH] [--force] | content --kind KIND --id ID".to_owned()
 }
 
 struct Options {

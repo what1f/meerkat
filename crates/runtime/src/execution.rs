@@ -303,7 +303,7 @@ impl Runtime {
                 .cli_commands
                 .iter()
                 .map(|command| AttemptCapability {
-                    name: format!("cli: {}", command.name),
+                    name: cli_capability_name(command),
                     display_name: command.name.clone(),
                     description: command.description.clone(),
                     kind: meerkat_protocol::CapabilityKind::CliCommand as i32,
@@ -772,11 +772,22 @@ fn protocol_tool(value: ToolDefinition) -> Result<ProtocolToolDefinition, Runtim
     })
 }
 
+/// Wrapped commands return credentials for `meerkat exec`, so they use their
+/// own prefix and the generic `meerkat invoke` path refuses them.
+pub(crate) fn cli_capability_name(command: &CliCommand) -> String {
+    if command.wraps.is_empty() {
+        format!("cli: {}", command.name)
+    } else {
+        format!("exec: {}", command.name)
+    }
+}
+
 fn protocol_cli(value: CliCommandDefinition) -> CliCommand {
     CliCommand {
         name: value.id,
         description: value.description,
         argv: Vec::new(),
+        wraps: value.wraps,
     }
 }
 

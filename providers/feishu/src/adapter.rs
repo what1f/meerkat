@@ -19,8 +19,8 @@ use meerkat_core::{
 };
 use meerkat_provider::{
     AgentContext, AgentRuntimeContext, AutoReactionContext, ChannelDefaultAttention,
-    ChannelDefinition, EventSender, EventSenderType, InitContext, InterfaceDefinition,
-    InvocationHandler, JsonSchema, MessageAttachment, MessageEvent,
+    ChannelDefinition, CliCommandDefinition, EventSender, EventSenderType, InitContext,
+    InterfaceDefinition, InvocationHandler, JsonSchema, MessageAttachment, MessageEvent,
     PROVIDER_CAPABILITY_TASK_SYSTEM, Provider, ProviderError, ProviderEvent, ProviderEventKind,
     ProviderFuture, ProviderInfo, ProviderStorage, ReactionEvent, RecallMessageContext,
     ResourceUpload, SendMessageContext, SendMessageResult, ToolDefinition,
@@ -119,6 +119,7 @@ pub struct FeishuProvider {
     workspaces: Arc<Mutex<BTreeMap<String, WorkspaceState>>>,
     contexts: Arc<Mutex<BTreeMap<String, InitContext>>>,
     identity_lock: Arc<AsyncMutex<()>>,
+    lark_cli: Arc<crate::lark_cli::LarkCliState>,
     inbound_resource_cache: Arc<AsyncMutex<InboundResourceCache>>,
 }
 
@@ -131,6 +132,7 @@ impl Clone for FeishuProvider {
             workspaces: self.workspaces.clone(),
             contexts: self.contexts.clone(),
             identity_lock: self.identity_lock.clone(),
+            lark_cli: self.lark_cli.clone(),
             inbound_resource_cache: self.inbound_resource_cache.clone(),
         }
     }
@@ -162,6 +164,7 @@ impl FeishuProvider {
             workspaces: Arc::new(Mutex::new(BTreeMap::new())),
             contexts: Arc::new(Mutex::new(BTreeMap::new())),
             identity_lock: Arc::new(AsyncMutex::new(())),
+            lark_cli: Arc::default(),
             inbound_resource_cache: Arc::new(AsyncMutex::new(InboundResourceCache::default())),
         }
     }
@@ -669,6 +672,31 @@ impl Provider for FeishuProvider {
                 );
             }
             Ok(tools)
+        })
+    }
+
+    fn cli_commands<'a>(
+        &'a self,
+        context: AgentRuntimeContext,
+    ) -> ProviderFuture<'a, Vec<CliCommandDefinition>> {
+        Box::pin(async move {
+            let state = self.state(&context.workspace_id.to_string(), &context.agent_id)?;
+            let init = self
+                .contexts
+                .lock()
+                .ok()
+                .and_then(|contexts| contexts.get(context.workspace_id.as_str()).cloned())
+                .ok_or(ProviderError::NotFound {
+                    entity: "workspace_context",
+                })?;
+            Ok(vec![crate::lark_cli::command(
+                context,
+                state.client,
+                state.auth,
+                init,
+                self.lark_cli.clone(),
+                self.clock.clone(),
+            )])
         })
     }
 
