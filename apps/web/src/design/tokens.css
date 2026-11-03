@@ -102,6 +102,7 @@
   --t-note: 12.5px;
   --t-chat: 13.5px;
   --t-label: 14px;
+  --t-badge: 5.5px;
   --t-alert: 14px;
   --t-row: 15px;
   --t-empty: 20px;
@@ -343,6 +344,13 @@
   --wall-a: #c3ccff;
   --wall-b: #e6ddff;
   --wall-c: #f7f2ff;
+  --smoke: rgb(110 112 122 / 55%);
+  --badge-ink: #1b1d26;
+  --tank: linear-gradient(180deg, #a6e1f7, #5fb4e6 70%, #4a9fd6);
+  --tank-bubble: rgb(255 255 255 / 70%);
+  --tank-bubble-ring: 0.6px solid var(--tank-bubble);
+  --screen-highlight: rgb(255 214 64 / 55%);
+  --video-progress: #ff4d4f;
   --furniture: none;
   --sitter: none;
   --hang-shadow: 0 1px 2px rgb(20 22 40 / 6%), 0 18px 28px -14px rgb(20 22 40 / 30%);
@@ -422,6 +430,13 @@
   --wall-a: #39427e;
   --wall-b: #574a8c;
   --wall-c: #6b5a9a;
+  --smoke: rgb(210 212 222 / 40%);
+  --badge-ink: #1b1d26;
+  --tank: linear-gradient(180deg, #3c7ea8, #22577f 70%, #1b4a6e);
+  --tank-bubble: rgb(255 255 255 / 45%);
+  --tank-bubble-ring: 0.6px solid var(--tank-bubble);
+  --screen-highlight: rgb(255 214 64 / 55%);
+  --video-progress: #ff4d4f;
   --furniture: brightness(0.6) contrast(1.1);
   --sitter: brightness(0.76);
   --hang-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 20px 30px -12px rgb(0 0 0 / 75%);

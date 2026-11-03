@@ -3,7 +3,9 @@ import "../../../apps/web/src/main";
 import { setTheme } from "../../../apps/web/src/lib/theme";
 import { navigate, parseHash } from "../../../apps/web/src/app/routes";
 import { setLanguage } from "../../../apps/web/src/lib/i18n";
+import { mountSeats } from "./seats";
 const query = new URLSearchParams(location.search);
+if (query.has("seats")) mountSeats();
 if (query.get("theme") === "dark") setTheme("dark");
 if (query.get("lang") === "en") setLanguage("en");
 addEventListener("message", (event) => {

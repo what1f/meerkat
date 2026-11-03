@@ -32,6 +32,7 @@
 }
 
 .who {
+  position: relative;
   display: block;
   width: 100%;
   height: 100%;
@@ -48,6 +49,8 @@
 .who > img {
   width: 100%;
   height: 100%;
+  transform-origin: 50% 90%;
+  animation-delay: calc(var(--phase) * -10s);
 }
 
 .root:hover .who {
@@ -99,31 +102,22 @@
 }
 
 .zz {
-  top: 70px;
-  left: 148px;
-  font-size: var(--t-body);
-  font-weight: 600;
-  line-height: 1;
-  color: var(--ink-2);
+  top: 38px;
+  left: 136px;
+  width: 22px;
   pointer-events: none;
-  text-shadow: var(--zz-halo);
-}
-
-.zz > i {
-  position: absolute;
-  font-style: normal;
   opacity: 0;
-  animation: zz 2.4s infinite;
+  animation: zz 3s ease-out infinite;
 }
 
-.zz > i:nth-child(2) {
-  font-size: var(--t-zz-2);
-  animation-delay: 0.8s;
-}
-
-.zz > i:nth-child(3) {
-  font-size: var(--t-zz-3);
-  animation-delay: 1.6s;
+.blanket {
+  top: 57px;
+  left: 79px;
+  width: 62px;
+  pointer-events: none;
+  filter: var(--sitter);
+  transform-origin: 50% 100%;
+  animation: breathe 3.6s ease-in-out infinite;
 }
 
 /* The figure being carried hangs from the pointer. */
@@ -162,15 +156,623 @@
 @keyframes zz {
   0% {
     opacity: 0;
-    transform: translate(0, 0);
+    transform: translate(0, 4px) scale(0.7);
   }
 
-  20% {
+  25% {
     opacity: 1;
   }
 
   100% {
     opacity: 0;
-    transform: translate(12px, -26px);
+    transform: translate(8px, -14px) scale(1);
+  }
+}
+
+/* The member badge, hung on its black lanyard from the monitor's edge. */
+.badge {
+  z-index: 0;
+  width: 24px;
+  pointer-events: none;
+  filter: var(--furniture);
+  transform-origin: 50% 0;
+  animation: sway 5s ease-in-out infinite;
+  animation-delay: calc(var(--phase) * -5s);
+}
+
+.badge > img {
+  display: block;
+  width: 100%;
+}
+
+/* Face and name are printed on the blank card. */
+.face {
+  position: absolute;
+  top: 37%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  overflow: hidden;
+  background: var(--field);
+  border-radius: var(--r-full);
+  translate: -50% 0;
+}
+
+.face > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.badge > b {
+  position: absolute;
+  top: 70%;
+  right: 3px;
+  left: 3px;
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: var(--t-badge);
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--badge-ink);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.root:hover .badge {
+  animation: swing 0.9s var(--ease-pop);
+}
+
+.root[data-screen='busy'] .badge {
+  animation: jiggle 0.6s ease-in-out infinite alternate;
+}
+
+/* Off duty the badge lies on the desk. */
+.root[data-away='true'] .badge {
+  animation: none;
+  transform: perspective(80px) rotateX(55deg) rotate(-16deg);
+}
+
+.mug {
+  width: 12px;
+  pointer-events: none;
+  filter: var(--furniture);
+}
+
+.mug > img {
+  display: block;
+  width: 100%;
+}
+
+.plant {
+  width: 15px;
+  pointer-events: none;
+  filter: var(--furniture);
+}
+
+.mug > i {
+  position: absolute;
+  bottom: 10px;
+  left: 3px;
+  display: none;
+  width: 2px;
+  height: 7px;
+  background: var(--smoke);
+  border-radius: var(--r-full);
+  opacity: 0;
+  filter: blur(0.6px);
+  animation: steam 2.4s ease-out infinite;
+}
+
+.mug > i + i {
+  left: 6px;
+  animation-delay: 1.2s;
+}
+
+.root[data-screen='ok'] .mug > i,
+.root[data-screen='boot'] .mug > i {
+  display: block;
+}
+
+/* A key pops off the keyboard now and then. */
+.key {
+  top: 68px;
+  left: 146px;
+  width: 9px;
+  pointer-events: none;
+  opacity: 0;
+  animation: key 2.6s var(--ease) infinite;
+  animation-delay: calc(var(--phase) * -2.6s);
+}
+
+.note {
+  top: 38px;
+  left: 138px;
+  width: 11px;
+  pointer-events: none;
+  opacity: 0;
+  animation: note 10s var(--ease) infinite;
+  animation-delay: calc(var(--phase) * -10s);
+}
+
+.huh {
+  top: 52px;
+  left: 146px;
+  width: 10px;
+  pointer-events: none;
+  animation: huh 1.6s ease-in-out infinite;
+}
+
+.smoke {
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.smoke > img {
+  position: absolute;
+  width: 14px;
+  max-width: none;
+  opacity: 0;
+  animation: smoke 2.4s ease-out infinite;
+}
+
+.smoke > img:nth-child(2) {
+  left: 5px;
+  animation-delay: 0.8s;
+}
+
+.smoke > img:nth-child(3) {
+  left: -4px;
+  animation-delay: 1.6s;
+}
+
+.confetti {
+  top: -14px;
+  left: 82px;
+  width: 56px;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  animation: burst 2.4s var(--ease-pop) infinite;
+}
+
+.thought {
+  top: 2px;
+  left: 120px;
+  width: 34px;
+  pointer-events: none;
+  transform-origin: 0 100%;
+  animation: ponder 2.4s ease-in-out infinite;
+}
+
+.speech {
+  width: 26px;
+  pointer-events: none;
+  opacity: 0;
+  transform-origin: 0 100%;
+  animation: speak 2.8s var(--ease-pop) infinite;
+}
+
+.plane {
+  width: 14px;
+  pointer-events: none;
+  opacity: 0;
+  animation: fly 2.8s ease-in infinite;
+}
+
+/* The figure's mood; every desk starts its loop at its own point. */
+.root[data-screen='ok'] .who > img {
+  animation: idle 10s var(--ease) infinite;
+  animation-delay: calc(var(--phase) * -10s);
+}
+
+.root[data-screen='busy'] .who > img {
+  animation: type 0.3s ease-in-out infinite alternate;
+}
+
+.root[data-screen='boot'] .who > img {
+  animation: wake 2.6s var(--ease) infinite;
+}
+
+.root[data-screen='alert'] .who > img {
+  animation: fret 3.2s ease-in-out infinite;
+}
+
+.root[data-screen='done'] .who > img {
+  animation: cheer 1.2s var(--ease) infinite;
+}
+
+.root[data-screen='think'] .who > img {
+  animation: tilt 3s ease-in-out infinite;
+}
+
+.root[data-screen='dark'] .who > img,
+.root[data-screen='asleep'] .who > img {
+  animation: breathe 3.6s ease-in-out infinite;
+}
+
+/* Idle poses take turns with the screen: coffee with the cat video, the phone while it sleeps. */
+.root[data-screen='ok'] .who > img[data-pose] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  animation-name: idle, slack;
+  animation-duration: 10s, 40s;
+  animation-timing-function: var(--ease), linear;
+  animation-iteration-count: infinite;
+}
+
+.root[data-screen='ok'] .who > img[data-pose='sip'] {
+  animation-delay: calc(var(--phase) * -10s), calc(var(--phase) * -40s - 30s);
+}
+
+.root[data-screen='ok'] .who > img[data-pose='phone'] {
+  animation-delay: calc(var(--phase) * -10s), calc(var(--phase) * -40s - 20s);
+}
+
+/* The working pose steps aside while another one is showing. */
+.root[data-screen='ok']:has(img[data-pose]) .who > img:first-child {
+  animation-name: idle, at-desk;
+  animation-duration: 10s, 40s;
+  animation-timing-function: var(--ease), linear;
+  animation-iteration-count: infinite;
+  animation-delay: calc(var(--phase) * -10s), calc(var(--phase) * -40s - 10.8s);
+}
+
+@keyframes idle {
+  0%,
+  30%,
+  100% {
+    transform: none;
+  }
+
+  /* Glances one way, then the other. */
+  36%,
+  44% {
+    transform: rotate(-4deg);
+  }
+
+  50%,
+  58% {
+    transform: rotate(3deg);
+  }
+
+  64% {
+    transform: none;
+  }
+
+  /* A little bounce in the chair. */
+  80% {
+    transform: translateY(-3px) scaleY(1.02);
+  }
+
+  86% {
+    transform: translateY(0.5px) scaleY(0.98);
+  }
+
+  90% {
+    transform: none;
+  }
+}
+
+@keyframes type {
+  from {
+    transform: none;
+  }
+
+  to {
+    transform: translateY(0.8px) rotate(0.6deg);
+  }
+}
+
+@keyframes wake {
+  0%,
+  100% {
+    transform: none;
+  }
+
+  40% {
+    transform: translateY(-2px) scaleY(1.04);
+  }
+
+  55% {
+    transform: translateY(-2px) scaleY(1.04) rotate(-2deg);
+  }
+
+  70% {
+    transform: translateY(-2px) scaleY(1.04) rotate(2deg);
+  }
+}
+
+@keyframes fret {
+  0%,
+  70%,
+  100% {
+    transform: none;
+  }
+
+  74% {
+    transform: rotate(-3deg);
+  }
+
+  78% {
+    transform: rotate(3deg);
+  }
+
+  82% {
+    transform: rotate(-2deg);
+  }
+
+  86% {
+    transform: rotate(1deg);
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    transform: none;
+  }
+
+  50% {
+    transform: scaleY(1.015) translateY(-0.5px);
+  }
+}
+
+@keyframes sway {
+  0%,
+  100% {
+    transform: rotate(-2deg);
+  }
+
+  50% {
+    transform: rotate(2deg);
+  }
+}
+
+@keyframes swing {
+  0% {
+    transform: rotate(0);
+  }
+
+  25% {
+    transform: rotate(12deg);
+  }
+
+  55% {
+    transform: rotate(-7deg);
+  }
+
+  80% {
+    transform: rotate(3deg);
+  }
+
+  100% {
+    transform: rotate(0);
+  }
+}
+
+@keyframes jiggle {
+  from {
+    transform: rotate(-3deg);
+  }
+
+  to {
+    transform: rotate(3deg);
+  }
+}
+
+@keyframes steam {
+  0% {
+    opacity: 0;
+    transform: translateY(0) scaleY(0.6);
+  }
+
+  30% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(1.5px, -8px) scaleY(1.2);
+  }
+}
+
+@keyframes key {
+  0%,
+  60% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  66% {
+    opacity: 1;
+    transform: translateY(-6px) rotate(-18deg);
+  }
+
+  82% {
+    opacity: 1;
+    transform: translateY(-9px) rotate(-40deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-2px) rotate(-60deg);
+  }
+}
+
+@keyframes note {
+  0%,
+  10% {
+    opacity: 0;
+    transform: none;
+  }
+
+  14% {
+    opacity: 1;
+  }
+
+  30% {
+    opacity: 0;
+    transform: translate(6px, -16px) rotate(12deg);
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes huh {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-8deg);
+  }
+
+  50% {
+    transform: translateY(-3px) rotate(8deg);
+  }
+}
+
+@keyframes smoke {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+
+  20% {
+    opacity: 0.9;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(4px, -16px) scale(1.3);
+  }
+}
+
+@keyframes slack {
+  0% {
+    opacity: 0;
+  }
+
+  2%,
+  23% {
+    opacity: 1;
+  }
+
+  25%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes at-desk {
+  0% {
+    opacity: 0;
+  }
+
+  2%,
+  52% {
+    opacity: 1;
+  }
+
+  54%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes burst {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.4);
+  }
+
+  25%,
+  70% {
+    opacity: 1;
+    transform: none;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-4px) scale(1.05);
+  }
+}
+
+@keyframes cheer {
+  0%,
+  100% {
+    transform: none;
+  }
+
+  20% {
+    transform: translateY(-4px) scaleY(1.03);
+  }
+
+  40% {
+    transform: translateY(0) scaleY(0.98);
+  }
+
+  55% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes tilt {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+
+  50% {
+    transform: rotate(-2.5deg);
+  }
+}
+
+@keyframes ponder {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    transform: translateY(-2px) scale(1.04);
+  }
+}
+
+@keyframes speak {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+
+  15%,
+  55% {
+    opacity: 1;
+    transform: none;
+  }
+
+  75%,
+  100% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.9);
+  }
+}
+
+@keyframes fly {
+  0%,
+  50% {
+    opacity: 0;
+    transform: none;
+  }
+
+  58% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(26px, -22px) rotate(-8deg) scale(0.8);
   }
 }

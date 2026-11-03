@@ -17,6 +17,7 @@ const result = await build({
   resolve: {
     alias: {
       react: resolve(web, "node_modules/react"),
+      "react-dom": resolve(web, "node_modules/react-dom"),
       "@tanstack/react-query": resolve(
         web,
         "node_modules/@tanstack/react-query",

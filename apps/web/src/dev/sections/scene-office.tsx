@@ -1,7 +1,17 @@
 import * as S from '../../scene';
 import { Spec, State } from '../Spec';
 import { OfficeDemo } from './drag-demos';
-const screens = ['ok', 'busy', 'alert', 'asleep', 'dark'] as const;
+const screens = [
+  'ok',
+  'busy',
+  'think',
+  'reply',
+  'done',
+  'boot',
+  'alert',
+  'asleep',
+  'dark',
+] as const;
 const poses = ['work', 'sleep', 'carry', 'stand'] as const;
 // A figure pack arrives as frame URLs; here the built-in 04 frames stand in for one.
 const frame = (pose: S.Pose) =>

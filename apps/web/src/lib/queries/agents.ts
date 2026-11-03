@@ -87,7 +87,10 @@ export function agentStatus(
   agent: DTO.Agent,
   machine: DTO.MachineCatalogItem | undefined,
   workspace: DTO.Workspace | undefined,
-): { status: 'ok' | 'busy' | 'idle' | 'err'; screen: 'dark' | 'asleep' | 'alert' | 'busy' | 'ok' } {
+): {
+  status: 'ok' | 'busy' | 'idle' | 'err';
+  screen: 'dark' | 'asleep' | 'boot' | 'alert' | 'busy' | 'ok';
+} {
   // Off duty nobody replies, so no member needs attention and every screen is off.
   if (workspace?.desired_state === 'paused') return { status: 'idle', screen: 'dark' };
   // On an offline computer everyone sleeps, even a member who needs attention.
@@ -107,7 +110,7 @@ export function agentStatus(
   if (workspace?.observed_state === 'paused' || machine.observed_state === 'paused')
     return { status: 'idle', screen: 'asleep' };
   if (workspace?.observed_state === 'starting' || machine.observed_state === 'starting')
-    return { status: 'busy', screen: 'busy' };
+    return { status: 'busy', screen: 'boot' };
   if (workspace?.observed_state !== 'running' || machine.observed_state !== 'running')
     return { status: 'idle', screen: 'dark' };
   if (agent.activity === 'busy') return { status: 'busy', screen: 'busy' };
