@@ -15,11 +15,11 @@ use self::connection::run_loop;
 use self::control::active_attempts;
 use self::events::restore_event;
 use crate::state::{PersistedState, SessionRecovery};
-use lankide_harness::{
+use meerkat_harness::{
     HarnessAvailability as NativeHarnessAvailability, HarnessConfig as NativeHarnessConfig,
     HarnessFactory, HarnessSession, ProbeResult,
 };
-use lankide_protocol::{ActiveAttempt, AgentRunContext, ExecutionEvent, MachineFrame};
+use meerkat_protocol::{ActiveAttempt, AgentRunContext, ExecutionEvent, MachineFrame};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
@@ -77,11 +77,11 @@ impl RegisteredHarness {
 #[derive(Debug)]
 pub enum MachineError {
     Io(std::io::Error),
-    Transport(lankide_protocol::TransportError),
-    Rpc(lankide_protocol::Status),
-    Link(lankide_protocol::link::LinkError),
+    Transport(meerkat_protocol::TransportError),
+    Rpc(meerkat_protocol::Status),
+    Link(meerkat_protocol::link::LinkError),
     ProtocolVersionUnsupported,
-    Harness(lankide_harness::HarnessError),
+    Harness(meerkat_harness::HarnessError),
     InvalidAssignment(String),
     InvalidHarnessRegistration(String),
     Resource(String),
@@ -120,28 +120,28 @@ impl From<std::io::Error> for MachineError {
         Self::Io(value)
     }
 }
-impl From<lankide_protocol::TransportError> for MachineError {
-    fn from(value: lankide_protocol::TransportError) -> Self {
+impl From<meerkat_protocol::TransportError> for MachineError {
+    fn from(value: meerkat_protocol::TransportError) -> Self {
         Self::Transport(value)
     }
 }
-impl From<lankide_protocol::link::LinkError> for MachineError {
-    fn from(error: lankide_protocol::link::LinkError) -> Self {
+impl From<meerkat_protocol::link::LinkError> for MachineError {
+    fn from(error: meerkat_protocol::link::LinkError) -> Self {
         match error {
-            lankide_protocol::link::LinkError::Closed(
-                lankide_protocol::link::CloseReason::ProtocolVersionUnsupported,
+            meerkat_protocol::link::LinkError::Closed(
+                meerkat_protocol::link::CloseReason::ProtocolVersionUnsupported,
             ) => Self::ProtocolVersionUnsupported,
             error => Self::Link(error),
         }
     }
 }
-impl From<lankide_protocol::Status> for MachineError {
-    fn from(value: lankide_protocol::Status) -> Self {
+impl From<meerkat_protocol::Status> for MachineError {
+    fn from(value: meerkat_protocol::Status) -> Self {
         Self::Rpc(value)
     }
 }
-impl From<lankide_harness::HarnessError> for MachineError {
-    fn from(value: lankide_harness::HarnessError) -> Self {
+impl From<meerkat_harness::HarnessError> for MachineError {
+    fn from(value: meerkat_harness::HarnessError) -> Self {
         Self::Harness(value)
     }
 }
@@ -348,10 +348,10 @@ impl Machine {
             .await;
             let catalog = match models {
                 Ok(Ok(models)) => (
-                    Some(lankide_protocol::ModelCatalog {
+                    Some(meerkat_protocol::ModelCatalog {
                         models: models
                             .into_iter()
-                            .map(|model| lankide_protocol::ModelCatalogItem {
+                            .map(|model| meerkat_protocol::ModelCatalogItem {
                                 available: true,
                                 model_id: model.id,
                                 display_name: model.name,
@@ -379,7 +379,7 @@ impl Machine {
             .timeout(Duration::from_secs(60));
         if let Some(pin) = self.cert_sha256.as_deref() {
             resource_http =
-                resource_http.use_preconfigured_tls(lankide_protocol::tls::client_config(pin)?);
+                resource_http.use_preconfigured_tls(meerkat_protocol::tls::client_config(pin)?);
         }
         let resource_http = resource_http
             .build()
@@ -524,11 +524,11 @@ struct Cancellation {
 
 struct ActiveExecution {
     session_identity: String,
-    terminated: watch::Receiver<Option<lankide_harness::AgentEventKind>>,
+    terminated: watch::Receiver<Option<meerkat_harness::AgentEventKind>>,
     cancel: watch::Sender<Option<Cancellation>>,
     progress: watch::Sender<tokio::time::Instant>,
     agent_key: String,
-    capabilities: std::collections::BTreeSet<lankide_harness::HarnessCapability>,
+    capabilities: std::collections::BTreeSet<meerkat_harness::HarnessCapability>,
     session: Arc<dyn HarnessSession>,
     agent_home: PathBuf,
     context: AgentRunContext,
@@ -561,7 +561,7 @@ struct Inner {
     factories: HashMap<String, Arc<dyn HarnessFactory>>,
     defaults: HashMap<String, NativeHarnessConfig>,
     probes: HashMap<String, ProbeResult>,
-    model_catalogs: HashMap<String, (Option<lankide_protocol::ModelCatalog>, String)>,
+    model_catalogs: HashMap<String, (Option<meerkat_protocol::ModelCatalog>, String)>,
     state: Mutex<PersistedState>,
     starting: Mutex<HashMap<String, StartingExecution>>,
     active: Mutex<HashMap<String, ActiveExecution>>,
@@ -570,7 +570,7 @@ struct Inner {
     // These two maps are the Machine-owned routing point for Runtime results.
     // Delivery into HarnessSession awaits the shared Harness contract method.
     outstanding_tools: Mutex<HashSet<(String, String)>>,
-    deferred_tool_results: Mutex<HashMap<(String, String), lankide_protocol::ToolResult>>,
+    deferred_tool_results: Mutex<HashMap<(String, String), meerkat_protocol::ToolResult>>,
     capability_calls: Mutex<HashMap<String, proxy::PendingCall>>,
     connection: RwLock<Option<mpsc::Sender<MachineFrame>>>,
     connected: watch::Sender<bool>,

@@ -29,7 +29,7 @@ impl Runtime {
                 continue;
             }
             let cancelled = self.storage.execution(id).await?.state
-                == lankide_storage::ExecutionState::Cancelled
+                == meerkat_storage::ExecutionState::Cancelled
                 || category == "cancelled";
             let fingerprint = failure
                 .as_ref()
@@ -114,7 +114,7 @@ impl Runtime {
                     },
                 )
                 .await?;
-            if result.status == lankide_provider::SendMessageStatus::Sent {
+            if result.status == meerkat_provider::SendMessageStatus::Sent {
                 self.storage
                     .finish_send(
                         &key,

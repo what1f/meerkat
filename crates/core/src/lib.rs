@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! Stable, persistence-independent domain vocabulary for Lankide.
+//! Stable, persistence-independent domain vocabulary for Meerkat.
 //!
 //! Every aggregate in this crate is built through a checked public boundary.
 //! Storage, transports, Providers, Harnesses, and UI code are deliberately not
@@ -27,7 +27,7 @@ pub use message::{MessageAuthorType, ReactionAction};
 pub use resource::ResourceRef;
 pub use team::TeamRole;
 
-pub const CRATE_NAME: &str = "lankide-core";
+pub const CRATE_NAME: &str = "meerkat-core";
 pub const PROVIDER_CAPABILITY_TASK_SYSTEM: &str = "task_system";
 
 /// Canonical Tool names are portable across every supported Harness.
@@ -44,8 +44,8 @@ pub fn agent_failure_notice(trigger: &str) -> &'static str {
         .chars()
         .any(|c| matches!(c as u32, 0x3400..=0x4dbf | 0x4e00..=0x9fff | 0x20000..=0x323af))
     {
-        "我未能处理这条消息，请负责人在 Lankide 中检查。"
+        "我未能处理这条消息，请负责人在 Meerkat 中检查。"
     } else {
-        "I couldn’t handle this message; please ask my owner to check Lankide."
+        "I couldn’t handle this message; please ask my owner to check Meerkat."
     }
 }

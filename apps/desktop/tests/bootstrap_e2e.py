@@ -47,16 +47,16 @@ def group_members(group):
 def reuse_running_services(binaries, artifact_dir):
     result = {"scenario": "unbundled-default-home-existing-owner", "status": "failed"}
     with tempfile.TemporaryDirectory(prefix="lk-owner-", dir="/tmp") as directory:
-        home = Path(directory) / ".lankide"
+        home = Path(directory) / ".meerkat"
         home.mkdir()
         (home / "runtime.json").write_text(json.dumps({"machine_link_listen": "127.0.0.1:0", "remote_access_port": 0}))
         env = {**os.environ, "HOME": directory}
-        env.pop("LANKIDE_HOME", None)
-        env.pop("LANKIDE_RUNTIME_RUN", None)
+        env.pop("MEERKAT_HOME", None)
+        env.pop("MEERKAT_RUNTIME_RUN", None)
         owners = []
         with (artifact_dir / "existing-owner.log").open("w") as log:
             try:
-                for name in ("lankided", "lankide-machine"):
+                for name in ("meerkatd", "meerkat-machine"):
                     owners.append(subprocess.Popen(
                         [str(binaries[name]), "--home", str(home)],
                         env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
@@ -66,8 +66,8 @@ def reuse_running_services(binaries, artifact_dir):
                     assert all(owner.poll() is None for owner in owners), "service owner exited"
                     assert time.monotonic() < deadline, "service owner did not start"
                     probe = subprocess.run(
-                        [str(binaries["lankide-desktop"]), "--local-bootstrap-smoke", "--result", str(artifact_dir / "existing-owner-ready.json")],
-                        env={**env, "LANKIDE_RUNTIME_RUN": str(home / "run")},
+                        [str(binaries["meerkat-desktop"]), "--local-bootstrap-smoke", "--result", str(artifact_dir / "existing-owner-ready.json")],
+                        env={**env, "MEERKAT_RUNTIME_RUN": str(home / "run")},
                         stdout=log, stderr=subprocess.STDOUT, timeout=10,
                     )
                     if probe.returncode == 0:
@@ -77,7 +77,7 @@ def reuse_running_services(binaries, artifact_dir):
                 for attempt in range(2):
                     output = artifact_dir / f"existing-owner-{attempt}.json"
                     process = subprocess.Popen(
-                        [str(binaries["lankide-desktop"]), "--local-bootstrap-smoke", "--result", str(output)],
+                        [str(binaries["meerkat-desktop"]), "--local-bootstrap-smoke", "--result", str(output)],
                         env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
                     )
                     try:
@@ -109,7 +109,7 @@ def reuse_running_services(binaries, artifact_dir):
 
 
 def run(binary_dir, artifact_dir):
-    names = ("lankide-desktop", "lankided", "lankide-machine", "lankide")
+    names = ("meerkat-desktop", "meerkatd", "meerkat-machine", "meerkat")
     binaries = {name: binary_dir / name for name in names}
     for binary in binaries.values():
         assert binary.is_file() and os.access(binary, os.X_OK), f"build required: {binary}"
@@ -119,16 +119,16 @@ def run(binary_dir, artifact_dir):
     for scenario, failed_helper in (
         ("ready", None),
         ("unbundled-default-home-ready", None),
-        ("runtime-exits", "lankided"),
-        ("machine-exits", "lankide-machine"),
-        ("helper-missing", "missing:lankided"),
+        ("runtime-exits", "meerkatd"),
+        ("machine-exits", "meerkat-machine"),
+        ("helper-missing", "missing:meerkatd"),
     ):
         result = {"scenario": scenario, "status": "failed"}
         scenarios.append(result)
         with tempfile.TemporaryDirectory(prefix="lk-boot-", dir="/tmp") as directory:
             root = Path(directory)
             default_home = scenario == "unbundled-default-home-ready"
-            home = root / (".lankide" if default_home else "home")
+            home = root / (".meerkat" if default_home else "home")
             home.mkdir()
             (home / "runtime.json").write_text(json.dumps({"machine_link_listen": "127.0.0.1:0", "remote_access_port": 0}))
             bundle = root / "bin"
@@ -144,13 +144,13 @@ def run(binary_dir, artifact_dir):
                     shutil.copy2(binary, destination)
             output = artifact_dir / f"{scenario}.json"
             env = {**os.environ, "HOME": str(root)}
-            env.pop("LANKIDE_HOME", None)
+            env.pop("MEERKAT_HOME", None)
             if not default_home:
-                env["LANKIDE_HOME"] = str(home)
-            env.pop("LANKIDE_RUNTIME_RUN", None)
+                env["MEERKAT_HOME"] = str(home)
+            env.pop("MEERKAT_RUNTIME_RUN", None)
             with (artifact_dir / f"{scenario}.log").open("w") as log:
                 process = subprocess.Popen(
-                    [str(bundle / "lankide-desktop"), "--local-bootstrap-smoke", "--result", str(output)],
+                    [str(bundle / "meerkat-desktop"), "--local-bootstrap-smoke", "--result", str(output)],
                     env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
                 )
                 try:
@@ -174,12 +174,12 @@ def run(binary_dir, artifact_dir):
                         credentials = json.loads((home / "machine-credentials.json").read_text())
                         assert credentials["local_discovery"] and credentials["machine_id"] != "local", "first launch did not self-pair"
                         assert payload["local_machine_id"] == credentials["machine_id"], "Desktop waited for another Machine"
-                        for name in ("lankided", "lankide-machine"):
+                        for name in ("meerkatd", "meerkat-machine"):
                             assert (home / "logs" / f"{name}.log").is_file(), "Desktop did not start its helper"
                     else:
                         assert code != 0 and payload["status"] == "failed", payload
                         assert not payload["machine_connected"], payload
-                        assert payload["runtime_ready"] == (failed_helper == "lankide-machine"), payload
+                        assert payload["runtime_ready"] == (failed_helper == "meerkat-machine"), payload
                         # A helper that fails before logger setup still reports
                         # its failure through the inherited foreground stream.
                         helper_output = (artifact_dir / f"{scenario}.log").read_text()

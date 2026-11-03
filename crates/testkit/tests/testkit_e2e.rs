@@ -1,4 +1,4 @@
-use lankide_testkit::{
+use meerkat_testkit::{
     CheckStatus, GateSelection, ProbeConfig, ProbeReport, run_prerequisite_probe,
 };
 use std::fs;
@@ -6,7 +6,7 @@ use std::path::Path;
 
 #[test]
 fn scenario_evidence_requires_completed_cleanup_and_durable_results() {
-    use lankide_testkit::ScenarioArtifact;
+    use meerkat_testkit::ScenarioArtifact;
     let fixture = temporary_fixture_root();
     let root = fixture.path();
     let success = ScenarioArtifact::new(root, "evidence", "success.1").unwrap();
@@ -63,7 +63,7 @@ fn scenario_evidence_requires_completed_cleanup_and_durable_results() {
 
 #[test]
 fn concurrent_scenario_suites_publish_independent_evidence_with_the_same_run_id() {
-    use lankide_testkit::ScenarioArtifact;
+    use meerkat_testkit::ScenarioArtifact;
     use std::sync::{Arc, Barrier};
 
     let ready = Arc::new(Barrier::new(32));
@@ -109,7 +109,7 @@ fn prerequisite_probe_runs_complete_hermetic_business_scenario_without_leaking_s
 #[test]
 fn hermetic_gate_does_not_require_live_fixtures_or_harness_configuration() {
     let sentinel = std::env::temp_dir().join(format!(
-        "lankide-testkit-live-prerequisites-must-not-be-read-{}",
+        "meerkat-testkit-live-prerequisites-must-not-be-read-{}",
         std::process::id()
     ));
     let report = run_prerequisite_probe(&ProbeConfig {
@@ -135,7 +135,7 @@ fn hermetic_gate_does_not_require_live_fixtures_or_harness_configuration() {
         report
             .checks
             .iter()
-            .filter(|check| check.gate != lankide_testkit::Gate::Hermetic)
+            .filter(|check| check.gate != meerkat_testkit::Gate::Hermetic)
             .all(|check| check.status == CheckStatus::NotRun)
     );
     assert!(!report.render_text().contains("feishu-fixture"));
@@ -232,7 +232,7 @@ fn temporary_fixture_root() -> tempfile::TempDir {
     // Reserve the directory atomically: concurrent scenarios can observe the
     // same clock timestamp even when it is expressed in nanoseconds.
     let root = tempfile::Builder::new()
-        .prefix("lankide-testkit-e2e-")
+        .prefix("meerkat-testkit-e2e-")
         .tempdir()
         .expect("reserve private fixture directory");
     root
@@ -246,12 +246,12 @@ fn create_feishu_fixture(root: &Path) -> Result<(), String> {
     .map_err(|error| format!("write Feishu main fixture: {error}"))?;
     fs::write(
         root.join("feishu-e2e.json"),
-        r#"{"provider_id":"feishu-main","app_id":"fixture-app","brand":"feishu","test_chat":{"chat_id":"oc_fixture","name":"Lankide E2E","chat_type":"private_group"},"test_actor":{"kind":"feishu_user_oauth","user_open_id":"ou_fixture","oauth_config_dir":".lankide/lark-cli-oauth","cli_source_dir":".lankide/cli","required_scopes":["im:message","task:task:read"]},"task":{"tasklist_guid":"tasklist-fixture","tasklist_name":"Lankide E2E"}}"#,
+        r#"{"provider_id":"feishu-main","app_id":"fixture-app","brand":"feishu","test_chat":{"chat_id":"oc_fixture","name":"Meerkat E2E","chat_type":"private_group"},"test_actor":{"kind":"feishu_user_oauth","user_open_id":"ou_fixture","oauth_config_dir":".meerkat/lark-cli-oauth","cli_source_dir":".meerkat/cli","required_scopes":["im:message","task:task:read"]},"task":{"tasklist_guid":"tasklist-fixture","tasklist_name":"Meerkat E2E"}}"#,
     )
     .map_err(|error| format!("write Feishu E2E fixture: {error}"))?;
-    fs::create_dir_all(root.join(".lankide/lark-cli-oauth"))
+    fs::create_dir_all(root.join(".meerkat/lark-cli-oauth"))
         .map_err(|error| format!("create OAuth fixture: {error}"))?;
-    fs::create_dir_all(root.join(".lankide/cli"))
+    fs::create_dir_all(root.join(".meerkat/cli"))
         .map_err(|error| format!("create CLI fixture: {error}"))?;
     set_owner_only(&root.join("feishu-app.json"))?;
     set_owner_only(&root.join("feishu-e2e.json"))?;
@@ -261,7 +261,7 @@ fn create_feishu_fixture(root: &Path) -> Result<(), String> {
 fn create_telegram_fixture(path: &Path) -> Result<(), String> {
     fs::write(
         path,
-        serde_json::to_vec(&lankide_testkit::TelegramLiveFixture {
+        serde_json::to_vec(&meerkat_testkit::TelegramLiveFixture {
             provider_id: "telegram-main".into(),
             agent_id: "agent".into(),
             account_id: "bot".into(),

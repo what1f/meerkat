@@ -11,23 +11,23 @@ if (query.get("lang") === "en") setLanguage("en");
 addEventListener("message", (event) => {
   if (parent === window || event.source !== parent) return;
   if (
-    event.data?.type === "lankide-design-theme" &&
+    event.data?.type === "meerkat-design-theme" &&
     (event.data.theme === "light" || event.data.theme === "dark")
   )
     setTheme(event.data.theme);
   if (
-    event.data?.type === "lankide-design-navigate" &&
+    event.data?.type === "meerkat-design-navigate" &&
     typeof event.data.page === "string"
   )
     navigate(parseHash("#/" + event.data.page));
-  if (event.data?.type === "lankide-design-add-member" && event.data.member)
+  if (event.data?.type === "meerkat-design-add-member" && event.data.member)
     addStoryboardMember(event.data.member);
 });
 new MutationObserver(() => {
   if (parent === window) return;
   parent.postMessage(
     {
-      type: "lankide-design-theme",
+      type: "meerkat-design-theme",
       theme: document.documentElement.dataset.theme,
     },
     "*",

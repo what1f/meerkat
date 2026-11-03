@@ -1,6 +1,6 @@
 [package]
 autotests = false
-name = "lankide-harness"
+name = "meerkat-harness"
 version.workspace = true
 edition.workspace = true
 description = "Harness contracts for Pi, Codex, and Claude Code"
@@ -9,7 +9,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-lankide-core = { path = "../core" }
+meerkat-core = { path = "../core" }
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["process", "io-util"] }
@@ -22,8 +22,8 @@ toml = "0.8.23"
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1.1.4", features = ["process"] }
 
-[package.metadata.lankide.e2e]
-command = "cargo test -p lankide-harness --features test-support --test e2e harness_e2e::"
+[package.metadata.meerkat.e2e]
+command = "cargo test -p meerkat-harness --features test-support --test e2e harness_e2e::"
 scenario = "Start, resume, execute, steer, inject an idempotent Tool Result, cancel, and close one Agent execution through a real child-process Harness contract. Carry structured Harness failures through the public execution contract. Expose isolated native process group ownership for Machine cancellation. Use the default shared full-access permission policy in session requests. Carry a distinct retryable ownership conflict category. A4a permits an empty thinking level and carries independent launch arguments; scripted process argv acceptance is in system-member-fields. A4c cleans isolated native process groups including descendants on close and startup failure; acceptance is in system-harness-test."
 prerequisites = "None"
 classification = "hermetic"

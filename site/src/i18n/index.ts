@@ -3,7 +3,7 @@ export type Lang = 'zh' | 'en';
 const zh = {
   htmlLang: 'zh-CN',
   meta: {
-    title: 'Lankide：让 AI Agent 加入你的团队',
+    title: 'Meerkat：让 AI Agent 加入你的团队',
     description:
       '开源的桌面应用。让 Codex、Claude Code 等 Agent 加入飞书或 Telegram 群，接收需求、分工协作、汇报结果。',
   },
@@ -12,7 +12,7 @@ const zh = {
     download: '下载',
     switchTo: 'English',
     switchShort: 'EN',
-    home: 'Lankide 首页',
+    home: 'Meerkat 首页',
     theme: '切换浅色或深色',
   },
   hero: {
@@ -20,7 +20,7 @@ const zh = {
     lede: '一键启动，让 AI Agent 跑在你最熟悉的 IM 里，像同事一样和你协作。',
     download: '下载',
     github: 'GitHub',
-    board: 'Lankide',
+    board: 'Meerkat',
   },
   team: {
     you: '你',
@@ -38,9 +38,9 @@ const zh = {
     ],
     app: '飞书',
     search: '搜索',
-    group: 'Lankide',
+    group: 'Meerkat',
     chats: ['设计评审', '周会', '前端'],
-    composer: '发送给 Lankide',
+    composer: '发送给 Meerkat',
     request: '首页加一个深色模式，跟随系统切换。',
     alpha1: '收到，拆成三项：',
     taskTitle: '首页深色模式',
@@ -64,7 +64,7 @@ const zh = {
   },
   hub: {
     title: '连接常用的 IM 与 Agent。',
-    lede: 'Lankide 位于两者之间，两端都支持扩展。',
+    lede: 'Meerkat 位于两者之间，两端都支持扩展。',
     feishu: '飞书',
     more: '更多',
   },
@@ -80,7 +80,7 @@ const zh = {
   },
   footer: {
     license: 'MIT 协议',
-    copyright: '© 2026 Lankide contributors',
+    copyright: '© 2026 Meerkat contributors',
   },
 };
 
@@ -89,7 +89,7 @@ export type Dict = typeof zh;
 const en: Dict = {
   htmlLang: 'en',
   meta: {
-    title: 'Lankide: bring AI agents into your team',
+    title: 'Meerkat: bring AI agents into your team',
     description:
       'An open-source desktop app. Codex, Claude Code and other agents join your Feishu or Telegram groups, take requests, split the work and report back.',
   },
@@ -98,7 +98,7 @@ const en: Dict = {
     download: 'Download',
     switchTo: '中文',
     switchShort: '中',
-    home: 'Lankide home',
+    home: 'Meerkat home',
     theme: 'Switch light or dark',
   },
   hero: {
@@ -106,7 +106,7 @@ const en: Dict = {
     lede: 'One click, and AI agents run inside the chat app you already live in, working with you like coworkers.',
     download: 'Download',
     github: 'GitHub',
-    board: 'Lankide',
+    board: 'Meerkat',
   },
   team: {
     you: 'You',
@@ -124,9 +124,9 @@ const en: Dict = {
     ],
     app: 'Feishu',
     search: 'Search',
-    group: 'Lankide',
+    group: 'Meerkat',
     chats: ['Design review', 'Weekly', 'Frontend'],
-    composer: 'Message Lankide',
+    composer: 'Message Meerkat',
     request: 'Add a dark mode to the home page that follows the system.',
     alpha1: 'Got it. Three tasks:',
     taskTitle: 'Home page dark mode',
@@ -150,7 +150,7 @@ const en: Dict = {
   },
   hub: {
     title: 'Connects chat apps to agents.',
-    lede: 'Lankide sits between them, and both sides are extensible.',
+    lede: 'Meerkat sits between them, and both sides are extensible.',
     feishu: 'Feishu',
     more: 'More',
   },
@@ -166,7 +166,7 @@ const en: Dict = {
   },
   footer: {
     license: 'MIT License',
-    copyright: '© 2026 Lankide contributors',
+    copyright: '© 2026 Meerkat contributors',
   },
 };
 

@@ -3,8 +3,8 @@ use crate::http::Transport;
 use crate::normalize::{
     NormalizationConfig, NormalizedMention, NormalizedMessage, NormalizedSender, SenderKind,
 };
-use lankide_core::AgentId;
-use lankide_provider::{ProviderError, ProviderPersonIdentity, ProviderStorage};
+use meerkat_core::AgentId;
+use meerkat_provider::{ProviderError, ProviderPersonIdentity, ProviderStorage};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -13,7 +13,7 @@ use std::sync::Arc;
 const STATE_KEY: &str = "identity_directory";
 
 /// Feishu identities are scoped by both tenant and observing App. The stable
-/// Lankide Agent ID remains the only identity that leaves this Provider.
+/// Meerkat Agent ID remains the only identity that leaves this Provider.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 pub(crate) struct IdentityDirectory {
     pub agents: BTreeMap<String, AgentIdentity>,

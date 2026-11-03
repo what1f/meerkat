@@ -3,7 +3,7 @@
 //! probes a CLI again only when its executable file changes.
 
 use super::Inner;
-use lankide_harness::{HarnessConfig, HarnessError, HarnessFactory, ProbeResult};
+use meerkat_harness::{HarnessConfig, HarnessError, HarnessFactory, ProbeResult};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

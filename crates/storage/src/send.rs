@@ -3,7 +3,7 @@ use crate::execution::expand_execution_chat_boundary;
 use crate::message::cid;
 use crate::workspace::{pid, wid};
 use crate::{Result, Storage, StorageError};
-use lankide_core::{AgentId, ChannelId, ProviderId, WorkspaceId};
+use meerkat_core::{AgentId, ChannelId, ProviderId, WorkspaceId};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
@@ -446,7 +446,7 @@ impl Storage {
         agent: &AgentId,
         channel: &ChannelId,
         channel_name: &str,
-        person: &lankide_core::PersonId,
+        person: &meerkat_core::PersonId,
         now: i64,
     ) -> Result<String> {
         let mut c = self.conn()?;

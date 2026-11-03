@@ -1,9 +1,9 @@
-use lankide_harness::{
+use meerkat_harness::{
     AgentEvent, AgentEventKind, ExecuteRequest, HarnessAvailability, HarnessConfig, HarnessFactory,
     ModelRef, SessionRequest, ToolDefinition, ToolResultRequest,
 };
-use lankide_harness_codex::CodexHarness;
-use lankide_testkit::{GateSelection, ProbeConfig, run_prerequisite_probe};
+use meerkat_harness_codex::CodexHarness;
+use meerkat_testkit::{GateSelection, ProbeConfig, run_prerequisite_probe};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::fs;
@@ -16,12 +16,12 @@ const HARD_TIMEOUT: Duration = Duration::from_secs(240);
 const EVENT_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires explicit LANKIDE_E2E_LIVE=1 and a paid Codex model invocation"]
+#[ignore = "requires explicit MEERKAT_E2E_LIVE=1 and a paid Codex model invocation"]
 async fn codex_e2e() {
     assert_eq!(
-        std::env::var("LANKIDE_E2E_LIVE").as_deref(),
+        std::env::var("MEERKAT_E2E_LIVE").as_deref(),
         Ok("1"),
-        "live Codex E2E requires LANKIDE_E2E_LIVE=1"
+        "live Codex E2E requires MEERKAT_E2E_LIVE=1"
     );
     let preflight = run_prerequisite_probe(&ProbeConfig::from_environment(
         GateSelection::HarnessLive,
@@ -33,9 +33,9 @@ async fn codex_e2e() {
         preflight.render_text()
     );
 
-    let run_id = std::env::var("LANKIDE_E2E_RUN_ID").unwrap_or_else(|_| unique("codex"));
+    let run_id = std::env::var("MEERKAT_E2E_RUN_ID").unwrap_or_else(|_| unique("codex"));
     let artifact_root = std::env::temp_dir()
-        .join("lankide-e2e-artifacts")
+        .join("meerkat-e2e-artifacts")
         .join("harness-codex")
         .join(&run_id);
     fs::create_dir_all(&artifact_root).expect("create Codex artifact root");
@@ -91,7 +91,7 @@ async fn run_scenario(
 ) -> Result<serde_json::Value, String> {
     let cli_path = resolve_codex_path()?;
     let work_root = tempfile::Builder::new()
-        .prefix("lankide-codex-live-")
+        .prefix("meerkat-codex-live-")
         .tempdir()
         .map_err(display)?;
     let codex_home = work_root.path().join("codex-home");
@@ -278,7 +278,7 @@ fn session_request(
 }
 
 async fn wait_for_tool_call(
-    events: &mut lankide_harness::AgentEventStream,
+    events: &mut meerkat_harness::AgentEventStream,
     expected_nonce: &str,
 ) -> Result<(String, Vec<AgentEvent>), String> {
     let mut observed = Vec::new();
@@ -314,7 +314,7 @@ async fn wait_for_tool_call(
 }
 
 async fn collect_terminal(
-    mut events: lankide_harness::AgentEventStream,
+    mut events: meerkat_harness::AgentEventStream,
 ) -> Result<Vec<AgentEvent>, String> {
     let mut observed = Vec::new();
     loop {
@@ -351,7 +351,7 @@ fn prepare_overlay(destination: &Path) -> Result<(), String> {
 }
 
 fn resolve_codex_path() -> Result<PathBuf, String> {
-    if let Some(path) = std::env::var_os("LANKIDE_CODEX_PATH").map(PathBuf::from) {
+    if let Some(path) = std::env::var_os("MEERKAT_CODEX_PATH").map(PathBuf::from) {
         return Ok(path);
     }
     let output = std::process::Command::new("sh")
@@ -479,7 +479,7 @@ async fn codex_default_home_is_agent_local() {
         thinking_level: "low".into(),
         cli_path: resolve_codex_path().unwrap(),
         environment: BTreeMap::from([(
-            "LANKIDE_AGENT_SOCKET".into(),
+            "MEERKAT_AGENT_SOCKET".into(),
             agent_socket.display().to_string(),
         )]),
         config_fingerprint: "isolation".into(),
@@ -506,7 +506,7 @@ async fn codex_default_home_is_agent_local() {
         .expect("native Codex startup");
         ids.push(session.entry().native_session_id);
         session.close().await.unwrap();
-        let home = cwd.join(".lankide/codex");
+        let home = cwd.join(".meerkat/codex");
         assert!(home.is_dir(), "default config must be Agent-local");
         #[cfg(unix)]
         {

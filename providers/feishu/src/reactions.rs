@@ -1,7 +1,7 @@
 use crate::client::{Auth, Client as FeishuClient};
 use crate::http::Transport;
-use lankide_core::MessageId;
-use lankide_provider::{
+use meerkat_core::MessageId;
+use meerkat_provider::{
     AgentRuntimeContext, InvocationHandler, JsonSchema, ProviderError, ProviderFuture,
     ToolDefinition,
 };
@@ -11,10 +11,10 @@ use std::sync::Arc;
 
 type SharedClient = FeishuClient<Arc<dyn Transport>>;
 
-pub(crate) fn management_catalog() -> Vec<lankide_provider::ReactionDefinition> {
+pub(crate) fn management_catalog() -> Vec<meerkat_provider::ReactionDefinition> {
     bundled_catalog()
         .into_iter()
-        .map(|entry| lankide_provider::ReactionDefinition {
+        .map(|entry| meerkat_provider::ReactionDefinition {
             id: entry.emoji_type,
             name: entry.name,
             emoji: String::new(),

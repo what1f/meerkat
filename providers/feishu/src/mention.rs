@@ -1,6 +1,6 @@
-//! Translation between Lankide's `@name[id]` marker and Feishu native @.
+//! Translation between Meerkat's `@name[id]` marker and Feishu native @.
 
-use lankide_core::{markdown_mention, markdown_mentions};
+use meerkat_core::{markdown_mention, markdown_mentions};
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Eq, PartialEq)]

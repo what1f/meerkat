@@ -7,11 +7,11 @@ use crate::resources::{agent_directory, replace_resource_links};
 use crate::state::{
     AssignmentLifecycle, PersistedAssignment, PersistedSession, SessionRecovery, assignment_key,
 };
-use lankide_harness::{
+use meerkat_harness::{
     ExecuteRequest, HarnessConfig as NativeHarnessConfig, HarnessErrorCode, HarnessSession,
     ModelRef, SessionRequest, ToolDefinition as NativeToolDefinition,
 };
-use lankide_protocol::{
+use meerkat_protocol::{
     AgentRunContext, AssignExecution, AssignmentResult, DeliveryResult, ExecutionRef, MachineFrame,
     SessionAction, machine_frame,
 };
@@ -22,7 +22,7 @@ use tokio::sync::watch;
 
 pub(super) async fn handle_delete_agent_files(
     inner: &Inner,
-    request: lankide_protocol::DeleteAgentFiles,
+    request: meerkat_protocol::DeleteAgentFiles,
 ) {
     let result = async {
         let agent = request
@@ -66,9 +66,9 @@ pub(super) async fn handle_delete_agent_files(
     send_frame(
         inner,
         MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::DeleteAgentFilesResult(
-                lankide_protocol::DeleteAgentFilesResult {
+                meerkat_protocol::DeleteAgentFilesResult {
                     request_id: request.request_id,
                     success,
                     error_code,
@@ -150,7 +150,7 @@ pub(super) async fn handle_assignment(inner: Arc<Inner>, assign: AssignExecution
         let failure = match &error {
             MachineError::Harness(error) => super::failure::attempt_failure(&error.failure),
             _ => {
-                use lankide_harness::{FailureCategory, HarnessFailure};
+                use meerkat_harness::{FailureCategory, HarnessFailure};
                 let category = match &error {
                     MachineError::InvalidAssignment(code) if code == "assignment_cancelled" => {
                         FailureCategory::Cancelled
@@ -180,7 +180,7 @@ pub(super) async fn handle_assignment(inner: Arc<Inner>, assign: AssignExecution
         send_frame(
             &inner,
             MachineFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(machine_frame::Frame::AssignmentResult(AssignmentResult {
                     failure: Some(failure),
                     execution: Some(execution),
@@ -217,7 +217,7 @@ async fn prepare_assignment(
         send_frame(
             &inner,
             MachineFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(machine_frame::Frame::AssignmentResult(AssignmentResult {
                     failure: None,
                     execution: Some(execution.clone()),
@@ -231,7 +231,7 @@ async fn prepare_assignment(
         send_frame(
             &inner,
             MachineFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(machine_frame::Frame::DeliveryResult(remembered.delivery)),
             },
         )
@@ -340,31 +340,31 @@ async fn prepare_assignment(
         super::proxy::AttemptProxy::start(inner.clone(), context.clone(), agent_home.clone())?;
     native_config
         .environment
-        .retain(|key, _| !key.starts_with("LANKIDE_RUNTIME_"));
+        .retain(|key, _| !key.starts_with("MEERKAT_RUNTIME_"));
     // Execution credentials belong to this attempt, never to editable Agent configuration.
     native_config.environment.extend([
         (
-            "LANKIDE_AGENT_SOCKET".into(),
+            "MEERKAT_AGENT_SOCKET".into(),
             proxy.path.display().to_string(),
         ),
         (
-            "LANKIDE_RUN_CONTEXT".into(),
+            "MEERKAT_RUN_CONTEXT".into(),
             proxy.context_path.display().to_string(),
         ),
         (
-            "LANKIDE_EXECUTION_ID".into(),
+            "MEERKAT_EXECUTION_ID".into(),
             execution.execution_id.to_string(),
         ),
         (
-            "LANKIDE_EXECUTION_ATTEMPT".into(),
+            "MEERKAT_EXECUTION_ATTEMPT".into(),
             execution.attempt.to_string(),
         ),
         (
-            "LANKIDE_EXECUTION_TOKEN".into(),
+            "MEERKAT_EXECUTION_TOKEN".into(),
             assign.execution_token.clone(),
         ),
         (
-            "LANKIDE_AGENT_HOME".into(),
+            "MEERKAT_AGENT_HOME".into(),
             agent_home.display().to_string(),
         ),
     ]);
@@ -403,7 +403,7 @@ async fn prepare_assignment(
     let resume = SessionAction::try_from(directive.action).ok()
         == Some(SessionAction::ResumeOrStart)
         && requested_native.is_some()
-        && capabilities.contains(&lankide_harness::HarnessCapability::Resume);
+        && capabilities.contains(&meerkat_harness::HarnessCapability::Resume);
     let cli_version = inner
         .cli_versions
         .version(factory.as_ref(), &native_config)
@@ -499,7 +499,7 @@ async fn prepare_assignment(
     let (progress_tx, progress_rx) = watch::channel(started);
     let (terminated_tx, terminated_rx) = watch::channel(None);
     let delivery_lock = Arc::new(tokio::sync::Mutex::new(()));
-    let can_cancel = capabilities.contains(&lankide_harness::HarnessCapability::Cancel);
+    let can_cancel = capabilities.contains(&meerkat_harness::HarnessCapability::Cancel);
     inner.active.lock().await.insert(
         key.clone(),
         ActiveExecution {
@@ -531,7 +531,7 @@ async fn prepare_assignment(
     send_frame(
         &inner,
         MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::AssignmentResult(AssignmentResult {
                 failure: None,
                 execution: Some(execution.clone()),
@@ -545,7 +545,7 @@ async fn prepare_assignment(
     send_frame(
         &inner,
         MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::DeliveryResult(DeliveryResult {
                 execution: Some(execution.clone()),
                 delivery_id: delivery.delivery_id,
@@ -577,7 +577,7 @@ async fn prepare_assignment(
 }
 
 pub(super) fn native_config(
-    config: &lankide_protocol::HarnessConfig,
+    config: &meerkat_protocol::HarnessConfig,
     fingerprint: &str,
     defaults: &NativeHarnessConfig,
 ) -> Result<NativeHarnessConfig, MachineError> {

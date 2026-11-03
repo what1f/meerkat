@@ -1,19 +1,19 @@
 use crate::MachineError;
-use lankide_harness::HarnessConfig;
-use lankide_protocol::CliCommand;
+use meerkat_harness::HarnessConfig;
+use meerkat_protocol::CliCommand;
 use std::path::{Path, PathBuf};
 
 pub(crate) fn discover() -> Option<PathBuf> {
     let executable = std::env::current_exe().ok()?;
-    let mut candidates = vec![executable.with_file_name("lankide")];
+    let mut candidates = vec![executable.with_file_name("meerkat")];
     if let Some(contents) = executable
         .ancestors()
         .find(|path| path.file_name().is_some_and(|name| name == "Contents"))
     {
-        candidates.push(contents.join("Resources/bin/lankide"));
+        candidates.push(contents.join("Resources/bin/meerkat"));
     }
     if let Some(path) = std::env::var_os("PATH") {
-        candidates.extend(std::env::split_paths(&path).map(|directory| directory.join("lankide")));
+        candidates.extend(std::env::split_paths(&path).map(|directory| directory.join("meerkat")));
     }
     candidates.into_iter().find(|path| executable_file(path))
 }
@@ -71,18 +71,18 @@ pub(crate) fn inject(
         .environment
         .insert("PATH".into(), path.to_string_lossy().into_owned());
     config.environment.insert(
-        "LANKIDE_CLI".into(),
+        "MEERKAT_CLI".into(),
         executable.to_string_lossy().into_owned(),
     );
     prompt.push_str(
-        "\n\n## 可用命令\n\n- `lankide capabilities`：查看可用操作和参数。\n- `lankide profile`：查看自己的姓名、岗位、签名和头像。\n- `lankide profile update --name NAME --role ROLE --bio BIO --avatar PATH`：更新自己的资料；只传需要修改的字段。\n",
+        "\n\n## 可用命令\n\n- `meerkat capabilities`：查看可用操作和参数。\n- `meerkat profile`：查看自己的姓名、岗位、签名和头像。\n- `meerkat profile update --name NAME --role ROLE --bio BIO --avatar PATH`：更新自己的资料；只传需要修改的字段。\n",
     );
     for command in commands {
         // The CLI remains the single gateway client; Provider commands do not
         // introduce per-Agent executables or direct credential access.
         let capability = format!("cli: {}", command.name).replace('\'', "'\"'\"'");
         prompt.push_str(&format!(
-            "\n- {}：{}\n  调用：`lankide invoke '{}' --arguments-json <JSON参数数组>`\n",
+            "\n- {}：{}\n  调用：`meerkat invoke '{}' --arguments-json <JSON参数数组>`\n",
             command.name, command.description, capability,
         ));
     }

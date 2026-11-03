@@ -2,15 +2,15 @@
 
 mod remote_access;
 
-pub use lankide_daemon_runtime::InstanceGuard;
-use lankide_daemon_runtime::{DaemonRuntimeError, create_private_directory};
+pub use meerkat_daemon_runtime::InstanceGuard;
+use meerkat_daemon_runtime::{DaemonRuntimeError, create_private_directory};
 
-use lankide_provider::{HostServices, Provider, ProviderError, ProviderHost, ProviderInfo};
-use lankide_runtime::{
+use meerkat_provider::{HostServices, Provider, ProviderError, ProviderHost, ProviderInfo};
+use meerkat_runtime::{
     ProviderFactoryFuture, ProviderFactoryRegistry, ProviderOnboarding, ProviderTypeFactory,
     RuntimeApplication, RuntimeConfig, RuntimePeerAdapter,
 };
-use lankide_storage::DatabaseConfig;
+use meerkat_storage::DatabaseConfig;
 use serde::Serialize;
 use std::fs;
 use std::future::Future;
@@ -46,7 +46,7 @@ impl RuntimePaths {
 
     pub fn local_default() -> Result<Self, AppError> {
         let user_home = std::env::var_os("HOME").ok_or(AppError::MissingHome)?;
-        Self::for_home(PathBuf::from(user_home).join(".lankide"))
+        Self::for_home(PathBuf::from(user_home).join(".meerkat"))
     }
 
     pub fn prepare(&self) -> Result<(), AppError> {
@@ -124,9 +124,9 @@ where
             // A live lock owner is not sufficient: prove it serves management
             // before treating this launch as a successful no-op.
             tokio::time::timeout(Duration::from_secs(2), async {
-                use lankide_client::ManagementClient;
+                use meerkat_client::ManagementClient;
                 let client =
-                    lankide_client::RuntimeManagementClient::connect_local_lazy(&paths.run);
+                    meerkat_client::RuntimeManagementClient::connect_local_lazy(&paths.run);
                 client
                     .list_workspaces()
                     .await
@@ -166,7 +166,7 @@ where
         #[serde(default = "default_attempt_lease_ms")]
         attempt_lease_ms: u64,
         #[serde(default)]
-        machine_link: lankide_protocol::link::LinkSettings,
+        machine_link: meerkat_protocol::link::LinkSettings,
     }
     fn default_remote_access_port() -> u16 {
         7443
@@ -212,7 +212,7 @@ where
         return Err(AppError::InvalidHome("local listener must use loopback"));
     }
     let url = format!("ws://{}", listener.local_addr()?);
-    let secret = lankide_protocol::link::publish(&paths.run, &url)?;
+    let secret = meerkat_protocol::link::publish(&paths.run, &url)?;
     let mut management_address = listener.local_addr()?;
     if management_address.ip().is_unspecified() {
         management_address.set_ip(match management_address {
@@ -221,7 +221,7 @@ where
         });
     }
     fs::write(
-        paths.run.join(lankide_protocol::management::URL_FILE),
+        paths.run.join(meerkat_protocol::management::URL_FILE),
         format!("http://{management_address}"),
     )?;
     let remote = remote_access::RemoteMachines::open(
@@ -234,14 +234,14 @@ where
     .await
     .map_err(AppError::Status)?;
     let (link_stop, link_stopped) = oneshot::channel();
-    let link_server = tokio::spawn(lankide_protocol::resources::serve_configured(
+    let link_server = tokio::spawn(meerkat_protocol::resources::serve_configured(
         listener,
         secret,
         RuntimePeerAdapter::new(application.clone()),
         settings.machine_link,
         Some(remote.clone()),
         None,
-        Some(std::sync::Arc::new(lankide_web_assets::serve)),
+        Some(std::sync::Arc::new(meerkat_web_assets::serve)),
         async {
             let _ = link_stopped.await;
         },
@@ -285,7 +285,7 @@ where
     for name in [
         "machine-link.url",
         "machine-link.secret",
-        lankide_protocol::management::URL_FILE,
+        meerkat_protocol::management::URL_FILE,
     ] {
         let _ = fs::remove_file(paths.run.join(name));
     }
@@ -295,41 +295,41 @@ where
 
 pub fn production_factories() -> Result<ProviderFactoryRegistry, AppError> {
     let factories = ProviderFactoryRegistry::default();
-    let feishu = lankide_provider_feishu::FeishuProvider::new();
+    let feishu = meerkat_provider_feishu::FeishuProvider::new();
     factories.register(Arc::new(ProductionProviderFactory::new(
         feishu.info(),
-        lankide_provider_feishu::FeishuProvider::capabilities(),
+        meerkat_provider_feishu::FeishuProvider::capabilities(),
         |workspace, services| {
             ProviderHost::new(
-                lankide_provider_feishu::FeishuProvider::new(),
+                meerkat_provider_feishu::FeishuProvider::new(),
                 workspace.id.clone(),
                 workspace.provider_config.clone(),
                 services,
             )
-            .map(|host| Arc::new(host) as Arc<dyn lankide_provider::ProviderHostInstance>)
+            .map(|host| Arc::new(host) as Arc<dyn meerkat_provider::ProviderHostInstance>)
         },
     )))?;
-    let telegram = lankide_provider_telegram::TelegramProvider::new();
+    let telegram = meerkat_provider_telegram::TelegramProvider::new();
     factories.register(Arc::new(ProductionProviderFactory::new(
         telegram.info(),
-        lankide_provider_telegram::TelegramProvider::capabilities(),
+        meerkat_provider_telegram::TelegramProvider::capabilities(),
         |workspace, services| {
             ProviderHost::new(
-                lankide_provider_telegram::TelegramProvider::new(),
+                meerkat_provider_telegram::TelegramProvider::new(),
                 workspace.id.clone(),
                 workspace.provider_config.clone(),
                 services,
             )
-            .map(|host| Arc::new(host) as Arc<dyn lankide_provider::ProviderHostInstance>)
+            .map(|host| Arc::new(host) as Arc<dyn meerkat_provider::ProviderHostInstance>)
         },
     )))?;
     Ok(factories)
 }
 
 type ProductionCreate = dyn Fn(
-        &lankide_storage::WorkspaceRecord,
+        &meerkat_storage::WorkspaceRecord,
         HostServices,
-    ) -> Result<Arc<dyn lankide_provider::ProviderHostInstance>, ProviderError>
+    ) -> Result<Arc<dyn meerkat_provider::ProviderHostInstance>, ProviderError>
     + Send
     + Sync;
 struct ProductionProviderFactory {
@@ -342,10 +342,10 @@ impl ProductionProviderFactory {
     fn new<F>(info: ProviderInfo, capabilities: &'static [&'static str], create: F) -> Self
     where
         F: Fn(
-                &lankide_storage::WorkspaceRecord,
+                &meerkat_storage::WorkspaceRecord,
                 HostServices,
             )
-                -> Result<Arc<dyn lankide_provider::ProviderHostInstance>, ProviderError>
+                -> Result<Arc<dyn meerkat_provider::ProviderHostInstance>, ProviderError>
             + Send
             + Sync
             + 'static,
@@ -372,9 +372,9 @@ impl ProviderTypeFactory for ProductionProviderFactory {
 
     fn create(
         &self,
-        workspace: &lankide_storage::WorkspaceRecord,
+        workspace: &meerkat_storage::WorkspaceRecord,
         services: HostServices,
-    ) -> Result<Arc<dyn lankide_provider::ProviderHostInstance>, ProviderError> {
+    ) -> Result<Arc<dyn meerkat_provider::ProviderHostInstance>, ProviderError> {
         (self.create)(workspace, services)
     }
 
@@ -412,10 +412,10 @@ fn unique_run_id() -> String {
 pub enum AppError {
     Io(io::Error),
     Json(serde_json::Error),
-    Runtime(lankide_runtime::RuntimeError),
-    Storage(lankide_storage::StorageError),
-    Protocol(lankide_protocol::TransportError),
-    Status(lankide_protocol::Status),
+    Runtime(meerkat_runtime::RuntimeError),
+    Storage(meerkat_storage::StorageError),
+    Protocol(meerkat_protocol::TransportError),
+    Status(meerkat_protocol::Status),
     MissingHome,
     InvalidHome(&'static str),
     InvalidWorkspaceId,
@@ -481,14 +481,14 @@ impl From<serde_json::Error> for AppError {
     }
 }
 
-impl From<lankide_runtime::RuntimeError> for AppError {
-    fn from(value: lankide_runtime::RuntimeError) -> Self {
+impl From<meerkat_runtime::RuntimeError> for AppError {
+    fn from(value: meerkat_runtime::RuntimeError) -> Self {
         Self::Runtime(value)
     }
 }
 
-impl From<lankide_storage::StorageError> for AppError {
-    fn from(value: lankide_storage::StorageError) -> Self {
+impl From<meerkat_storage::StorageError> for AppError {
+    fn from(value: meerkat_storage::StorageError) -> Self {
         Self::Storage(value)
     }
 }

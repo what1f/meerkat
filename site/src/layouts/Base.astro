@@ -35,7 +35,7 @@ const canonical = new URL(pathFor(lang), Astro.site);
       (() => {
         const root = document.documentElement;
         root.classList.add('js');
-        const saved = localStorage.getItem('lankide-theme');
+        const saved = localStorage.getItem('meerkat-theme');
         root.dataset.theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
       })();
     </script>

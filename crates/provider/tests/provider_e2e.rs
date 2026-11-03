@@ -1,8 +1,8 @@
-use lankide_core::ResourceRef;
-use lankide_core::{
+use meerkat_core::ResourceRef;
+use meerkat_core::{
     AgentId, AttentionLevel, ChannelAbility, ChannelId, MessageId, ProviderId, WorkspaceId,
 };
-use lankide_provider::*;
+use meerkat_provider::*;
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,

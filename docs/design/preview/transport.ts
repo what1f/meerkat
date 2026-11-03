@@ -481,5 +481,5 @@ export function addStoryboardMember(member: Record<string, unknown>) {
     activity: "idle",
     pause_reason: null,
   });
-  dispatchEvent(new Event("lankide-design-data"));
+  dispatchEvent(new Event("meerkat-design-data"));
 }

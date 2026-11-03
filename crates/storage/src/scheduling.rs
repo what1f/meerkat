@@ -1,5 +1,5 @@
 use crate::{Result, Storage};
-use lankide_core::{AgentId, WorkspaceId};
+use meerkat_core::{AgentId, WorkspaceId};
 use rusqlite::params;
 
 impl Storage {

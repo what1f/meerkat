@@ -1,5 +1,5 @@
 use super::*;
-use lankide_protocol::{
+use meerkat_protocol::{
     Agent as ProtocolAgent, AgentAttention, AgentOnboardingState, AgentRef, AttentionMode,
     CatalogRequest, ChannelAttention, CreateAgentRequest, CreateWorkspaceRequest,
     DeleteAgentRequest, DeleteAgentResponse, DesiredState, EnvironmentVariable,
@@ -11,12 +11,12 @@ use lankide_protocol::{
     SetWorkspaceStateRequest, UpdateAgentRequest, UpdateWorkspaceRequest,
     Workspace as ProtocolWorkspace, WorkspaceRef,
 };
-use lankide_provider::{
+use meerkat_provider::{
     AgentSpec as ProviderAgentSpec, ChannelDefaultAttention,
     EnvironmentVariable as ProviderEnvironmentVariable, SecretValue as ProviderSecret,
     WorkspaceSpec as ProviderWorkspaceSpec,
 };
-use lankide_storage::{AgentRecord, AttentionRecord, WorkspaceRecord, WorkspaceSetupStatus};
+use meerkat_storage::{AgentRecord, AttentionRecord, WorkspaceRecord, WorkspaceSetupStatus};
 use std::collections::BTreeSet;
 
 mod lifecycle;
@@ -27,8 +27,8 @@ use lifecycle::{
 impl RuntimeApplication {
     pub async fn cancel_attempt(
         &self,
-        request: lankide_protocol::CancelAttemptRequest,
-    ) -> Result<lankide_protocol::CancelAttemptResponse, RuntimeError> {
+        request: meerkat_protocol::CancelAttemptRequest,
+    ) -> Result<meerkat_protocol::CancelAttemptResponse, RuntimeError> {
         // Validate ownership/existence through storage before forwarding control.
         self.runtime()?
             .database()
@@ -37,13 +37,13 @@ impl RuntimeApplication {
         self.machine_broker()
             .request_cancellation(request.execution_id)
             .await?;
-        Ok(lankide_protocol::CancelAttemptResponse {})
+        Ok(meerkat_protocol::CancelAttemptResponse {})
     }
 
     pub async fn get_execution_details(
         &self,
-        request: lankide_protocol::GetExecutionDetailsRequest,
-    ) -> Result<lankide_protocol::ExecutionDetails, RuntimeError> {
+        request: meerkat_protocol::GetExecutionDetailsRequest,
+    ) -> Result<meerkat_protocol::ExecutionDetails, RuntimeError> {
         let runtime = self.runtime()?;
         let execution = runtime.database().execution(request.execution_id).await?;
         let attempts = runtime
@@ -52,7 +52,7 @@ impl RuntimeApplication {
             .await?
             .into_iter()
             .map(|attempt| {
-                Ok(lankide_protocol::ExecutionAttemptDetails {
+                Ok(meerkat_protocol::ExecutionAttemptDetails {
                     attempt: attempt.attempt as u32,
                     machine_id: attempt.machine_id,
                     state: attempt.state.as_str().into(),
@@ -64,7 +64,7 @@ impl RuntimeApplication {
                 })
             })
             .collect::<Result<Vec<_>, RuntimeError>>()?;
-        Ok(lankide_protocol::ExecutionDetails {
+        Ok(meerkat_protocol::ExecutionDetails {
             error_code: execution.error_code,
             error_message: execution.error_message,
             execution_id: execution.execution_id,
@@ -164,7 +164,7 @@ impl RuntimeApplication {
     pub async fn list_human_members(
         &self,
         request: GetWorkspaceRequest,
-    ) -> Result<Vec<lankide_protocol::HumanTeamMember>, RuntimeError> {
+    ) -> Result<Vec<meerkat_protocol::HumanTeamMember>, RuntimeError> {
         let workspace_id = workspace_id(request.workspace.clone())?;
         self.runtime()?.database().workspace(&workspace_id).await?;
         Ok(self
@@ -173,7 +173,7 @@ impl RuntimeApplication {
             .list_human_team_member_views(&workspace_id)
             .await?
             .into_iter()
-            .map(|p| lankide_protocol::HumanTeamMember {
+            .map(|p| meerkat_protocol::HumanTeamMember {
                 person_id: p.person_id.to_string(),
                 team_role: p.team_role.as_str().into(),
                 name: p.name,
@@ -186,8 +186,8 @@ impl RuntimeApplication {
 
     pub async fn sync_human_profile(
         &self,
-        request: lankide_protocol::SyncHumanProfileRequest,
-    ) -> Result<lankide_protocol::HumanTeamMember, RuntimeError> {
+        request: meerkat_protocol::SyncHumanProfileRequest,
+    ) -> Result<meerkat_protocol::HumanTeamMember, RuntimeError> {
         let workspace = workspace_id(request.workspace.clone())?;
         let person_id = PersonId::new(request.person_id.clone())
             .map_err(|e| RuntimeError::InvalidCore(e.to_string()))?;
@@ -197,7 +197,7 @@ impl RuntimeApplication {
             .person(&workspace, &person_id)
             .await?
             .ok_or_else(|| RuntimeError::Application("unknown team member".into()))?;
-        if person.team_role == lankide_core::TeamRole::External {
+        if person.team_role == meerkat_core::TeamRole::External {
             return Err(RuntimeError::Application("unknown team member".into()));
         }
         runtime
@@ -219,8 +219,8 @@ impl RuntimeApplication {
 
     pub async fn update_human_position(
         &self,
-        request: lankide_protocol::UpdateHumanPositionRequest,
-    ) -> Result<Vec<lankide_protocol::HumanTeamMember>, RuntimeError> {
+        request: meerkat_protocol::UpdateHumanPositionRequest,
+    ) -> Result<Vec<meerkat_protocol::HumanTeamMember>, RuntimeError> {
         let workspace_id = workspace_id(request.workspace.clone())?;
         let person = PersonId::new(request.person_id)
             .map_err(|e| RuntimeError::InvalidCore(e.to_string()))?;
@@ -262,19 +262,19 @@ impl RuntimeApplication {
     pub async fn get_agent_first_reply(
         &self,
         request: GetAgentRequest,
-    ) -> Result<lankide_protocol::AgentFirstReply, RuntimeError> {
+    ) -> Result<meerkat_protocol::AgentFirstReply, RuntimeError> {
         let (workspace, agent) = agent_id(request.agent)?;
         let runtime = self.runtime()?;
         runtime.database().agent_record(&workspace, &agent).await?;
-        Ok(lankide_protocol::AgentFirstReply {
+        Ok(meerkat_protocol::AgentFirstReply {
             state: if runtime
                 .database()
                 .agent_has_first_reply(&workspace, &agent)
                 .await?
             {
-                lankide_protocol::AgentFirstReplyState::Replied
+                meerkat_protocol::AgentFirstReplyState::Replied
             } else {
-                lankide_protocol::AgentFirstReplyState::Waiting
+                meerkat_protocol::AgentFirstReplyState::Waiting
             },
         })
     }
@@ -327,7 +327,7 @@ impl RuntimeApplication {
         if machine.revoked_at.is_some() {
             return Err(RuntimeError::MachineRevoked);
         }
-        let inventory: Vec<lankide_protocol::link::HarnessInfo> =
+        let inventory: Vec<meerkat_protocol::link::HarnessInfo> =
             serde_json::from_str(&machine.inventory_json)
                 .map_err(|e| RuntimeError::Application(e.to_string()))?;
         validate_harness_selection(&inventory, &agent.harness_id, &agent.model, &agent.thinking)
@@ -564,7 +564,7 @@ impl RuntimeApplication {
 
     pub async fn advance_provider_onboarding(
         &self,
-        request: lankide_protocol::AdvanceProviderOnboardingRequest,
+        request: meerkat_protocol::AdvanceProviderOnboardingRequest,
     ) -> Result<ProviderOnboardingState, RuntimeError> {
         let workspace_id = workspace_id(request.workspace)?;
         self.provider_onboarding(
@@ -605,7 +605,7 @@ impl RuntimeApplication {
 
     pub async fn advance_agent_onboarding(
         &self,
-        request: lankide_protocol::AdvanceAgentOnboardingRequest,
+        request: meerkat_protocol::AdvanceAgentOnboardingRequest,
     ) -> Result<AgentOnboardingState, RuntimeError> {
         let (workspace, agent) = agent_id(request.agent)?;
         self.agent_onboarding(
@@ -700,7 +700,7 @@ impl RuntimeApplication {
                 let live = online
                     .iter()
                     .find(|value| value.machine_id == record.machine_id);
-                let inventory: Vec<lankide_protocol::link::HarnessInfo> =
+                let inventory: Vec<meerkat_protocol::link::HarnessInfo> =
                     serde_json::from_str(&record.inventory_json)
                         .map_err(|e| RuntimeError::Application(e.to_string()))?;
                 Ok(MachineCatalogItem {
@@ -716,7 +716,7 @@ impl RuntimeApplication {
                     },
                     harnesses: inventory
                         .into_iter()
-                        .map(lankide_protocol::management::HarnessInfo::try_from)
+                        .map(meerkat_protocol::management::HarnessInfo::try_from)
                         .collect::<Result<_, _>>()
                         .map_err(|e| RuntimeError::Application(e.to_string()))?,
                     status_message: String::new(),
@@ -764,8 +764,8 @@ impl RuntimeApplication {
                 harness_id: harness.harness_id,
                 display_name: harness.display_name,
                 description: harness.reason,
-                availability: lankide_protocol::HarnessAvailability::try_from(harness.availability)
-                    .unwrap_or(lankide_protocol::HarnessAvailability::Unspecified),
+                availability: meerkat_protocol::HarnessAvailability::try_from(harness.availability)
+                    .unwrap_or(meerkat_protocol::HarnessAvailability::Unspecified),
                 supported_thinking_levels: Vec::new(),
             })
             .collect();
@@ -783,7 +783,7 @@ impl RuntimeApplication {
             reactions: host
                 .reaction_catalog()
                 .into_iter()
-                .map(|reaction| lankide_protocol::ReactionCatalogItem {
+                .map(|reaction| meerkat_protocol::ReactionCatalogItem {
                     reaction_id: reaction.id,
                     display_name: reaction.name,
                     emoji: reaction.emoji,
@@ -857,7 +857,7 @@ fn agent_onboarding_dto(
 }
 
 fn default_attention(
-    channels: &[lankide_provider::ChannelDefinition],
+    channels: &[meerkat_provider::ChannelDefinition],
 ) -> BTreeMap<ChannelId, AttentionRecord> {
     channels
         .iter()
@@ -875,7 +875,7 @@ fn default_attention(
 }
 
 fn attention_record(
-    channels: &[lankide_provider::ChannelDefinition],
+    channels: &[meerkat_provider::ChannelDefinition],
     attention: Option<AgentAttention>,
 ) -> Result<BTreeMap<ChannelId, AttentionRecord>, RuntimeError> {
     let mut result = default_attention(channels);
@@ -968,12 +968,12 @@ async fn resource_ref(
     storage: Database,
     workspace_id: &WorkspaceId,
     resource_id: ResourceId,
-) -> Result<lankide_protocol::ResourceRef, RuntimeError> {
+) -> Result<meerkat_protocol::ResourceRef, RuntimeError> {
     let value = storage
         .resource_metadata(workspace_id, resource_id)
         .await?
         .ok_or_else(|| RuntimeError::Application("resource metadata not found".into()))?;
-    Ok(lankide_protocol::ResourceRef {
+    Ok(meerkat_protocol::ResourceRef {
         resource_id: value.resource_id.get(),
         file_name: value.file_name,
         media_type: value.media_type,
@@ -1003,9 +1003,9 @@ async fn agent_dto_with_activity(
         figure: record.figure,
         launch_arguments: record.launch_arguments,
         activity: if busy {
-            lankide_protocol::AgentActivity::Busy
+            meerkat_protocol::AgentActivity::Busy
         } else {
-            lankide_protocol::AgentActivity::Idle
+            meerkat_protocol::AgentActivity::Idle
         },
         agent: Some(AgentRef {
             workspace_id: record.workspace_id.to_string(),
@@ -1180,7 +1180,7 @@ fn nonempty(value: String) -> Option<String> {
 }
 
 pub(crate) fn validate_harness_selection(
-    inventory: &[lankide_protocol::HarnessInfo],
+    inventory: &[meerkat_protocol::HarnessInfo],
     harness_id: &str,
     model_id: &str,
     thinking_level: &str,

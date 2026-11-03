@@ -18,7 +18,7 @@ def executable(path, content):
 
 
 def run():
-    with tempfile.TemporaryDirectory(prefix="lankide-verification-") as directory:
+    with tempfile.TemporaryDirectory(prefix="meerkat-verification-") as directory:
         root = Path(directory)
         scripts = root / "scripts"
         scripts.mkdir()
@@ -84,12 +84,12 @@ def run():
         assert result.returncode == 45, result.stdout + result.stderr
 
         # Composition is a required subgate, with live opt-in and exit propagation.
-        composition_env = {**env, "LANKIDE_E2E_RUN_ID": "composition-negative", "LANKIDE_E2E_LOCK_ROOT": str(root / "locks")}
-        composition_env.pop("LANKIDE_E2E_LIVE", None)
+        composition_env = {**env, "MEERKAT_E2E_RUN_ID": "composition-negative", "MEERKAT_E2E_LOCK_ROOT": str(root / "locks")}
+        composition_env.pop("MEERKAT_E2E_LIVE", None)
         result = subprocess.run([str(scripts / "verify-all"), "--gate", "live-composition"], env=composition_env, capture_output=True, text=True)
         assert result.returncode == 4, result.stdout + result.stderr
         executable(scripts / "verify-live-composition", "#!/bin/sh\nexit 43\n")
-        composition_env["LANKIDE_E2E_LIVE"] = "1"
+        composition_env["MEERKAT_E2E_LIVE"] = "1"
         result = subprocess.run([str(scripts / "verify-all"), "--gate", "live-composition"], env=composition_env, capture_output=True, text=True)
         assert result.returncode == 43, result.stdout + result.stderr
         resume_dir = root / "target/e2e-artifacts/full-release/composition-negative"
@@ -125,7 +125,7 @@ def run():
         source.write_text("fn main() {}\n")
         assert subprocess.run(command, capture_output=True).returncode != 0, "renamed test image escaped boundary"
         copied.unlink()
-        manifest.write_text(manifest.read_text() + '[dependencies]\nfixtures = { package = "lankide-testkit", path = "../../testkit" }\n')
+        manifest.write_text(manifest.read_text() + '[dependencies]\nfixtures = { package = "meerkat-testkit", path = "../../testkit" }\n')
         assert subprocess.run(command, capture_output=True).returncode != 0
         manifest.write_text(manifest.read_text().replace('[dependencies]', '[dev-dependencies]'))
         assert subprocess.run(command, capture_output=True).returncode == 0
@@ -137,7 +137,7 @@ def run():
             shutil.copy2(ROOT / name, root / name)
         binary_dir = root / "release"
         binary_dir.mkdir()
-        for name in ("lankide", "lankide-desktop", "lankided", "lankide-machine"):
+        for name in ("meerkat", "meerkat-desktop", "meerkatd", "meerkat-machine"):
             executable(binary_dir / name, "#!/bin/sh\nexit 0\n")
         snapshot, provenance = root / "snapshot.json", root / "provenance.json"
         provenance_tool = str(scripts / "release-provenance")
@@ -147,7 +147,7 @@ def run():
         assert invoke("record", "--output", provenance, "--binary-dir", binary_dir, "--source-snapshot", snapshot).returncode == 0
         verify = ("verify", "--output", provenance, "--binary-dir", binary_dir)
         assert invoke(*verify).returncode == 0
-        for changed in (source, binary_dir / "lankide", scripts / "verify-all", root / "LICENSE"):
+        for changed in (source, binary_dir / "meerkat", scripts / "verify-all", root / "LICENSE"):
             original, stat = changed.read_bytes(), changed.stat()
             changed.write_bytes(original + b"\n# changed bytes\n")
             os.utime(changed, ns=(stat.st_atime_ns, stat.st_mtime_ns))
@@ -167,17 +167,17 @@ def run():
             "desktop\tproduct\tapp\thermetic\ttrue\tHeadless bootstrap\tNone\tyes\timplemented\n"
         )
         review_dir = root / "window-review"
-        visual_env = {**os.environ, "LANKIDE_VISUAL_BINARY": str(binary_dir / "lankide-desktop"), "LANKIDE_RELEASE_BIN_DIR": str(binary_dir)}
-        visual_env.pop("LANKIDE_VISUAL_SCENARIOS", None)
-        visual_env.pop("LANKIDE_VISUAL_REVIEW", None)
+        visual_env = {**os.environ, "MEERKAT_VISUAL_BINARY": str(binary_dir / "meerkat-desktop"), "MEERKAT_RELEASE_BIN_DIR": str(binary_dir)}
+        visual_env.pop("MEERKAT_VISUAL_SCENARIOS", None)
+        visual_env.pop("MEERKAT_VISUAL_REVIEW", None)
         def visual(*arguments, env=visual_env):
             return subprocess.run(["python3", str(visual_gate), *map(str, arguments)], env=env, capture_output=True, text=True)
         assert visual().returncode == 4, "missing real-window evidence must not pass"
-        gate_env = {**visual_env, "LANKIDE_E2E_RUN_ID": "visual-no-evidence", "LANKIDE_E2E_LOCK_ROOT": str(root / "locks")}
+        gate_env = {**visual_env, "MEERKAT_E2E_RUN_ID": "visual-no-evidence", "MEERKAT_E2E_LOCK_ROOT": str(root / "locks")}
         result = subprocess.run([str(scripts / "verify-module"), "--run", "desktop"], env=gate_env, capture_output=True, text=True)
         assert result.returncode == 0, result.stdout + result.stderr
         result = subprocess.run([str(scripts / "verify-all"), "--gate", "desktop-visual"], env=gate_env, capture_output=True, text=True)
-        assert result.returncode == 4 and "LANKIDE_VISUAL_REVIEW" in result.stderr, result.stdout + result.stderr
+        assert result.returncode == 4 and "MEERKAT_VISUAL_REVIEW" in result.stderr, result.stdout + result.stderr
 
         # The full-release resume step uses the same real visual evidence gate.
         full_dir = root / "target/e2e-artifacts/full-release/visual-no-evidence"
@@ -192,13 +192,13 @@ def run():
         assert invoke("snapshot", "--output", snapshot).returncode == 0
         assert invoke("record", "--output", full_dir / "provenance.json", "--binary-dir", release_dir, "--source-snapshot", snapshot).returncode == 0
         result = subprocess.run([str(scripts / "verify-all"), "--gate", "full-release", "--resume"], env=gate_env, capture_output=True, text=True)
-        assert result.returncode == 4 and "LANKIDE_VISUAL_REVIEW" in result.stdout + result.stderr, result.stdout + result.stderr
+        assert result.returncode == 4 and "MEERKAT_VISUAL_REVIEW" in result.stdout + result.stderr, result.stdout + result.stderr
         full_result = json.loads((full_dir / "result.json").read_text())
         assert full_result["status"] == "failed" and full_result["steps"][-1]["id"] == "desktop-visual-retry-1"
         assert full_result["steps"][-1]["status"] == "failed"
         assert visual("--prepare", review_dir).returncode == 0
         assert visual("--review", review_dir / "review.json").returncode != 0, "pending template must not pass"
-        assert visual("--review", review_dir / "review.json", env={**visual_env, "LANKIDE_VISUAL_SCENARIOS": "agent-list"}).returncode != 0, "partial visual selection must not pass"
+        assert visual("--review", review_dir / "review.json", env={**visual_env, "MEERKAT_VISUAL_SCENARIOS": "agent-list"}).returncode != 0, "partial visual selection must not pass"
         # Exercise image formats through the public evidence gate. These
         # deliberately undersized test images must never satisfy acceptance.
         review_path = review_dir / "review.json"
@@ -222,12 +222,12 @@ def run():
         # Package acceptance must reject a stale binary, modified signed copy,
         # and a different archive even when its ZIP CRCs are internally valid.
         shutil.copy2(ROOT / "scripts/package-provenance", scripts / "package-provenance")
-        bundle = root / "packaged/Lankide.app"
+        bundle = root / "packaged/Meerkat.app"
         layout = {
-            "lankide-desktop": "Contents/MacOS/Lankide",
-            "lankided": "Contents/Library/LaunchServices/lankided",
-            "lankide-machine": "Contents/Library/LaunchServices/lankide-machine",
-            "lankide": "Contents/Resources/bin/lankide",
+            "meerkat-desktop": "Contents/MacOS/Meerkat",
+            "meerkatd": "Contents/Library/LaunchServices/meerkatd",
+            "meerkat-machine": "Contents/Library/LaunchServices/meerkat-machine",
+            "meerkat": "Contents/Resources/bin/meerkat",
         }
         for name, relative in layout.items():
             destination = bundle / relative
@@ -239,7 +239,7 @@ def run():
             shutil.copy2(root / name, bundle / "Contents/Resources" / name)
         launch_agents = bundle / "Contents/Library/LaunchAgents"
         launch_agents.mkdir(parents=True)
-        for name in ("com.lankide.daemon.plist", "com.lankide.machine.plist"):
+        for name in ("com.meerkat.daemon.plist", "com.meerkat.machine.plist"):
             (launch_agents / name).write_text("test-only launch agent metadata")
         assert invoke("snapshot", "--output", snapshot).returncode == 0
         assert invoke("record", "--output", provenance, "--binary-dir", binary_dir, "--source-snapshot", snapshot).returncode == 0
@@ -264,7 +264,7 @@ def run():
         assert package("record", *record).returncode == 0
         check_package = ("--archive", archive, "--output", package_receipt)
         assert package("verify", *check_package).returncode == 0
-        for path in (binary_dir / "lankide", bundle / "Contents/MacOS/Lankide"):
+        for path in (binary_dir / "meerkat", bundle / "Contents/MacOS/Meerkat"):
             original = path.read_bytes()
             path.write_bytes(original + b"changed")
             assert package("verify", *check_package).returncode != 0, "changed executable accepted"

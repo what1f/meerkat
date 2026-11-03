@@ -1,5 +1,5 @@
 use crate::{ProviderError, ProviderFuture};
-use lankide_core::{
+use meerkat_core::{
     AgentId, AttentionLevel, ChannelAbility, ChannelId, MessageId, ProviderId, ResourceRef,
 };
 use serde::{Deserialize, Serialize};
@@ -152,7 +152,7 @@ pub struct MessageEvent {
     pub mentioned_agent_ids: Vec<AgentId>,
     pub attachments: Vec<ResourceRef>,
 }
-pub use lankide_core::ReactionAction;
+pub use meerkat_core::ReactionAction;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReactionEvent {
     pub target_provider_message_id: String,

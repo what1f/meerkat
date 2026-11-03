@@ -2,7 +2,7 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lankide</title>
+<title>Meerkat</title>
 <style>
   /* Values from apps/web/src/design/tokens.css. */
   :root {
@@ -58,7 +58,7 @@
     height: 100%;
   }
 
-  /* The meerkat peeks out of its burrow while Lankide opens; the script below drives it. */
+  /* The meerkat peeks out of its burrow while Meerkat opens; the script below drives it. */
   .peek { position: relative; width: 196px; height: 180px; }
   .peek .hole { position: absolute; top: 148px; left: 10px; width: 176px; height: 32px; background: #4e3038; border-radius: var(--r-pill); }
   .peek .clip { position: absolute; top: 0; left: 0; width: 196px; height: 164px; overflow: hidden; }
@@ -113,19 +113,19 @@
 <script>
   const zh = navigator.language.toLowerCase().startsWith('zh');
   const messages = zh ? {
-    loading: '正在打开 Lankide…', retry: '重试', settings: '打开系统设置',
-    'background-permission': '请允许 Lankide 在后台运行',
-    'background-installation': '请重新安装 Lankide',
-    'helper-missing': '请重新安装 Lankide',
-    'update-pending': '请退出并重新打开 Lankide',
-    'startup-failed': '无法打开 Lankide'
+    loading: '正在打开 Meerkat…', retry: '重试', settings: '打开系统设置',
+    'background-permission': '请允许 Meerkat 在后台运行',
+    'background-installation': '请重新安装 Meerkat',
+    'helper-missing': '请重新安装 Meerkat',
+    'update-pending': '请退出并重新打开 Meerkat',
+    'startup-failed': '无法打开 Meerkat'
   } : {
-    loading: 'Opening Lankide…', retry: 'Retry', settings: 'Open System Settings',
-    'background-permission': 'Allow Lankide to run in the background',
-    'background-installation': 'Reinstall Lankide',
-    'helper-missing': 'Reinstall Lankide',
-    'update-pending': 'Quit and reopen Lankide',
-    'startup-failed': 'Could not open Lankide'
+    loading: 'Opening Meerkat…', retry: 'Retry', settings: 'Open System Settings',
+    'background-permission': 'Allow Meerkat to run in the background',
+    'background-installation': 'Reinstall Meerkat',
+    'helper-missing': 'Reinstall Meerkat',
+    'update-pending': 'Quit and reopen Meerkat',
+    'startup-failed': 'Could not open Meerkat'
   };
   document.documentElement.lang = zh ? 'zh' : 'en';
   document.getElementById('loading').textContent = messages.loading;
@@ -137,7 +137,7 @@
     const settings = code === 'background-permission';
     const action = document.getElementById('action');
     action.textContent = settings ? messages.settings : messages.retry;
-    action.onclick = () => { location.href = `lankide-boot://${settings ? 'settings' : 'retry'}`; };
+    action.onclick = () => { location.href = `meerkat-boot://${settings ? 'settings' : 'retry'}`; };
   }
   addEventListener('hashchange', render);
   render();

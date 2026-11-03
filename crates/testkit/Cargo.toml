@@ -1,6 +1,6 @@
 [package]
 autotests = false
-name = "lankide-testkit"
+name = "meerkat-testkit"
 version.workspace = true
 edition.workspace = true
 description = "Business-scenario fixtures for module E2E suites"
@@ -10,21 +10,21 @@ publish.workspace = true
 
 [dependencies]
 rusqlite.workspace = true
-lankide-core = { path = "../core" }
-lankide-protocol = { path = "../protocol" }
-lankide-provider = { path = "../provider" }
-lankide-harness = { path = "../harness" }
-lankide-storage = { path = "../storage" }
-lankide-runtime = { path = "../runtime" }
-lankide-machine-core = { path = "../machine-core" }
+meerkat-core = { path = "../core" }
+meerkat-protocol = { path = "../protocol" }
+meerkat-provider = { path = "../provider" }
+meerkat-harness = { path = "../harness" }
+meerkat-storage = { path = "../storage" }
+meerkat-runtime = { path = "../runtime" }
+meerkat-machine-core = { path = "../machine-core" }
 serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
 
-[package.metadata.lankide.e2e]
-command = "cargo test -p lankide-testkit --test e2e testkit_e2e::"
+[package.metadata.meerkat.e2e]
+command = "cargo test -p meerkat-testkit --test e2e testkit_e2e::"
 scenario = "Run the public prerequisite probe without live dependencies, with current owner-only JSON fixtures, and verify durable scenario evidence rejects incomplete cleanup, cleanup failures, duplicate runs, and result write failures. Concurrent scenario suites use private fixture directories and publish independent evidence with the same run ID."
 prerequisites = "None"
 classification = "hermetic"

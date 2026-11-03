@@ -9,7 +9,7 @@ def write_record(value):
         with open(record, "a") as output:
             output.write(json.dumps(value) + "\n")
 
-write_record({"argv": sys.argv[1:], "cwd": os.getcwd(), "environment": {key: os.environ[key] for key in ("HOME", "PI_CODING_AGENT_DIR", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "LANKIDE_AGENT_SOCKET") if key in os.environ}})
+write_record({"argv": sys.argv[1:], "cwd": os.getcwd(), "environment": {key: os.environ[key] for key in ("HOME", "PI_CODING_AGENT_DIR", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "MEERKAT_AGENT_SOCKET") if key in os.environ}})
 if "--version" in sys.argv:
     print(os.environ.get("PI_TEST_VERSION", "native-fixture"))
     sys.exit(0)
@@ -23,7 +23,7 @@ const tools=[], handlers=[], active=['read']; let invoked;
 const pi={registerTool:t=>tools.push(t),on:(name,fn)=>handlers.push(fn),getActiveTools:()=>active,setActiveTools:values=>{active.splice(0,active.length,...values)}};
 const module=await import('data:text/javascript;base64,SOURCE');module.default(pi);
 for (const handler of handlers) await handler();
-const wrapper=tools.find(t=>t.name==='lankide_tools');let discovered,described;
+const wrapper=tools.find(t=>t.name==='meerkat_tools');let discovered,described;
 if(wrapper){const context={ui:{input:async (_title,payload)=>{invoked=JSON.parse(payload);return JSON.stringify({success:true,structured_content:{ok:true}})}}};
  discovered=JSON.parse((await wrapper.execute('list',{argv:['list']},null,null,context)).content[0].text);
  described=JSON.parse((await wrapper.execute('describe',{argv:['describe','report']},null,null,context)).content[0].text);

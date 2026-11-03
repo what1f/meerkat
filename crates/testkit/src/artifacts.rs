@@ -47,7 +47,7 @@ impl ScenarioArtifact {
         }
         let journal = private_file(&dir.join("cleanup.jsonl"))?;
         let artifact = Self {
-            marker: format!("[lankide-e2e:{run_id}]"),
+            marker: format!("[meerkat-e2e:{run_id}]"),
             dir,
             journal: Mutex::new(journal),
             journal_failed: AtomicBool::new(false),

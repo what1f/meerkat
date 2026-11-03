@@ -22,7 +22,7 @@ members = [
     "apps/daemon",
     "apps/machine",
     "apps/desktop",
-    "apps/lankide-cli",
+    "apps/meerkat-cli",
 ]
 
 [profile.dev]

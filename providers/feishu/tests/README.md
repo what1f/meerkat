@@ -1,9 +1,9 @@
 Run the separate S2.2 and S2.3 business scenarios:
 
 ```sh
-cargo test -p lankide-provider-feishu --test mock_server_e2e
-cargo test -p lankide-provider-feishu --test mock_server_e2e a_group_message_mentioning_a_bot_reaches_its_agent -- --exact
-cargo test -p lankide-provider-feishu --test mock_server_e2e a_reply_with_an_attachment_reaches_the_chat_with_the_file -- --exact
+cargo test -p meerkat-provider-feishu --test mock_server_e2e
+cargo test -p meerkat-provider-feishu --test mock_server_e2e a_group_message_mentioning_a_bot_reaches_its_agent -- --exact
+cargo test -p meerkat-provider-feishu --test mock_server_e2e a_reply_with_an_attachment_reaches_the_chat_with_the_file -- --exact
 ```
 
 The test starts HTTP and WebSocket servers on ephemeral loopback ports. It
@@ -48,7 +48,7 @@ joins the team once by union identity; the first creator becomes the lead.
 Profiles use the contact API and enterprise checks use the official tenant key.
 
 ```sh
-cargo test -p lankide-system-e2e --test e2e provider_management_e2e::
+cargo test -p meerkat-system-e2e --test e2e provider_management_e2e::
 pnpm --dir apps/web exec playwright test e2e/rig.spec.ts e2e/onboarding.spec.ts e2e/members.spec.ts
 ```
 

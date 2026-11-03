@@ -317,7 +317,7 @@ impl Worker {
                 let context = Context::full(&runtime).map_err(js_error)?;
                 let (tx, events) = mpsc::channel();
                 let scratch = tempfile::Builder::new()
-                    .prefix("lankide-plugin-")
+                    .prefix("meerkat-plugin-")
                     .tempdir()
                     .map_err(|e| HarnessError::new(HarnessErrorCode::Io, e.to_string()))?;
                 let root = Some(
@@ -952,7 +952,7 @@ impl Host {
                 }
             }
         }
-        command.env_remove("LANKIDE_RUNTIME_RUN");
+        command.env_remove("MEERKAT_RUNTIME_RUN");
         let stderr = v["stderr"].as_str().map(PathBuf::from).unwrap_or_else(|| {
             self.scratch
                 .path()

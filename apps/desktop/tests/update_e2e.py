@@ -36,9 +36,9 @@ def running_update(binaries, artifact_dir, delay=8):
         bundle = contents / "MacOS"
         bundle.mkdir(parents=True)
         (contents / "Info.plist").write_bytes(plistlib.dumps({
-            "CFBundleIdentifier": "com.lankide.boot-update-e2e",
-            "CFBundleName": "Lankide Boot Update E2E",
-            "CFBundleExecutable": "lankide-desktop",
+            "CFBundleIdentifier": "com.meerkat.boot-update-e2e",
+            "CFBundleName": "Meerkat Boot Update E2E",
+            "CFBundleExecutable": "meerkat-desktop",
             "CFBundlePackageType": "APPL",
             "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True},
         }))
@@ -69,13 +69,13 @@ else:
             path = harnesses / name
             path.write_text("#!/bin/sh\nexit 1\n")
             path.chmod(0o755)
-        env = {**os.environ, "HOME": str(root), "LANKIDE_HOME": str(home),
+        env = {**os.environ, "HOME": str(root), "MEERKAT_HOME": str(home),
                "SHELL": "/bin/sh", "PATH": f"{harnesses}:/usr/bin:/bin"}
-        env.pop("LANKIDE_RUNTIME_RUN", None)
+        env.pop("MEERKAT_RUNTIME_RUN", None)
         owners = []
         with (artifact_dir / "update.log").open("w") as log:
             try:
-                for name in ("lankided", "lankide-machine"):
+                for name in ("meerkatd", "meerkat-machine"):
                     owner = subprocess.Popen([str(bundle / name), "--home", str(home)],
                                              env=env, stdout=log, stderr=subprocess.STDOUT,
                                              start_new_session=True)
@@ -97,7 +97,7 @@ else:
                 old_url = (home / "run/management.url").read_text().strip()
                 # This is the update criterion used by the shipped shell:
                 # replace the helpers at the same paths with newer builds.
-                for name in ("lankided", "lankide-machine"):
+                for name in ("meerkatd", "meerkat-machine"):
                     staged = bundle / f".{name}.update"
                     shutil.copyfile(binaries[name], staged)
                     staged.chmod(0o755)
@@ -119,7 +119,7 @@ def replace_running_services(binaries, artifact_dir):
         output = artifact_dir / "update-bootstrap.json"
         started = time.monotonic()
         process = subprocess.Popen(
-            [str(bundle / "lankide-desktop"), "--local-bootstrap-smoke", "--result", str(output)],
+            [str(bundle / "meerkat-desktop"), "--local-bootstrap-smoke", "--result", str(output)],
             env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
         )
         try:
@@ -154,7 +154,7 @@ def review_window(binaries, artifact_dir):
     after six seconds, management navigation without Retry, and normal Quit.
     """
     with running_update(binaries, artifact_dir, delay=20) as (root, home, bundle, env, owners, old_url, log):
-        process = subprocess.Popen([str(bundle / "lankide-desktop")], env=env,
+        process = subprocess.Popen([str(bundle / "meerkat-desktop")], env=env,
                                    stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         session = {"app": str(bundle.parent.parent), "home": str(home), "pid": process.pid,
                    "old_pids": [owner.pid for owner in owners], "old_url": old_url}
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     args.artifact_dir.mkdir(parents=True, exist_ok=True)
     binaries = {name: args.binary_dir.resolve() / name
-                for name in ("lankide-desktop", "lankided", "lankide-machine", "lankide")}
+                for name in ("meerkat-desktop", "meerkatd", "meerkat-machine", "meerkat")}
     if args.window:
         review_window(binaries, args.artifact_dir)
     else:

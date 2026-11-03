@@ -6,9 +6,9 @@ mod http;
 mod server;
 
 use host::{Services, agent_spec};
-use lankide_core::{AgentId, ChannelId, MessageId};
-use lankide_provider::*;
-use lankide_provider_feishu::FeishuProvider;
+use meerkat_core::{AgentId, ChannelId, MessageId};
+use meerkat_provider::*;
+use meerkat_provider_feishu::FeishuProvider;
 use serde_json::{Value, json};
 use server::{FILE, FeishuServer};
 use std::time::Duration;
@@ -770,8 +770,8 @@ async fn mock_unresolved_agent_mentions_fail_before_sending() {
 async fn mock_runtime(
     server: &FeishuServer,
     services: &std::sync::Arc<Services>,
-) -> std::sync::Arc<lankide_runtime::Runtime> {
-    use lankide_protocol::{AgentRuntimeProfile, HarnessConfig, SessionDirective};
+) -> std::sync::Arc<meerkat_runtime::Runtime> {
+    use meerkat_protocol::{AgentRuntimeProfile, HarnessConfig, SessionDirective};
     let runtime = std::sync::Arc::new(services.runtime());
     for id in ["alpha", "beta"] {
         let agent = AgentId::new(id).unwrap();
@@ -806,12 +806,12 @@ async fn mock_runtime(
         runtime
             .configure_agent(
                 &services.workspace,
-                lankide_runtime::AgentRuntimeConfig {
+                meerkat_runtime::AgentRuntimeConfig {
                     agent_id: AgentId::new(id).unwrap(),
                     provider_sender_id: id.into(),
                     attention: std::collections::BTreeMap::from([(
                         ChannelId::new("group_chat").unwrap(),
-                        lankide_runtime::AttentionPolicy::Mention,
+                        meerkat_runtime::AttentionPolicy::Mention,
                     )]),
                     auto_reaction: None,
                     agent_config: json!({}),
@@ -835,7 +835,7 @@ async fn mock_runtime(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn mock_attachment_echoes_leave_one_sent_message_and_one_mention() {
-    use lankide_storage::{SendOutcome, SendRequest};
+    use meerkat_storage::{SendOutcome, SendRequest};
     let server = FeishuServer::start();
     let services = Services::new("feishu");
     let runtime = mock_runtime(&server, &services).await;
@@ -928,7 +928,7 @@ async fn mock_attachment_echoes_leave_one_sent_message_and_one_mention() {
                     .await
                     .expect("Agent echo must be dropped while the upload is pending")
                     .unwrap(),
-                    lankide_runtime::CoordinatedEvent::Dropped
+                    meerkat_runtime::CoordinatedEvent::Dropped
                 ));
                 if index == 0 {
                     release.send(()).unwrap();
@@ -988,7 +988,7 @@ async fn mock_attachment_echoes_leave_one_sent_message_and_one_mention() {
             .accept_provider_event(&services.workspace, event, 6)
             .await
             .unwrap(),
-        lankide_runtime::CoordinatedEvent::Dropped
+        meerkat_runtime::CoordinatedEvent::Dropped
     ));
     assert_eq!(
         services
@@ -1036,7 +1036,7 @@ async fn mock_attachment_echoes_leave_one_sent_message_and_one_mention() {
             .chats
             .iter()
             .flat_map(|chat| &chat.trigger_reasons)
-            .any(|reason| matches!(reason, lankide_storage::DispatchReason::Mention))
+            .any(|reason| matches!(reason, meerkat_storage::DispatchReason::Mention))
     );
     runtime.shutdown().await.unwrap();
     assert!(
@@ -1065,7 +1065,7 @@ async fn mock_attachment_echoes_leave_one_sent_message_and_one_mention() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn human_message_is_processed_while_another_agent_uploads() {
-    use lankide_storage::SendRequest;
+    use meerkat_storage::SendRequest;
     let server = FeishuServer::start();
     let services = Services::new("feishu");
     let runtime = mock_runtime(&server, &services).await;
@@ -1157,7 +1157,7 @@ async fn human_message_is_processed_while_another_agent_uploads() {
     .unwrap();
     assert!(matches!(
         coordinated,
-        lankide_runtime::CoordinatedEvent::Message { .. }
+        meerkat_runtime::CoordinatedEvent::Message { .. }
     ));
     assert_eq!(
         services
@@ -1208,7 +1208,7 @@ async fn mock_agent_dm_reactions_are_recorded_without_waking_the_actor() {
             .await
             .unwrap();
         assert!(
-            matches!(result,lankide_runtime::CoordinatedEvent::Reaction(ref result) if result.reaction_id.is_some())
+            matches!(result,meerkat_runtime::CoordinatedEvent::Reaction(ref result) if result.reaction_id.is_some())
         );
     } else {
         runtime.shutdown().await.unwrap();
@@ -1530,7 +1530,7 @@ async fn mock_task_comments_mention_members_and_events_name_the_actor() {
             .chats
             .iter()
             .flat_map(|chat| &chat.trigger_reasons)
-            .any(|reason| matches!(reason, lankide_storage::DispatchReason::Mention))
+            .any(|reason| matches!(reason, meerkat_storage::DispatchReason::Mention))
     );
     runtime.shutdown().await.unwrap();
 }
@@ -1671,7 +1671,7 @@ async fn mock_first_dm_uses_the_returned_chat_for_history_and_echoes() {
         .unwrap();
     let attempt = services
         .db
-        .begin_send(lankide_storage::SendRequest {
+        .begin_send(meerkat_storage::SendRequest {
             workspace_id: services.workspace.clone(),
             channel_id: channel.clone(),
             provider_chat_id: target.clone(),
@@ -1745,7 +1745,7 @@ async fn mock_first_dm_uses_the_returned_chat_for_history_and_echoes() {
             .accept_provider_event(&services.workspace, event, 3)
             .await
             .unwrap(),
-        lankide_runtime::CoordinatedEvent::Dropped
+        meerkat_runtime::CoordinatedEvent::Dropped
     ));
     assert_eq!(services.db.message_count(&services.workspace).unwrap(), 1);
     assert_eq!(services.db.send_attempt("first-dm").unwrap().state, "sent");

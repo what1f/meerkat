@@ -1,7 +1,7 @@
 //! Capability calls received on an authenticated Machine connection.
 use crate::{RuntimeApplication, RuntimePeerAdapter};
-use lankide_protocol::Status;
-use lankide_protocol::{agent, *};
+use meerkat_protocol::Status;
+use meerkat_protocol::{agent, *};
 use std::sync::Arc;
 use std::{collections::HashMap, time::Instant};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -122,7 +122,7 @@ pub(crate) async fn respond(
         Ok(bytes) if bytes.len() <= agent::MAX_CALL_BYTES => (bytes, 0, String::new()),
         Ok(_) => (
             Vec::new(),
-            lankide_protocol::Code::ResourceExhausted as i32,
+            meerkat_protocol::Code::ResourceExhausted as i32,
             "capability_payload_too_large".into(),
         ),
         Err(error) => (Vec::new(), error.code() as i32, error.message().to_owned()),
@@ -144,7 +144,7 @@ pub(crate) async fn respond(
                 &machine,
                 &instance,
                 RuntimeFrame {
-                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                    protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                     frame: Some(runtime_frame::Frame::CapabilityResponse(response)),
                 },
             )

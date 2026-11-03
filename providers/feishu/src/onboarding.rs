@@ -2,7 +2,7 @@ use crate::{
     Auth, Credentials, Domain, FeishuClient, FeishuRegistrar, RegistrationPoll, Transport,
     authorization::standard_capability_gaps, authorization_url, contains_standard_capabilities,
 };
-use lankide_provider::{
+use meerkat_provider::{
     AgentOnboardingContext, ProviderError, ProviderOnboarding, ProviderOnboardingStatus,
     SecretValue,
 };
@@ -261,7 +261,7 @@ async fn poll_permissions(
                 {
                     if (200..300).contains(&response.status) {
                         avatar = context
-                            .save_resource(lankide_provider::ResourceUpload {
+                            .save_resource(meerkat_provider::ResourceUpload {
                                 file_name: "member.jpg".into(),
                                 media_type: response
                                     .headers

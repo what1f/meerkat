@@ -1,7 +1,7 @@
 use crate::error::conv;
 use crate::workspace::wid;
 use crate::{Result, Storage, StorageError};
-use lankide_core::{AgentId, ChannelId, WorkspaceId};
+use meerkat_core::{AgentId, ChannelId, WorkspaceId};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -447,7 +447,7 @@ impl Storage {
     pub fn remove_resource_metadata(
         &self,
         workspace: &WorkspaceId,
-        id: lankide_core::ResourceId,
+        id: meerkat_core::ResourceId,
     ) -> Result<()> {
         self.conn()?.execute(
             "DELETE FROM resource_metadata WHERE workspace_id=?1 AND resource_id=?2",

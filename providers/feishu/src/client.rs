@@ -1792,7 +1792,7 @@ impl<T: Transport> Client<T> {
         )
         .await?;
         self.publish_application(
-            "Lankide permission update",
+            "Meerkat permission update",
             "Update Agent permissions or events",
             auth,
         )
@@ -2216,7 +2216,7 @@ fn multipart(
             "Feishu multipart field and file name are required".to_owned(),
         ));
     }
-    let boundary = "lankide-feishu-boundary-7f8e";
+    let boundary = "meerkat-feishu-boundary-7f8e";
     let mut body = Vec::new();
     for (name, value, content_type) in fields {
         body.extend_from_slice(

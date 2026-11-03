@@ -1,9 +1,9 @@
 #[path = "../../../tests/support/registered_machine.rs"]
 mod registered_machine;
-use lankide_core::{
+use meerkat_core::{
     AgentId, ChannelId, MessageAuthorType, PersonId, ProviderId, ResourceId, WorkspaceId,
 };
-use lankide_storage::{
+use meerkat_storage::{
     AgentRecord, AgentSpec, AttemptAuthorization, AttemptCapability, AttentionRecord, CommitResult,
     DatabaseConfig, DispatchReason, ExecutionAuthSpec, ExecutionEventDisposition, ExecutionState,
     GuardedSendResult, InboxDispatch, InboxState, IncomingMessage, IncomingReaction, IngestEvent,
@@ -109,7 +109,7 @@ fn storage_business_flow_uses_real_sqlite_wal() {
 
 fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, String> {
     let temp_home = tempfile::Builder::new()
-        .prefix(&format!("lankide-storage-{run_id}-"))
+        .prefix(&format!("meerkat-storage-{run_id}-"))
         .tempdir()
         .map_err(|error| error.to_string())?;
     let db_path = temp_home.path().join("runtime.sqlite3");
@@ -2080,7 +2080,7 @@ fn baseline_reopens_and_unsupported_versions_are_refused() {
             .unwrap();
         drop(connection);
         assert!(matches!(Storage::open(config.clone()),
-            Err(lankide_storage::StorageError::UnsupportedSchemaVersion(found)) if found == version));
+            Err(meerkat_storage::StorageError::UnsupportedSchemaVersion(found)) if found == version));
         let connection = rusqlite::Connection::open(&config.path).unwrap();
         assert_eq!(
             connection

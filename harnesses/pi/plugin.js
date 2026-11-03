@@ -22,7 +22,7 @@ const toolNames = new Map(),
   uiRequests = new Map(),
   results = new Map();
 function send(type, fields = {}) {
-  const id = "lankide-" + ++nextId;
+  const id = "meerkat-" + ++nextId;
   ctx.send(processId, { id, type, ...fields });
   return id;
 }
@@ -48,7 +48,7 @@ function installTools(tools, nativeSearch) {
   const fixed = new Set(["message_send", "attention_set", "chat_messages"]);
   const deferred = tools.filter(t => !fixed.has(t.name));
   async function invoke(tool, toolCallId, params, signal, context) {
-    const raw = await context.ui.input("lankide-tool-result", JSON.stringify({ tool_call_id: toolCallId, tool_name: tool.name, arguments: params }), { signal });
+    const raw = await context.ui.input("meerkat-tool-result", JSON.stringify({ tool_call_id: toolCallId, tool_name: tool.name, arguments: params }), { signal });
     if (raw === undefined) throw Error("Tool cancelled");
     const result = JSON.parse(raw);
     const text = [result.content_markdown, ...(result.resources || []).map(r => r.file_name + ": " + r.local_path)].filter(Boolean).join("\n\n") || JSON.stringify(result.structured_content);
@@ -65,8 +65,8 @@ function installTools(tools, nativeSearch) {
     if (nativeSearch) {
       pi.on("session_start", () => pi.setActiveTools([...new Set([...pi.getActiveTools(), "tool_search"])]));
     } else if (deferred.length) {
-      pi.registerTool({ name: "lankide_tools", label: "Lankide tools",
-        description: "Discover and call additional Lankide tools: reactions, tasks, profiles, message editing and recall. argv: [list], [describe, TOOL], or [call, TOOL, JSON_ARGUMENTS].",
+      pi.registerTool({ name: "meerkat_tools", label: "Meerkat tools",
+        description: "Discover and call additional Meerkat tools: reactions, tasks, profiles, message editing and recall. argv: [list], [describe, TOOL], or [call, TOOL, JSON_ARGUMENTS].",
         parameters: { type: "object", properties: { argv: { type: "array", items: { type: "string" }, minItems: 1 } }, required: ["argv"], additionalProperties: false },
         async execute(id, { argv }, signal, _update, context) {
           let value;
@@ -90,7 +90,7 @@ function open(value, resume) {
   paths = prepare(request);
   ctx.skills(request.working_directory + "/skills");
   const sessionDir = paths.root + "/sessions"; // Creating a marker keeps the session directory Machine-owned.
-  ctx.write(sessionDir + "/.lankide", "");
+  ctx.write(sessionDir + "/.meerkat", "");
   if (resume) {
     const matches = ctx
       .list(sessionDir)
@@ -109,7 +109,7 @@ function open(value, resume) {
   }
   const tools = request.tools.map((t, i) => {
     const nativeName =
-      "lankide_" + i + "_" + t.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+      "meerkat_" + i + "_" + t.name.replace(/[^a-zA-Z0-9_-]/g, "_");
     toolNames.set(nativeName, t.name);
     return { ...t, nativeName };
   });
@@ -136,10 +136,10 @@ function open(value, resume) {
     args.push("--thinking", request.config.thinking_level);
   if (resume) args.push("--session-id", request.native_session_id);
   const recordRoot =
-    request.config.environment.LANKIDE_PI_ARTIFACT_DIR ||
+    request.config.environment.MEERKAT_PI_ARTIFACT_DIR ||
     paths.root + "/records";
   const recordPath =
-    request.config.environment.LANKIDE_PI_RECORD_PATH ||
+    request.config.environment.MEERKAT_PI_RECORD_PATH ||
     recordRoot + "/pi-" + ctx.uuid() + ".rpc.jsonl";
   processId = launch(request.config, args, {
     cwd: request.working_directory,
@@ -148,7 +148,7 @@ function open(value, resume) {
     record: {
       path: recordPath,
       limit:
-        Number(request.config.environment.LANKIDE_PI_RECORD_MAX_BYTES) ||
+        Number(request.config.environment.MEERKAT_PI_RECORD_MAX_BYTES) ||
         4 * 1024 * 1024,
     },
   });
@@ -213,9 +213,9 @@ defineHarness({
   rebind(value) {
     request = value;
     const env = request.config.environment;
-    if (env.LANKIDE_PI_RECORD_PATH)
-      ctx.record(processId, { path: env.LANKIDE_PI_RECORD_PATH,
-        limit: Number(env.LANKIDE_PI_RECORD_MAX_BYTES) || 4 * 1024 * 1024 });
+    if (env.MEERKAT_PI_RECORD_PATH)
+      ctx.record(processId, { path: env.MEERKAT_PI_RECORD_PATH,
+        limit: Number(env.MEERKAT_PI_RECORD_MAX_BYTES) || 4 * 1024 * 1024 });
   },
   execute(value) {
     active = true;
@@ -271,7 +271,7 @@ defineHarness({
     if (!active) return;
     switch (v.type) {
       case "extension_ui_request":
-        if (v.method === "input" && v.title === "lankide-tool-result") {
+        if (v.method === "input" && v.title === "meerkat-tool-result") {
           const invocation = JSON.parse(v.placeholder);
           const call = invocation.tool_call_id;
           if (!observed.has(call)) {

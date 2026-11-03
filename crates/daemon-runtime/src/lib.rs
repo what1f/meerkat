@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! Shared filesystem lifecycle for local Lankide daemons.
+//! Shared filesystem lifecycle for local Meerkat daemons.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};

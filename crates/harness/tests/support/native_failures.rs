@@ -1,4 +1,4 @@
-use lankide_harness::{
+use meerkat_harness::{
     AgentEventKind, ExecuteRequest, FailureCategory, HarnessConfig, HarnessFactory, HarnessFailure,
     ModelRef, SessionRequest,
 };
@@ -129,7 +129,7 @@ pub async fn run(factory: &dyn HarnessFactory, adapter: &str) -> Result<()> {
                     ),
                     ("CLAUDE_CONFIG_DIR".into(), config_dir.display().to_string()),
                     (
-                        "LANKIDE_CLAUDE_CONFIG_DIR".into(),
+                        "MEERKAT_CLAUDE_CONFIG_DIR".into(),
                         config_dir.display().to_string(),
                     ),
                 ]),

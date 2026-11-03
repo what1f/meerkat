@@ -1,7 +1,7 @@
 //! HTTP transport adapter for the management contract.
 use futures_util::{SinkExt, StreamExt};
-use lankide_protocol::{self as wire, management as json};
-use lankide_protocol::{Response, Status};
+use meerkat_protocol::{self as wire, management as json};
+use meerkat_protocol::{Response, Status};
 use std::{
     path::{Path, PathBuf},
     pin::Pin,

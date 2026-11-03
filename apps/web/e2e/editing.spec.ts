@@ -6,7 +6,7 @@ test('editing keeps its draft and contrast when window focus changes', async ({ 
   await rig({ op: 'create_workspace', workspace });
   await rig({ op: 'create_agent', workspace, agent: 'ada' });
   await page.addInitScript((ws) => {
-    localStorage.setItem('lankide.workspace', JSON.stringify(ws));
+    localStorage.setItem('meerkat.workspace', JSON.stringify(ws));
   }, workspace);
   await page.goto('/#/member/ada');
   const soul = page.getByRole('textbox', { name: /性格|Personality/ });

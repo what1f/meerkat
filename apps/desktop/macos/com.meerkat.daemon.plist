@@ -3,16 +3,16 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.lankide.daemon</string>
+    <string>com.meerkat.daemon</string>
     <key>BundleProgram</key>
-    <string>Contents/Library/LaunchServices/lankided</string>
+    <string>Contents/Library/LaunchServices/meerkatd</string>
     <key>ProgramArguments</key>
     <array>
-        <string>Contents/Library/LaunchServices/lankided</string>
+        <string>Contents/Library/LaunchServices/meerkatd</string>
     </array>
     <key>AssociatedBundleIdentifiers</key>
     <array>
-        <string>com.lankide.desktop</string>
+        <string>com.meerkat.desktop</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

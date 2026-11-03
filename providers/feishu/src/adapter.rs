@@ -14,10 +14,10 @@ use crate::mention::{
     BARE_MENTION, MentionTarget, extract_agent_ids, has_bare_mention, render_card_markdown,
 };
 use crate::normalize::{NormalizationConfig, NormalizedEvent, SenderKind};
-use lankide_core::{
+use meerkat_core::{
     AgentId, AttentionLevel, ChannelAbility, ChannelId, ProviderId, ResourceRef, markdown_mention,
 };
-use lankide_provider::{
+use meerkat_provider::{
     AgentContext, AgentRuntimeContext, AutoReactionContext, ChannelDefaultAttention,
     ChannelDefinition, EventSender, EventSenderType, InitContext, InterfaceDefinition,
     InvocationHandler, JsonSchema, MessageAttachment, MessageEvent,
@@ -46,7 +46,7 @@ const FEISHU_EVENT_TYPES: [&str; 5] = [
 /// websocket framing; the Provider owns source retry, registration,
 /// normalization, lifecycle, and sink delivery.
 pub type EventSourceFactory = dyn for<'a> Fn(
-        &'a lankide_core::WorkspaceId,
+        &'a meerkat_core::WorkspaceId,
         &'a Credentials,
         &'a Domain,
         &'a dyn Transport,
@@ -113,7 +113,7 @@ impl InboundResourceCache {
 /// `with_transport` and `with_event_source_factory` are the two seams used by
 /// module E2E and by hosts that already own a configured SDK websocket client.
 pub struct FeishuProvider {
-    clock: Arc<dyn lankide_provider::Clock>,
+    clock: Arc<dyn meerkat_provider::Clock>,
     transport: SharedTransport,
     event_source_factory: Option<Arc<EventSourceFactory>>,
     workspaces: Arc<Mutex<BTreeMap<String, WorkspaceState>>>,
@@ -156,7 +156,7 @@ impl Default for FeishuProvider {
 impl FeishuProvider {
     pub fn new() -> Self {
         Self {
-            clock: Arc::new(lankide_provider::SystemClock),
+            clock: Arc::new(meerkat_provider::SystemClock),
             transport: Arc::new(ReqwestTransport::new()),
             event_source_factory: Some(Arc::new(crate::ws::native_event_source_factory)),
             workspaces: Arc::new(Mutex::new(BTreeMap::new())),
@@ -173,7 +173,7 @@ impl FeishuProvider {
         self
     }
 
-    pub fn with_clock(mut self, clock: Arc<dyn lankide_provider::Clock>) -> Self {
+    pub fn with_clock(mut self, clock: Arc<dyn meerkat_provider::Clock>) -> Self {
         self.clock = clock;
         self
     }
@@ -191,7 +191,7 @@ impl FeishuProvider {
     pub fn with_event_source_factory<F>(mut self, factory: F) -> Self
     where
         F: for<'a> Fn(
-                &'a lankide_core::WorkspaceId,
+                &'a meerkat_core::WorkspaceId,
                 &'a Credentials,
                 &'a Domain,
                 &'a dyn Transport,
@@ -290,7 +290,7 @@ impl Provider for FeishuProvider {
         &[PROVIDER_CAPABILITY_TASK_SYSTEM]
     }
 
-    fn reaction_catalog(&self) -> Vec<lankide_provider::ReactionDefinition> {
+    fn reaction_catalog(&self) -> Vec<meerkat_provider::ReactionDefinition> {
         crate::reactions::management_catalog()
     }
     fn info(&self) -> ProviderInfo {
@@ -409,11 +409,11 @@ impl Provider for FeishuProvider {
                     });
                 }
                 let id =
-                    lankide_core::PersonId::new(id).map_err(|_| ProviderError::InvalidInput {
+                    meerkat_core::PersonId::new(id).map_err(|_| ProviderError::InvalidInput {
                         field: "recipient_id",
                     })?;
                 let person = context.storage().person(&id).await?;
-                if person.team_role == lankide_provider::TeamRole::External {
+                if person.team_role == meerkat_provider::TeamRole::External {
                     return Err(ProviderError::InvalidInput {
                         field: "recipient_id: 请选择团队成员",
                     });
@@ -560,7 +560,7 @@ impl Provider for FeishuProvider {
                         })
                     {
                         init.logger().log(
-                            lankide_provider::LogLevel::Error,
+                            meerkat_provider::LogLevel::Error,
                             &format!("Feishu send failed: {error:?}"),
                         );
                     }
@@ -824,10 +824,10 @@ impl Provider for FeishuProvider {
 
     fn agent_onboarding<'a>(
         &'a self,
-        context: lankide_provider::AgentOnboardingContext,
+        context: meerkat_provider::AgentOnboardingContext,
         action: String,
         opaque_payload: Value,
-    ) -> ProviderFuture<'a, lankide_provider::ProviderOnboarding> {
+    ) -> ProviderFuture<'a, meerkat_provider::ProviderOnboarding> {
         Box::pin(async move {
             crate::onboarding::agent_onboarding_with_transport(
                 context,
@@ -841,7 +841,7 @@ impl Provider for FeishuProvider {
 
     fn update_agent<'a>(
         &'a self,
-        context: lankide_provider::AgentContext,
+        context: meerkat_provider::AgentContext,
     ) -> ProviderFuture<'a, ()> {
         Box::pin(async move {
             let state = self.state(&context.workspace_id.to_string(), &context.agent_id)?;
@@ -895,7 +895,7 @@ impl Provider for FeishuProvider {
                     .await?;
                 client
                     .publish_application(
-                        "Lankide Agent profile update",
+                        "Meerkat Agent profile update",
                         "Update Agent name or avatar",
                         auth,
                     )
@@ -1006,13 +1006,13 @@ fn spawn_dispatcher(
     mut dispatcher: Dispatcher<Box<dyn EventSource>>,
     factory: Arc<EventSourceFactory>,
     transport: SharedTransport,
-    workspace_id: lankide_core::WorkspaceId,
+    workspace_id: meerkat_core::WorkspaceId,
     credentials: Credentials,
     domain: Domain,
     normalization: NormalizationConfig,
     identity_lock: Arc<AsyncMutex<()>>,
     inbound_resource_cache: Arc<AsyncMutex<InboundResourceCache>>,
-    clock: Arc<dyn lankide_provider::Clock>,
+    clock: Arc<dyn meerkat_provider::Clock>,
 ) -> EventTask {
     let (shutdown, mut stopped) = tokio::sync::oneshot::channel();
     let task = tokio::spawn(async move {
@@ -1042,7 +1042,7 @@ fn spawn_dispatcher(
                     failures += 1;
                     if !error.retryable || retry.exhausted(failures) {
                         context.logger().log(
-                            lankide_provider::LogLevel::Warn,
+                            meerkat_provider::LogLevel::Warn,
                             &format!("Feishu event skipped: {error}"),
                         );
                         // Mark the skip before sending its receipt. An ack retry must not
@@ -1053,7 +1053,7 @@ fn spawn_dispatcher(
                     } else {
                         let delay = retry.delay(failures);
                         context.logger().log(
-                            lankide_provider::LogLevel::Warn,
+                            meerkat_provider::LogLevel::Warn,
                             &format!(
                                 "Feishu event acceptance failed; retry in {}ms: {error}",
                                 delay.as_millis()
@@ -1064,21 +1064,21 @@ fn spawn_dispatcher(
                 }
                 Err(DispatchError::Normalize(error)) => {
                     context.logger().log(
-                        lankide_provider::LogLevel::Warn,
+                        meerkat_provider::LogLevel::Warn,
                         &format!("Feishu event skipped: {error}"),
                     );
                     dispatcher.discard();
                 }
                 Err(DispatchError::Source(SourceError::Malformed(error))) => {
                     context.logger().log(
-                        lankide_provider::LogLevel::Warn,
+                        meerkat_provider::LogLevel::Warn,
                         &format!("Feishu malformed event skipped: {error}"),
                     );
                     dispatcher.discard();
                 }
                 Err(error) => {
                     context.logger().log(
-                        lankide_provider::LogLevel::Warn,
+                        meerkat_provider::LogLevel::Warn,
                         &format!("Feishu event receiver disconnected: {error}"),
                     );
                     dispatcher.stop().await;
@@ -1095,7 +1095,7 @@ fn spawn_dispatcher(
                             Ok(source) => break source,
                             Err(error) => {
                                 context.logger().log(
-                                    lankide_provider::LogLevel::Warn,
+                                    meerkat_provider::LogLevel::Warn,
                                     &format!("Feishu event reconnect failed: {error}"),
                                 );
                                 reconnect_failures += 1;
@@ -1125,7 +1125,7 @@ struct FeishuEventBridge {
     client: Arc<SharedClient>,
     auth: Auth,
     transport: SharedTransport,
-    clock: Arc<dyn lankide_provider::Clock>,
+    clock: Arc<dyn meerkat_provider::Clock>,
     identity_lock: Arc<AsyncMutex<()>>,
     inbound_resource_cache: Arc<AsyncMutex<InboundResourceCache>>,
     human_names: BTreeMap<String, (String, Instant)>,
@@ -1202,7 +1202,7 @@ impl NormalizedEventSink for FeishuEventBridge {
                 return Ok(());
             };
             if let Some(app_id) = sync_app {
-                if let Ok(person_id) = lankide_core::PersonId::new(provider_event.sender.id.clone())
+                if let Ok(person_id) = meerkat_core::PersonId::new(provider_event.sender.id.clone())
                 {
                     let context = self.context.clone();
                     let client = self.client.clone();
@@ -1225,7 +1225,7 @@ impl NormalizedEventSink for FeishuEventBridge {
                         .await;
                         if let Err(error) = result {
                             context.logger().log(
-                                lankide_provider::LogLevel::Warn,
+                                meerkat_provider::LogLevel::Warn,
                                 &format!("Feishu profile sync failed: {}", error.code()),
                             );
                         }
@@ -1354,7 +1354,7 @@ async fn normalized_event_to_provider(
                     Ok(downloaded) => downloaded,
                     Err(_) => {
                         context.logger().log(
-                            lankide_provider::LogLevel::Warn,
+                            meerkat_provider::LogLevel::Warn,
                             "A Feishu attachment could not be downloaded; the message was accepted without that attachment",
                         );
                         continue;
@@ -1373,7 +1373,7 @@ async fn normalized_event_to_provider(
                     Ok(resource) => resource,
                     Err(_) => {
                         context.logger().log(
-                            lankide_provider::LogLevel::Warn,
+                            meerkat_provider::LogLevel::Warn,
                             "A Feishu attachment could not be saved; the message was accepted without that attachment",
                         );
                         continue;
@@ -1498,7 +1498,7 @@ async fn normalized_event_to_provider(
                     kind: EventSenderType::System,
                     name: "Feishu".to_owned(),
                 },
-                kind: ProviderEventKind::Custom(lankide_provider::CustomEvent {
+                kind: ProviderEventKind::Custom(meerkat_provider::CustomEvent {
                     mentioned_agent_ids: Vec::new(),
                     reason: "chat_updated".to_owned(),
                     target_agent_ids: Vec::new(),
@@ -1663,7 +1663,7 @@ async fn resolved_sender(
             }
         }
     }
-    if person.team_role != lankide_provider::TeamRole::External {
+    if person.team_role != meerkat_provider::TeamRole::External {
         let (saved_name, _) = context
             .storage()
             .human_profile(&person.person_id)
@@ -1771,7 +1771,7 @@ async fn feishu_mention_targets(
             });
         }
         let person_id =
-            lankide_core::PersonId::new(id.clone()).map_err(|_| ProviderError::InvalidInput {
+            meerkat_core::PersonId::new(id.clone()).map_err(|_| ProviderError::InvalidInput {
                 field: "mention: 请使用 @名称[成员ID]",
             })?;
         let person = storage.person(&person_id).await?;
@@ -1843,7 +1843,7 @@ async fn resolve_reply_id(
     storage: &dyn ProviderStorage,
     channel_id: &ChannelId,
     chat_id: &str,
-    reply_to: Option<lankide_core::MessageId>,
+    reply_to: Option<meerkat_core::MessageId>,
 ) -> Result<Option<String>, ProviderError> {
     let Some(reply_to) = reply_to else {
         return Ok(None);
@@ -1985,10 +1985,10 @@ impl InvocationHandler for HumanSyncHandler {
     fn invoke<'a>(&'a self, input: Value) -> ProviderFuture<'a, Value> {
         Box::pin(async move {
             let person_id =
-                lankide_core::PersonId::new(input["person_id"].as_str().unwrap_or_default())
+                meerkat_core::PersonId::new(input["person_id"].as_str().unwrap_or_default())
                     .map_err(|_| ProviderError::InvalidInput { field: "person_id" })?;
             let person = self.context.storage().person(&person_id).await?;
-            if person.team_role == lankide_provider::TeamRole::External {
+            if person.team_role == meerkat_provider::TeamRole::External {
                 return Err(ProviderError::InvalidInput { field: "person_id" });
             }
             let (_, directory) = crate::identity::load(self.context.storage()).await?;
@@ -2036,10 +2036,10 @@ async fn sync_human_profile(
     client: Arc<SharedClient>,
     transport: SharedTransport,
     app_id: &str,
-    person_id: &lankide_core::PersonId,
+    person_id: &meerkat_core::PersonId,
 ) -> Result<(), ProviderError> {
     let person = context.storage().person(person_id).await?;
-    if person.team_role == lankide_provider::TeamRole::External {
+    if person.team_role == meerkat_provider::TeamRole::External {
         return Err(ProviderError::InvalidInput { field: "person_id" });
     }
     let open_id = person.provider_state["open_ids_by_app"][app_id].as_str();

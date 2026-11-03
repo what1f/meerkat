@@ -76,7 +76,7 @@ impl Runtime {
         drop(channels);
         let mut agents = provider.agents.read().await.clone();
         // Providers only know an Agent's account; the Runtime owns its name.
-        let name_agent = |sender: &mut lankide_provider::EventSender| {
+        let name_agent = |sender: &mut meerkat_provider::EventSender| {
             if sender.kind != EventSenderType::Agent {
                 return;
             }
@@ -379,7 +379,7 @@ impl Runtime {
     async fn apply_team_command(
         &self,
         workspace_id: &WorkspaceId,
-        sender: &lankide_provider::EventSender,
+        sender: &meerkat_provider::EventSender,
         content: &str,
         now: i64,
     ) -> Result<bool, RuntimeError> {
@@ -402,7 +402,7 @@ impl Runtime {
         else {
             return Ok(false);
         };
-        let Some(target) = lankide_core::markdown_mentions(target)
+        let Some(target) = meerkat_core::markdown_mentions(target)
             .into_iter()
             .find(|mention| mention.range == (0..target.len()))
             .and_then(|mention| PersonId::new(mention.id.to_owned()).ok())
@@ -429,7 +429,7 @@ impl Runtime {
         agent_id: &AgentId,
         channel_id: &ChannelId,
         provider_chat_id: &str,
-        attention: lankide_storage::AttentionRecord,
+        attention: meerkat_storage::AttentionRecord,
         now: i64,
     ) -> Result<(), RuntimeError> {
         self.require_active(workspace_id)?;
@@ -443,16 +443,16 @@ impl Runtime {
                 channel_id: channel_id.clone(),
             })?;
         let supported = match &attention {
-            lankide_storage::AttentionRecord::Mention => {
+            meerkat_storage::AttentionRecord::Mention => {
                 channel.attention_levels.contains(&AttentionLevel::Mention)
             }
-            lankide_storage::AttentionRecord::Always => {
+            meerkat_storage::AttentionRecord::Always => {
                 channel.attention_levels.contains(&AttentionLevel::Follow)
             }
-            lankide_storage::AttentionRecord::Schedule { .. } => {
+            meerkat_storage::AttentionRecord::Schedule { .. } => {
                 channel.attention_levels.contains(&AttentionLevel::Schedule)
             }
-            lankide_storage::AttentionRecord::Mute => !channel.attention_levels.is_empty(),
+            meerkat_storage::AttentionRecord::Mute => !channel.attention_levels.is_empty(),
         };
         if !supported {
             return Err(RuntimeError::Application(
@@ -487,7 +487,7 @@ pub enum CoordinatedEvent {
     Message {
         result: IngestResult,
         auto_reaction_errors: Vec<String>,
-        steer_deliveries: Vec<lankide_storage::SteerDelivery>,
+        steer_deliveries: Vec<meerkat_storage::SteerDelivery>,
     },
     Reaction(ReactionResult),
     Custom(IngestResult),
@@ -502,7 +502,7 @@ fn sender_kind(value: EventSenderType) -> MessageAuthorType {
     }
 }
 
-fn resource_view(value: &lankide_core::ResourceRef) -> Result<ResourceView, RuntimeError> {
+fn resource_view(value: &meerkat_core::ResourceRef) -> Result<ResourceView, RuntimeError> {
     Ok(ResourceView {
         resource_id: ResourceId::new(value.resource_id)
             .map_err(|error| RuntimeError::InvalidCore(error.to_string()))?,
@@ -517,8 +517,8 @@ fn message_dispatches(
     channel: &ChannelDefinition,
     agents: &BTreeMap<AgentId, AgentRuntimeConfig>,
     chat_attention: &BTreeMap<AgentId, AttentionPolicy>,
-    sender: &lankide_provider::EventSender,
-    message: &lankide_provider::MessageEvent,
+    sender: &meerkat_provider::EventSender,
+    message: &meerkat_provider::MessageEvent,
     now: i64,
 ) -> Result<Vec<InboxDispatch>, RuntimeError> {
     let mut dispatches = Vec::new();
@@ -588,13 +588,13 @@ fn message_dispatches(
 }
 
 fn attention_policy(
-    record: &lankide_storage::AttentionRecord,
+    record: &meerkat_storage::AttentionRecord,
 ) -> Result<AttentionPolicy, RuntimeError> {
     Ok(match record {
-        lankide_storage::AttentionRecord::Mention => AttentionPolicy::Mention,
-        lankide_storage::AttentionRecord::Always => AttentionPolicy::Always,
-        lankide_storage::AttentionRecord::Mute => AttentionPolicy::Mute,
-        lankide_storage::AttentionRecord::Schedule { interval_minutes } => {
+        meerkat_storage::AttentionRecord::Mention => AttentionPolicy::Mention,
+        meerkat_storage::AttentionRecord::Always => AttentionPolicy::Always,
+        meerkat_storage::AttentionRecord::Mute => AttentionPolicy::Mute,
+        meerkat_storage::AttentionRecord::Schedule { interval_minutes } => {
             AttentionPolicy::Schedule(
                 ScheduleInterval::try_from(*interval_minutes)
                     .map_err(|error| RuntimeError::InvalidCore(error.to_string()))?,
@@ -605,7 +605,7 @@ fn attention_policy(
 
 fn reaction_dispatches(
     agents: &BTreeMap<AgentId, AgentRuntimeConfig>,
-    sender: &lankide_provider::EventSender,
+    sender: &meerkat_provider::EventSender,
     reaction: &str,
     target_author: Option<(MessageAuthorType, String)>,
     now: i64,

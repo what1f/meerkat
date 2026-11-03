@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Reset one Rust Lankide workspace to a clean local conversation state.
+# Reset one Rust Meerkat workspace to a clean local conversation state.
 #
 # This is a destructive test-workspace tool. It preserves Workspace and Agent
 # configuration, Provider credentials/state, and configured avatar resources;
@@ -18,8 +18,8 @@ restart=1
 confirmed=0
 
 user_home=""
-default_lankide_home=""
-lankide_home=""
+default_meerkat_home=""
+meerkat_home=""
 workspaces_root=""
 workspace_root=""
 workspace_id=""
@@ -45,16 +45,16 @@ usage() {
 Usage:
   ./scripts/reset-agent-context.sh [options]
 
-Reset one Rust Lankide workspace so the next Agent turn starts without local
+Reset one Rust Meerkat workspace so the next Agent turn starts without local
 conversation, long-term memory, unread, execution, tool, attachment, or Harness
 session history.
 
 Options:
-  -H, --home PATH       Lankide home to reset. If omitted, use LANKIDE_HOME or
-                        ~/.lankide.
+  -H, --home PATH       Meerkat home to reset. If omitted, use MEERKAT_HOME or
+                        ~/.meerkat.
   -w, --workspace ID|PATH
                         Workspace ID or workspace directory. If omitted, use
-                        LANKIDE_WORKSPACE_ID, the current workspace directory,
+                        MEERKAT_WORKSPACE_ID, the current workspace directory,
                         or the only workspace in the local database.
       --backup-dir PATH Store the recoverable backup under this directory.
       --restart          Start Runtime and Machine again and verify that old
@@ -65,8 +65,8 @@ Options:
   -h, --help            Show this help.
 
 Environment:
-  LANKIDE_HOME            Override the local Rust Lankide home.
-  LANKIDE_WORKSPACE_ID    Override the default workspace selection.
+  MEERKAT_HOME            Override the local Rust Meerkat home.
+  MEERKAT_WORKSPACE_ID    Override the default workspace selection.
 
 The default mode restarts the services after the reset. Provider configuration,
 credentials, identity state, Provider cursors, Workspace/Agent configuration,
@@ -197,33 +197,33 @@ parse_arguments() {
   done
 }
 
-resolve_lankide_home() {
+resolve_meerkat_home() {
   local candidate
   if [ -n "$home_arg" ]; then
     candidate="$home_arg"
-  elif [ -n "${LANKIDE_HOME:-}" ]; then
-    candidate="${LANKIDE_HOME}"
+  elif [ -n "${MEERKAT_HOME:-}" ]; then
+    candidate="${MEERKAT_HOME}"
   else
-    candidate="$user_home/.lankide"
+    candidate="$user_home/.meerkat"
   fi
   reject_symlink "$candidate"
-  lankide_home="$(canonical_directory "$candidate")"
-  default_lankide_home="$user_home/.lankide"
-  if [ -d "$default_lankide_home" ]; then
-    reject_symlink "$default_lankide_home"
-    default_lankide_home="$(canonical_directory "$default_lankide_home")"
+  meerkat_home="$(canonical_directory "$candidate")"
+  default_meerkat_home="$user_home/.meerkat"
+  if [ -d "$default_meerkat_home" ]; then
+    reject_symlink "$default_meerkat_home"
+    default_meerkat_home="$(canonical_directory "$default_meerkat_home")"
   fi
 }
 
 resolve_workspace() {
   local selected current candidate ids count
-  workspaces_root="$lankide_home/workspaces"
+  workspaces_root="$meerkat_home/workspaces"
   reject_symlink "$workspaces_root"
   workspaces_root="$(canonical_directory "$workspaces_root")"
 
   selected="$workspace_arg"
-  if [ -z "$selected" ] && [ -n "${LANKIDE_WORKSPACE_ID:-}" ]; then
-    selected="${LANKIDE_WORKSPACE_ID}"
+  if [ -z "$selected" ] && [ -n "${MEERKAT_WORKSPACE_ID:-}" ]; then
+    selected="${MEERKAT_WORKSPACE_ID}"
   fi
 
   if [ -n "$selected" ]; then
@@ -257,7 +257,7 @@ resolve_workspace() {
 }
 
 resolve_database() {
-  database="$lankide_home/runtime.db"
+  database="$meerkat_home/runtime.db"
   [ -f "$database" ] || die "Runtime database not found: $database"
   reject_symlink "$database"
 }
@@ -362,8 +362,8 @@ validate_agent_paths() {
     printf '%s' "$env_json" | jq -e 'type == "object"' >/dev/null || die "Agent $agent_id has invalid env_json"
 
     for key in HOME CODEX_HOME PI_CODING_AGENT_DIR PI_CODING_AGENT_SESSION_DIR \
-      LANKIDE_PI_ARTIFACT_DIR LANKIDE_PI_PID_JOURNAL LANKIDE_CLAUDE_CONFIG_DIR \
-      LANKIDE_CLAUDE_ARTIFACT_DIR
+      MEERKAT_PI_ARTIFACT_DIR MEERKAT_PI_PID_JOURNAL MEERKAT_CLAUDE_CONFIG_DIR \
+      MEERKAT_CLAUDE_ARTIFACT_DIR
     do
       value="$(printf '%s' "$env_json" | jq -r --arg key "$key" 'if .[$key] == null then "" elif (.[$key] | type) == "string" then .[$key] else error("not a string") end')" \
         || die "Agent $agent_id has invalid path override $key"
@@ -374,7 +374,7 @@ validate_agent_paths() {
         *) die "Agent $agent_id uses a relative path override $key; refusing to reset an ambiguous session path" ;;
       esac
       case "$value" in
-        "$agent_home/.lankide"|"$agent_home/.lankide"/*) ;;
+        "$agent_home/.meerkat"|"$agent_home/.meerkat"/*) ;;
         *) die "Agent $agent_id uses $key outside its isolated Harness directory; refusing to reset" ;;
       esac
     done
@@ -383,7 +383,7 @@ validate_agent_paths() {
 
 validate_filesystem_scope() {
   local resources_root target_resources agents_root agent_id agent_home path
-  resources_root="$lankide_home/resources"
+  resources_root="$meerkat_home/resources"
   if [ -e "$resources_root" ] || [ -L "$resources_root" ]; then
     reject_symlink "$resources_root"
     [ -d "$resources_root" ] || die "resource root is not a directory: $resources_root"
@@ -402,7 +402,7 @@ validate_filesystem_scope() {
 
   for agent_id in $agent_ids; do
     agent_home="$workspace_root/agents/$agent_id"
-    for path in "$agent_home/.lankide" "$agent_home/resources" "$agent_home/tool-results" "$agent_home/memory"; do
+    for path in "$agent_home/.meerkat" "$agent_home/resources" "$agent_home/tool-results" "$agent_home/memory"; do
       if [ -e "$path" ] || [ -L "$path" ]; then
         reject_symlink "$path"
       fi
@@ -491,7 +491,7 @@ print_counts() {
 
 print_target() {
   printf 'Target workspace:          %s (%s)\n' "$workspace_id" "$(db_count "SELECT name FROM workspaces WHERE workspace_id=$(workspace_sql);")"
-  printf 'Lankide home:              %s\n' "$lankide_home"
+  printf 'Meerkat home:              %s\n' "$meerkat_home"
   printf 'Runtime database:          %s\n' "$database"
   printf 'Workspace directory:       %s\n' "$workspace_root"
   printf 'Machine state:            %s\n' "$machine_state"
@@ -519,13 +519,13 @@ validate_loaded_service_scope() {
   local service="$1" actual
   actual="$(service_home "$service")"
   if [ -z "$actual" ]; then
-    actual="$default_lankide_home"
+    actual="$default_meerkat_home"
   else
     reject_symlink "$actual"
     actual="$(canonical_directory "$actual")"
   fi
-  if [ "$actual" != "$lankide_home" ]; then
-    [ "$lankide_home" != "$default_lankide_home" ] || die "loaded service $service points to a different Lankide home: $actual"
+  if [ "$actual" != "$meerkat_home" ]; then
+    [ "$meerkat_home" != "$default_meerkat_home" ] || die "loaded service $service points to a different Meerkat home: $actual"
     return 1
   fi
 }
@@ -593,34 +593,34 @@ stop_loaded_service() {
   fi
   output="$(launchctl bootout "$service" 2>&1)" || die "could not stop service $service: $output"
   case "$label" in
-    com.lankide.daemon) wait_for_lock_release "$lankide_home/run/runtime.lock" ;;
-    com.lankide.machine) wait_for_lock_release "$lankide_home/run/machine.lock" ;;
+    com.meerkat.daemon) wait_for_lock_release "$meerkat_home/run/runtime.lock" ;;
+    com.meerkat.machine) wait_for_lock_release "$meerkat_home/run/machine.lock" ;;
   esac
 }
 
 stop_daemons() {
   if command -v launchctl >/dev/null 2>&1; then
     service_domain="gui/$(id -u)"
-    stop_loaded_service com.lankide.machine
-    stop_loaded_service com.lankide.daemon
+    stop_loaded_service com.meerkat.machine
+    stop_loaded_service com.meerkat.daemon
   fi
-  stop_lock_process "$lankide_home/run/machine.lock" lankide-machine
-  stop_lock_process "$lankide_home/run/runtime.lock" lankided
+  stop_lock_process "$meerkat_home/run/machine.lock" meerkat-machine
+  stop_lock_process "$meerkat_home/run/runtime.lock" meerkatd
 }
 
 target_processes() {
   local pids pid command_line
   pids="$(ps -axo pid=,command= | awk '
-    $0 ~ /lankided|lankide-machine|(^|[[:space:]])pi([[:space:]]|$)|\/pi([[:space:]]|$)|codex app-server|(^|[[:space:]])claude([[:space:]]|$)|\/claude([[:space:]]|$)/ { print $1 }
+    $0 ~ /meerkatd|meerkat-machine|(^|[[:space:]])pi([[:space:]]|$)|\/pi([[:space:]]|$)|codex app-server|(^|[[:space:]])claude([[:space:]]|$)|\/claude([[:space:]]|$)/ { print $1 }
   ' | sort -u)"
   for pid in $pids; do
     [ "$pid" != "$$" ] || continue
     [ "$pid" != "$PPID" ] || continue
     command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
     case "$command_line" in
-      *lankided*|*lankide-machine*)
+      *meerkatd*|*meerkat-machine*)
         case "$command_line" in
-          *"$lankide_home"*) printf '%s\n' "$pid" ;;
+          *"$meerkat_home"*) printf '%s\n' "$pid" ;;
         esac
         ;;
       *)
@@ -634,7 +634,7 @@ target_processes() {
 
 active_lock_pids() {
   local lock pid
-  for lock in "$lankide_home/run/machine.lock" "$lankide_home/run/runtime.lock"; do
+  for lock in "$meerkat_home/run/machine.lock" "$meerkat_home/run/runtime.lock"; do
     if [ -e "$lock" ]; then
       pid="$(lock_pid "$lock")"
       if kill -0 "$pid" 2>/dev/null; then
@@ -672,7 +672,7 @@ prepare_backup() {
   if [ -n "$backup_arg" ]; then
     backup_parent="$backup_arg"
   else
-    backup_parent="$lankide_home/backups/zero-context"
+    backup_parent="$meerkat_home/backups/zero-context"
   fi
   case "$backup_parent" in
     /*) ;;
@@ -728,13 +728,13 @@ quarantine_agent_files() {
     agent_home="$workspace_root/agents/$agent_id"
     [ -d "$agent_home" ] || continue
     backup_agent="$backup_root/agents/$agent_id"
-    move_path_to_backup "$agent_home/.lankide" "$backup_agent/.lankide"
+    move_path_to_backup "$agent_home/.meerkat" "$backup_agent/.meerkat"
     move_path_to_backup "$agent_home/resources" "$backup_agent/resources"
     move_path_to_backup "$agent_home/tool-results" "$backup_agent/tool-results"
     move_path_to_backup "$agent_home/memory" "$backup_agent/memory"
-    if [ -d "$backup_agent/.lankide" ]; then
-      mkdir -p "$agent_home/.lankide"
-      chmod 700 "$agent_home/.lankide"
+    if [ -d "$backup_agent/.meerkat" ]; then
+      mkdir -p "$agent_home/.meerkat"
+      chmod 700 "$agent_home/.meerkat"
     fi
     if [ -d "$backup_agent/resources" ]; then
       mkdir -p "$agent_home/resources"
@@ -762,7 +762,7 @@ resource_is_kept() {
 
 quarantine_resources() {
   local source_root entry name
-  source_root="$lankide_home/resources/$workspace_id"
+  source_root="$meerkat_home/resources/$workspace_id"
   if [ -d "$source_root" ]; then
     shopt -s nullglob dotglob
     for entry in "$source_root"/*; do
@@ -898,7 +898,7 @@ verify_workspace_files() {
   local agent_id agent_home target_resources entry name
   for agent_id in $agent_ids; do
     agent_home="$workspace_root/agents/$agent_id"
-    for target_resources in "$agent_home/.lankide" "$agent_home/resources" "$agent_home/tool-results" "$agent_home/memory"; do
+    for target_resources in "$agent_home/.meerkat" "$agent_home/resources" "$agent_home/tool-results" "$agent_home/memory"; do
       if [ -d "$target_resources" ]; then
         if find "$target_resources" -mindepth 1 -print -quit | grep -q .; then
           die "workspace-local Agent history remains under $target_resources"
@@ -906,7 +906,7 @@ verify_workspace_files() {
       fi
     done
   done
-  target_resources="$lankide_home/resources/$workspace_id"
+  target_resources="$meerkat_home/resources/$workspace_id"
   if [ -d "$target_resources" ]; then
     shopt -s nullglob dotglob
     for entry in "$target_resources"/*; do
@@ -966,7 +966,7 @@ remove_sqlite_sidecars() {
 service_ready() {
   local label="$1" binary="$2" lock="$3"
   launchctl print "$service_domain/$label" >/dev/null 2>&1 || return 1
-  [ -f "$lankide_home/run/management.url" ] || return 1
+  [ -f "$meerkat_home/run/management.url" ] || return 1
   if [ -e "$lock" ]; then
     local pid
     pid="$(lock_pid "$lock")"
@@ -982,11 +982,11 @@ service_ready() {
 
 restart_daemons_and_verify() {
   local label plist service output attempt runtime_ready machine_ready
-  [ "$lankide_home" = "$default_lankide_home" ] || die "--restart with a custom --home is unsafe; use --no-restart"
+  [ "$meerkat_home" = "$default_meerkat_home" ] || die "--restart with a custom --home is unsafe; use --no-restart"
   require_command launchctl
   service_domain="gui/$(id -u)"
 
-  for label in com.lankide.daemon com.lankide.machine; do
+  for label in com.meerkat.daemon com.meerkat.machine; do
     plist="$user_home/Library/LaunchAgents/$label.plist"
     [ -f "$plist" ] || die "LaunchAgent plist not found: $plist"
     reject_symlink "$plist"
@@ -1002,10 +1002,10 @@ restart_daemons_and_verify() {
   machine_ready=0
   for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60
   do
-    if service_ready com.lankide.daemon lankided "$lankide_home/run/runtime.lock"; then
+    if service_ready com.meerkat.daemon meerkatd "$meerkat_home/run/runtime.lock"; then
       runtime_ready=1
     fi
-    if service_ready com.lankide.machine lankide-machine "$lankide_home/run/machine.lock"; then
+    if service_ready com.meerkat.machine meerkat-machine "$meerkat_home/run/machine.lock"; then
       machine_ready=1
     fi
     if [ "$runtime_ready" -eq 1 ] && [ "$machine_ready" -eq 1 ]; then
@@ -1028,7 +1028,7 @@ main() {
   require_command jq
   require_command shasum
   resolve_user_home
-  resolve_lankide_home
+  resolve_meerkat_home
   resolve_database
   resolve_workspace
   resolve_machine_state
@@ -1046,7 +1046,7 @@ main() {
 
   require_command lsof
   require_command ps
-  if [ "$restart" -eq 1 ] && [ "$lankide_home" != "$default_lankide_home" ]; then
+  if [ "$restart" -eq 1 ] && [ "$meerkat_home" != "$default_meerkat_home" ]; then
     die "--restart with a custom --home is unsafe; use --no-restart"
   fi
 

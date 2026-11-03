@@ -32,9 +32,9 @@
 相关生产库构建通过：
 
 ```sh
-cargo build --locked -p lankide-machine-core -p lankide-storage -p lankide-daemon-runtime
-cargo build --locked -p lankide-provider-telegram
-cargo build --locked -p lankide-runtime
+cargo build --locked -p meerkat-machine-core -p meerkat-storage -p meerkat-daemon-runtime
+cargo build --locked -p meerkat-provider-telegram
+cargo build --locked -p meerkat-runtime
 ```
 
 实际构建通过工作区现有的 `scripts/with-dev-cache` 包装执行。没有审查或运行仓库测试，没有执行 `just check`、`just test`，也没有执行真实浏览器或外部服务验收。构建通过只证明相关生产库能够编译。
@@ -59,7 +59,7 @@ cargo build --locked -p lankide-runtime
 
 **触发条件：** 全局来源目录和 Agent 目标目录均有凭据文件，目标文件尚未被记录为继承文件。
 
-第一次刷新遇到目标目录已有独立 `auth.json` 或 `.credentials.json` 时，会保留文件。但外层仍因来源文件存在，将文件名写入 `.lankide-inherited.json`。第二次刷新因此把目标文件视为继承文件，删除它并链接或复制全局凭据。
+第一次刷新遇到目标目录已有独立 `auth.json` 或 `.credentials.json` 时，会保留文件。但外层仍因来源文件存在，将文件名写入 `.meerkat-inherited.json`。第二次刷新因此把目标文件视为继承文件，删除它并链接或复制全局凭据。
 
 **影响：** Agent 的独立登录状态被覆盖，可能切换到另一个账号或失去原有访问能力。
 

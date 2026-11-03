@@ -1,4 +1,4 @@
-use lankide_protocol::{AgentRunContext, ResourceRef};
+use meerkat_protocol::{AgentRunContext, ResourceRef};
 use sha2::{Digest, Sha256};
 use std::fmt::Write;
 use std::path::{Component, Path, PathBuf};
@@ -60,7 +60,7 @@ pub(crate) async fn download_resource(
     let (path, temporary) = download_paths(resource, directory)?;
     let runtime_url = match endpoint {
         Some(url) => url.to_owned(),
-        None => lankide_protocol::link::discover(runtime_run)?.0,
+        None => meerkat_protocol::link::discover(runtime_run)?.0,
     };
     let mut url = reqwest::Url::parse(&runtime_url)
         .map_err(|_| MachineError::Resource("invalid_runtime_url".into()))?;
@@ -92,8 +92,8 @@ pub(crate) async fn download_resource(
         let mut request = client
             .get(url.clone())
             .bearer_auth(&context.execution_token)
-            .header("x-lankide-execution", execution.execution_id)
-            .header("x-lankide-attempt", execution.attempt);
+            .header("x-meerkat-execution", execution.execution_id)
+            .header("x-meerkat-attempt", execution.attempt);
         if offset > 0 {
             request = request.header("range", format!("bytes={offset}-"));
         }

@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use lankide_client::*;
+use meerkat_client::*;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -439,7 +439,7 @@ impl ManagementClient for MockManagementClient {
     async fn update_agent(
         &self,
         mut a: Agent,
-        avatar: Option<lankide_client::AgentAvatarUpload>,
+        avatar: Option<meerkat_client::AgentAvatarUpload>,
     ) -> Result<Agent, ClientError> {
         validate_agent_choice(&a.harness_id, &a.cli_path)?;
         if let Some(avatar) = avatar {
@@ -675,7 +675,7 @@ impl ManagementClient for MockManagementClient {
             return Ok(json!({
                 "manager_bot_ready": workspace.provider.id == "telegram",
                 "manager_bot_username": if workspace.provider.id == "telegram" {
-                    Some("lankide_mgr_260822_bot")
+                    Some("meerkat_mgr_260822_bot")
                 } else {
                     None
                 }

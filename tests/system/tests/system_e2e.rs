@@ -1,5 +1,5 @@
-use lankide_client::ManagementClient;
-use lankide_system_e2e::{OutboundKind, Result, RigConfig, Script, SystemRig};
+use meerkat_client::ManagementClient;
+use meerkat_system_e2e::{OutboundKind, Result, RigConfig, Script, SystemRig};
 use std::time::Duration;
 
 fn config() -> RigConfig {
@@ -103,7 +103,7 @@ async fn human_mentions_and_direct_messages_steer_one_active_run_without_replay(
         .create()
         .await?;
     agent
-        .group_attention(lankide_protocol::AttentionMode::Always)
+        .group_attention(meerkat_protocol::AttentionMode::Always)
         .await?;
     team.mention(&agent, "group", "alice", "start working")
         .await?;
@@ -152,7 +152,7 @@ async fn human_mentions_and_direct_messages_steer_one_active_run_without_replay(
 #[tokio::test]
 async fn restarting_the_machine_during_a_run_delivers_the_reply_exactly_once() -> Result<()> {
     let mut rig = SystemRig::start(RigConfig {
-        retry: lankide_runtime::RetryConfig {
+        retry: meerkat_runtime::RetryConfig {
             base_ms: 50,
             max_ms: 100,
             ..Default::default()
@@ -287,7 +287,7 @@ async fn s1_2_same_person_has_separate_conversations_with_two_bots() -> Result<(
 
 #[tokio::test]
 async fn s1_3_unmentioned_group_message_keeps_each_agents_attention_policy() -> Result<()> {
-    use lankide_protocol::AttentionMode;
+    use meerkat_protocol::AttentionMode;
     let rig = SystemRig::start(config()).await?;
     let team = rig.workspace("team").await?;
     let bruce = team.agent("bruce").create().await?;
@@ -630,7 +630,7 @@ async fn accepted_steer_keeps_an_undelivered_group_message_for_the_next_run() ->
         .create()
         .await?;
     agent
-        .group_attention(lankide_protocol::AttentionMode::Always)
+        .group_attention(meerkat_protocol::AttentionMode::Always)
         .await?;
     team.mention(&agent, "group", "alice", "start working")
         .await?;

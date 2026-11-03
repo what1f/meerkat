@@ -1,35 +1,35 @@
 [package]
 autotests = false
-name = "lankide-harness-claude-code"
+name = "meerkat-harness-claude-code"
 version.workspace = true
 edition.workspace = true
-description = "Claude Code Harness adapter for Lankide"
+description = "Claude Code Harness adapter for Meerkat"
 license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-lankide-core = { path = "../../crates/core" }
-lankide-harness = { path = "../../crates/harness" }
+meerkat-core = { path = "../../crates/core" }
+meerkat-harness = { path = "../../crates/harness" }
 serde_json.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 
 [dev-dependencies]
-lankide-testkit = { path = "../../crates/testkit" }
+meerkat-testkit = { path = "../../crates/testkit" }
 tempfile.workspace = true
 
-[package.metadata.lankide.e2e]
-command = "LANKIDE_E2E_LIVE=1 cargo test -p lankide-harness-claude-code --test e2e claude_code_e2e:: -- --ignored --nocapture"
+[package.metadata.meerkat.e2e]
+command = "MEERKAT_E2E_LIVE=1 cargo test -p meerkat-harness-claude-code --test e2e claude_code_e2e:: -- --ignored --nocapture"
 scenario = "Run the configured Claude Code-compatible CLI through native shell execution, session start and resume, stream-json steer, HTTP MCP Tool Result, cancel, close, and process cleanup. A4a appends independent launch arguments and omits the effort option when no level is selected; cross-module acceptance is in system-member-fields."
-prerequisites = "LANKIDE_CLAUDE_CODE_PATH; configured test model; harness-live prerequisite probe"
+prerequisites = "MEERKAT_CLAUDE_CODE_PATH; configured test model; harness-live prerequisite probe"
 classification = "live"
 unattended = "yes after live opt-in and preflight"
 status = "implemented"
 
-[package.metadata.lankide.e2e-additional.harness-claude-code-hermetic]
-command = "cargo test -p lankide-harness-claude-code --test e2e"
-scenario = "Classify missing CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through the public native Harness API; retain original error text and stderr. Start native executions in isolated process groups for Machine-owned tree cleanup. Verify S7.2: bypassPermissions native launch without a tool allowlist or empty setting sources, Agent-home skills at the native project path, and preserved native project skills, settings, and Lankide MCP wiring. Classify missing or non-executable CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through the public native Harness API; retain original error text and stderr. Native execution receives the private Agent socket and strips inherited Runtime directory settings; MCP calls use the Machine capability link. A4c cleans native process groups on startup failure and session close; cross-module acceptance is in system-harness-test."
+[package.metadata.meerkat.e2e-additional.harness-claude-code-hermetic]
+command = "cargo test -p meerkat-harness-claude-code --test e2e"
+scenario = "Classify missing CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through the public native Harness API; retain original error text and stderr. Start native executions in isolated process groups for Machine-owned tree cleanup. Verify S7.2: bypassPermissions native launch without a tool allowlist or empty setting sources, Agent-home skills at the native project path, and preserved native project skills, settings, and Meerkat MCP wiring. Classify missing or non-executable CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through the public native Harness API; retain original error text and stderr. Native execution receives the private Agent socket and strips inherited Runtime directory settings; MCP calls use the Machine capability link. A4c cleans native process groups on startup failure and session close; cross-module acceptance is in system-harness-test."
 prerequisites = "Python 3"
 classification = "hermetic"
 unattended = "yes"

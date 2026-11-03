@@ -189,7 +189,7 @@ fn validate_assign_execution(assign: &AssignExecution) -> Result<(), Status> {
         .workspace
         .as_ref()
         .ok_or_else(|| Status::invalid_argument("missing_workspace_ref"))?;
-    lankide_core::WorkspaceId::new(workspace.workspace_id.clone())
+    meerkat_core::WorkspaceId::new(workspace.workspace_id.clone())
         .map_err(|error| Status::invalid_argument(error.code()))?;
     let agent = assign
         .agent
@@ -199,7 +199,7 @@ fn validate_assign_execution(assign: &AssignExecution) -> Result<(), Status> {
     if agent.workspace_id != workspace.workspace_id {
         return Err(Status::invalid_argument("agent_workspace_mismatch"));
     }
-    lankide_core::AgentId::new(agent.agent_id.clone())
+    meerkat_core::AgentId::new(agent.agent_id.clone())
         .map_err(|error| Status::invalid_argument(error.code()))?;
     if assign.harness.is_none() {
         return Err(Status::invalid_argument("missing_harness_config"));
@@ -212,7 +212,7 @@ fn validate_assign_execution(assign: &AssignExecution) -> Result<(), Status> {
     }
     let mut tool_names = BTreeSet::new();
     for tool in &assign.tools {
-        if !lankide_core::is_canonical_tool_name(&tool.name) {
+        if !meerkat_core::is_canonical_tool_name(&tool.name) {
             return Err(Status::invalid_argument("invalid_tool_name"));
         }
         if !tool_names.insert(&tool.name) {
@@ -227,7 +227,7 @@ fn validate_assign_execution(assign: &AssignExecution) -> Result<(), Status> {
 
 fn validate_execution_ref(execution: Option<&ExecutionRef>) -> Result<(), Status> {
     let execution = execution.ok_or_else(|| Status::invalid_argument("missing_execution_ref"))?;
-    lankide_core::ExecutionId::new(execution.execution_id)
+    meerkat_core::ExecutionId::new(execution.execution_id)
         .map_err(|error| Status::invalid_argument(error.code()))?;
     if execution.attempt == 0 {
         return Err(Status::invalid_argument("attempt_must_be_positive"));
@@ -236,7 +236,7 @@ fn validate_execution_ref(execution: Option<&ExecutionRef>) -> Result<(), Status
 }
 
 pub(super) fn validate_resource_ref(resource: &ResourceRef) -> Result<(), Status> {
-    lankide_core::ResourceId::new(resource.resource_id)
+    meerkat_core::ResourceId::new(resource.resource_id)
         .map_err(|error| Status::invalid_argument(error.code()))?;
     validate_resource_descriptor(&ResourceDescriptor {
         file_name: resource.file_name.clone(),
@@ -262,7 +262,7 @@ fn validate_resource_descriptor(descriptor: &ResourceDescriptor) -> Result<(), S
 }
 
 pub(super) fn validate_resource_request(request: &ResourceRequest) -> Result<(), Status> {
-    lankide_core::ResourceId::new(request.resource_id)
+    meerkat_core::ResourceId::new(request.resource_id)
         .map_err(|error| Status::invalid_argument(error.code()))?;
     require_text(&request.transfer_id, "transfer_id")?;
     validate_agent_run_context(request.context.as_ref())
@@ -274,16 +274,16 @@ pub(super) fn validate_request_id(request_id: &str) -> Result<(), Status> {
 
 pub(super) fn validate_workspace_ref(workspace: Option<&WorkspaceRef>) -> Result<(), Status> {
     let workspace = workspace.ok_or_else(|| Status::invalid_argument("missing_workspace_ref"))?;
-    lankide_core::WorkspaceId::new(workspace.workspace_id.clone())
+    meerkat_core::WorkspaceId::new(workspace.workspace_id.clone())
         .map_err(|error| Status::invalid_argument(error.code()))?;
     Ok(())
 }
 
 pub(super) fn validate_agent_ref(agent: Option<&AgentRef>) -> Result<(), Status> {
     let agent = agent.ok_or_else(|| Status::invalid_argument("missing_agent_ref"))?;
-    lankide_core::WorkspaceId::new(agent.workspace_id.clone())
+    meerkat_core::WorkspaceId::new(agent.workspace_id.clone())
         .map_err(|error| Status::invalid_argument(error.code()))?;
-    lankide_core::AgentId::new(agent.agent_id.clone())
+    meerkat_core::AgentId::new(agent.agent_id.clone())
         .map_err(|error| Status::invalid_argument(error.code()))?;
     Ok(())
 }
@@ -345,7 +345,7 @@ pub(super) fn validate_agent_write(
 pub(super) fn validate_attention(attention: &AgentAttention) -> Result<(), Status> {
     let mut channels = BTreeSet::new();
     for value in &attention.channels {
-        lankide_core::ChannelId::new(value.channel_id.clone())
+        meerkat_core::ChannelId::new(value.channel_id.clone())
             .map_err(|error| Status::invalid_argument(error.code()))?;
         if !channels.insert(value.channel_id.as_str()) {
             return Err(Status::invalid_argument("Choose each channel only once."));

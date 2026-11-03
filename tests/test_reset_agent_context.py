@@ -21,7 +21,7 @@ class ResetContextTest(unittest.TestCase):
     def test_reset_clears_runtime_and_machine_bindings_but_preserves_configuration(self):
         schema_source = (ROOT / "crates/storage/src/schema.rs").read_text()
         schema = schema_source.split('const BASELINE_SCHEMA: &str = r#"', 1)[1].split('"#;', 1)[0]
-        with tempfile.TemporaryDirectory(prefix="lankide-reset-test-") as directory:
+        with tempfile.TemporaryDirectory(prefix="meerkat-reset-test-") as directory:
             home = Path(directory)
             database = home / "runtime.db"
             connection = sqlite3.connect(database)
@@ -77,7 +77,7 @@ class ResetContextTest(unittest.TestCase):
                     path = agent_home / "memory" / relative
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text(content)
-            native_file = home / "workspaces/target/agents/agent/.lankide/pi/session.jsonl"
+            native_file = home / "workspaces/target/agents/agent/.meerkat/pi/session.jsonl"
             native_file.parent.mkdir(parents=True)
             native_file.write_text("old native session")
             state_path = home / "workspaces/.machine/state.json"
@@ -105,7 +105,7 @@ class ResetContextTest(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT count(*) FROM resource_metadata WHERE workspace_id='target' AND resource_id=42").fetchone()[0], 1)
             backups = list((home / "backups/zero-context").iterdir())
             self.assertEqual(len(backups), 1)
-            self.assertTrue((backups[0] / "agents/agent/.lankide/pi/session.jsonl").exists())
+            self.assertTrue((backups[0] / "agents/agent/.meerkat/pi/session.jsonl").exists())
             for relative, content in memory_files.items():
                 self.assertFalse((home / "workspaces/target/agents/agent/memory" / relative).exists())
                 self.assertEqual((backups[0] / "agents/agent/memory" / relative).read_text(), content)

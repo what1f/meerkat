@@ -1,5 +1,5 @@
 use super::Inner;
-use lankide_harness::{HarnessSession, SessionHealth, SessionRequest};
+use meerkat_harness::{HarnessSession, SessionHealth, SessionRequest};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,10 +13,10 @@ pub(super) fn identity(request: &SessionRequest, session_key: &str, soul: &str) 
     let mut request = request.clone();
     request.native_session_id = None;
     request.config.environment.retain(|key, _| {
-        !key.starts_with("LANKIDE_EXECUTION_")
-            && !key.starts_with("LANKIDE_PI_RECORD_")
-            && key != "LANKIDE_PI_ARTIFACT_DIR"
-            && key != "LANKIDE_AGENT_SOCKET"
+        !key.starts_with("MEERKAT_EXECUTION_")
+            && !key.starts_with("MEERKAT_PI_RECORD_")
+            && key != "MEERKAT_PI_ARTIFACT_DIR"
+            && key != "MEERKAT_AGENT_SOCKET"
     });
     serde_json::json!([session_key, soul, request]).to_string()
 }

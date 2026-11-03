@@ -1,10 +1,10 @@
 const DEFAULT_MODEL: &str = "deepseek-v4-flash";
-use lankide_harness::{
+use meerkat_harness::{
     AgentEvent, AgentEventKind, ExecuteRequest, HarnessAvailability, HarnessConfig, HarnessFactory,
     ModelRef, SessionRequest, ToolDefinition, ToolResultRequest,
 };
-use lankide_harness_claude_code::{ClaudeCodeHarness, HARNESS_ID};
-use lankide_testkit::{GateSelection, ProbeConfig, run_prerequisite_probe};
+use meerkat_harness_claude_code::{ClaudeCodeHarness, HARNESS_ID};
+use meerkat_testkit::{GateSelection, ProbeConfig, run_prerequisite_probe};
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -20,9 +20,9 @@ const EVENT_TIMEOUT: Duration = Duration::from_secs(90);
 #[ignore = "requires dcc, deepseek-v4-flash, and explicit live opt-in"]
 async fn claude_code_e2e() {
     assert_eq!(
-        std::env::var("LANKIDE_E2E_LIVE").as_deref(),
+        std::env::var("MEERKAT_E2E_LIVE").as_deref(),
         Ok("1"),
-        "live Claude Code E2E requires LANKIDE_E2E_LIVE=1"
+        "live Claude Code E2E requires MEERKAT_E2E_LIVE=1"
     );
     let preflight = run_prerequisite_probe(&ProbeConfig::from_environment(
         GateSelection::HarnessLive,
@@ -33,13 +33,13 @@ async fn claude_code_e2e() {
         "harness-live preflight is not green:\n{}",
         preflight.render_text()
     );
-    let cli_path = std::env::var_os("LANKIDE_CLAUDE_CODE_PATH")
+    let cli_path = std::env::var_os("MEERKAT_CLAUDE_CODE_PATH")
         .map(PathBuf::from)
-        .expect("LANKIDE_CLAUDE_CODE_PATH is required");
+        .expect("MEERKAT_CLAUDE_CODE_PATH is required");
 
-    let run_id = std::env::var("LANKIDE_E2E_RUN_ID").unwrap_or_else(|_| unique("claude-code"));
+    let run_id = std::env::var("MEERKAT_E2E_RUN_ID").unwrap_or_else(|_| unique("claude-code"));
     let root = std::env::temp_dir()
-        .join("lankide-e2e-artifacts")
+        .join("meerkat-e2e-artifacts")
         .join("harness-claude-code")
         .join(&run_id);
     let workspace = root.join("workspace");
@@ -104,7 +104,7 @@ async fn run_scenario(
     run_id: &str,
     cli_path: &Path,
 ) -> Result<serde_json::Value, String> {
-    let nonce = format!("lankide-claude-{run_id}");
+    let nonce = format!("meerkat-claude-{run_id}");
     let config = HarnessConfig {
         launch_arguments: Default::default(),
         harness_id: HARNESS_ID.to_owned(),
@@ -113,11 +113,11 @@ async fn run_scenario(
         cli_path: cli_path.to_path_buf(),
         environment: BTreeMap::from([
             (
-                "LANKIDE_CLAUDE_CONFIG_DIR".to_owned(),
+                "MEERKAT_CLAUDE_CONFIG_DIR".to_owned(),
                 config_dir.display().to_string(),
             ),
             (
-                "LANKIDE_CLAUDE_ARTIFACT_DIR".to_owned(),
+                "MEERKAT_CLAUDE_ARTIFACT_DIR".to_owned(),
                 artifact_dir.display().to_string(),
             ),
         ]),
@@ -269,7 +269,7 @@ fn session_request(
 }
 
 async fn wait_for_tool(
-    stream: &mut lankide_harness::AgentEventStream,
+    stream: &mut meerkat_harness::AgentEventStream,
     nonce: &str,
 ) -> Result<(String, Vec<AgentEvent>), String> {
     let mut events = Vec::new();
@@ -302,7 +302,7 @@ async fn wait_for_tool(
 }
 
 async fn collect_terminal(
-    mut stream: lankide_harness::AgentEventStream,
+    mut stream: meerkat_harness::AgentEventStream,
 ) -> Result<Vec<AgentEvent>, String> {
     let mut events = Vec::new();
     loop {

@@ -4,18 +4,18 @@ mod process_support;
 mod ws;
 use process_support::{ProcessHarnessFactory, ProcessHarnessSpec};
 
-use lankide_harness::{
+use meerkat_harness::{
     AgentEventStream, CancelReceipt, CloseReceipt, ExecuteRequest, HarnessAvailability,
     HarnessConfig as NativeHarnessConfig, HarnessError, HarnessErrorCode, HarnessFactory,
     HarnessFuture, HarnessInfo as NativeHarnessInfo, HarnessSession, ModelRef, ProbeResult,
     SessionEntry, SessionHealth, SessionRequest, SteerReceipt, ToolResultReceipt,
     ToolResultRequest,
 };
-use lankide_machine_core::{
+use meerkat_machine_core::{
     Machine, MachineConfig, ReconnectPolicy, RegisteredHarness, agent_directory,
     workspace_directory,
 };
-use lankide_protocol::{
+use meerkat_protocol::{
     AgentRef, AgentRuntimeProfile, AssignExecution, AssignmentResult, DeliverSteer, Delivery,
     DeliveryKind, ExecutionCommitted, ExecutionEvent, ExecutionEventAck, ExecutionEventKind,
     ExecutionRef, HarnessConfig, MachineFrame, MachineFrameStream, MachineHello, ResourceChunk,
@@ -24,7 +24,7 @@ use lankide_protocol::{
     TransportConfig, WorkspaceRef, machine_frame, runtime_frame,
 };
 
-use lankide_protocol::Status;
+use meerkat_protocol::Status;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
@@ -185,16 +185,16 @@ impl Peer {
 }
 
 #[async_trait::async_trait]
-impl lankide_protocol::MachinePeer for Peer {
+impl meerkat_protocol::MachinePeer for Peer {
     async fn authorize_link(
         &self,
         credential: &str,
         local_secret: &str,
-    ) -> Result<(), lankide_protocol::link::CloseReason> {
+    ) -> Result<(), meerkat_protocol::link::CloseReason> {
         if credential == local_secret {
             Ok(())
         } else {
-            Err(lankide_protocol::link::CloseReason::Unauthorized)
+            Err(meerkat_protocol::link::CloseReason::Unauthorized)
         }
     }
 
@@ -214,8 +214,8 @@ impl lankide_protocol::MachinePeer for Peer {
                         {
                             assert_eq!(request.method, "invoke_capability");
                             assert!(request.eof);
-                            let call = lankide_protocol::agent::decode::<
-                                lankide_protocol::CapabilityInvokeRequest,
+                            let call = meerkat_protocol::agent::decode::<
+                                meerkat_protocol::CapabilityInvokeRequest,
                             >(request.payload.as_slice())
                             .expect("capability request");
                             let context = call.context.expect("run context");
@@ -236,12 +236,12 @@ impl lankide_protocol::MachinePeer for Peer {
         });
         let (sender, receiver) = mpsc::channel(64);
         let hello = RuntimeFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::Hello(RuntimeHello {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 runtime_instance_id: "runtime-machine-e2e".into(),
                 heartbeat_interval_ms: 500,
-                max_message_bytes: lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES as u64,
+                max_message_bytes: meerkat_protocol::DEFAULT_MAX_MESSAGE_BYTES as u64,
             })),
         };
         sender
@@ -380,10 +380,10 @@ async fn machine_e2e() {
 
     let cli_dir = temp.join("capability-bin");
     fs::create_dir_all(&cli_dir).unwrap();
-    let capability_cli = cli_dir.join("lankide");
+    let capability_cli = cli_dir.join("meerkat");
     fs::write(
         &capability_cli,
-        "#!/bin/sh\nprintf '%s' \"$LANKIDE_EXECUTION_ID\"\n",
+        "#!/bin/sh\nprintf '%s' \"$MEERKAT_EXECUTION_ID\"\n",
     )
     .unwrap();
     {
@@ -401,9 +401,9 @@ async fn machine_e2e() {
             ..Default::default()
         },
     })
-    .with_device_credential(lankide_protocol::link::discover(&socket).unwrap().1)
+    .with_device_credential(meerkat_protocol::link::discover(&socket).unwrap().1)
     .with_capability_cli(&capability_cli)
-    .with_execution_liveness(lankide_machine_core::ExecutionLiveness {
+    .with_execution_liveness(meerkat_machine_core::ExecutionLiveness {
         cancel_grace: Duration::from_millis(150),
         ..Default::default()
     });
@@ -567,7 +567,7 @@ async fn machine_e2e() {
             .await;
         assert_tool_receipt(&mut incoming_rx, 17, 1, "call-1", true, "").await;
         peer.send(RuntimeFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::DeliverSteer(DeliverSteer {
                 execution: Some(execution(17)),
                 delivery: Some(delivery(170, "finish-tool")),
@@ -578,7 +578,7 @@ async fn machine_e2e() {
 
         std::fs::File::create(content_home.join("large.md"))
             .expect("large content file")
-            .set_len(lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES as u64 + 1)
+            .set_len(meerkat_protocol::DEFAULT_MAX_MESSAGE_BYTES as u64 + 1)
             .expect("size large content file");
         fs::write(content_home.join("invalid.md"), [0xff, 0xfe])
             .expect("invalid UTF-8 content file");
@@ -717,7 +717,7 @@ async fn machine_e2e() {
             .expect("running recovery state");
         assert!(recovering.contains("interrupted"));
         peer.send(RuntimeFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::DeliverSteer(DeliverSteer {
                 execution: Some(execution(3)),
                 delivery: Some(delivery(33, "urgent")),
@@ -726,7 +726,7 @@ async fn machine_e2e() {
         .await;
         wait_delivery(&mut incoming_rx, 3).await;
         peer.send(RuntimeFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::DeliverSteer(DeliverSteer {
                 execution: Some(execution(3)),
                 delivery: Some(delivery(33, "urgent")),
@@ -874,7 +874,7 @@ async fn machine_e2e() {
             "assignment_conflict"
         );
         peer.send(RuntimeFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::ExecutionCommitted(
                 ExecutionCommitted {
                     execution: replayed_after_ack.execution.clone(),
@@ -1045,7 +1045,7 @@ async fn machine_e2e() {
         wait_for(|| tool_results() >= 5).await;
         assert_eq!(tool_results(), 5);
         peer.send(RuntimeFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::DeliverSteer(DeliverSteer {
                 execution: Some(execution(13)),
                 delivery: Some(delivery(130, "finish-tool")),
@@ -1154,9 +1154,9 @@ async fn machine_e2e() {
         assert!(state.contains("config_fingerprint"));
 
         peer.send(RuntimeFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::DeleteAgentFiles(
-                lankide_protocol::DeleteAgentFiles {
+                meerkat_protocol::DeleteAgentFiles {
                     request_id: "delete-reader".into(),
                     agent: Some(AgentRef {
                         workspace_id: "alpha_team".into(),
@@ -1197,7 +1197,7 @@ async fn machine_e2e() {
         fs::create_dir(workspace_root.join(".machine/state.json.tmp"))
             .expect("block atomic state write");
         peer.send(RuntimeFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::DeliverSteer(DeliverSteer {
                 execution: Some(execution(99)),
                 delivery: Some(delivery(990, "after-disk-failure")),
@@ -1222,7 +1222,7 @@ async fn machine_e2e() {
     assert!(
         matches!(
             host_result,
-            Err(lankide_machine_core::MachineError::PersistenceFailed)
+            Err(meerkat_machine_core::MachineError::PersistenceFailed)
         ),
         "disk failure must report unsuccessful Machine exit: {host_result:?}"
     );
@@ -1306,7 +1306,7 @@ async fn idle_sessions_reuse_rotate_credentials_expire_and_close() {
         start:open, resume:open,
         rebind(r) {{ request = r; record("rebind"); }},
         execute() {{
-          record("execute", JSON.parse(ctx.read(request.config.environment.LANKIDE_RUN_CONTEXT)));
+          record("execute", JSON.parse(ctx.read(request.config.environment.MEERKAT_RUN_CONTEXT)));
           completed("OK");
         }},
         close() {{ record("close"); }}
@@ -1314,14 +1314,14 @@ async fn idle_sessions_reuse_rotate_credentials_expire_and_close() {
     "#,
         serde_json::to_string(&log).unwrap()
     );
-    let factory = lankide_harness::JsHarnessFactory::new("pi", "Pi", source).unwrap();
+    let factory = meerkat_harness::JsHarnessFactory::new("pi", "Pi", source).unwrap();
     let mut machine = Machine::new(MachineConfig {
         machine_id: "warm-machine".into(),
         instance_id: "warm-instance".into(),
         workspace_root: root.display().to_string(),
         reconnect: Default::default(),
     })
-    .with_device_credential(lankide_protocol::link::discover(&socket).unwrap().1)
+    .with_device_credential(meerkat_protocol::link::discover(&socket).unwrap().1)
     .with_capability_cli("/usr/bin/true")
     .with_session_idle_timeout(Duration::from_secs(2));
     machine
@@ -1368,7 +1368,7 @@ async fn idle_sessions_reuse_rotate_credentials_expire_and_close() {
         assert!(
             !agent_directory(&root, "alpha_team", "warm")
                 .unwrap()
-                .join(".lankide/run-context.json")
+                .join(".meerkat/run-context.json")
                 .exists()
         );
     }
@@ -1480,14 +1480,14 @@ async fn cli_versions_are_detected_saved_and_refreshed() {
         serde_json::to_string(&log).unwrap()
     );
     let start_machine = || {
-        let factory = lankide_harness::JsHarnessFactory::new("pi", "Pi", source.clone()).unwrap();
+        let factory = meerkat_harness::JsHarnessFactory::new("pi", "Pi", source.clone()).unwrap();
         let mut machine = Machine::new(MachineConfig {
             machine_id: "ver-machine".into(),
             instance_id: "ver-instance".into(),
             workspace_root: root.display().to_string(),
             reconnect: Default::default(),
         })
-        .with_device_credential(lankide_protocol::link::discover(&socket).unwrap().1)
+        .with_device_credential(meerkat_protocol::link::discover(&socket).unwrap().1)
         .with_capability_cli("/usr/bin/true");
         machine
             .register_harness(RegisteredHarness::new(
@@ -1591,28 +1591,28 @@ fn runtime_assign(
     resources: Vec<ResourceRef>,
     fault: &str,
 ) -> RuntimeFrame {
-    let mut environment_variables = vec![lankide_protocol::EnvironmentVariable {
+    let mut environment_variables = vec![meerkat_protocol::EnvironmentVariable {
         name: "MACHINE_HARNESS_LOG".into(),
         value: artifact_harness_log(),
     }];
     environment_variables.extend([
-        lankide_protocol::EnvironmentVariable {
+        meerkat_protocol::EnvironmentVariable {
             name: "PATH".into(),
             value: "/no-user-executables".into(),
         },
-        lankide_protocol::EnvironmentVariable {
-            name: "LANKIDE_CLI".into(),
+        meerkat_protocol::EnvironmentVariable {
+            name: "MEERKAT_CLI".into(),
             value: "/not-the-capability-cli".into(),
         },
     ]);
     if !fault.is_empty() {
-        environment_variables.push(lankide_protocol::EnvironmentVariable {
+        environment_variables.push(meerkat_protocol::EnvironmentVariable {
             name: "MACHINE_HARNESS_FAULT".into(),
             value: fault.into(),
         });
     }
     RuntimeFrame {
-        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::AssignExecution(AssignExecution {
             execution: Some(execution(id)),
             workspace: Some(WorkspaceRef {
@@ -1666,7 +1666,7 @@ fn runtime_assign(
                     output_schema_json: "{}".into(),
                 },
             ],
-            cli_commands: vec![lankide_protocol::CliCommand {
+            cli_commands: vec![meerkat_protocol::CliCommand {
                 name: "inspect".into(),
                 description: "Inspect the current work".into(),
                 argv: vec![],
@@ -1699,7 +1699,7 @@ fn runtime_assign_with_harness(
 fn artifact_harness_log() -> String {
     std::env::temp_dir()
         .join(format!(
-            "lankide-machine-core-harness-{}.tsv",
+            "meerkat-machine-core-harness-{}.tsv",
             std::process::id()
         ))
         .display()
@@ -1725,9 +1725,9 @@ fn delivery(id: i64, input: &str) -> Delivery {
 }
 fn cancel(id: i64) -> RuntimeFrame {
     RuntimeFrame {
-        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::CancelExecution(
-            lankide_protocol::CancelExecution {
+            meerkat_protocol::CancelExecution {
                 force_close: false,
                 execution: Some(execution(id)),
                 reason: "test cancel".into(),
@@ -1755,16 +1755,16 @@ fn runtime_tool_result(
     resources: Vec<ResourceRef>,
 ) -> RuntimeFrame {
     RuntimeFrame {
-        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::CapabilityResponse(
-            lankide_protocol::CapabilityResponse {
+            meerkat_protocol::CapabilityResponse {
                 request_id: format!(
                     "{}:{}:{}",
                     execution.execution_id, execution.attempt, tool_call_id
                 ),
                 eof: true,
-                payload: lankide_protocol::agent::encode(
-                    &lankide_protocol::CapabilityInvokeResult {
+                payload: meerkat_protocol::agent::encode(
+                    &meerkat_protocol::CapabilityInvokeResult {
                         invocation_id: tool_call_id.into(),
                         success: true,
                         content_markdown: content_markdown.into(),
@@ -1802,8 +1802,8 @@ async fn wait_tool_prefix(
                     .and_then(|context| context.execution.as_ref())
                     .is_some_and(|execution| execution.execution_id == id) =>
             {
-                let call: lankide_protocol::CapabilityInvokeRequest =
-                    lankide_protocol::agent::decode(&call.payload).unwrap();
+                let call: meerkat_protocol::CapabilityInvokeRequest =
+                    meerkat_protocol::agent::decode(&call.payload).unwrap();
                 assert_eq!(call.invocation_id, "call-1");
                 saw_call = true;
             }
@@ -1845,8 +1845,8 @@ async fn wait_specific_tool_call(
                     .and_then(|context| context.execution.as_ref())
                     .is_some_and(|execution| execution.execution_id == id) =>
             {
-                let call: lankide_protocol::CapabilityInvokeRequest =
-                    lankide_protocol::agent::decode(&call.payload).unwrap();
+                let call: meerkat_protocol::CapabilityInvokeRequest =
+                    meerkat_protocol::agent::decode(&call.payload).unwrap();
                 assert_eq!(call.capability_name, tool_name);
                 return serde_json::from_str(&call.arguments_json).expect("tool arguments JSON");
             }
@@ -1908,7 +1908,7 @@ async fn finish_local_tool_error(
         "missing local Tool error {code}"
     );
     peer.send(RuntimeFrame {
-        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::DeliverSteer(DeliverSteer {
             execution: Some(execution(id)),
             delivery: Some(delivery(id * 10, "finish-tool")),
@@ -1925,7 +1925,7 @@ async fn assert_tool_receipt(
     tool_call_id: &str,
     success: bool,
     error_code: &str,
-) -> lankide_protocol::ResourceTransferResult {
+) -> meerkat_protocol::ResourceTransferResult {
     let expected = format!("tool_result:{execution_id}:{attempt}:{tool_call_id}");
     loop {
         let frame = timeout(STEP, receiver.recv())
@@ -2082,7 +2082,7 @@ async fn wait_delivery(receiver: &mut mpsc::UnboundedReceiver<MachineFrame>, id:
 }
 async fn ack(peer: &Peer, event: &ExecutionEvent) {
     peer.send(RuntimeFrame {
-        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::ExecutionEventAck(ExecutionEventAck {
             execution: event.execution.clone(),
             max_saved_sequence: event.sequence,

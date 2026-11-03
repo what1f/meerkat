@@ -1,7 +1,7 @@
 use super::*;
-use lankide_protocol::Status;
-use lankide_protocol::*;
-use lankide_provider::ResourceUpload;
+use meerkat_protocol::Status;
+use meerkat_protocol::*;
+use meerkat_provider::ResourceUpload;
 use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
 use tokio_stream::{StreamExt, wrappers::ReceiverStream};
@@ -20,14 +20,14 @@ impl RuntimePeerAdapter {
 }
 
 #[async_trait::async_trait]
-impl lankide_protocol::MachinePeer for RuntimePeerAdapter {
+impl meerkat_protocol::MachinePeer for RuntimePeerAdapter {
     async fn authorize_link(
         &self,
         credential: &str,
         _local_secret: &str,
-    ) -> Result<(), lankide_protocol::link::CloseReason> {
+    ) -> Result<(), meerkat_protocol::link::CloseReason> {
         if credential.is_empty() {
-            return Err(lankide_protocol::link::CloseReason::Unauthorized);
+            return Err(meerkat_protocol::link::CloseReason::Unauthorized);
         }
         self.application
             .authenticate_machine(None, credential)
@@ -35,9 +35,9 @@ impl lankide_protocol::MachinePeer for RuntimePeerAdapter {
     }
     async fn pair_machine(
         &self,
-        request: lankide_protocol::link::PairMachineRequest,
+        request: meerkat_protocol::link::PairMachineRequest,
         local_secret: &str,
-    ) -> Result<lankide_protocol::link::PairMachineResponse, Status> {
+    ) -> Result<meerkat_protocol::link::PairMachineResponse, Status> {
         self.application
             .pair_machine(request, local_secret)
             .await
@@ -47,7 +47,7 @@ impl lankide_protocol::MachinePeer for RuntimePeerAdapter {
     async fn link_rejected(
         &self,
         hello: MachineHello,
-        reason: lankide_protocol::link::CloseReason,
+        reason: meerkat_protocol::link::CloseReason,
     ) {
         log::error!("machine={} link_rejected={reason}", hello.machine_id);
         let _ = self
@@ -138,7 +138,7 @@ impl lankide_protocol::MachinePeer for RuntimePeerAdapter {
                                                 &instance_id,
                                                 RuntimeFrame {
                                                     protocol_version:
-                                                        lankide_protocol::PROTOCOL_VERSION,
+                                                        meerkat_protocol::PROTOCOL_VERSION,
                                                     frame: Some(
                                                         runtime_frame::Frame::CapabilityResponse(
                                                             CapabilityResponse {
@@ -280,7 +280,7 @@ impl RuntimePeer for RuntimePeerAdapter {
                 descriptor = Some(value);
             }
             bytes.extend_from_slice(&chunk.bytes);
-            if bytes.len() > lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES {
+            if bytes.len() > meerkat_protocol::DEFAULT_MAX_MESSAGE_BYTES {
                 return Err(Status::resource_exhausted("Resource is too large."));
             }
             saw_eof = chunk.eof;
@@ -465,8 +465,8 @@ impl RuntimePeer for RuntimePeerAdapter {
 
     async fn import_figure_pack(
         &self,
-        request: lankide_protocol::ImportFigurePackRequest,
-    ) -> Result<lankide_protocol::FigurePack, Status> {
+        request: meerkat_protocol::ImportFigurePackRequest,
+    ) -> Result<meerkat_protocol::FigurePack, Status> {
         self.application
             .import_figure_pack(request)
             .await
@@ -474,8 +474,8 @@ impl RuntimePeer for RuntimePeerAdapter {
     }
     async fn list_figure_packs(
         &self,
-        request: lankide_protocol::ListFigurePacksRequest,
-    ) -> Result<Vec<lankide_protocol::FigurePack>, Status> {
+        request: meerkat_protocol::ListFigurePacksRequest,
+    ) -> Result<Vec<meerkat_protocol::FigurePack>, Status> {
         self.application
             .list_figure_packs(request)
             .await
@@ -520,7 +520,7 @@ impl RuntimePeer for RuntimePeerAdapter {
     async fn list_human_members(
         &self,
         request: GetWorkspaceRequest,
-    ) -> Result<Vec<lankide_protocol::HumanTeamMember>, Status> {
+    ) -> Result<Vec<meerkat_protocol::HumanTeamMember>, Status> {
         self.application
             .list_human_members(request)
             .await
@@ -528,8 +528,8 @@ impl RuntimePeer for RuntimePeerAdapter {
     }
     async fn sync_human_profile(
         &self,
-        request: lankide_protocol::SyncHumanProfileRequest,
-    ) -> Result<lankide_protocol::HumanTeamMember, Status> {
+        request: meerkat_protocol::SyncHumanProfileRequest,
+    ) -> Result<meerkat_protocol::HumanTeamMember, Status> {
         self.application
             .sync_human_profile(request)
             .await
@@ -537,8 +537,8 @@ impl RuntimePeer for RuntimePeerAdapter {
     }
     async fn update_human_position(
         &self,
-        request: lankide_protocol::UpdateHumanPositionRequest,
-    ) -> Result<Vec<lankide_protocol::HumanTeamMember>, Status> {
+        request: meerkat_protocol::UpdateHumanPositionRequest,
+    ) -> Result<Vec<meerkat_protocol::HumanTeamMember>, Status> {
         self.application
             .update_human_position(request)
             .await
@@ -550,8 +550,8 @@ impl RuntimePeer for RuntimePeerAdapter {
     }
     async fn cancel_attempt(
         &self,
-        request: lankide_protocol::CancelAttemptRequest,
-    ) -> Result<lankide_protocol::CancelAttemptResponse, Status> {
+        request: meerkat_protocol::CancelAttemptRequest,
+    ) -> Result<meerkat_protocol::CancelAttemptResponse, Status> {
         self.application
             .cancel_attempt(request)
             .await
@@ -570,7 +570,7 @@ impl RuntimePeer for RuntimePeerAdapter {
     async fn get_agent_first_reply(
         &self,
         request: GetAgentRequest,
-    ) -> Result<lankide_protocol::AgentFirstReply, Status> {
+    ) -> Result<meerkat_protocol::AgentFirstReply, Status> {
         self.application
             .get_agent_first_reply(request)
             .await
@@ -705,8 +705,8 @@ impl RuntimePeer for RuntimePeerAdapter {
     }
     async fn test_harness(
         &self,
-        request: lankide_protocol::TestHarnessRequest,
-    ) -> Result<lankide_protocol::TestHarnessResponse, Status> {
+        request: meerkat_protocol::TestHarnessRequest,
+    ) -> Result<meerkat_protocol::TestHarnessResponse, Status> {
         self.application
             .machine_broker()
             .test_harness(request)
@@ -714,8 +714,8 @@ impl RuntimePeer for RuntimePeerAdapter {
     }
     async fn get_model_catalog(
         &self,
-        request: lankide_protocol::ModelCatalogRequest,
-    ) -> Result<lankide_protocol::ModelCatalog, Status> {
+        request: meerkat_protocol::ModelCatalogRequest,
+    ) -> Result<meerkat_protocol::ModelCatalog, Status> {
         let catalog = self
             .application
             .machine_catalog(CatalogRequest::default())
@@ -726,7 +726,7 @@ impl RuntimePeer for RuntimePeerAdapter {
             .into_iter()
             .find(|machine| machine.machine_id == request.machine_id)
             .ok_or_else(|| Status::not_found("Machine not found"))?;
-        if machine.observed_state != lankide_protocol::ObservedState::Running
+        if machine.observed_state != meerkat_protocol::ObservedState::Running
             || machine.revoked_at.is_some()
         {
             return Err(Status::unavailable("Machine is offline"));
@@ -782,7 +782,7 @@ impl RuntimePeer for RuntimePeerAdapter {
                     };
                     if event.sequence <= after
                         || (event.kind
-                            != lankide_protocol::ManagementEventKind::MachineCatalogChanged
+                            != meerkat_protocol::ManagementEventKind::MachineCatalogChanged
                             && workspace.as_ref().is_some_and(|workspace| {
                                 event
                                     .workspace
@@ -876,7 +876,7 @@ impl RuntimePeer for RuntimePeerAdapter {
     async fn send_message(
         &self,
         request: SendMessageRequest,
-    ) -> Result<lankide_protocol::SendMessageResult, Status> {
+    ) -> Result<meerkat_protocol::SendMessageResult, Status> {
         self.application
             .send_message_gateway(request)
             .await
@@ -929,21 +929,21 @@ pub(crate) fn status(error: RuntimeError) -> Status {
         RuntimeError::InvalidExecutionToken => {
             Status::permission_denied("This action is no longer authorized.")
         }
-        RuntimeError::ProviderCall(lankide_provider::ProviderError::AppConfigurationFailed {
+        RuntimeError::ProviderCall(meerkat_provider::ProviderError::AppConfigurationFailed {
             ..
         }) => Status::failed_precondition("The connection could not be completed. Try again.")
             .with_detail(Some("app_configuration_failed".into())),
-        RuntimeError::ProviderCall(lankide_provider::ProviderError::NotFound { .. })
-        | RuntimeError::ProviderCall(lankide_provider::ProviderError::UnknownRegistration {
+        RuntimeError::ProviderCall(meerkat_provider::ProviderError::NotFound { .. })
+        | RuntimeError::ProviderCall(meerkat_provider::ProviderError::UnknownRegistration {
             ..
         }) => Status::not_found("The provider interface was not found."),
-        RuntimeError::ProviderCall(lankide_provider::ProviderError::InvalidInput {
+        RuntimeError::ProviderCall(meerkat_provider::ProviderError::InvalidInput {
             field: "team_enterprise",
         }) => Status::failed_precondition("This person belongs to another organization.")
             .with_detail(Some("team_enterprise".into())),
-        RuntimeError::ProviderCall(lankide_provider::ProviderError::InvalidInput { .. })
-        | RuntimeError::ProviderCall(lankide_provider::ProviderError::InvalidSchema { .. })
-        | RuntimeError::ProviderCall(lankide_provider::ProviderError::SchemaMismatch { .. }) => {
+        RuntimeError::ProviderCall(meerkat_provider::ProviderError::InvalidInput { .. })
+        | RuntimeError::ProviderCall(meerkat_provider::ProviderError::InvalidSchema { .. })
+        | RuntimeError::ProviderCall(meerkat_provider::ProviderError::SchemaMismatch { .. }) => {
             Status::invalid_argument("The provider interface input is invalid.")
         }
         RuntimeError::Provider { .. } | RuntimeError::ProviderCall(_) => {

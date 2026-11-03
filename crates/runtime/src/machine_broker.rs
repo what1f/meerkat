@@ -1,10 +1,10 @@
 use super::*;
-use lankide_protocol::Status;
-use lankide_protocol::{
+use meerkat_protocol::Status;
+use meerkat_protocol::{
     ExecutionEventKind, HarnessInfo, MachineFrame, MachineHello, RuntimeFrame, RuntimeFrameStream,
     machine_frame, runtime_frame,
 };
-use lankide_storage::{ExecutionEventDisposition, RecordExecutionEvent, SteerDelivery, Storage};
+use meerkat_storage::{ExecutionEventDisposition, RecordExecutionEvent, SteerDelivery, Storage};
 use std::collections::BTreeSet;
 use std::sync::{
     Mutex as StdMutex, RwLock as StdRwLock,
@@ -22,7 +22,7 @@ struct BrokerInner {
     attempt_lease_millis: AtomicI64,
     connections: StdRwLock<BTreeMap<String, MachineConnection>>,
     next_connection_id: AtomicU64,
-    link_rejections: StdRwLock<BTreeMap<String, lankide_protocol::link::CloseReason>>,
+    link_rejections: StdRwLock<BTreeMap<String, meerkat_protocol::link::CloseReason>>,
     pending: StdMutex<BTreeMap<i64, PendingExecution>>,
     pending_harness_tests: StdMutex<BTreeMap<String, PendingHarnessTest>>,
     pending_agent_deletions: StdMutex<BTreeMap<String, oneshot::Sender<Result<(), String>>>>,
@@ -43,7 +43,7 @@ struct MachineConnection {
 struct PendingHarnessTest {
     machine_id: String,
     instance_id: String,
-    response: oneshot::Sender<lankide_protocol::TestHarnessResponse>,
+    response: oneshot::Sender<meerkat_protocol::TestHarnessResponse>,
 }
 
 struct PendingHarnessTestGuard<'a> {
@@ -105,14 +105,14 @@ impl MachineBroker {
 
     pub async fn test_harness(
         &self,
-        request: lankide_protocol::TestHarnessRequest,
-    ) -> Result<lankide_protocol::TestHarnessResponse, Status> {
+        request: meerkat_protocol::TestHarnessRequest,
+    ) -> Result<meerkat_protocol::TestHarnessResponse, Status> {
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
         tokio::time::timeout_at(deadline, self.run_harness_test(request, deadline))
             .await
             .unwrap_or_else(|_| {
-                Ok(lankide_protocol::TestHarnessResponse {
-                    state: lankide_protocol::HarnessTestState::TimedOut,
+                Ok(meerkat_protocol::TestHarnessResponse {
+                    state: meerkat_protocol::HarnessTestState::TimedOut,
                     reply: None,
                     error_code: None,
                 })
@@ -121,9 +121,9 @@ impl MachineBroker {
 
     async fn run_harness_test(
         &self,
-        request: lankide_protocol::TestHarnessRequest,
+        request: meerkat_protocol::TestHarnessRequest,
         deadline: tokio::time::Instant,
-    ) -> Result<lankide_protocol::TestHarnessResponse, Status> {
+    ) -> Result<meerkat_protocol::TestHarnessResponse, Status> {
         let machines = self
             .database()
             .map_err(crate::peer::status)?
@@ -171,16 +171,16 @@ impl MachineBroker {
             id: id.clone(),
         };
         let frame = RuntimeFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(runtime_frame::Frame::TestHarness(
-                lankide_protocol::link::TestHarness {
+                meerkat_protocol::link::TestHarness {
                     request_id: id.clone(),
                     // Leave time for Machine cleanup and the result frame.
                     budget_millis: deadline
                         .saturating_duration_since(tokio::time::Instant::now())
                         .as_millis()
                         .saturating_sub(1000) as u64,
-                    harness: lankide_protocol::HarnessConfig {
+                    harness: meerkat_protocol::HarnessConfig {
                         harness_id: request.harness_id,
                         executable_path: request.cli_path.unwrap_or_default(),
                         model: request.model,
@@ -204,7 +204,7 @@ impl MachineBroker {
     pub fn reject_link(
         &self,
         machine_id: String,
-        reason: lankide_protocol::link::CloseReason,
+        reason: meerkat_protocol::link::CloseReason,
     ) -> Result<(), RuntimeError> {
         self.inner
             .link_rejections
@@ -216,7 +216,7 @@ impl MachineBroker {
 
     pub fn rejected_links(
         &self,
-    ) -> Result<BTreeMap<String, lankide_protocol::link::CloseReason>, RuntimeError> {
+    ) -> Result<BTreeMap<String, meerkat_protocol::link::CloseReason>, RuntimeError> {
         Ok(self
             .inner
             .link_rejections
@@ -280,9 +280,9 @@ impl MachineBroker {
                     && connection.instance_id == execution.instance_id
                 {
                     let _ = connection.sender.try_send(Ok(RuntimeFrame {
-                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                         frame: Some(runtime_frame::Frame::CancelExecution(
-                            lankide_protocol::CancelExecution {
+                            meerkat_protocol::CancelExecution {
                                 force_close: !supports(connection, &execution.harness_id, "cancel"),
                                 execution: Some(ExecutionRef {
                                     execution_id: *execution_id,
@@ -318,8 +318,8 @@ impl MachineBroker {
         );
         for (_, connection) in connections {
             let _ = connection.sender.try_send(Ok(RuntimeFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
-                frame: Some(runtime_frame::Frame::Shutdown(lankide_protocol::Shutdown {
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
+                frame: Some(runtime_frame::Frame::Shutdown(meerkat_protocol::Shutdown {
                     reason: "Runtime is stopping.".into(),
                 })),
             }));
@@ -394,23 +394,23 @@ impl MachineBroker {
             .insert(hello.machine_id.clone(), connection)
         {
             let _ = previous.sender.try_send(Ok(RuntimeFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
-                frame: Some(runtime_frame::Frame::Shutdown(lankide_protocol::Shutdown {
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
+                frame: Some(runtime_frame::Frame::Shutdown(meerkat_protocol::Shutdown {
                     reason: "replaced_by_reconnect".into(),
                 })),
             }));
         }
         sender
             .try_send(Ok(RuntimeFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::Hello(
-                    lankide_protocol::RuntimeHello {
-                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                    meerkat_protocol::RuntimeHello {
+                        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                         runtime_instance_id: format!("runtime-{}", std::process::id()),
-                        heartbeat_interval_ms: lankide_protocol::link::LinkSettings::default()
+                        heartbeat_interval_ms: meerkat_protocol::link::LinkSettings::default()
                             .heartbeat_interval
                             .as_millis() as u64,
-                        max_message_bytes: lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES as u64,
+                        max_message_bytes: meerkat_protocol::DEFAULT_MAX_MESSAGE_BYTES as u64,
                     },
                 )),
             }))
@@ -557,12 +557,12 @@ impl MachineBroker {
             // Stop any stale local run and let this Machine discard that outbox;
             // none of the rejected data reaches storage or a Provider.
             for frame in [
-                runtime_frame::Frame::CancelExecution(lankide_protocol::CancelExecution {
+                runtime_frame::Frame::CancelExecution(meerkat_protocol::CancelExecution {
                     execution: Some(*execution),
                     force_close: true,
                     reason: "placement_changed".into(),
                 }),
-                runtime_frame::Frame::ExecutionCommitted(lankide_protocol::ExecutionCommitted {
+                runtime_frame::Frame::ExecutionCommitted(meerkat_protocol::ExecutionCommitted {
                     execution: Some(*execution),
                     committed_at: now_millis(),
                 }),
@@ -571,7 +571,7 @@ impl MachineBroker {
                     machine_id,
                     instance_id,
                     RuntimeFrame {
-                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                         frame: Some(frame),
                     },
                 )
@@ -738,10 +738,10 @@ impl MachineBroker {
                         owner.machine_id == machine_id
                             && matches!(
                                 owner.state,
-                                lankide_storage::ExecutionAttemptState::Lost
-                                    | lankide_storage::ExecutionAttemptState::Rejected
-                                    | lankide_storage::ExecutionAttemptState::Failed
-                                    | lankide_storage::ExecutionAttemptState::Cancelled
+                                meerkat_storage::ExecutionAttemptState::Lost
+                                    | meerkat_storage::ExecutionAttemptState::Rejected
+                                    | meerkat_storage::ExecutionAttemptState::Failed
+                                    | meerkat_storage::ExecutionAttemptState::Cancelled
                             )
                     });
                 let mut completion = None;
@@ -794,9 +794,9 @@ impl MachineBroker {
                     machine_id,
                     instance_id,
                     RuntimeFrame {
-                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                         frame: Some(runtime_frame::Frame::ExecutionEventAck(
-                            lankide_protocol::ExecutionEventAck {
+                            meerkat_protocol::ExecutionEventAck {
                                 execution: Some(execution),
                                 max_saved_sequence,
                             },
@@ -809,9 +809,9 @@ impl MachineBroker {
                         machine_id,
                         instance_id,
                         RuntimeFrame {
-                            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                             frame: Some(runtime_frame::Frame::ExecutionCommitted(
-                                lankide_protocol::ExecutionCommitted {
+                                meerkat_protocol::ExecutionCommitted {
                                     execution: Some(execution.clone()),
                                     committed_at: event.occurred_at,
                                 },
@@ -930,9 +930,9 @@ impl MachineBroker {
                             machine_id,
                             instance_id,
                             RuntimeFrame {
-                                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                                 frame: Some(runtime_frame::Frame::CancelExecution(
-                                    lankide_protocol::CancelExecution {
+                                    meerkat_protocol::CancelExecution {
                                         execution: Some(ExecutionRef {
                                             execution_id: *id,
                                             attempt: *attempt as u32,
@@ -953,8 +953,8 @@ impl MachineBroker {
                         ));
                         if matches!(
                             context.state,
-                            lankide_storage::ExecutionState::Failed
-                                | lankide_storage::ExecutionState::Cancelled
+                            meerkat_storage::ExecutionState::Failed
+                                | meerkat_storage::ExecutionState::Cancelled
                         ) {
                             // Expiry can occur while offline, when cancellation
                             // cannot reach the Machine. Close the orphan on return.
@@ -962,9 +962,9 @@ impl MachineBroker {
                                 machine_id,
                                 instance_id,
                                 RuntimeFrame {
-                                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                                    protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                                     frame: Some(runtime_frame::Frame::CancelExecution(
-                                        lankide_protocol::CancelExecution {
+                                        meerkat_protocol::CancelExecution {
                                             execution: Some(ExecutionRef {
                                                 execution_id: *id,
                                                 attempt: *attempt as u32,
@@ -1057,11 +1057,11 @@ impl MachineBroker {
         if let Err(error) = connection
             .sender
             .send(Ok(RuntimeFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::DeleteAgentFiles(
-                    lankide_protocol::DeleteAgentFiles {
+                    meerkat_protocol::DeleteAgentFiles {
                         request_id: request_id.clone(),
-                        agent: Some(lankide_protocol::AgentRef {
+                        agent: Some(meerkat_protocol::AgentRef {
                             workspace_id: workspace_id.to_string(),
                             agent_id: agent_id.to_string(),
                         }),
@@ -1149,18 +1149,18 @@ impl MachineBroker {
                 .last()
                 && matches!(
                     attempt.state,
-                    lankide_storage::ExecutionAttemptState::Offered
-                        | lankide_storage::ExecutionAttemptState::Accepted
-                        | lankide_storage::ExecutionAttemptState::Running
+                    meerkat_storage::ExecutionAttemptState::Offered
+                        | meerkat_storage::ExecutionAttemptState::Accepted
+                        | meerkat_storage::ExecutionAttemptState::Running
                 )
                 && let Some(context) = storage
                     .execution_auth_context(execution_id, attempt.attempt)
                     .await?
                 && matches!(
                     context.state,
-                    lankide_storage::ExecutionState::Assigning
-                        | lankide_storage::ExecutionState::Running
-                        | lankide_storage::ExecutionState::Recovering
+                    meerkat_storage::ExecutionState::Assigning
+                        | meerkat_storage::ExecutionState::Running
+                        | meerkat_storage::ExecutionState::Recovering
                 )
             {
                 let agent = storage
@@ -1186,9 +1186,9 @@ impl MachineBroker {
                 &machine,
                 &instance,
                 RuntimeFrame {
-                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                    protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                     frame: Some(runtime_frame::Frame::CancelExecution(
-                        lankide_protocol::CancelExecution {
+                        meerkat_protocol::CancelExecution {
                             force_close,
                             execution: Some(ExecutionRef {
                                 execution_id,
@@ -1217,9 +1217,9 @@ impl MachineBroker {
                 && connection.instance_id == pending.instance_id
             {
                 let _ = connection.sender.try_send(Ok(RuntimeFrame {
-                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                    protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                     frame: Some(runtime_frame::Frame::CancelExecution(
-                        lankide_protocol::CancelExecution {
+                        meerkat_protocol::CancelExecution {
                             force_close: !supports(connection, &pending.harness_id, "cancel"),
                             execution: Some(ExecutionRef {
                                 execution_id,
@@ -1323,23 +1323,23 @@ fn supports(connection: &MachineConnection, harness_id: &str, capability: &str) 
 
 fn steer_frame(delivery: SteerDelivery) -> RuntimeFrame {
     RuntimeFrame {
-        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::DeliverSteer(
-            lankide_protocol::DeliverSteer {
-                execution: Some(lankide_protocol::ExecutionRef {
+            meerkat_protocol::DeliverSteer {
+                execution: Some(meerkat_protocol::ExecutionRef {
                     execution_id: delivery.execution_id,
                     attempt: delivery.attempt as u32,
                 }),
-                delivery: Some(lankide_protocol::Delivery {
+                delivery: Some(meerkat_protocol::Delivery {
                     delivery_id: delivery.delivery_id,
-                    kind: lankide_protocol::DeliveryKind::Steer as i32,
+                    kind: meerkat_protocol::DeliveryKind::Steer as i32,
                     rendered_markdown: delivery.rendered_markdown,
                     snapshot_id: 0,
                     trigger_reasons: Vec::new(),
                     resources: delivery
                         .resources
                         .into_iter()
-                        .map(|r| lankide_protocol::ResourceRef {
+                        .map(|r| meerkat_protocol::ResourceRef {
                             resource_id: r.resource_id.get(),
                             file_name: r.file_name,
                             media_type: r.media_type,
@@ -1397,7 +1397,7 @@ impl MachineExecutor for BrokerMachineExecutor {
             if !supports(&connection, &harness_id, "resume")
                 && let Some(session) = assignment.session.as_mut()
             {
-                session.action = lankide_protocol::SessionAction::StartNew as i32;
+                session.action = meerkat_protocol::SessionAction::StartNew as i32;
                 session.native_session_id = None;
             }
             let execution = assignment.execution.as_ref().expect("validated execution");
@@ -1472,7 +1472,7 @@ impl MachineExecutor for BrokerMachineExecutor {
             if connection
                 .sender
                 .send(Ok(RuntimeFrame {
-                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                    protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                     frame: Some(runtime_frame::Frame::AssignExecution(assignment)),
                 }))
                 .await

@@ -262,7 +262,7 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
     ) -> Result<Response<Workspace>, Status> {
         let input = request.get_ref();
         validate_request_id(&input.request_id)?;
-        lankide_core::WorkspaceId::new(input.workspace_id.clone())
+        meerkat_core::WorkspaceId::new(input.workspace_id.clone())
             .map_err(|error| Status::invalid_argument(error.code()))?;
         require_text(&input.name, "workspace_name")?;
         require_text(&input.provider_id, "provider_id")?;
@@ -375,7 +375,7 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
         request: Request<CancelAttemptRequest>,
     ) -> Result<Response<CancelAttemptResponse>, Status> {
         validate_request_id(&request.get_ref().request_id)?;
-        lankide_core::ExecutionId::new(request.get_ref().execution_id)
+        meerkat_core::ExecutionId::new(request.get_ref().execution_id)
             .map_err(|_| Status::invalid_argument("invalid_execution_id"))?;
         Ok(Response::new(
             self.peer.cancel_attempt(request.into_inner()).await?,
@@ -387,7 +387,7 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
         request: Request<GetExecutionDetailsRequest>,
     ) -> Result<Response<ExecutionDetails>, Status> {
         validate_request_id(&request.get_ref().request_id)?;
-        lankide_core::ExecutionId::new(request.get_ref().execution_id)
+        meerkat_core::ExecutionId::new(request.get_ref().execution_id)
             .map_err(|_| Status::invalid_argument("invalid_execution_id"))?;
         Ok(Response::new(
             self.peer

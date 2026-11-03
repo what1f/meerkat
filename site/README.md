@@ -1,4 +1,4 @@
-# Lankide site
+# Meerkat site
 
 The landing page at `lankide.dev`. A static Astro site, independent of the app.
 

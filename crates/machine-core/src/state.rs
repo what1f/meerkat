@@ -22,9 +22,9 @@ pub(crate) enum SessionRecovery {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(crate) struct PersistedState {
     #[serde(default)]
-    pub accepted_steers: BTreeMap<String, BTreeMap<i64, lankide_protocol::DeliveryResult>>,
+    pub accepted_steers: BTreeMap<String, BTreeMap<i64, meerkat_protocol::DeliveryResult>>,
     #[serde(default)]
-    pub uploaded_resources: BTreeMap<String, BTreeMap<String, lankide_protocol::ResourceRef>>,
+    pub uploaded_resources: BTreeMap<String, BTreeMap<String, meerkat_protocol::ResourceRef>>,
     pub sessions: BTreeMap<String, PersistedSession>,
     pub accepted_assignments: BTreeMap<String, PersistedAssignment>,
     pub pending_events: BTreeMap<String, BTreeMap<u64, PersistedEvent>>,
@@ -33,7 +33,7 @@ pub(crate) struct PersistedState {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub(crate) struct PersistedAssignment {
     pub fingerprint: String,
-    pub delivery: lankide_protocol::DeliveryResult,
+    pub delivery: meerkat_protocol::DeliveryResult,
     pub lifecycle: AssignmentLifecycle,
 }
 

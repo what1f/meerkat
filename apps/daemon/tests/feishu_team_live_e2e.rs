@@ -1,4 +1,4 @@
-use lankide_client::{
+use meerkat_client::{
     AgentDraft, Avatar, ManagementClient, RuntimeManagementClient, ThinkingLevel, WorkspaceDraft,
 };
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
@@ -25,8 +25,8 @@ struct FeishuAgentFixture {
 
 #[path = "support/live.rs"]
 mod live;
-use lankide_provider_feishu::{Auth, Credentials, Domain, FeishuClient, Method, ReqwestTransport};
-use lankide_testkit::{GateSelection, ScenarioArtifact};
+use meerkat_provider_feishu::{Auth, Credentials, Domain, FeishuClient, Method, ReqwestTransport};
+use meerkat_testkit::{GateSelection, ScenarioArtifact};
 use sha2::{Digest, Sha256};
 
 #[derive(Default)]
@@ -38,10 +38,10 @@ struct OwnedResources {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "requires explicit LANKIDE_E2E_LIVE=1, real Feishu fixtures, and real Pi"]
+#[ignore = "requires explicit MEERKAT_E2E_LIVE=1, real Feishu fixtures, and real Pi"]
 async fn real_feishu_team_lifecycle_queue_steer_and_reply() {
-    assert_eq!(env::var("LANKIDE_E2E_LIVE").as_deref(), Ok("1"));
-    let run_id = env::var("LANKIDE_E2E_RUN_ID").expect("LANKIDE_E2E_RUN_ID is required");
+    assert_eq!(env::var("MEERKAT_E2E_LIVE").as_deref(), Ok("1"));
+    let run_id = env::var("MEERKAT_E2E_RUN_ID").expect("MEERKAT_E2E_RUN_ID is required");
     let artifact = Arc::new(
         ScenarioArtifact::new(
             &workspace_root().join("target/e2e-artifacts"),
@@ -63,17 +63,17 @@ async fn real_feishu_team_lifecycle_queue_steer_and_reply() {
     let result = live::scenario(async move {
     live::preflight(GateSelection::FeishuLive);
     let fixture_db = PathBuf::from(
-        env::var("LANKIDE_FEISHU_E2E_APPS")
-            .expect("LANKIDE_FEISHU_E2E_APPS is required"),
+        env::var("MEERKAT_FEISHU_E2E_APPS")
+            .expect("MEERKAT_FEISHU_E2E_APPS is required"),
     );
     require_owner_only(&fixture_db).expect("Feishu fixture must be owner-only");
     let mut apps = load_feishu_apps(&fixture_db).expect("load two Feishu Agent applications");
     let lark_cli =
-        PathBuf::from(env::var("LANKIDE_E2E_LARK_CLI").expect("LANKIDE_E2E_LARK_CLI is required"));
+        PathBuf::from(env::var("MEERKAT_E2E_LARK_CLI").expect("MEERKAT_E2E_LARK_CLI is required"));
     let oauth_dir = PathBuf::from(
-        env::var("LANKIDE_E2E_OAUTH_DIR").expect("LANKIDE_E2E_OAUTH_DIR is required"),
+        env::var("MEERKAT_E2E_OAUTH_DIR").expect("MEERKAT_E2E_OAUTH_DIR is required"),
     );
-    let chat_id = env::var("LANKIDE_E2E_CHAT_ID").expect("LANKIDE_E2E_CHAT_ID is required");
+    let chat_id = env::var("MEERKAT_E2E_CHAT_ID").expect("MEERKAT_E2E_CHAT_ID is required");
     hydrate_group_bots(&lark_cli, &oauth_dir, &chat_id, &mut apps)
         .expect("both Feishu Apps must already be members of the E2E group");
 
@@ -92,7 +92,7 @@ async fn real_feishu_team_lifecycle_queue_steer_and_reply() {
         .expect("Runtime UDS did not become ready");
 
     let machine_bin = PathBuf::from(
-        env::var("LANKIDE_E2E_MACHINE_BIN").expect("LANKIDE_E2E_MACHINE_BIN is required"),
+        env::var("MEERKAT_E2E_MACHINE_BIN").expect("MEERKAT_E2E_MACHINE_BIN is required"),
     );
     let machine_log = private_log(&artifact_dir.join("machine.log"));
     let machine = live::Daemon::spawn(Command::new(machine_bin)
@@ -153,7 +153,7 @@ async fn real_feishu_team_lifecycle_queue_steer_and_reply() {
     let snapshot = application_profile(&evan_fixture).await.expect("snapshot actual Feishu profile");
     write_private_json(&artifact_dir.join("profile-before.json"), &snapshot).expect("persist profile recovery values");
     owned.lock().unwrap().profile = Some((evan_fixture.clone(), snapshot));
-    let profile_marker = format!("Lankide live E2E {run_id}");
+    let profile_marker = format!("Meerkat live E2E {run_id}");
     let mut edited = evan.clone();
     edited.role = "E2E-RD".into();
     edited.bio = profile_marker.clone();
@@ -178,7 +178,7 @@ async fn real_feishu_team_lifecycle_queue_steer_and_reply() {
         &chat_id,
         &evan_fixture,
         &format!(
-            "{start_marker} 请先用 bash 执行 sleep 15，等待随后发来的两条补充要求；然后使用 bash 调用正式能力命令 $LANKIDE_CLI send --channel group_chat --chat {chat_id} --force --content {evan_final}_{steer_one}_{steer_two}。只发送一次，不要改写 --content 的参数值，不要读取凭据或打印环境变量。"
+            "{start_marker} 请先用 bash 执行 sleep 15，等待随后发来的两条补充要求；然后使用 bash 调用正式能力命令 $MEERKAT_CLI send --channel group_chat --chat {chat_id} --force --content {evan_final}_{steer_one}_{steer_two}。只发送一次，不要改写 --content 的参数值，不要读取凭据或打印环境变量。"
         ),
         &format!("{run_id}-start"),
     )
@@ -211,7 +211,7 @@ async fn real_feishu_team_lifecycle_queue_steer_and_reply() {
         &chat_id,
         &rocky_fixture,
         &format!(
-            "{rocky_marker} 请用 bash 调用正式能力命令 $LANKIDE_CLI send --channel group_chat --chat {chat_id} --force --content {rocky_final}，只发送一次。不要读取凭据或打印环境变量。"
+            "{rocky_marker} 请用 bash 调用正式能力命令 $MEERKAT_CLI send --channel group_chat --chat {chat_id} --force --content {rocky_final}，只发送一次。不要读取凭据或打印环境变量。"
         ),
         &format!("{run_id}-rocky"),
     )
@@ -473,8 +473,8 @@ async fn cleanup_team(owned: &Mutex<OwnedResources>, home: &Path, artifact: &Sce
             Err(_) => artifact.record_cleanup("enumerate_bot_messages", "private_database", false),
         }
     }
-    let cli = env::var_os("LANKIDE_E2E_LARK_CLI").map(PathBuf::from);
-    let oauth = env::var_os("LANKIDE_E2E_OAUTH_DIR")
+    let cli = env::var_os("MEERKAT_E2E_LARK_CLI").map(PathBuf::from);
+    let oauth = env::var_os("MEERKAT_E2E_OAUTH_DIR")
         .map(PathBuf::from)
         .unwrap_or_default();
     for (request_key, id) in &owned.actor_requests {
@@ -516,7 +516,7 @@ fn native_cli_evidence(
     expected_markers: &[(&str, &str)],
 ) -> Result<Value, String> {
     let db = runtime_db(database)?;
-    let cli = live::runtime_binary().with_file_name("lankide");
+    let cli = live::runtime_binary().with_file_name("meerkat");
     let hash = Sha256::digest(fs::read(&cli).map_err(|_| "read shipped capability CLI")?)
         .iter()
         .map(|byte| format!("{byte:02x}"))
@@ -529,7 +529,7 @@ fn native_cli_evidence(
         let directory = home
             .join("workspaces/feishu_team_e2e/agents")
             .join(agent)
-            .join(".lankide/pi/sessions");
+            .join(".meerkat/pi/sessions");
         let mut matched = None;
         for entry in fs::read_dir(&directory).map_err(|_| "native session directory missing")? {
             let path = entry.map_err(|_| "read session directory")?.path();
@@ -614,8 +614,8 @@ fn native_cli_evidence(
 fn is_direct_shipped_cli_send(command: &str, cli: &Path) -> bool {
     let command = command.trim();
     let prefixes = [
-        "$LANKIDE_CLI send ".to_owned(),
-        "${LANKIDE_CLI} send ".to_owned(),
+        "$MEERKAT_CLI send ".to_owned(),
+        "${MEERKAT_CLI} send ".to_owned(),
         format!("{} send ", cli.display()),
     ];
     prefixes.iter().any(|prefix| command.starts_with(prefix))

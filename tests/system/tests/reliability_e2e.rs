@@ -1,15 +1,15 @@
-use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use meerkat_system_e2e::{Result, RigConfig, Script, SystemRig};
 use std::time::Duration;
 use tokio::time::timeout;
 
 fn config() -> RigConfig {
     RigConfig {
         local_discovery: true,
-        link: lankide_protocol::link::LinkSettings {
+        link: meerkat_protocol::link::LinkSettings {
             heartbeat_interval: Duration::from_millis(200),
             handshake_timeout: Duration::from_secs(1),
         },
-        reconnect: lankide_machine_core::ReconnectPolicy {
+        reconnect: meerkat_machine_core::ReconnectPolicy {
             initial: Duration::from_millis(30),
             maximum: Duration::from_millis(100),
             ..Default::default()
@@ -141,7 +141,7 @@ async fn management_cancel_stops_surviving_run_after_runtime_crash() -> Result<(
 async fn repeated_machine_loss_uses_backoff_and_pauses_with_one_notice() -> Result<()> {
     let mut rig = SystemRig::start(RigConfig {
         attempt_lease: Duration::from_millis(350),
-        retry: lankide_runtime::RetryConfig {
+        retry: meerkat_runtime::RetryConfig {
             base_ms: 100,
             max_ms: 200,
             ..Default::default()
@@ -248,7 +248,7 @@ async fn lost_initial_delivery_receipt_replays_completion_without_rerun() -> Res
                     .as_object()
                     .unwrap()
                     .values()
-                    .any(|e| e["kind"] == lankide_protocol::ExecutionEventKind::Completed as i32)
+                    .any(|e| e["kind"] == meerkat_protocol::ExecutionEventKind::Completed as i32)
             }))
     })
     .await?;
@@ -319,7 +319,7 @@ async fn lost_steer_receipt_replays_before_completion_without_rerun() -> Result<
                     .as_object()
                     .unwrap()
                     .values()
-                    .any(|e| e["kind"] == lankide_protocol::ExecutionEventKind::Completed as i32)
+                    .any(|e| e["kind"] == meerkat_protocol::ExecutionEventKind::Completed as i32)
             }))
     })
     .await?;
@@ -394,7 +394,7 @@ async fn cut_after_acceptance_replays_receipt_before_live_reply() -> Result<()> 
                     .as_object()
                     .unwrap()
                     .values()
-                    .any(|e| e["kind"] == lankide_protocol::ExecutionEventKind::Started as i32)
+                    .any(|e| e["kind"] == meerkat_protocol::ExecutionEventKind::Started as i32)
             }))
     })
     .await?;

@@ -16,12 +16,12 @@ for (const desktop of [false, true]) {
     const context = await browser.newContext({
       baseURL,
       reducedMotion: 'reduce',
-      ...(desktop ? { userAgent: 'Mozilla/5.0 LankideDesktop/0.1.0' } : {}),
+      ...(desktop ? { userAgent: 'Mozilla/5.0 MeerkatDesktop/0.1.0' } : {}),
     });
     const page = await context.newPage();
     try {
       await page.addInitScript(
-        (id) => localStorage.setItem('lankide.workspace', JSON.stringify(id)),
+        (id) => localStorage.setItem('meerkat.workspace', JSON.stringify(id)),
         workspace,
       );
       for (const viewport of [
@@ -128,7 +128,7 @@ for (const locale of ['en-US', 'zh-CN']) {
         });
         await page.goto('http://boot.test/boot.html');
         await expect(page.locator('#loading')).toHaveText(
-          locale === 'zh-CN' ? '正在打开 Lankide…' : 'Opening Lankide…',
+          locale === 'zh-CN' ? '正在打开 Meerkat…' : 'Opening Meerkat…',
         );
         await expect(page.locator('#loading')).toHaveCSS('opacity', '1');
         await expect(page.locator('.peek .meerkat')).toBeAttached();
@@ -209,20 +209,20 @@ for (const viewport of [
     await rig({ op: 'create_agent', ...member });
     const context = await browser.newContext({
       baseURL,
-      userAgent: 'Mozilla/5.0 LankideDesktop/0.1.0',
+      userAgent: 'Mozilla/5.0 MeerkatDesktop/0.1.0',
       viewport,
     });
     const page = await context.newPage();
     try {
       await page.addInitScript((id) => {
-        localStorage.setItem('lankide.workspace', JSON.stringify(id));
+        localStorage.setItem('meerkat.workspace', JSON.stringify(id));
       }, member.workspace);
       await page.goto(`/#/member/${member.agent}`);
       await page.getByRole('button', { name: /高级|Advanced/ }).click();
       const names = page.getByRole('textbox', { name: /^(名称|Variable)$/ });
       const values = page.getByRole('textbox', { name: /^(值|Value)$/ });
       const blank = (await names.count()) - 1;
-      await names.nth(blank).fill('LANKIDE_SYSTEM_SCRIPT');
+      await names.nth(blank).fill('MEERKAT_SYSTEM_SCRIPT');
       await values.nth(blank).fill('{"behaviour":"fail_spawn","text":"model not found"}');
       await page.getByTestId('member-save').click();
       await expect(page.getByTestId('member-save')).toBeDisabled();

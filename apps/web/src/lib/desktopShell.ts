@@ -1,5 +1,5 @@
 export function isDesktopShell(): boolean {
-  return /(?:^|\s)LankideDesktop\/\S+/.test(navigator.userAgent);
+  return /(?:^|\s)MeerkatDesktop\/\S+/.test(navigator.userAgent);
 }
 
 export function syncWindowTheme(theme: 'system' | 'light' | 'dark') {

@@ -1,15 +1,15 @@
 [package]
 autotests = false
-name = "lankided"
+name = "meerkatd"
 version.workspace = true
 edition.workspace = true
-description = "Lankide Runtime daemon composition root"
+description = "Meerkat Runtime daemon composition root"
 license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-lankide-web-assets = { path = "../../crates/web-assets" }
+meerkat-web-assets = { path = "../../crates/web-assets" }
 log.workspace = true
 socket2 = "0.6"
 nix = { version = "0.29", features = ["net"] }
@@ -18,40 +18,40 @@ tokio-rustls.workspace = true
 rcgen.workspace = true
 async-trait.workspace = true
 sha2.workspace = true
-lankide-client = { path = "../../crates/client" }
-lankide-core = { path = "../../crates/core" }
-lankide-daemon-runtime = { path = "../../crates/daemon-runtime" }
-lankide-protocol = { path = "../../crates/protocol" }
-lankide-provider = { path = "../../crates/provider" }
-lankide-runtime = { path = "../../crates/runtime" }
-lankide-provider-feishu = { path = "../../providers/feishu" }
-lankide-provider-telegram = { path = "../../providers/telegram" }
-lankide-storage = { path = "../../crates/storage" }
+meerkat-client = { path = "../../crates/client" }
+meerkat-core = { path = "../../crates/core" }
+meerkat-daemon-runtime = { path = "../../crates/daemon-runtime" }
+meerkat-protocol = { path = "../../crates/protocol" }
+meerkat-provider = { path = "../../crates/provider" }
+meerkat-runtime = { path = "../../crates/runtime" }
+meerkat-provider-feishu = { path = "../../providers/feishu" }
+meerkat-provider-telegram = { path = "../../providers/telegram" }
+meerkat-storage = { path = "../../crates/storage" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["signal"] }
 
 [dev-dependencies]
-lankide-testkit = { path = "../../crates/testkit" }
+meerkat-testkit = { path = "../../crates/testkit" }
 tempfile = { workspace = true }
 tokio-stream.workspace = true
 rusqlite.workspace = true
 
 [[bin]]
 test = false
-name = "lankided"
+name = "meerkatd"
 path = "src/main.rs"
 
-[package.metadata.lankide.e2e]
-command = "cargo build --locked -p lankided --example runtime_daemon_e2e && cargo test -p lankided --test e2e runtime_daemon_e2e::"
+[package.metadata.meerkat.e2e]
+command = "cargo build --locked -p meerkatd --example runtime_daemon_e2e && cargo test -p meerkatd --test e2e runtime_daemon_e2e::"
 scenario = "Boot one Runtime on a private home, exercise local origin-checked HTTP management and event WebSocket subscriptions including Agent deletion and acknowledged Machine file cleanup and authenticated JSON/WS Machine composition; S3.1 shuts down with a live Machine and running Provider, exits 0 without still_shared and reopens the database; S3.2 exits a duplicate 0 without opening SQLite while the owner serves; S3.3 recovers stale ownership after SIGKILL. Load optional retry-policy.json duration configuration from the private Runtime home. Serve HTTP resources and WS links on one listener, with configurable execution token lifetime. Read Machine heartbeat interval and handshake timeout from runtime.json with production defaults. Default local management to 127.0.0.1:7440, reject occupied ports without fallback, and keep hermetic rigs on explicit port 0. Serve POST /machines/pair on the shared listener; local discovery secret authorizes pairing only, and pairing validity is configured in runtime.json (default ten minutes). Reconcile the peer active-attempt report before dispatching its queued execution. Agent capabilities and attachment transfers use capability_request/response frames over the Machine WS link and private Machine proxy sockets (S15 system scenarios). Runtime readiness and duplicate-owner health checks use authenticated HTTP and lock files with no Runtime UDS listener (S17). Persist an owner-only self-signed Machine certificate and remote address, start and stop the TLS listener live, preserve loopback management and local discovery, and reuse the identity after restart. Serve management listings during simultaneous conversations across several Workspaces and shut down with Provider receivers and database operations drained. Detect the primary up non-loopback LAN IPv4 address when enabling remote access and retain manual address fallback. Serve the Web frontend through an application-injected fallback on the loopback listener, after local access checks, while keeping Machine WebSocket upgrades and remote TLS routes unchanged (web-assets system scenario)."
 prerequisites = "None for hermetic boot check"
 classification = "hermetic"
 unattended = "yes"
 status = "implemented"
 
-[package.metadata.lankide.e2e-additional.daemon-logs]
-command = "cargo build --locked -p lankided --example runtime_daemon_e2e && cargo test -p lankided --test e2e daemon_logs_e2e::"
+[package.metadata.meerkat.e2e-additional.daemon-logs]
+command = "cargo build --locked -p meerkatd --example runtime_daemon_e2e && cargo test -p meerkatd --test e2e daemon_logs_e2e::"
 scenario = "Run the shipped Runtime daemon with invalid configuration and discarded stdout/stderr; retain a timestamped failure in the private home log, rotate a full 4 MiB log once, and enforce mode 0600 on both files."
 prerequisites = "Unix filesystem semantics; private daemon home"
 classification = "hermetic"

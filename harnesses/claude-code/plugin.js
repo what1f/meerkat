@@ -49,7 +49,7 @@ function open(value, resume) {
   // Wait for the local server before the first prompt. Per-tool false metadata
   // keeps the remaining tools deferred even with this server-level default.
   const mcpConfig = JSON.parse(ctx.read(mcpPath));
-  mcpConfig.mcpServers.lankide.alwaysLoad = true;
+  mcpConfig.mcpServers.meerkat.alwaysLoad = true;
   ctx.write(mcpPath, JSON.stringify(mcpConfig));
   ctx.bindSession(nativeId);
   return { native_session_id: nativeId };

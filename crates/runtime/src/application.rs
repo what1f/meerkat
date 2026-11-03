@@ -1,12 +1,12 @@
 use super::*;
-use lankide_core::PersonId;
-use lankide_protocol::{AgentRef, EnvironmentVariable, SessionAction};
-use lankide_provider::{
+use meerkat_core::PersonId;
+use meerkat_protocol::{AgentRef, EnvironmentVariable, SessionAction};
+use meerkat_provider::{
     OperationProgress, OperationUpdate, ProviderAgentFile, ProviderFuture as SdkFuture,
     ProviderLogger, ProviderMessage, ProviderPersonIdentity, ProviderResource, ProviderStorage,
     ResourceSaver, ResourceUpload, SecretReader, SecretValue as ProviderSecret,
 };
-use lankide_storage::{AgentRecord, AttentionRecord, PersonRecord};
+use meerkat_storage::{AgentRecord, AttentionRecord, PersonRecord};
 use std::{
     collections::BTreeMap,
     sync::{
@@ -35,7 +35,7 @@ pub(crate) struct ApplicationInner {
     factories: ProviderFactoryRegistry,
     state: AtomicU8,
     sequence: AtomicU64,
-    events: broadcast::Sender<lankide_protocol::ManagementEvent>,
+    events: broadcast::Sender<meerkat_protocol::ManagementEvent>,
     recovery: StdMutex<Option<RecoveryReport>>,
     machine_connected: AtomicBool,
     broker: MachineBroker,
@@ -177,7 +177,7 @@ impl RuntimeApplication {
                             .database()
                             .set_workspace_setup(
                                 &workspace.id,
-                                lankide_storage::WorkspaceSetupStatus::Ready,
+                                meerkat_storage::WorkspaceSetupStatus::Ready,
                                 None,
                                 now_millis(),
                             )
@@ -193,7 +193,7 @@ impl RuntimeApplication {
                             .database()
                             .set_workspace_setup(
                                 &workspace.id,
-                                lankide_storage::WorkspaceSetupStatus::Error,
+                                meerkat_storage::WorkspaceSetupStatus::Error,
                                 Some("provider_setup_failed"),
                                 now_millis(),
                             )
@@ -359,7 +359,7 @@ impl RuntimeApplication {
         Ok(())
     }
 
-    pub fn subscribe_management(&self) -> broadcast::Receiver<lankide_protocol::ManagementEvent> {
+    pub fn subscribe_management(&self) -> broadcast::Receiver<meerkat_protocol::ManagementEvent> {
         self.inner.events.subscribe()
     }
 
@@ -464,7 +464,7 @@ impl RuntimeApplication {
                     .database()
                     .set_workspace_setup(
                         &workspace.id,
-                        lankide_storage::WorkspaceSetupStatus::Error,
+                        meerkat_storage::WorkspaceSetupStatus::Error,
                         Some("provider_setup_failed"),
                         now_millis(),
                     )
@@ -538,9 +538,9 @@ impl RuntimeApplication {
             for (workspace, agent) in runtime.database().take_management_changes() {
                 self.emit_management(
                     if agent.is_some() {
-                        lankide_protocol::ManagementEventKind::AgentUpdated
+                        meerkat_protocol::ManagementEventKind::AgentUpdated
                     } else {
-                        lankide_protocol::ManagementEventKind::WorkspaceUpdated
+                        meerkat_protocol::ManagementEventKind::WorkspaceUpdated
                     },
                     &workspace,
                     agent.as_ref(),
@@ -660,7 +660,7 @@ impl RuntimeApplication {
                     }
                     if changed {
                         execution_application.emit_management(
-                            lankide_protocol::ManagementEventKind::AgentUpdated,
+                            meerkat_protocol::ManagementEventKind::AgentUpdated,
                             &execution_workspace,
                             Some(&execution_agent),
                             now_millis(),
@@ -713,10 +713,10 @@ impl RuntimeApplication {
 
     pub(crate) fn emit_machine_catalog_changed(&self) {
         let sequence = self.inner.sequence.fetch_add(1, Ordering::AcqRel) + 1;
-        let _ = self.inner.events.send(lankide_protocol::ManagementEvent {
+        let _ = self.inner.events.send(meerkat_protocol::ManagementEvent {
             sequence,
             occurred_at: now_millis(),
-            kind: lankide_protocol::ManagementEventKind::MachineCatalogChanged,
+            kind: meerkat_protocol::ManagementEventKind::MachineCatalogChanged,
             workspace: None,
             agent: None,
         });
@@ -724,13 +724,13 @@ impl RuntimeApplication {
 
     pub(crate) fn emit_management(
         &self,
-        kind: lankide_protocol::ManagementEventKind,
+        kind: meerkat_protocol::ManagementEventKind,
         workspace: &WorkspaceId,
         agent: Option<&AgentId>,
         occurred_at: i64,
     ) {
         let sequence = self.inner.sequence.fetch_add(1, Ordering::AcqRel) + 1;
-        let _ = self.inner.events.send(lankide_protocol::ManagementEvent {
+        let _ = self.inner.events.send(meerkat_protocol::ManagementEvent {
             sequence,
             occurred_at,
             kind,
@@ -917,7 +917,7 @@ impl SecretReader for WorkspaceServices {
         })
     }
 }
-impl lankide_provider::SecretWriter for WorkspaceServices {
+impl meerkat_provider::SecretWriter for WorkspaceServices {
     fn write<'a>(&'a self, name: &'a str, value: ProviderSecret) -> SdkFuture<'a, ()> {
         Box::pin(async move {
             if let Some(scoped) = name.strip_prefix("agent:")
@@ -931,7 +931,7 @@ impl lankide_provider::SecretWriter for WorkspaceServices {
                         &self.workspace_id,
                         &agent_id,
                         secret_name,
-                        lankide_storage::SecretValue::new(value.expose_secret()),
+                        meerkat_storage::SecretValue::new(value.expose_secret()),
                         now_millis(),
                     )
                     .await
@@ -941,7 +941,7 @@ impl lankide_provider::SecretWriter for WorkspaceServices {
                 .put_secret(
                     &self.workspace_id,
                     name,
-                    lankide_storage::SecretValue::new(value.expose_secret()),
+                    meerkat_storage::SecretValue::new(value.expose_secret()),
                     now_millis(),
                 )
                 .await
@@ -1049,7 +1049,7 @@ impl ProviderStorage for WorkspaceServices {
     }
     fn resource<'a>(
         &'a self,
-        resource: &'a lankide_core::ResourceRef,
+        resource: &'a meerkat_core::ResourceRef,
     ) -> SdkFuture<'a, ProviderResource> {
         Box::pin(async move {
             let resource_id =
@@ -1064,7 +1064,7 @@ impl ProviderStorage for WorkspaceServices {
                     operation: "read_runtime_resource",
                     retryable: false,
                 })?;
-            let stored_resource = lankide_core::ResourceRef::from(stored.resource);
+            let stored_resource = meerkat_core::ResourceRef::from(stored.resource);
             if stored_resource != *resource {
                 return Err(ProviderError::InvalidInput { field: "resource" });
             }
@@ -1096,7 +1096,7 @@ impl ProviderStorage for WorkspaceServices {
         person_id: &'a PersonId,
         tenant_id: Option<&'a str>,
         name: Option<&'a str>,
-        avatar: Option<&'a lankide_core::ResourceRef>,
+        avatar: Option<&'a meerkat_core::ResourceRef>,
     ) -> SdkFuture<'a, ProviderPersonIdentity> {
         Box::pin(async move {
             let person = self
@@ -1139,7 +1139,7 @@ impl ProviderStorage for WorkspaceServices {
     fn human_profile<'a>(
         &'a self,
         person_id: &'a PersonId,
-    ) -> SdkFuture<'a, (Option<String>, Option<lankide_core::ResourceRef>)> {
+    ) -> SdkFuture<'a, (Option<String>, Option<meerkat_core::ResourceRef>)> {
         Box::pin(async move {
             self.storage
                 .human_profile(&self.workspace_id, person_id)
@@ -1151,7 +1151,7 @@ impl ProviderStorage for WorkspaceServices {
         &'a self,
         person_id: &'a PersonId,
         name: Option<&'a str>,
-        avatar: Option<&'a lankide_core::ResourceRef>,
+        avatar: Option<&'a meerkat_core::ResourceRef>,
         signature: Option<&'a str>,
     ) -> SdkFuture<'a, ()> {
         Box::pin(async move {
@@ -1183,7 +1183,7 @@ impl ProviderStorage for WorkspaceServices {
                 .ok_or(ProviderError::NotFound { entity: "person" })
         })
     }
-    fn team_members(&self) -> SdkFuture<'_, Vec<lankide_provider::ProviderTeamMember>> {
+    fn team_members(&self) -> SdkFuture<'_, Vec<meerkat_provider::ProviderTeamMember>> {
         Box::pin(async move {
             let humans = self
                 .storage
@@ -1198,9 +1198,9 @@ impl ProviderStorage for WorkspaceServices {
             Ok(humans
                 .into_iter()
                 .map(person_identity)
-                .map(lankide_provider::ProviderTeamMember::Human)
+                .map(meerkat_provider::ProviderTeamMember::Human)
                 .chain(agents.into_iter().map(|agent| {
-                    lankide_provider::ProviderTeamMember::Agent { agent_id: agent.id }
+                    meerkat_provider::ProviderTeamMember::Agent { agent_id: agent.id }
                 }))
                 .collect())
         })
@@ -1263,12 +1263,12 @@ fn person_identity(record: PersonRecord) -> ProviderPersonIdentity {
     }
 }
 impl ProviderLogger for WorkspaceServices {
-    fn log(&self, level: lankide_provider::LogLevel, message: &str) {
+    fn log(&self, level: meerkat_provider::LogLevel, message: &str) {
         let level = match level {
-            lankide_provider::LogLevel::Debug => log::Level::Debug,
-            lankide_provider::LogLevel::Info => log::Level::Info,
-            lankide_provider::LogLevel::Warn => log::Level::Warn,
-            lankide_provider::LogLevel::Error => log::Level::Error,
+            meerkat_provider::LogLevel::Debug => log::Level::Debug,
+            meerkat_provider::LogLevel::Info => log::Level::Info,
+            meerkat_provider::LogLevel::Warn => log::Level::Warn,
+            meerkat_provider::LogLevel::Error => log::Level::Error,
         };
         log::log!(level, "provider workspace={}: {message}", self.workspace_id);
     }
@@ -1288,7 +1288,7 @@ impl OperationProgress for WorkspaceServices {
     }
 }
 impl ResourceSaver for WorkspaceServices {
-    fn save<'a>(&'a self, upload: ResourceUpload) -> SdkFuture<'a, lankide_core::ResourceRef> {
+    fn save<'a>(&'a self, upload: ResourceUpload) -> SdkFuture<'a, meerkat_core::ResourceRef> {
         Box::pin(async move {
             self.resources
                 .save(&self.workspace_id, upload)

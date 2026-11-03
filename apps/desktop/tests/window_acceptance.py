@@ -19,7 +19,7 @@ SCENARIOS = (
     "startup-loader", "startup-error-recovery", "open-in-browser",
     "external-link-navigation",
 )
-BINARY_NAMES = ("lankide-desktop", "lankided", "lankide-machine", "lankide")
+BINARY_NAMES = ("meerkat-desktop", "meerkatd", "meerkat-machine", "meerkat")
 
 
 def digest(path):
@@ -27,13 +27,13 @@ def digest(path):
 
 
 def binary_paths():
-    requested = os.environ.get("LANKIDE_VISUAL_BINARY")
-    if os.environ.get("LANKIDE_RELEASE_REQUIRED") == "1" and not requested:
-        raise ValueError("release gate requires LANKIDE_VISUAL_BINARY")
-    desktop = Path(requested) if requested else ROOT / "target/debug/lankide-desktop"
-    directory = Path(os.environ.get("LANKIDE_RELEASE_BIN_DIR", str(desktop.parent)))
+    requested = os.environ.get("MEERKAT_VISUAL_BINARY")
+    if os.environ.get("MEERKAT_RELEASE_REQUIRED") == "1" and not requested:
+        raise ValueError("release gate requires MEERKAT_VISUAL_BINARY")
+    desktop = Path(requested) if requested else ROOT / "target/debug/meerkat-desktop"
+    directory = Path(os.environ.get("MEERKAT_RELEASE_BIN_DIR", str(desktop.parent)))
     paths = {name: directory / name for name in BINARY_NAMES}
-    paths["lankide-desktop"] = desktop
+    paths["meerkat-desktop"] = desktop
     for path in paths.values():
         if not path.is_file() or not os.access(path, os.X_OK):
             raise ValueError(f"product executable missing: {path}")
@@ -95,9 +95,9 @@ def screenshot_size(data):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prepare", type=Path, help="write a pending review template; does not launch or accept the app")
-    parser.add_argument("--review", type=Path, default=os.environ.get("LANKIDE_VISUAL_REVIEW"))
+    parser.add_argument("--review", type=Path, default=os.environ.get("MEERKAT_VISUAL_REVIEW"))
     args = parser.parse_args()
-    if os.environ.get("LANKIDE_VISUAL_SCENARIOS"):
+    if os.environ.get("MEERKAT_VISUAL_SCENARIOS"):
         raise ValueError("partial scenario selection cannot satisfy Desktop acceptance")
     paths = binary_paths()
     if args.prepare:
@@ -112,7 +112,7 @@ def main():
         print(f"Pending review template: {args.prepare / 'review.json'}; follow apps/desktop/tests/window-acceptance.md")
         return
     if args.review is None:
-        print("PREREQUISITE_MISSING: supply LANKIDE_VISUAL_REVIEW after reviewing the actual product window", file=sys.stderr)
+        print("PREREQUISITE_MISSING: supply MEERKAT_VISUAL_REVIEW after reviewing the actual product window", file=sys.stderr)
         raise SystemExit(4)
     review_path = Path(args.review).resolve()
     review = json.loads(review_path.read_text())
@@ -143,7 +143,7 @@ def main():
         if current.returncode == 0 and current.stdout.strip() == item["started_at"].strip():
             raise ValueError(f"review process is still alive: {item['role']}")
     home = Path(review["runtime_home"])
-    if not home.is_absolute() or not home.name or home == Path.home() / ".lankide":
+    if not home.is_absolute() or not home.name or home == Path.home() / ".meerkat":
         raise ValueError("review must identify its isolated Runtime home")
     for name in ("runtime.sock", "runtime.lock", "machine.lock"):
         if (home / "run" / name).exists():

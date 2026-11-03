@@ -3,7 +3,7 @@
 mod daemon_e2e;
 mod shutdown_scenarios;
 use daemon_e2e::run_e2e;
-use lankided::{RuntimePaths, run_daemon, wait_for_shutdown};
+use meerkatd::{RuntimePaths, run_daemon, wait_for_shutdown};
 
 #[tokio::main]
 async fn main() {
@@ -48,7 +48,7 @@ async fn main() {
                 if fixture {
                     daemon_e2e::fixture_factories().expect("fixture factories")
                 } else {
-                    lankided::production_factories().expect("production factories")
+                    meerkatd::production_factories().expect("production factories")
                 },
                 wait_for_shutdown(),
             )

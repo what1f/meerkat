@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-use lankide_machine::{AppError, DaemonConfig};
+use meerkat_machine::{AppError, DaemonConfig};
 use std::{
     env,
     ffi::{OsStr, OsString},
@@ -56,11 +56,11 @@ async fn execute() -> Result<(), AppError> {
                     .into_owned(),
             );
         } else if argument == "--version" {
-            println!("lankide-machine {}", env!("CARGO_PKG_VERSION"));
+            println!("meerkat-machine {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         } else if argument == "--help" {
             println!(
-                "Usage: lankide-machine [pair URL CODE [--cert-sha256 HEX]] [--home PATH] [--instance-id ID] [--runtime-url URL] [--link-secret-file PATH]"
+                "Usage: meerkat-machine [pair URL CODE [--cert-sha256 HEX]] [--home PATH] [--instance-id ID] [--runtime-url URL] [--link-secret-file PATH]"
             );
             return Ok(());
         } else if argument == "--home" {
@@ -93,16 +93,16 @@ async fn execute() -> Result<(), AppError> {
         }
     }
     let paths = match home {
-        Some(home) => lankide_machine::MachineDaemonPaths::for_home(home)?,
-        None => lankide_machine::MachineDaemonPaths::local_default()?,
+        Some(home) => meerkat_machine::MachineDaemonPaths::for_home(home)?,
+        None => meerkat_machine::MachineDaemonPaths::local_default()?,
     };
-    lankide_daemon_runtime::init_logging(&paths.home, "lankide-machine")?;
+    meerkat_daemon_runtime::init_logging(&paths.home, "meerkat-machine")?;
     if pairing.is_none() {
         log::info!("started version={}", env!("CARGO_PKG_VERSION"));
     }
     let mut config = DaemonConfig::for_home(paths.home)?;
     if let Some((url, code)) = pairing {
-        lankide_machine::pair_with_pin(&config.paths, &url, &code, cert_sha256.as_deref()).await?;
+        meerkat_machine::pair_with_pin(&config.paths, &url, &code, cert_sha256.as_deref()).await?;
     }
     config.runtime_url = runtime_url;
     config.link_secret_file = link_secret_file;
@@ -112,7 +112,7 @@ async fn execute() -> Result<(), AppError> {
     if let Some(instance_id) = instance_id {
         config.instance_id = instance_id;
     }
-    lankide_machine::run(config).await
+    meerkat_machine::run(config).await
 }
 
 fn user_executable_path() -> Option<OsString> {
@@ -123,10 +123,10 @@ fn user_executable_path() -> Option<OsString> {
 }
 
 fn login_shell_path() -> Option<OsString> {
-    const START: &str = "__LANKIDE_PATH_START__";
-    const END: &str = "__LANKIDE_PATH_END__";
+    const START: &str = "__MEERKAT_PATH_START__";
+    const END: &str = "__MEERKAT_PATH_END__";
     const COMMAND_LINE: &str =
-        "printf '%s\\n' __LANKIDE_PATH_START__; printenv PATH; printf '%s\\n' __LANKIDE_PATH_END__";
+        "printf '%s\\n' __MEERKAT_PATH_START__; printenv PATH; printf '%s\\n' __MEERKAT_PATH_END__";
 
     let shell = env::var_os("SHELL")
         .filter(|value| !value.is_empty())

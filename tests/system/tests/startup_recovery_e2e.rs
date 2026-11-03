@@ -1,5 +1,5 @@
-use lankide_client::{ManagementClient, WorkspaceObservedState, WorkspaceStatus};
-use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use meerkat_client::{ManagementClient, WorkspaceObservedState, WorkspaceStatus};
+use meerkat_system_e2e::{Result, RigConfig, Script, SystemRig};
 
 async fn create_team(rig: &SystemRig) -> Result<()> {
     rig.workspace("team")

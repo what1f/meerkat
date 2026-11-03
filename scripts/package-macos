@@ -4,19 +4,19 @@ set -euo pipefail
 ROOT_DIR="${0:A:h:h}"
 cd "$ROOT_DIR"
 "$ROOT_DIR/scripts/verify-production-boundary"
-RELEASE_DIR="${LANKIDE_RELEASE_BIN_DIR:-${CARGO_TARGET_DIR:-$ROOT_DIR/target}/release}"
+RELEASE_DIR="${MEERKAT_RELEASE_BIN_DIR:-${CARGO_TARGET_DIR:-$ROOT_DIR/target}/release}"
 RELEASE_DIR="${RELEASE_DIR:A}"
-OUTPUT_DIR="${LANKIDE_PACKAGE_OUTPUT_DIR:-$RELEASE_DIR}"
-PROVENANCE="${LANKIDE_RELEASE_PROVENANCE:-$RELEASE_DIR/build-provenance.json}"
+OUTPUT_DIR="${MEERKAT_PACKAGE_OUTPUT_DIR:-$RELEASE_DIR}"
+PROVENANCE="${MEERKAT_RELEASE_PROVENANCE:-$RELEASE_DIR/build-provenance.json}"
 "$ROOT_DIR/scripts/release-provenance" verify --binary-dir "$RELEASE_DIR" --output "$PROVENANCE"
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="${OUTPUT_DIR:A}"
-APP_DIR="$OUTPUT_DIR/Lankide.app"
+APP_DIR="$OUTPUT_DIR/Meerkat.app"
 CONTENTS="$APP_DIR/Contents"
 VERSION="$(sed -nE 's/^version = "([^"]+)"/\1/p' "$ROOT_DIR/apps/desktop/Cargo.toml" | head -n 1)"
 ARCHITECTURE="$(uname -m)"
-ARCHIVE="$OUTPUT_DIR/Lankide-$VERSION-macos-$ARCHITECTURE.zip"
-SIGNING_IDENTITY="${LANKIDE_CODESIGN_IDENTITY:--}"
+ARCHIVE="$OUTPUT_DIR/Meerkat-$VERSION-macos-$ARCHITECTURE.zip"
+SIGNING_IDENTITY="${MEERKAT_CODESIGN_IDENTITY:--}"
 APP_ONLY=0
 
 if [[ "${1:-}" == "--app-only" ]]; then
@@ -31,7 +31,7 @@ if (( APP_ONLY == 0 )); then
   command -v uv >/dev/null || { print -u2 'Install uv to build the DMG'; exit 2; }
 fi
 
-for binary in lankide-desktop lankided lankide-machine lankide; do
+for binary in meerkat-desktop meerkatd meerkat-machine meerkat; do
   [[ -x "$RELEASE_DIR/$binary" ]] || {
     print -u2 "release binary is missing: $RELEASE_DIR/$binary"
     exit 4
@@ -40,7 +40,7 @@ for binary in lankide-desktop lankided lankide-machine lankide; do
 done
 
 case "$APP_DIR" in
-  "$ROOT_DIR"/target/*/Lankide.app) ;;
+  "$ROOT_DIR"/target/*/Meerkat.app) ;;
   *) print -u2 "unsafe App output path: $APP_DIR"; exit 2 ;;
 esac
 rm -rf "$APP_DIR"
@@ -50,12 +50,12 @@ mkdir -p \
   "$CONTENTS/Library/LaunchServices" \
   "$CONTENTS/Resources/bin"
 
-cp "$RELEASE_DIR/lankide-desktop" "$CONTENTS/MacOS/Lankide"
-cp "$RELEASE_DIR/lankided" "$CONTENTS/Library/LaunchServices/lankided"
-cp "$RELEASE_DIR/lankide-machine" "$CONTENTS/Library/LaunchServices/lankide-machine"
-cp "$RELEASE_DIR/lankide" "$CONTENTS/Resources/bin/lankide"
-cp "$ROOT_DIR/apps/desktop/macos/com.lankide.daemon.plist" "$CONTENTS/Library/LaunchAgents/com.lankide.daemon.plist"
-cp "$ROOT_DIR/apps/desktop/macos/com.lankide.machine.plist" "$CONTENTS/Library/LaunchAgents/com.lankide.machine.plist"
+cp "$RELEASE_DIR/meerkat-desktop" "$CONTENTS/MacOS/Meerkat"
+cp "$RELEASE_DIR/meerkatd" "$CONTENTS/Library/LaunchServices/meerkatd"
+cp "$RELEASE_DIR/meerkat-machine" "$CONTENTS/Library/LaunchServices/meerkat-machine"
+cp "$RELEASE_DIR/meerkat" "$CONTENTS/Resources/bin/meerkat"
+cp "$ROOT_DIR/apps/desktop/macos/com.meerkat.daemon.plist" "$CONTENTS/Library/LaunchAgents/com.meerkat.daemon.plist"
+cp "$ROOT_DIR/apps/desktop/macos/com.meerkat.machine.plist" "$CONTENTS/Library/LaunchAgents/com.meerkat.machine.plist"
 cp "$ROOT_DIR/apps/desktop/Info.plist" "$CONTENTS/Info.plist"
 cp "$ROOT_DIR/LICENSE" "$ROOT_DIR/THIRD_PARTY_LICENSES.md" "$CONTENTS/Resources/"
 cp -R "$ROOT_DIR/licenses" "$CONTENTS/Resources/licenses"
@@ -63,13 +63,13 @@ if [[ "$SIGNING_IDENTITY" == "-" ]]; then
   touch "$CONTENTS/Resources/AdHocBackgroundServices"
 fi
 plutil -lint \
-  "$CONTENTS/Library/LaunchAgents/com.lankide.daemon.plist" \
-  "$CONTENTS/Library/LaunchAgents/com.lankide.machine.plist" >/dev/null
+  "$CONTENTS/Library/LaunchAgents/com.meerkat.daemon.plist" \
+  "$CONTENTS/Library/LaunchAgents/com.meerkat.machine.plist" >/dev/null
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$CONTENTS/Info.plist"
 plutil -replace CFBundleVersion -string "$VERSION" "$CONTENTS/Info.plist"
 
-ICON_TEMP="$(mktemp -d "$OUTPUT_DIR/Lankide-icon.XXXXXX")"
-ICONSET="$ICON_TEMP/Lankide.iconset"
+ICON_TEMP="$(mktemp -d "$OUTPUT_DIR/Meerkat-icon.XXXXXX")"
+ICONSET="$ICON_TEMP/Meerkat.iconset"
 mkdir "$ICONSET"
 cleanup() { rm -rf "$ICON_TEMP"; }
 trap cleanup EXIT INT TERM
@@ -87,18 +87,18 @@ done
 iconutil -c icns "$ICONSET" -o "$CONTENTS/Resources/AppIcon.icns"
 
 chmod 755 \
-  "$CONTENTS/MacOS/Lankide" \
-  "$CONTENTS/Library/LaunchServices/lankided" \
-  "$CONTENTS/Library/LaunchServices/lankide-machine" \
-  "$CONTENTS/Resources/bin/lankide"
+  "$CONTENTS/MacOS/Meerkat" \
+  "$CONTENTS/Library/LaunchServices/meerkatd" \
+  "$CONTENTS/Library/LaunchServices/meerkat-machine" \
+  "$CONTENTS/Resources/bin/meerkat"
 xattr -cr "$APP_DIR"
 "$ROOT_DIR/scripts/package-provenance" stage --binary-dir "$RELEASE_DIR" \
   --build-provenance "$PROVENANCE" --bundle "$APP_DIR" --output "$ICON_TEMP/stage.json"
 for helper in \
-  "$CONTENTS/Library/LaunchServices/lankided" \
-  "$CONTENTS/Library/LaunchServices/lankide-machine" \
-  "$CONTENTS/Resources/bin/lankide" \
-  "$CONTENTS/MacOS/Lankide"; do
+  "$CONTENTS/Library/LaunchServices/meerkatd" \
+  "$CONTENTS/Library/LaunchServices/meerkat-machine" \
+  "$CONTENTS/Resources/bin/meerkat" \
+  "$CONTENTS/MacOS/Meerkat"; do
   codesign --force --sign "$SIGNING_IDENTITY" "$helper"
 done
 codesign --force --sign "$SIGNING_IDENTITY" "$APP_DIR"
@@ -118,7 +118,7 @@ if (( APP_ONLY == 0 )); then ARCHIVE_ARGS=(--archive "$ARCHIVE"); fi
   --build-provenance "$PROVENANCE" --bundle "$APP_DIR" "${ARCHIVE_ARGS[@]}" \
   --stage "$ICON_TEMP/stage.json" --output "$OUTPUT_DIR/package-provenance.json"
 if (( APP_ONLY == 0 )); then
-  "$ROOT_DIR/scripts/package-macos-dmg" "$APP_DIR" "$OUTPUT_DIR/Lankide-$VERSION-macos-$ARCHITECTURE.dmg"
-  (cd "$OUTPUT_DIR" && shasum -a 256 "${ARCHIVE:t}" "Lankide-$VERSION-macos-$ARCHITECTURE.dmg" \
-    > "Lankide-$VERSION-macos-$ARCHITECTURE.sha256")
+  "$ROOT_DIR/scripts/package-macos-dmg" "$APP_DIR" "$OUTPUT_DIR/Meerkat-$VERSION-macos-$ARCHITECTURE.dmg"
+  (cd "$OUTPUT_DIR" && shasum -a 256 "${ARCHIVE:t}" "Meerkat-$VERSION-macos-$ARCHITECTURE.dmg" \
+    > "Meerkat-$VERSION-macos-$ARCHITECTURE.sha256")
 fi

@@ -2191,10 +2191,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-cli"
+name = "meerkat-cli"
 version = "0.1.0"
 dependencies = [
- "lankide-protocol",
+ "meerkat-protocol",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -2204,12 +2204,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-client"
+name = "meerkat-client"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "futures-util",
- "lankide-protocol",
+ "meerkat-protocol",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -2221,7 +2221,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-core"
+name = "meerkat-core"
 version = "0.1.0"
 dependencies = [
  "serde",
@@ -2229,7 +2229,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-daemon-runtime"
+name = "meerkat-daemon-runtime"
 version = "0.1.0"
 dependencies = [
  "log",
@@ -2237,10 +2237,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-desktop"
+name = "meerkat-desktop"
 version = "0.1.0"
 dependencies = [
- "lankide-client",
+ "meerkat-client",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
@@ -2256,10 +2256,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-harness"
+name = "meerkat-harness"
 version = "0.1.0"
 dependencies = [
- "lankide-core",
+ "meerkat-core",
  "rquickjs",
  "rustix",
  "serde",
@@ -2272,12 +2272,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-harness-claude-code"
+name = "meerkat-harness-claude-code"
 version = "0.1.0"
 dependencies = [
- "lankide-core",
- "lankide-harness",
- "lankide-testkit",
+ "meerkat-core",
+ "meerkat-harness",
+ "meerkat-testkit",
  "serde_json",
  "tempfile",
  "tokio",
@@ -2285,11 +2285,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-harness-codex"
+name = "meerkat-harness-codex"
 version = "0.1.0"
 dependencies = [
- "lankide-harness",
- "lankide-testkit",
+ "meerkat-harness",
+ "meerkat-testkit",
  "serde_json",
  "tempfile",
  "tokio",
@@ -2297,11 +2297,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-harness-pi"
+name = "meerkat-harness-pi"
 version = "0.1.0"
 dependencies = [
- "lankide-harness",
- "lankide-testkit",
+ "meerkat-harness",
+ "meerkat-testkit",
  "serde",
  "serde_json",
  "tempfile",
@@ -2310,20 +2310,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-machine"
+name = "meerkat-machine"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "lankide-client",
- "lankide-daemon-runtime",
- "lankide-harness",
- "lankide-harness-claude-code",
- "lankide-harness-codex",
- "lankide-harness-pi",
- "lankide-machine-core",
- "lankide-protocol",
- "lankide-runtime",
- "lankided",
+ "meerkat-client",
+ "meerkat-daemon-runtime",
+ "meerkat-harness",
+ "meerkat-harness-claude-code",
+ "meerkat-harness-codex",
+ "meerkat-harness-pi",
+ "meerkat-machine-core",
+ "meerkat-protocol",
+ "meerkat-runtime",
+ "meerkatd",
  "log",
  "reqwest 0.12.28",
  "serde",
@@ -2335,13 +2335,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-machine-core"
+name = "meerkat-machine-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "lankide-core",
- "lankide-harness",
- "lankide-protocol",
+ "meerkat-core",
+ "meerkat-harness",
+ "meerkat-protocol",
  "log",
  "mime_guess",
  "pulldown-cmark",
@@ -2357,7 +2357,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-protocol"
+name = "meerkat-protocol"
 version = "0.1.0"
 dependencies = [
  "async-trait",
@@ -2367,8 +2367,8 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "lankide-client",
- "lankide-core",
+ "meerkat-client",
+ "meerkat-core",
  "rustls",
  "serde",
  "serde_json",
@@ -2385,17 +2385,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-provider"
+name = "meerkat-provider"
 version = "0.1.0"
 dependencies = [
- "lankide-core",
+ "meerkat-core",
  "serde",
  "serde_json",
  "tokio",
 ]
 
 [[package]]
-name = "lankide-provider-feishu"
+name = "meerkat-provider-feishu"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
@@ -2403,12 +2403,12 @@ dependencies = [
  "flate2",
  "futures-util",
  "image",
- "lankide-core",
- "lankide-protocol",
- "lankide-provider",
- "lankide-runtime",
- "lankide-storage",
- "lankide-testkit",
+ "meerkat-core",
+ "meerkat-protocol",
+ "meerkat-provider",
+ "meerkat-runtime",
+ "meerkat-storage",
+ "meerkat-testkit",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -2421,14 +2421,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-provider-telegram"
+name = "meerkat-provider-telegram"
 version = "0.1.0"
 dependencies = [
- "lankide-core",
- "lankide-provider",
- "lankide-runtime",
- "lankide-storage",
- "lankide-testkit",
+ "meerkat-core",
+ "meerkat-provider",
+ "meerkat-runtime",
+ "meerkat-storage",
+ "meerkat-testkit",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",
@@ -2438,17 +2438,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-runtime"
+name = "meerkat-runtime"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
  "image",
- "lankide-client",
- "lankide-core",
- "lankide-protocol",
- "lankide-provider",
- "lankide-storage",
+ "meerkat-client",
+ "meerkat-core",
+ "meerkat-protocol",
+ "meerkat-provider",
+ "meerkat-storage",
  "log",
  "rusqlite",
  "serde",
@@ -2463,10 +2463,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-storage"
+name = "meerkat-storage"
 version = "0.1.0"
 dependencies = [
- "lankide-core",
+ "meerkat-core",
  "rusqlite",
  "serde",
  "serde_json",
@@ -2475,26 +2475,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-system-e2e"
+name = "meerkat-system-e2e"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
  "image",
- "lankide-cli",
- "lankide-client",
- "lankide-core",
- "lankide-daemon-runtime",
- "lankide-harness",
- "lankide-machine",
- "lankide-machine-core",
- "lankide-protocol",
- "lankide-provider",
- "lankide-provider-feishu",
- "lankide-provider-telegram",
- "lankide-runtime",
- "lankide-storage",
- "lankided",
+ "meerkat-cli",
+ "meerkat-client",
+ "meerkat-core",
+ "meerkat-daemon-runtime",
+ "meerkat-harness",
+ "meerkat-machine",
+ "meerkat-machine-core",
+ "meerkat-protocol",
+ "meerkat-provider",
+ "meerkat-provider-feishu",
+ "meerkat-provider-telegram",
+ "meerkat-runtime",
+ "meerkat-storage",
+ "meerkatd",
  "log",
  "reqwest 0.12.28",
  "rusqlite",
@@ -2509,16 +2509,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-testkit"
+name = "meerkat-testkit"
 version = "0.1.0"
 dependencies = [
- "lankide-core",
- "lankide-harness",
- "lankide-machine-core",
- "lankide-protocol",
- "lankide-provider",
- "lankide-runtime",
- "lankide-storage",
+ "meerkat-core",
+ "meerkat-harness",
+ "meerkat-machine-core",
+ "meerkat-protocol",
+ "meerkat-provider",
+ "meerkat-runtime",
+ "meerkat-storage",
  "rusqlite",
  "serde",
  "serde_json",
@@ -2526,7 +2526,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-web-assets"
+name = "meerkat-web-assets"
 version = "0.1.0"
 dependencies = [
  "bytes",
@@ -2537,29 +2537,29 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-web-types"
+name = "meerkat-web-types"
 version = "0.1.0"
 dependencies = [
- "lankide-protocol",
+ "meerkat-protocol",
  "ts-rs",
 ]
 
 [[package]]
-name = "lankided"
+name = "meerkatd"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "lankide-client",
- "lankide-core",
- "lankide-daemon-runtime",
- "lankide-protocol",
- "lankide-provider",
- "lankide-provider-feishu",
- "lankide-provider-telegram",
- "lankide-runtime",
- "lankide-storage",
- "lankide-testkit",
- "lankide-web-assets",
+ "meerkat-client",
+ "meerkat-core",
+ "meerkat-daemon-runtime",
+ "meerkat-protocol",
+ "meerkat-provider",
+ "meerkat-provider-feishu",
+ "meerkat-provider-telegram",
+ "meerkat-runtime",
+ "meerkat-storage",
+ "meerkat-testkit",
+ "meerkat-web-assets",
  "log",
  "nix",
  "rcgen",

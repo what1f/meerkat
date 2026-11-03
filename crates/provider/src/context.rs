@@ -1,5 +1,5 @@
 use crate::{InterfaceDefinition, ProviderError, ProviderEvent, ProviderFuture, SecretValue};
-use lankide_core::{AgentId, ChannelId, MessageId, PersonId, ProviderId, ResourceRef, WorkspaceId};
+use meerkat_core::{AgentId, ChannelId, MessageId, PersonId, ProviderId, ResourceRef, WorkspaceId};
 use serde_json::Value;
 use std::{
     fmt,
@@ -227,7 +227,7 @@ pub trait ProviderStorage: Send + Sync {
     }
 }
 
-pub use lankide_core::TeamRole;
+pub use meerkat_core::TeamRole;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProviderPersonIdentity {

@@ -44,24 +44,24 @@ pub use resource_store::*;
 
 use agent_profile::{AgentProfileFiles, StoredAgentAvatar, avatar_file};
 
-use lankide_core::{
+use meerkat_core::{
     AgentId, AttentionLevel, ChannelAbility, ChannelId, MessageAuthorType, MessageId, PersonId,
     ProviderId, ResourceId, ScheduleInterval, UnixMillis, WorkspaceId,
 };
-use lankide_protocol::{
+use meerkat_protocol::{
     AgentRuntimeProfile, AssignExecution, CliCommand, Delivery, DeliveryKind, ExecutionRef,
     HarnessConfig, ResourceRef, SessionDirective, ToolDefinition as ProtocolToolDefinition,
     WorkspaceRef,
 };
-use lankide_provider::{
+use meerkat_provider::{
     AgentRuntimeSpec, AutoReactionSpec, ChannelDefaultAttention, ChannelDefinition,
     CliCommandDefinition, EditMessageSpec, EventDelivery, EventSenderType, HostServices,
     InterfaceCatalogEntry, Provider, ProviderError, ProviderEvent, ProviderEventKind, ProviderHost,
     ProviderHostInstance, ProviderInfo, ReactionAction, RecallMessageSpec, SendMessageResult,
     SendMessageSpec, ToolDefinition,
 };
-pub use lankide_provider::{ProviderOnboarding, ProviderOnboardingStatus};
-use lankide_storage::{
+pub use meerkat_provider::{ProviderOnboarding, ProviderOnboardingStatus};
+use meerkat_storage::{
     AttemptAuthorization, AttemptCapability, DatabaseConfig, DispatchReason, ExecutionAuthSpec,
     GuardedSendResult, InboxDispatch, IncomingReaction, IngestEvent, IngestResult, MessageInput,
     ReactionOrigin, ReactionResult, ResourceView, SendOutcome, SendRequest, SnapshotView, Storage,

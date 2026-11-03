@@ -4,7 +4,7 @@
 
 ## User story
 
-A person who has never heard of Lankide installs it because someone said "it
+A person who has never heard of Meerkat installs it because someone said "it
 puts AI members into our Feishu". On first launch they think:
 
 1. What does this give me, and what do I do first? One sentence, one button.
@@ -84,7 +84,7 @@ progress.
 
 - Title 「{name} 准备好了」, the member's desk, and **在飞书中打开**, which
   opens the direct chat.
-- Lankide waits for the first message: the member types, then the reply
+- Meerkat waits for the first message: the member types, then the reply
   appears in the chat. Until then **完成** is a quiet link; after the reply it
   becomes the primary pill and enters the main window, where the new badge
   hangs on the board.

@@ -1,15 +1,15 @@
-use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use meerkat_system_e2e::{Result, RigConfig, Script, SystemRig};
 use std::time::Duration;
 use tokio::time::{Instant, timeout};
 
 fn config() -> RigConfig {
     RigConfig {
         network_proxy: true,
-        link: lankide_protocol::link::LinkSettings {
+        link: meerkat_protocol::link::LinkSettings {
             heartbeat_interval: Duration::from_millis(200),
             handshake_timeout: Duration::from_millis(400),
         },
-        reconnect: lankide_machine_core::ReconnectPolicy {
+        reconnect: meerkat_machine_core::ReconnectPolicy {
             initial: Duration::from_millis(50),
             maximum: Duration::from_millis(800),
             healthy_duration: Duration::from_secs(1),
@@ -127,7 +127,7 @@ async fn s10_3_sigkill_after_finish_before_ack_replays_once() -> Result<()> {
                 .values()
                 .any(|events| {
                     events.as_object().unwrap().values().any(|e| {
-                        e["kind"] == lankide_protocol::ExecutionEventKind::Completed as i32
+                        e["kind"] == meerkat_protocol::ExecutionEventKind::Completed as i32
                     })
                 }))
         })
@@ -254,7 +254,7 @@ async fn offline_past_attempt_lease_fails_the_run() -> Result<()> {
 
 #[tokio::test]
 async fn silent_tcp_and_ws_peers_release_runtime_connections() -> Result<()> {
-    use lankide_protocol::link::{CloseReason, LinkError, MachineLink};
+    use meerkat_protocol::link::{CloseReason, LinkError, MachineLink};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let rig = SystemRig::start(config()).await?;
     let (url, secret) = rig.machine_endpoint()?;
@@ -272,7 +272,7 @@ async fn silent_tcp_and_ws_peers_release_runtime_connections() -> Result<()> {
         );
     }
     let mut ws =
-        lankide_protocol::link::connect(&url, &secret, lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES)
+        meerkat_protocol::link::connect(&url, &secret, meerkat_protocol::DEFAULT_MAX_MESSAGE_BYTES)
             .await?;
     assert!(matches!(
         timeout(Duration::from_secs(2), ws.receive()).await?,

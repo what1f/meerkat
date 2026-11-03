@@ -1,9 +1,9 @@
 use super::{feishu_web, telegram_web};
 use feishu_web::FeishuWeb;
-use lankide_client::{ManagementClient, WorkspaceDraft};
-use lankide_provider::{Provider, ProviderHost};
-use lankide_runtime::ProviderFactoryRegistry;
-use lankide_system_e2e::{Result, SystemRig};
+use meerkat_client::{ManagementClient, WorkspaceDraft};
+use meerkat_provider::{Provider, ProviderHost};
+use meerkat_runtime::ProviderFactoryRegistry;
+use meerkat_system_e2e::{Result, SystemRig};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -39,23 +39,23 @@ pub struct Im {
 }
 #[derive(Clone)]
 struct TelegramNetwork(Arc<telegram_web::TelegramWeb>);
-impl lankide_provider_telegram::Transport for TelegramNetwork {
+impl meerkat_provider_telegram::Transport for TelegramNetwork {
     fn execute(
         &self,
-        mut request: lankide_provider_telegram::Request,
-    ) -> lankide_provider_telegram::http::TransportFuture<'_> {
+        mut request: meerkat_provider_telegram::Request,
+    ) -> meerkat_provider_telegram::http::TransportFuture<'_> {
         Box::pin(async move {
             let path = request
                 .path
                 .strip_prefix("https://api.telegram.org")
                 .ok_or_else(|| {
-                    lankide_provider_telegram::TransportError::Failed(
+                    meerkat_provider_telegram::TransportError::Failed(
                         "unexpected Telegram host".into(),
                     )
                 })?;
             request.path = format!("{}{}", self.0.http.endpoint, path);
-            lankide_provider_telegram::Transport::execute(
-                &lankide_provider_telegram::ReqwestTransport::new(),
+            meerkat_provider_telegram::Transport::execute(
+                &meerkat_provider_telegram::ReqwestTransport::new(),
                 request,
             )
             .await
@@ -92,11 +92,11 @@ impl Im {
         let factories = ProviderFactoryRegistry::default();
         let im = self.clone();
         factories.register_host_factory(
-            lankide_provider_feishu::FeishuProvider::new().info(),
+            meerkat_provider_feishu::FeishuProvider::new().info(),
             move |w, s| {
                 let transport = im.feishu(w.id.as_str());
                 ProviderHost::new(
-                    lankide_provider_feishu::FeishuProvider::new()
+                    meerkat_provider_feishu::FeishuProvider::new()
                         .with_transport(transport.clone())
                         .with_clock(Arc::new(transport.clone()))
                         .with_event_source_factory(move |_, credentials, _, _| {
@@ -104,7 +104,7 @@ impl Im {
                                 feishu_web::Source(transport.clone(), credentials.app_id.clone());
                             Box::pin(async move {
                                 Ok(Box::new(source)
-                                    as Box<dyn lankide_provider_feishu::events::EventSource>)
+                                    as Box<dyn meerkat_provider_feishu::events::EventSource>)
                             })
                         }),
                     w.id.clone(),
@@ -115,10 +115,10 @@ impl Im {
         )?;
         let im = self.clone();
         factories.register_host_factory(
-            lankide_provider_telegram::TelegramProvider::new().info(),
+            meerkat_provider_telegram::TelegramProvider::new().info(),
             move |w, s| {
                 ProviderHost::new(
-                    lankide_provider_telegram::TelegramProvider::new()
+                    meerkat_provider_telegram::TelegramProvider::new()
                         .with_transport(TelegramNetwork(im.telegram(w.id.as_str()))),
                     w.id.clone(),
                     w.provider_config.clone(),
@@ -226,7 +226,7 @@ impl Im {
         state.tasks.push(
             json!({"guid":id,"summary":text,"completed_at":"0","tasklist_guid":"team_tasklist"}),
         );
-        state.events.push_back(lankide_provider_feishu::events::RawEvent::new("task.task.update_user_access_v2", json!({"schema":"2.0","header":{"event_id":id,"event_type":"task.task.update_user_access_v2","app_id":"cli_registered_1","tenant_key":"tenant-a"},"event":{"task_guid":id,"event_types":["task_completed_update"]}}).to_string().into_bytes()));
+        state.events.push_back(meerkat_provider_feishu::events::RawEvent::new("task.task.update_user_access_v2", json!({"schema":"2.0","header":{"event_id":id,"event_type":"task.task.update_user_access_v2","app_id":"cli_registered_1","tenant_key":"tenant-a"},"event":{"task_guid":id,"event_types":["task_completed_update"]}}).to_string().into_bytes()));
     }
     pub async fn dm(
         &self,
@@ -274,7 +274,7 @@ impl Im {
                 state
                     .message_chats
                     .insert(message.clone(), "owner_dm".into());
-                state.events.push_back(lankide_provider_feishu::events::RawEvent::new("im.message.receive_v1",json!({"schema":"2.0","header":{"event_id":format!("web-{id}"),"event_type":"im.message.receive_v1","app_id":app,"tenant_key":"tenant-a"},"event":{"sender":{"sender_type":"user","sender_id":{"open_id":format!("ou_lead_{app}"),"union_id":"on_lead"}},"message":{"message_id":message,"chat_id":"owner_dm","chat_type":"p2p","create_time":"1900000000000","message_type":"text","content":json!({"text":text}).to_string()}}}).to_string().into_bytes()));
+                state.events.push_back(meerkat_provider_feishu::events::RawEvent::new("im.message.receive_v1",json!({"schema":"2.0","header":{"event_id":format!("web-{id}"),"event_type":"im.message.receive_v1","app_id":app,"tenant_key":"tenant-a"},"event":{"sender":{"sender_type":"user","sender_id":{"open_id":format!("ou_lead_{app}"),"union_id":"on_lead"}},"message":{"message_id":message,"chat_id":"owner_dm","chat_type":"p2p","create_time":"1900000000000","message_type":"text","content":json!({"text":text}).to_string()}}}).to_string().into_bytes()));
             }
             "telegram" => {
                 self.telegram(workspace).state.lock().unwrap().updates.push_back(json!({"update_id":id,"message":{"message_id":id,"date":1900000000,"chat":{"id":300,"type":"private"},"from":{"id":300,"first_name":"Alice"},"text":text}}));

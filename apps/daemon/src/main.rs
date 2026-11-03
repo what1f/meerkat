@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-use lankided::{AppError, RuntimePaths, production_factories, run_daemon, wait_for_shutdown};
+use meerkatd::{AppError, RuntimePaths, production_factories, run_daemon, wait_for_shutdown};
 
 #[tokio::main]
 async fn main() {
@@ -18,10 +18,10 @@ async fn execute() -> Result<(), AppError> {
     let mut home = None;
     while let Some(argument) = arguments.next() {
         if argument == "--version" {
-            println!("lankided {}", env!("CARGO_PKG_VERSION"));
+            println!("meerkatd {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         } else if argument == "--help" {
-            println!("Usage: lankided [--home PATH]");
+            println!("Usage: meerkatd [--home PATH]");
             return Ok(());
         } else if argument == "--home" {
             home = Some(std::path::PathBuf::from(
@@ -37,7 +37,7 @@ async fn execute() -> Result<(), AppError> {
         Some(home) => RuntimePaths::for_home(home)?,
         None => RuntimePaths::local_default()?,
     };
-    lankide_daemon_runtime::init_logging(&paths.home, "lankided")?;
+    meerkat_daemon_runtime::init_logging(&paths.home, "meerkatd")?;
     log::info!("started version={}", env!("CARGO_PKG_VERSION"));
     run_daemon(paths, production_factories()?, wait_for_shutdown()).await
 }

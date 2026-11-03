@@ -283,7 +283,7 @@ pub enum ClientError {
 }
 
 impl ClientError {
-    pub(crate) fn provider_error(&self, configuration: bool) -> lankide_provider::ProviderError {
+    pub(crate) fn provider_error(&self, configuration: bool) -> meerkat_provider::ProviderError {
         let (operation, upstream_code, status) = match self {
             Self::Api {
                 operation, code, ..
@@ -302,13 +302,13 @@ impl ClientError {
             _ => "feishu_api",
         };
         if configuration {
-            lankide_provider::ProviderError::AppConfigurationFailed {
+            meerkat_provider::ProviderError::AppConfigurationFailed {
                 operation,
                 upstream_code,
                 status,
             }
         } else {
-            lankide_provider::ProviderError::Upstream {
+            meerkat_provider::ProviderError::Upstream {
                 operation,
                 upstream_code,
                 status,

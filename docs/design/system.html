@@ -2,7 +2,7 @@
 <html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="utf-8">
-<title>Lankide 设计系统</title>
+<title>Meerkat 设计系统</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 /* ======================================================================
@@ -1192,7 +1192,7 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
 <body>
 
 <div class="doc-top">
-  <div class="brand"><img src="../../apps/web/src/assets/avatars/00.jpg" alt="">Lankide</div>
+  <div class="brand"><img src="../../apps/web/src/assets/avatars/00.jpg" alt="">Meerkat</div>
   <nav>
     <a href="#prototype">原型</a>
     <a href="#onboarding">引导</a>
@@ -1211,7 +1211,7 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
 <div class="sheet">
 
 <div class="hero-doc">
-  <h1>Lankide 设计系统</h1>
+  <h1>Meerkat 设计系统</h1>
   <p>安静、精确，每个像素都有用。</p>
 </div>
 
@@ -1219,7 +1219,7 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
 <section id="prototype">
   <div class="window" id="app">
     <div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>
-    <iframe id="app-preview" title="Lankide" src="prototype.html" style="width:100%;height:100%;border:0"></iframe>
+    <iframe id="app-preview" title="Meerkat" src="prototype.html" style="width:100%;height:100%;border:0"></iframe>
   </div>
 </section>
 
@@ -1439,7 +1439,7 @@ table.tok td.k { font-family: var(--font-mono); font-size: var(--t-caption); col
   <div class="card-doc">
     <h4>Command · Dashes · Skeleton · Empty</h4>
     <div class="sub">命令一键复制；引导页用细横线表示进度；加载用骨架而不是转圈。</div>
-    <div class="command" id="cmd-demo">lankide-machine pair wss://192.168.1.8:7443 K7Q2-9XPM --cert-sha256 3f9a…c21e<button class="btn icon sm" data-copy data-tip="复制"><span data-i="copy" data-s="14"></span></button></div>
+    <div class="command" id="cmd-demo">meerkat-machine pair wss://192.168.1.8:7443 K7Q2-9XPM --cert-sha256 3f9a…c21e<button class="btn icon sm" data-copy data-tip="复制"><span data-i="copy" data-s="14"></span></button></div>
     <div class="specimen" style="margin-top:18px;gap:28px">
       <div class="dashes" id="dashes-demo"><i class="done"></i><i class="cur"></i><i></i><i></i><i></i></div>
       <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><span class="skel" style="width:56px;height:56px;border-radius:50%"></span><span class="skel" style="width:64px;height:10px"></span><span class="skel" style="width:44px;height:8px"></span></div>
@@ -1860,7 +1860,7 @@ function pageSettings() {
 // supply the separate component specimens and onboarding storyboard.
 function render() {
   const page = S.open ? 'member/' + encodeURIComponent(S.open) : S.page === 'machines' ? 'office' : S.page;
-  $('#app-preview')?.contentWindow.postMessage({ type: 'lankide-design-navigate', page }, '*');
+  $('#app-preview')?.contentWindow.postMessage({ type: 'meerkat-design-navigate', page }, '*');
 }
 
 /* ======================================================================
@@ -1983,7 +1983,7 @@ function addMachineDialog() {
   const d = openDialog(`
     <h3>添加工区</h3>
     <p style="margin:6px 0 14px;color:var(--ink-2)">在另一台电脑的终端里运行</p>
-    <div class="command">lankide-machine pair wss://192.168.1.8:7443 K7Q2-9XPM --cert-sha256 3f9a…c21e<button class="btn icon sm" data-copy data-tip="复制">${icon('copy', 14)}</button></div>
+    <div class="command">meerkat-machine pair wss://192.168.1.8:7443 K7Q2-9XPM --cert-sha256 3f9a…c21e<button class="btn icon sm" data-copy data-tip="复制">${icon('copy', 14)}</button></div>
     <div class="row" id="pair-state" style="padding:14px 2px 0;min-height:0;gap:10px;color:var(--ink-2)"><span class="dot busy"></span>等待连接</div>
     <div class="reveal" id="net"><div><div style="padding-top:14px"><input class="input mono" style="font-size:12px" value="192.168.1.8:7443"></div></div></div>
     <div class="foot"><button class="link" id="net-link">网络${icon('chev', 14).replace('class="i"', 'class="i chev"')}</button><span class="grow"></span><button class="btn quiet" data-close>取消</button></div>`);
@@ -2129,7 +2129,7 @@ document.addEventListener('input', e => { if (e.target.matches('.soul textarea')
 
 function setTheme(t) {
   S.theme = t;
-  $('#app-preview')?.contentWindow.postMessage({ type: 'lankide-design-theme', theme: t }, '*');
+  $('#app-preview')?.contentWindow.postMessage({ type: 'meerkat-design-theme', theme: t }, '*');
   document.documentElement.dataset.theme = t;
   const seg = $('#doc-theme');
   seg.style.setProperty('--i', t === 'dark' ? 1 : 0);
@@ -2468,7 +2468,7 @@ const previewPage = Q.get('page') === 'machines' ? 'office' : Q.get('page') || '
 const previewHash = Q.get('open') ? '#/member/' + encodeURIComponent(Q.get('open')) : '#/' + previewPage;
 preview.src = 'prototype.html?' + previewQuery + previewHash;
 addEventListener('message', event => {
-  if (event.source === preview.contentWindow && event.data?.type === 'lankide-design-theme' && ['light', 'dark'].includes(event.data.theme) && event.data.theme !== S.theme) setTheme(event.data.theme);
+  if (event.source === preview.contentWindow && event.data?.type === 'meerkat-design-theme' && ['light', 'dark'].includes(event.data.theme) && event.data.theme !== S.theme) setTheme(event.data.theme);
 });
 if (Q.get('theme')) setTheme(Q.get('theme'));
 if (Q.get('page')) S.page = Q.get('page');
@@ -2640,7 +2640,7 @@ function obFinish(add) {
   if (add && OB.m.name.trim()) {
     const m = { ...OB.m, id: nextId++, name: OB.m.name.trim(), status: 'ok', justAdded: true }; delete m.draft;
     members.product.push(m);
-    $('#app-preview')?.contentWindow.postMessage({ type: 'lankide-design-add-member', member: m }, '*');
+    $('#app-preview')?.contentWindow.postMessage({ type: 'meerkat-design-add-member', member: m }, '*');
   }
   S.team = 'product'; S.page = 'members'; S.open = null; render();
   $('#prototype').scrollIntoView({ behavior: 'smooth' });

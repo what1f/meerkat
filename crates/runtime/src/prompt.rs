@@ -1,5 +1,5 @@
-use lankide_core::AgentId;
-use lankide_storage::{AgentRecord, HumanTeamMemberView, TeamRole, WorkspaceRecord};
+use meerkat_core::AgentId;
+use meerkat_storage::{AgentRecord, HumanTeamMemberView, TeamRole, WorkspaceRecord};
 use serde_json::Value;
 
 pub(crate) fn system_prompt(

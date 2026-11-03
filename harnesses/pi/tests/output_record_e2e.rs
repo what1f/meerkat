@@ -1,7 +1,7 @@
-use lankide_harness::{
+use meerkat_harness::{
     AgentEventKind, ExecuteRequest, HarnessConfig, HarnessFactory, ModelRef, SessionRequest,
 };
-use lankide_harness_pi::PiHarness;
+use meerkat_harness_pi::PiHarness;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
@@ -48,14 +48,14 @@ async fn streamed_turn_keeps_bounded_final_record() -> Result<(), Box<dyn std::e
                 environment: BTreeMap::from([
                     ("PI_CODING_AGENT_DIR".into(), agent.display().to_string()),
                     (
-                        "LANKIDE_PI_ARTIFACT_DIR".into(),
+                        "MEERKAT_PI_ARTIFACT_DIR".into(),
                         diagnostics.display().to_string(),
                     ),
                     (
-                        "LANKIDE_PI_RECORD_PATH".into(),
+                        "MEERKAT_PI_RECORD_PATH".into(),
                         record.display().to_string(),
                     ),
-                    ("LANKIDE_PI_RECORD_MAX_BYTES".into(), "2048".into()),
+                    ("MEERKAT_PI_RECORD_MAX_BYTES".into(), "2048".into()),
                 ]),
             },
             working_directory,
@@ -86,7 +86,7 @@ async fn streamed_turn_keeps_bounded_final_record() -> Result<(), Box<dyn std::e
                 other => panic!("unexpected event: {other:?}"),
             }
         }
-        Ok::<_, lankide_harness::HarnessError>(())
+        Ok::<_, meerkat_harness::HarnessError>(())
     })
     .await??;
     session.close().await?;
@@ -117,7 +117,7 @@ async fn resume_accepts_large_history_and_the_canonical_working_directory()
     let alias = root.path().join("alias");
     fs::create_dir(&real)?;
     std::os::unix::fs::symlink(&real, &alias)?;
-    let sessions = alias.join(".lankide/pi/sessions");
+    let sessions = alias.join(".meerkat/pi/sessions");
     fs::create_dir_all(&sessions)?;
     fs::write(
         sessions.join("timestamp_pi-native-success.jsonl"),
@@ -184,7 +184,7 @@ async fn resume_accepts_large_history_and_the_canonical_working_directory()
         .await
         .err()
         .expect("an oversized session header must be rejected");
-    assert_eq!(error.code, lankide_harness::HarnessErrorCode::InvalidConfig);
+    assert_eq!(error.code, meerkat_harness::HarnessErrorCode::InvalidConfig);
     assert!(error.message.contains("64 KiB"), "{error}");
     Ok(())
 }

@@ -1,5 +1,5 @@
-use lankide_client::{ManagementClient, WorkspaceStatus};
-use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use meerkat_client::{ManagementClient, WorkspaceStatus};
+use meerkat_system_e2e::{Result, RigConfig, Script, SystemRig};
 use std::time::Duration;
 
 #[tokio::test]
@@ -9,12 +9,12 @@ async fn a_paused_workspace_loses_its_offline_attempt_and_retries_only_after_res
         harness_executable: env!("CARGO_BIN_EXE_system-harness").into(),
         network_proxy: true,
         attempt_lease: Duration::from_millis(800),
-        retry: lankide_runtime::RetryConfig {
+        retry: meerkat_runtime::RetryConfig {
             base_ms: 40,
             max_ms: 160,
             ..Default::default()
         },
-        link: lankide_protocol::link::LinkSettings {
+        link: meerkat_protocol::link::LinkSettings {
             heartbeat_interval: Duration::from_millis(100),
             handshake_timeout: Duration::from_secs(1),
         },

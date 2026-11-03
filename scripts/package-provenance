@@ -11,10 +11,10 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 LAYOUT = {
-    "lankide-desktop": "Contents/MacOS/Lankide",
-    "lankided": "Contents/Library/LaunchServices/lankided",
-    "lankide-machine": "Contents/Library/LaunchServices/lankide-machine",
-    "lankide": "Contents/Resources/bin/lankide",
+    "meerkat-desktop": "Contents/MacOS/Meerkat",
+    "meerkatd": "Contents/Library/LaunchServices/meerkatd",
+    "meerkat-machine": "Contents/Library/LaunchServices/meerkat-machine",
+    "meerkat": "Contents/Resources/bin/meerkat",
 }
 
 
@@ -35,8 +35,8 @@ def bundle_snapshot(bundle):
         "Contents/Resources/AppIcon.icns",
         "Contents/Resources/LICENSE",
         "Contents/Resources/THIRD_PARTY_LICENSES.md",
-        "Contents/Library/LaunchAgents/com.lankide.daemon.plist",
-        "Contents/Library/LaunchAgents/com.lankide.machine.plist",
+        "Contents/Library/LaunchAgents/com.meerkat.daemon.plist",
+        "Contents/Library/LaunchAgents/com.meerkat.machine.plist",
     ):
         if relative not in values:
             raise ValueError(f"bundle file missing: {relative}")

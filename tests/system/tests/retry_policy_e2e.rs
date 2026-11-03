@@ -1,5 +1,5 @@
-use lankide_runtime::RetryConfig;
-use lankide_system_e2e::{OutboundKind, Result, RigConfig, Script, SystemRig};
+use meerkat_runtime::RetryConfig;
+use meerkat_system_e2e::{OutboundKind, Result, RigConfig, Script, SystemRig};
 
 fn config() -> RigConfig {
     RigConfig {
@@ -46,7 +46,7 @@ async fn s5_1_configuration_pauses_queues_and_model_fix_resumes() -> Result<()> 
     assert_eq!(sends.len(), 2);
     assert_eq!(
         sends[0].content,
-        lankide_core::agent_failure_notice("hello")
+        meerkat_core::agent_failure_notice("hello")
     );
     assert_eq!(sends[0].kind, OutboundKind::Send);
     assert!(sends[0].reply_to.is_none());
@@ -191,7 +191,7 @@ async fn s5_6_localized_notices_hide_diagnostics_and_use_own_identity() -> Resul
         rig.settle().await?;
         let sends = team.outbound(&agent, "alice");
         assert_eq!(sends.len(), 1);
-        assert_eq!(sends[0].content, lankide_core::agent_failure_notice(text));
+        assert_eq!(sends[0].content, meerkat_core::agent_failure_notice(text));
         assert_eq!(sends[0].account, agent.account);
         assert_eq!(sends[0].kind, OutboundKind::Send);
         for secret in ["/secret", "pi", "127", "E_BAD", "model"] {

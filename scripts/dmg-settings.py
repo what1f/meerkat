@@ -1,9 +1,9 @@
-"""Lankide's drag-to-install layout; no language-dependent instructions."""
+"""Meerkat's drag-to-install layout; no language-dependent instructions."""
 
 format = "UDZO"
 filesystem = "HFS+"
 compression_level = 9
-files = [(defines["app"], "Lankide.app")]
+files = [(defines["app"], "Meerkat.app")]
 symlinks = {"Applications": "/Applications"}
 background = defines["background"]
 show_status_bar = False
@@ -22,7 +22,7 @@ label_pos = "bottom"
 text_size = 14
 icon_size = 128
 icon_locations = {
-    "Lankide.app": (180, 190),
+    "Meerkat.app": (180, 190),
     "Applications": (460, 190),
     ".DS_Store": (1600, 1200),
     ".VolumeIcon.icns": (1760, 1200),

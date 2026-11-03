@@ -68,7 +68,7 @@ impl AgentProfileFiles {
         workspace_id: &WorkspaceId,
         agent_id: &AgentId,
         previous_path: Option<&str>,
-        upload: &lankide_protocol::AgentAvatarUpload,
+        upload: &meerkat_protocol::AgentAvatarUpload,
     ) -> Result<AgentAvatarMutation, RuntimeError> {
         let (extension, media_type) = detect_avatar_format(&upload.bytes)?;
         if upload.media_type != media_type {
@@ -182,8 +182,8 @@ impl AgentAvatarMutation {
     }
 }
 
-pub(crate) fn avatar_file(avatar: StoredAgentAvatar) -> lankide_protocol::AgentAvatarFile {
-    lankide_protocol::AgentAvatarFile {
+pub(crate) fn avatar_file(avatar: StoredAgentAvatar) -> meerkat_protocol::AgentAvatarFile {
+    meerkat_protocol::AgentAvatarFile {
         path: avatar.path,
         media_type: avatar.media_type,
         bytes: avatar.bytes,
@@ -201,7 +201,7 @@ fn avatar_relative_path(
 }
 
 fn detect_avatar_format(bytes: &[u8]) -> Result<(&'static str, &'static str), RuntimeError> {
-    if bytes.is_empty() || bytes.len() > lankide_protocol::MAX_WORKSPACE_IMAGE_BYTES {
+    if bytes.is_empty() || bytes.len() > meerkat_protocol::MAX_WORKSPACE_IMAGE_BYTES {
         return Err(RuntimeError::Application(
             "Choose a PNG, JPEG, WebP or GIF image up to 3 MiB".into(),
         ));

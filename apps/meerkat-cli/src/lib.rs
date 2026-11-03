@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
-//! Agent-run-scoped Lankide capability CLI.
+//! Agent-run-scoped Meerkat capability CLI.
 
-use lankide_protocol as wire;
+use meerkat_protocol as wire;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::ffi::OsString;
@@ -21,10 +21,10 @@ pub struct RunConfig {
 
 impl RunConfig {
     pub fn from_environment() -> Result<Self, CliError> {
-        if let Some(path) = std::env::var_os("LANKIDE_RUN_CONTEXT") {
+        if let Some(path) = std::env::var_os("MEERKAT_RUN_CONTEXT") {
             let path = PathBuf::from(path);
-            let home = PathBuf::from(required_env("LANKIDE_AGENT_HOME")?);
-            if !path.is_absolute() || path != home.join(".lankide/run-context.json") {
+            let home = PathBuf::from(required_env("MEERKAT_AGENT_HOME")?);
+            if !path.is_absolute() || path != home.join(".meerkat/run-context.json") {
                 return Err(CliError::Config("invalid execution context path"));
             }
             let metadata = std::fs::symlink_metadata(&path)?;
@@ -41,17 +41,17 @@ impl RunConfig {
             config.context()?;
             return Ok(config);
         }
-        let socket = required_env("LANKIDE_AGENT_SOCKET")?.into();
-        let agent_home = required_env("LANKIDE_AGENT_HOME")?.into();
-        let execution_id = required_env("LANKIDE_EXECUTION_ID")?
+        let socket = required_env("MEERKAT_AGENT_SOCKET")?.into();
+        let agent_home = required_env("MEERKAT_AGENT_HOME")?.into();
+        let execution_id = required_env("MEERKAT_EXECUTION_ID")?
             .parse()
-            .map_err(|_| CliError::Config("LANKIDE_EXECUTION_ID must be a positive integer"))?;
-        let attempt = required_env("LANKIDE_EXECUTION_ATTEMPT")?
+            .map_err(|_| CliError::Config("MEERKAT_EXECUTION_ID must be a positive integer"))?;
+        let attempt = required_env("MEERKAT_EXECUTION_ATTEMPT")?
             .parse()
             .map_err(|_| {
-                CliError::Config("LANKIDE_EXECUTION_ATTEMPT must be a positive integer")
+                CliError::Config("MEERKAT_EXECUTION_ATTEMPT must be a positive integer")
             })?;
-        let execution_token = required_env("LANKIDE_EXECUTION_TOKEN")?;
+        let execution_token = required_env("MEERKAT_EXECUTION_TOKEN")?;
         let config = Self {
             socket,
             agent_home,
@@ -65,10 +65,10 @@ impl RunConfig {
 
     fn context(&self) -> Result<wire::AgentRunContext, CliError> {
         if !self.socket.is_absolute() {
-            return Err(CliError::Config("LANKIDE_AGENT_SOCKET must be absolute"));
+            return Err(CliError::Config("MEERKAT_AGENT_SOCKET must be absolute"));
         }
         if !self.agent_home.is_absolute() {
-            return Err(CliError::Config("LANKIDE_AGENT_HOME must be absolute"));
+            return Err(CliError::Config("MEERKAT_AGENT_HOME must be absolute"));
         }
         if self.execution_id <= 0 || self.attempt == 0 || self.execution_token.trim().is_empty() {
             return Err(CliError::Config("execution context is incomplete"));
@@ -89,7 +89,7 @@ pub enum CliError {
     Usage(String),
     Io(std::io::Error),
     Transport(String),
-    Runtime(lankide_protocol::Status),
+    Runtime(meerkat_protocol::Status),
     Decode(String),
 }
 
@@ -160,7 +160,7 @@ pub async fn execute(
             capabilities.push(json!({
                 "name": "profile",
                 "display_name": "My profile",
-                "description": "Run `lankide profile` to view your profile, or `lankide profile update --name NAME --role ROLE --bio BIO --avatar PATH` to update it.",
+                "description": "Run `meerkat profile` to view your profile, or `meerkat profile update --name NAME --role ROLE --bio BIO --avatar PATH` to update it.",
                 "kind": wire::CapabilityKind::CliCommand as i32,
                 "input_schema": Value::Null,
                 "output_schema": Value::Null,
@@ -192,7 +192,7 @@ async fn profile(
                 Options::parse(&args[1..], &["--name", "--role", "--bio", "--avatar"], &[])?;
             if options.values.is_empty() {
                 return Err(CliError::Usage(
-                    "lankide profile update requires --name, --role, --bio, or --avatar".to_owned(),
+                    "meerkat profile update requires --name, --role, --bio, or --avatar".to_owned(),
                 ));
             }
             let avatar = options
@@ -315,7 +315,7 @@ async fn invoke(
     let name = args
         .first()
         .filter(|value| !value.starts_with('-'))
-        .ok_or_else(|| CliError::Usage("lankide invoke <capability> [--arguments-json JSON | --arguments-file PATH] [--invocation-id ID]".to_owned()))?
+        .ok_or_else(|| CliError::Usage("meerkat invoke <capability> [--arguments-json JSON | --arguments-file PATH] [--invocation-id ID]".to_owned()))?
         .clone();
     let options = Options::parse(
         &args[1..],
@@ -531,7 +531,7 @@ async fn upload_file(
         .upload_resource(tokio_stream::iter(chunks))
         .await
         .map_err(status)
-        .map(lankide_protocol::Response::into_inner)
+        .map(meerkat_protocol::Response::into_inner)
 }
 
 fn capability_result(result: wire::CapabilityInvokeResult) -> Value {
@@ -567,7 +567,7 @@ fn parse_json_or_string(value: &str) -> Value {
     }
 }
 
-fn status(error: lankide_protocol::Status) -> CliError {
+fn status(error: meerkat_protocol::Status) -> CliError {
     CliError::Runtime(error)
 }
 
@@ -605,7 +605,7 @@ fn require_no_extra(args: &[String], expected: usize) -> Result<(), CliError> {
 }
 
 fn help() -> String {
-    "lankide capabilities | profile [update --name NAME --role ROLE --bio BIO --avatar PATH] | invoke <capability> [--arguments-json JSON | --arguments-file PATH] | send (--channel ID --chat ID | --to PERSON_ID) (--content TEXT | --content-file PATH) [--reply-to MESSAGE_ID] [--attachment PATH] [--force] | content --kind KIND --id ID".to_owned()
+    "meerkat capabilities | profile [update --name NAME --role ROLE --bio BIO --avatar PATH] | invoke <capability> [--arguments-json JSON | --arguments-file PATH] | send (--channel ID --chat ID | --to PERSON_ID) (--content TEXT | --content-file PATH) [--reply-to MESSAGE_ID] [--attachment PATH] [--force] | content --kind KIND --id ID".to_owned()
 }
 
 struct Options {

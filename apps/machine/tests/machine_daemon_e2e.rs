@@ -11,7 +11,7 @@ fn daemon_business_scenario() {
             "machine_daemon_e2e{}",
             std::env::consts::EXE_SUFFIX
         ));
-    let helper = std::env::var_os("LANKIDE_E2E_HELPER_MACHINE_DAEMON_E2E")
+    let helper = std::env::var_os("MEERKAT_E2E_HELPER_MACHINE_DAEMON_E2E")
         .map(std::path::PathBuf::from)
         .unwrap_or(helper);
     let output = std::process::Command::new(helper)
@@ -40,9 +40,9 @@ fn local_javascript_adapter_is_loaded_without_spawning_its_cli() {
     )
     .unwrap();
     std::fs::write(package.join("plugin.js"),r#"defineHarness({apiVersion:1,id:'custom',defaults:{environment:{WINDOW:'70'},launch_arguments:['--window','70']}})"#).unwrap();
-    let config = lankide_machine::DaemonConfig::for_home(home.path()).unwrap();
+    let config = meerkat_machine::DaemonConfig::for_home(home.path()).unwrap();
     let mut registrations = Vec::new();
-    lankide_machine::load_harness_plugins(&config, &mut registrations).unwrap();
+    meerkat_machine::load_harness_plugins(&config, &mut registrations).unwrap();
     assert_eq!(registrations.len(), 1);
     assert_eq!(registrations[0].factory.info().harness_id, "custom");
     assert_eq!(

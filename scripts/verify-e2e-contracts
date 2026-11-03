@@ -75,7 +75,7 @@ def main() -> int:
             fail(f"{module_id}: Cargo package not found: {package_name}")
             errors += 1
             continue
-        contracts = (package.get("metadata") or {}).get("lankide", {})
+        contracts = (package.get("metadata") or {}).get("meerkat", {})
         additional = contracts.get("e2e-additional", {})
         if module_id in additional:
             contract = additional[module_id]
@@ -87,7 +87,7 @@ def main() -> int:
                 errors += 1
             primary_packages.add(package_name)
         if not isinstance(contract, dict):
-            fail(f"{module_id}: missing package.metadata.lankide.e2e")
+            fail(f"{module_id}: missing package.metadata.meerkat.e2e")
             errors += 1
             continue
         tokens = shlex.split(row["command"])
@@ -121,7 +121,7 @@ def main() -> int:
                 errors += 1
 
     for package_name, package in packages.items():
-        additional = (package.get("metadata") or {}).get("lankide", {}).get("e2e-additional", {})
+        additional = (package.get("metadata") or {}).get("meerkat", {}).get("e2e-additional", {})
         for module_id in additional:
             if (package_name, module_id) not in additional_contracts:
                 fail(f"{module_id}: additional E2E contract has no manifest row")
@@ -130,7 +130,7 @@ def main() -> int:
     unlisted = sorted(
         package_name
         for package_name, package in packages.items()
-        if (package.get("metadata") or {}).get("lankide", {}).get("e2e")
+        if (package.get("metadata") or {}).get("meerkat", {}).get("e2e")
         and package_name not in primary_packages
     )
     for package_name in unlisted:
@@ -140,9 +140,9 @@ def main() -> int:
     for name, package in packages.items():
         if name in package_names:
             continue
-        metadata = (package.get("metadata") or {}).get("lankide", {})
+        metadata = (package.get("metadata") or {}).get("meerkat", {})
         exemption = metadata.get("e2e-exemption")
-        if name == "lankide-web-types" and isinstance(exemption, str) and exemption.strip():
+        if name == "meerkat-web-types" and isinstance(exemption, str) and exemption.strip():
             continue
         if name not in unlisted:
             fail(f"workspace package lacks an E2E contract: {name}")

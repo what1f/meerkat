@@ -4,7 +4,7 @@ import { api, addFeishuMember, createFeishuTeam } from './feishu';
 
 const open = async (page: Page, workspace: string, hash = 'members') => {
   await page.addInitScript((ws) => {
-    localStorage.setItem('lankide.workspace', JSON.stringify(ws));
+    localStorage.setItem('meerkat.workspace', JSON.stringify(ws));
   }, workspace);
   await page.goto(`/#/${hash}`);
 };
@@ -178,7 +178,7 @@ test('B3a.3: a member paused by a failed run can be resumed', async ({ page }) =
   const names = page.getByRole('textbox', { name: /^(名称|Variable)$/ });
   const values = page.getByRole('textbox', { name: /^(值|Value)$/ });
   const blank = (await names.count()) - 1;
-  await names.nth(blank).fill('LANKIDE_SYSTEM_SCRIPT');
+  await names.nth(blank).fill('MEERKAT_SYSTEM_SCRIPT');
   await values.nth(blank).fill('{"behaviour":"fail_spawn","text":"model not found"}');
   await save(page);
 
@@ -458,7 +458,7 @@ test('human badges show contact profiles and save positions without changing ide
         .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
     )
     .toBe(true);
-  await page.screenshot({ path: '/tmp/lankide-web/team-humans-board.png', animations: 'disabled' });
+  await page.screenshot({ path: '/tmp/meerkat-web/team-humans-board.png', animations: 'disabled' });
   await bob.click();
   await bob.getByRole('button', { name: /编辑岗位|Edit role/ }).click();
   const position = page.getByTestId('human-position');
@@ -497,7 +497,7 @@ test('human badges show contact profiles and save positions without changing ide
   await position.press('Enter');
   await expect(position).toHaveValue('Team Leader');
   await page.screenshot({
-    path: '/tmp/lankide-web/team-humans-profile.png',
+    path: '/tmp/meerkat-web/team-humans-profile.png',
     animations: 'disabled',
   });
   await page.goto('/#/members');
@@ -546,7 +546,7 @@ for (const language of ['en', 'zh']) {
     });
     await rig({ op: 'feishu_scan', workspace, state: 'waiting' });
     await page.addInitScript((lang) => {
-      localStorage.setItem('lankide.language', JSON.stringify(lang));
+      localStorage.setItem('meerkat.language', JSON.stringify(lang));
     }, language);
     await open(page, workspace, 'member/new');
     await page.getByTestId('member-name').fill('Second');
@@ -622,7 +622,7 @@ for (const language of ['en', 'zh']) {
     await createFeishuTeam(workspace);
     await addFeishuMember(baseURL!, workspace);
     await page.addInitScript(
-      (lang) => localStorage.setItem('lankide.language', JSON.stringify(lang)),
+      (lang) => localStorage.setItem('meerkat.language', JSON.stringify(lang)),
       language,
     );
     await open(page, workspace);
@@ -691,7 +691,7 @@ for (const language of ['en', 'zh']) {
     });
     expect(roster[0].name).toBe('Manual Alice');
     await page.screenshot({
-      path: `/tmp/lankide-web/human-sync-back-${language}.png`,
+      path: `/tmp/meerkat-web/human-sync-back-${language}.png`,
       animations: 'disabled',
     });
     await role.click();

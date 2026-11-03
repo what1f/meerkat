@@ -1,8 +1,8 @@
-use lankide_protocol::link::{
+use meerkat_protocol::link::{
     self, CloseReason, LinkError, MachineFrame, MachineHello, MachineLink, MachinePayload,
 };
-use lankide_protocol::{DEFAULT_MAX_MESSAGE_BYTES, PROTOCOL_VERSION};
-use lankide_system_e2e::{OutboundKind, Result, RigConfig, Script, SystemRig};
+use meerkat_protocol::{DEFAULT_MAX_MESSAGE_BYTES, PROTOCOL_VERSION};
+use meerkat_system_e2e::{OutboundKind, Result, RigConfig, Script, SystemRig};
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -32,12 +32,12 @@ fn hello(version: u32) -> MachineFrame {
 #[tokio::test]
 async fn s9_1_newer_machine_gets_a_typed_rejection_visible_in_management() -> Result<()> {
     let rig = SystemRig::start(config()).await?;
-    use lankide_client::ManagementClient;
+    use meerkat_client::ManagementClient;
     let (url, _) = rig.machine_endpoint()?;
     let home = tempfile::tempdir()?;
     let code = rig.management().create_pairing_code().await?;
-    let credentials = lankide_machine::pair(
-        &lankide_machine::MachineDaemonPaths::for_home(home.path())?,
+    let credentials = meerkat_machine::pair(
+        &meerkat_machine::MachineDaemonPaths::for_home(home.path())?,
         &url,
         &code.code,
     )
@@ -52,20 +52,20 @@ async fn s9_1_newer_machine_gets_a_typed_rejection_visible_in_management() -> Re
     link.send(newer.clone()).await?;
     let result = timeout(Duration::from_secs(3), link.receive())
         .await?
-        .map_err(lankide_machine_core::MachineError::from);
+        .map_err(meerkat_machine_core::MachineError::from);
     assert!(
         matches!(
             result,
-            Err(lankide_machine_core::MachineError::ProtocolVersionUnsupported)
+            Err(meerkat_machine_core::MachineError::ProtocolVersionUnsupported)
         ),
         "{result:?}"
     );
-    let management = lankide_client::http::HttpManagementTransport::local(
+    let management = meerkat_client::http::HttpManagementTransport::local(
         rig.runtime_run(),
         DEFAULT_MAX_MESSAGE_BYTES,
     );
     let catalog = management
-        .get_machine_catalog(lankide_protocol::CatalogRequest {
+        .get_machine_catalog(meerkat_protocol::CatalogRequest {
             request_id: "version-rejection".into(),
             workspace: None,
         })
@@ -78,7 +78,7 @@ async fn s9_1_newer_machine_gets_a_typed_rejection_visible_in_management() -> Re
         .expect("rejected Machine in catalog");
     assert_eq!(
         rejected.observed_state,
-        lankide_protocol::ObservedState::Error
+        meerkat_protocol::ObservedState::Error
     );
     assert_eq!(rejected.status_message, "protocol_version_unsupported");
     // A supported reconnect clears the rejection without changing storage.
@@ -97,7 +97,7 @@ async fn s9_1_newer_machine_gets_a_typed_rejection_visible_in_management() -> Re
     // Hold the active-attempt report at the link boundary. A hello alone must
     // not make the Machine available, even with an otherwise healthy socket.
     let before_report = management
-        .get_machine_catalog(lankide_protocol::CatalogRequest {
+        .get_machine_catalog(meerkat_protocol::CatalogRequest {
             request_id: "before-reconciliation".into(),
             workspace: None,
         })
@@ -110,7 +110,7 @@ async fn s9_1_newer_machine_gets_a_typed_rejection_visible_in_management() -> Re
             .find(|machine| machine.machine_id == credentials.machine_id)
             .unwrap()
             .observed_state,
-        lankide_protocol::ObservedState::Stopped
+        meerkat_protocol::ObservedState::Stopped
     );
     // Availability requires the first active-attempt report, as on the real peer.
     compatible
@@ -127,7 +127,7 @@ async fn s9_1_newer_machine_gets_a_typed_rejection_visible_in_management() -> Re
     timeout(Duration::from_secs(3), async {
         loop {
             let catalog = management
-                .get_machine_catalog(lankide_protocol::CatalogRequest {
+                .get_machine_catalog(meerkat_protocol::CatalogRequest {
                     request_id: "compatible-reconnect".into(),
                     workspace: None,
                 })
@@ -138,7 +138,7 @@ async fn s9_1_newer_machine_gets_a_typed_rejection_visible_in_management() -> Re
                 .iter()
                 .find(|machine| machine.machine_id == credentials.machine_id)
                 .unwrap();
-            if machine.observed_state == lankide_protocol::ObservedState::Running {
+            if machine.observed_state == meerkat_protocol::ObservedState::Running {
                 assert!(machine.status_message.is_empty());
                 return Ok::<_, Box<dyn std::error::Error + Send + Sync>>(());
             }

@@ -1,5 +1,5 @@
 //! Non-production JavaScript mock using the same host as shipped adapters.
-use lankide_harness::*;
+use meerkat_harness::*;
 use std::{
     path::PathBuf,
     time::{Duration, Instant},

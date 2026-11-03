@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 if [[ $# != 2 ]]; then
-  printf 'usage: ./scripts/package-macos-dmg <Lankide.app> <output.dmg>\n' >&2
+  printf 'usage: ./scripts/package-macos-dmg <Meerkat.app> <output.dmg>\n' >&2
   exit 2
 fi
 [[ -d "$1" && "$2" == "$ROOT_DIR"/target/*.dmg ]] || {
@@ -16,6 +16,6 @@ background="$ROOT_DIR/apps/desktop/assets/dmg/background.png"
 }
 rm -f "$2"
 uvx --from 'dmgbuild==1.6.7' dmgbuild -s "$ROOT_DIR/scripts/dmg-settings.py" \
-  -D "app=$1" -D "background=$background" 'Lankide' "$2"
+  -D "app=$1" -D "background=$background" 'Meerkat' "$2"
 "$ROOT_DIR/scripts/verify-macos-dmg" "$2" "$(dirname "$2")/package-provenance.json"
 printf 'DMG ready: %s\n' "$2"

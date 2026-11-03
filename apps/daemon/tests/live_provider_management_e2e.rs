@@ -1,4 +1,4 @@
-use lankide_client::{
+use meerkat_client::{
     AgentDraft, Avatar, ManagementClient, RuntimeManagementClient, ThinkingLevel, WorkspaceDraft,
 };
 use rusqlite::{Connection, OpenFlags};
@@ -33,12 +33,12 @@ struct Fixture {
 
 #[path = "support/live.rs"]
 mod live;
-use lankide_testkit::{GateSelection, ScenarioArtifact};
+use meerkat_testkit::{GateSelection, ScenarioArtifact};
 
 #[tokio::test]
 #[ignore = "requires the owner-only Feishu and Telegram live fixtures"]
 async fn real_runtime_creates_feishu_and_telegram_agents() {
-    let run_id = std::env::var("LANKIDE_E2E_RUN_ID").expect("unique run id required");
+    let run_id = std::env::var("MEERKAT_E2E_RUN_ID").expect("unique run id required");
     let artifact = ScenarioArtifact::new(
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/e2e-artifacts"),
         "runtime-provider-management",
@@ -48,7 +48,7 @@ async fn real_runtime_creates_feishu_and_telegram_agents() {
     let daemons = Arc::new(Mutex::new(Vec::<live::Daemon>::new()));
     let owned = daemons.clone();
     let home = tempfile::Builder::new()
-        .prefix("lankide-live-runtime-")
+        .prefix("meerkat-live-runtime-")
         .tempdir_in("/tmp")
         .expect("create private runtime home");
     let home_path = home.path().to_path_buf();
@@ -198,7 +198,7 @@ async fn real_runtime_creates_feishu_and_telegram_agents() {
 fn agent(id: &str, config: Value, secrets: Value) -> AgentDraft {
     AgentDraft {
         id: id.into(),
-        name: "Lankide E2E".into(),
+        name: "Meerkat E2E".into(),
         role: "QA".into(),
         bio: String::new(),
         avatar: Avatar::Custom("E2E".into()),
@@ -217,19 +217,19 @@ fn agent(id: &str, config: Value, secrets: Value) -> AgentDraft {
 }
 
 fn load_fixture() -> Result<Fixture, String> {
-    let feishu_root = std::env::var_os("LANKIDE_E2E_TEAM_ROOT")
+    let feishu_root = std::env::var_os("MEERKAT_E2E_TEAM_ROOT")
         .map(PathBuf::from)
-        .ok_or("LANKIDE_E2E_TEAM_ROOT is required")?;
+        .ok_or("MEERKAT_E2E_TEAM_ROOT is required")?;
     let bootstrap_path = feishu_root.join("feishu-app.json");
     require_owner_only(&bootstrap_path)?;
     let feishu: FeishuProvider = serde_json::from_slice(
         &fs::read(&bootstrap_path).map_err(|_| "Feishu fixture is unavailable")?,
     )
     .map_err(|_| "Feishu fixture is invalid")?;
-    let path = std::env::var_os("LANKIDE_TELEGRAM_E2E_FIXTURE")
+    let path = std::env::var_os("MEERKAT_TELEGRAM_E2E_FIXTURE")
         .map(PathBuf::from)
-        .ok_or("LANKIDE_TELEGRAM_E2E_FIXTURE is required")?;
-    let telegram = lankide_testkit::read_telegram_fixture(&path)?;
+        .ok_or("MEERKAT_TELEGRAM_E2E_FIXTURE is required")?;
+    let telegram = meerkat_testkit::read_telegram_fixture(&path)?;
     Ok(Fixture {
         feishu_app_id: feishu.app_id,
         feishu_app_secret: feishu.app_secret,

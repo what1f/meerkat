@@ -84,7 +84,7 @@ pub struct NormalizedReaction {
     pub raw: Vec<u8>,
 }
 
-pub use lankide_core::ReactionAction;
+pub use meerkat_core::ReactionAction;
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 pub struct NormalizedChatUpdate {

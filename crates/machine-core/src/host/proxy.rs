@@ -1,6 +1,6 @@
 use super::{Inner, MachineError};
-use lankide_protocol::Status;
-use lankide_protocol::{
+use meerkat_protocol::Status;
+use meerkat_protocol::{
     agent::{self, AgentProxy, CapabilityTransport},
     *,
 };
@@ -147,7 +147,7 @@ impl LocalTransport {
                 let offset = index * agent::CHUNK_BYTES;
                 sender
                     .send(MachineFrame {
-                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                         frame: Some(machine_frame::Frame::CapabilityRequest(CapabilityRequest {
                             request_id: id.clone(),
                             method: method.to_owned(),
@@ -204,7 +204,7 @@ impl AttemptProxy {
         let listener = tokio::net::UnixListener::bind(&path)?;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
         let (stopped, rx) = watch::channel(false);
-        let context_path = agent_home.join(".lankide/run-context.json");
+        let context_path = agent_home.join(".meerkat/run-context.json");
         std::fs::create_dir_all(context_path.parent().unwrap())?;
         let mut file = tempfile::NamedTempFile::new_in(context_path.parent().unwrap())?;
         use std::io::Write;
@@ -261,7 +261,7 @@ pub(super) async fn response(inner: &Inner, chunk: CapabilityResponse) {
         };
         let error = if chunk.error_code != 0 {
             Some(Status::new(
-                lankide_protocol::Code::from_i32(chunk.error_code),
+                meerkat_protocol::Code::from_i32(chunk.error_code),
                 chunk.error_message,
             ))
         } else if chunk.offset != call.bytes.len() as u64
@@ -350,8 +350,8 @@ pub(super) async fn harness_call(
                     message: error.message().into(),
                     retryable: matches!(
                         error.code(),
-                        lankide_protocol::Code::Unavailable
-                            | lankide_protocol::Code::DeadlineExceeded
+                        meerkat_protocol::Code::Unavailable
+                            | meerkat_protocol::Code::DeadlineExceeded
                     ),
                 }),
                 ..Default::default()

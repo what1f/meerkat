@@ -17,7 +17,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-pub const CRATE_NAME: &str = "lankide-testkit";
+pub const CRATE_NAME: &str = "meerkat-testkit";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScenarioDescription {
@@ -161,7 +161,7 @@ impl ProbeReport {
 
     pub fn render_text(&self) -> String {
         let mut output = String::new();
-        output.push_str("lankide prerequisite probe\n");
+        output.push_str("meerkat prerequisite probe\n");
         output.push_str("selected_gate: ");
         output.push_str(self.selected_gate.as_str());
         output.push('\n');
@@ -212,8 +212,8 @@ impl Default for ProbeConfig {
 
 impl ProbeConfig {
     pub fn from_environment(selected_gate: GateSelection, run_live_checks: bool) -> Self {
-        let fixture_root = env_path("LANKIDE_E2E_TEAM_ROOT");
-        let telegram_fixture = env::var_os("LANKIDE_TELEGRAM_E2E_FIXTURE")
+        let fixture_root = env_path("MEERKAT_E2E_TEAM_ROOT");
+        let telegram_fixture = env::var_os("MEERKAT_TELEGRAM_E2E_FIXTURE")
             .map(PathBuf::from)
             .unwrap_or_default();
 
@@ -222,16 +222,16 @@ impl ProbeConfig {
             run_live_checks,
             feishu_fixture_root: fixture_root,
             telegram_fixture,
-            telegram_mutating_chat_id: env::var("LANKIDE_TELEGRAM_E2E_CHAT_ID")
+            telegram_mutating_chat_id: env::var("MEERKAT_TELEGRAM_E2E_CHAT_ID")
                 .ok()
                 .filter(|value| !value.trim().is_empty()),
-            authorized_telegram_chat_id: env::var("LANKIDE_TELEGRAM_AUTHORIZED_FIXTURE_CHAT_ID")
+            authorized_telegram_chat_id: env::var("MEERKAT_TELEGRAM_AUTHORIZED_FIXTURE_CHAT_ID")
                 .unwrap_or_default(),
-            pi_path: env::var_os("LANKIDE_PI_PATH").map(PathBuf::from),
-            pi_models_path: env_path("LANKIDE_PI_MODELS_PATH"),
-            codex_path: env::var_os("LANKIDE_CODEX_PATH").map(PathBuf::from),
-            codex_config_path: env_path("LANKIDE_CODEX_CONFIG_PATH"),
-            claude_code_path: env_path("LANKIDE_CLAUDE_CODE_PATH"),
+            pi_path: env::var_os("MEERKAT_PI_PATH").map(PathBuf::from),
+            pi_models_path: env_path("MEERKAT_PI_MODELS_PATH"),
+            codex_path: env::var_os("MEERKAT_CODEX_PATH").map(PathBuf::from),
+            codex_config_path: env_path("MEERKAT_CODEX_CONFIG_PATH"),
+            claude_code_path: env_path("MEERKAT_CLAUDE_CODE_PATH"),
         }
     }
 }
@@ -337,7 +337,7 @@ impl FeishuFixture {
                 self.issue
                     .clone()
                     .unwrap_or_else(|| "required fixture files are missing".to_owned()),
-                Some("provide LANKIDE_E2E_TEAM_ROOT with the application fixture"),
+                Some("provide MEERKAT_E2E_TEAM_ROOT with the application fixture"),
             )
         }
     }
@@ -419,13 +419,13 @@ impl FeishuFixture {
             pass(
                 "test_chat",
                 Gate::FeishuLive,
-                "Lankide E2E chat metadata is present",
+                "Meerkat E2E chat metadata is present",
             )
         } else {
             missing(
                 "test_chat",
                 Gate::FeishuLive,
-                "Lankide E2E chat metadata is incomplete",
+                "Meerkat E2E chat metadata is incomplete",
                 Some("restore test_chat metadata in feishu-e2e.json"),
             )
         }
@@ -436,13 +436,13 @@ impl FeishuFixture {
             pass(
                 "tasklist",
                 Gate::FeishuLive,
-                "Lankide E2E tasklist metadata is ready",
+                "Meerkat E2E tasklist metadata is ready",
             )
         } else {
             missing(
                 "tasklist",
                 Gate::FeishuLive,
-                "Lankide E2E tasklist metadata is incomplete",
+                "Meerkat E2E tasklist metadata is incomplete",
                 Some("restore task metadata in feishu-e2e.json"),
             )
         }
@@ -476,7 +476,7 @@ impl TelegramFixture {
                 self.issue
                     .clone()
                     .unwrap_or_else(|| "Telegram workspace metadata is incomplete".to_owned()),
-                Some("provide LANKIDE_TELEGRAM_E2E_FIXTURE for an isolated test workspace"),
+                Some("provide MEERKAT_TELEGRAM_E2E_FIXTURE for an isolated test workspace"),
             )
         }
     }
@@ -550,13 +550,13 @@ impl TelegramFixture {
                 "telegram_mutating_chat_explicit",
                 Gate::TelegramLiveMutating,
                 "configured Telegram E2E chat is not present in the workspace",
-                Some("set LANKIDE_TELEGRAM_E2E_CHAT_ID to an isolated authorized chat"),
+                Some("set MEERKAT_TELEGRAM_E2E_CHAT_ID to an isolated authorized chat"),
             ),
             None => missing(
                 "telegram_mutating_chat_explicit",
                 Gate::TelegramLiveMutating,
                 "no authorized Telegram E2E chat is configured",
-                Some("set LANKIDE_TELEGRAM_E2E_CHAT_ID or use the authorized fixture chat"),
+                Some("set MEERKAT_TELEGRAM_E2E_CHAT_ID or use the authorized fixture chat"),
             ),
         }
     }
@@ -642,7 +642,7 @@ fn inspect_feishu_fixture(root: &Path) -> FeishuFixture {
             .get("test_chat")
             .and_then(|chat| chat.get("name"))
             .and_then(Value::as_str)
-            == Some("Lankide E2E");
+            == Some("Meerkat E2E");
     fixture.tasklist_valid = metadata
         .get("task")
         .and_then(|task| task.get("tasklist_guid"))
@@ -652,7 +652,7 @@ fn inspect_feishu_fixture(root: &Path) -> FeishuFixture {
             .get("task")
             .and_then(|task| task.get("tasklist_name"))
             .and_then(Value::as_str)
-            == Some("Lankide E2E");
+            == Some("Meerkat E2E");
     fixture
 }
 
@@ -827,7 +827,7 @@ fn claude_code_check(path: Option<&Path>) -> CheckResult {
             "claude_code_executable_path",
             Gate::HarnessLive,
             "configured Claude Code CLI Path is not executable",
-            Some("set LANKIDE_CLAUDE_CODE_PATH to an executable Claude Code-compatible CLI"),
+            Some("set MEERKAT_CLAUDE_CODE_PATH to an executable Claude Code-compatible CLI"),
         );
     };
     if command_supports_model_flag(path) {

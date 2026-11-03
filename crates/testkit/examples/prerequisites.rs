@@ -1,4 +1,4 @@
-use lankide_testkit::{GateSelection, ProbeConfig, run_prerequisite_probe};
+use meerkat_testkit::{GateSelection, ProbeConfig, run_prerequisite_probe};
 
 fn main() {
     let mut format = "text";
@@ -60,7 +60,7 @@ fn usage_and_exit() -> ! {
 
 fn usage_and_exit_with_code(code: i32) -> ! {
     eprintln!(
-        "usage: cargo run -p lankide-testkit --example prerequisites -- [--format text|json] [--gate all|hermetic|feishu-live|telegram-live-readonly|telegram-live-mutating|harness-live] [--no-live]"
+        "usage: cargo run -p meerkat-testkit --example prerequisites -- [--format text|json] [--gate all|hermetic|feishu-live|telegram-live-readonly|telegram-live-mutating|harness-live] [--no-live]"
     );
     std::process::exit(code)
 }

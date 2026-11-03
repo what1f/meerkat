@@ -1,8 +1,8 @@
-use lankide_protocol::{
+use meerkat_protocol::{
     link::{self, MachineLink},
     *,
 };
-use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use meerkat_system_e2e::{Result, RigConfig, Script, SystemRig};
 use serde_json::{Value, json};
 use std::{path::PathBuf, time::Duration};
 use tokio::time::timeout;
@@ -80,10 +80,10 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     );
     let env = report["env"].as_object().unwrap();
     assert!(
-        !env.keys().any(|key| key.starts_with("LANKIDE_RUNTIME_")),
+        !env.keys().any(|key| key.starts_with("MEERKAT_RUNTIME_")),
         "{env:?}"
     );
-    let socket = PathBuf::from(env["LANKIDE_AGENT_SOCKET"].as_str().unwrap());
+    let socket = PathBuf::from(env["MEERKAT_AGENT_SOCKET"].as_str().unwrap());
     assert!(socket.starts_with(rig.machine_home()));
     use std::os::unix::fs::PermissionsExt;
     assert_eq!(
@@ -97,20 +97,20 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
             & 0o777,
         0o700
     );
-    let context_path = PathBuf::from(env["LANKIDE_RUN_CONTEXT"].as_str().unwrap());
+    let context_path = PathBuf::from(env["MEERKAT_RUN_CONTEXT"].as_str().unwrap());
     assert_eq!(
         std::fs::metadata(&context_path)?.permissions().mode() & 0o777,
         0o600
     );
     let context: serde_json::Value = serde_json::from_slice(&std::fs::read(&context_path)?)?;
     assert_eq!(context["socket"], socket.to_string_lossy().as_ref());
-    assert_eq!(context["execution_token"], env["LANKIDE_EXECUTION_TOKEN"]);
+    assert_eq!(context["execution_token"], env["MEERKAT_EXECUTION_TOKEN"]);
     let old_context = AgentRunContext {
         execution: Some(ExecutionRef {
-            execution_id: env["LANKIDE_EXECUTION_ID"].as_str().unwrap().parse()?,
-            attempt: env["LANKIDE_EXECUTION_ATTEMPT"].as_str().unwrap().parse()?,
+            execution_id: env["MEERKAT_EXECUTION_ID"].as_str().unwrap().parse()?,
+            attempt: env["MEERKAT_EXECUTION_ATTEMPT"].as_str().unwrap().parse()?,
         }),
-        execution_token: env["LANKIDE_EXECUTION_TOKEN"].as_str().unwrap().into(),
+        execution_token: env["MEERKAT_EXECUTION_TOKEN"].as_str().unwrap().into(),
     };
     let mut local = connect_uds(&socket, DEFAULT_MAX_MESSAGE_BYTES).await?;
     let mut second = local.clone();
@@ -121,7 +121,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     assert!(!capabilities?.into_inner().capabilities.is_empty());
     assert_eq!(profile?.into_inner().name, "Bruce Lee");
     let proxy_management =
-        lankide_client::http::HttpManagementTransport::local(&socket, DEFAULT_MAX_MESSAGE_BYTES);
+        meerkat_client::http::HttpManagementTransport::local(&socket, DEFAULT_MAX_MESSAGE_BYTES);
     assert_eq!(
         proxy_management
             .list_workspaces(ListWorkspacesRequest {
@@ -130,13 +130,13 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
             .await
             .unwrap_err()
             .code(),
-        lankide_protocol::Code::Unavailable
+        meerkat_protocol::Code::Unavailable
     );
     let mut wrong = old_context.clone();
     wrong.execution_token = "wrong-token".into();
     assert_eq!(
         local.list_capabilities(wrong).await.unwrap_err().code(),
-        lankide_protocol::Code::Unauthenticated
+        meerkat_protocol::Code::Unauthenticated
     );
     assert!(
         !rig.runtime_run().join("runtime.sock").exists(),
@@ -151,7 +151,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     )
     .await?
     .unwrap_err();
-    assert_eq!(failure.code(), lankide_protocol::Code::Unavailable);
+    assert_eq!(failure.code(), meerkat_protocol::Code::Unavailable);
     rig.proxy.as_ref().unwrap().cut();
     let failure = timeout(
         Duration::from_secs(1),
@@ -159,7 +159,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     )
     .await?
     .unwrap_err();
-    assert_eq!(failure.code(), lankide_protocol::Code::Unavailable);
+    assert_eq!(failure.code(), meerkat_protocol::Code::Unavailable);
     rig.proxy.as_ref().unwrap().restore();
     rig.wait_machine_online().await?;
     timeout(Duration::from_secs(3), async {
@@ -229,7 +229,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
                 request_id: "finished-token".into(),
                 method: "list_capabilities".into(),
                 context: Some(old_context.clone().into()),
-                payload: lankide_protocol::agent::encode(&old_context).expect("capability JSON"),
+                payload: meerkat_protocol::agent::encode(&old_context).expect("capability JSON"),
                 offset: 0,
                 eof: true,
             },
@@ -250,7 +250,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     .await??;
     assert_eq!(
         response.error_code,
-        lankide_protocol::Code::PermissionDenied as i32,
+        meerkat_protocol::Code::PermissionDenied as i32,
         "finished token accepted: {}",
         json!(response)
     );

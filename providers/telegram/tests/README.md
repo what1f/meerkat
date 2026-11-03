@@ -1,9 +1,9 @@
 Run the separate S2.2 and S2.3 business scenarios:
 
 ```sh
-cargo test -p lankide-provider-telegram --test mock_server_e2e
-cargo test -p lankide-provider-telegram --test mock_server_e2e a_group_message_mentioning_a_bot_reaches_its_agent -- --exact
-cargo test -p lankide-provider-telegram --test mock_server_e2e a_reply_with_an_attachment_reaches_the_chat_with_the_file -- --exact
+cargo test -p meerkat-provider-telegram --test mock_server_e2e
+cargo test -p meerkat-provider-telegram --test mock_server_e2e a_group_message_mentioning_a_bot_reaches_its_agent -- --exact
+cargo test -p meerkat-provider-telegram --test mock_server_e2e a_reply_with_an_attachment_reaches_the_chat_with_the_file -- --exact
 ```
 
 The test starts a Bot API server on an ephemeral loopback port. It drives

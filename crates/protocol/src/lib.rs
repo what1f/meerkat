@@ -20,7 +20,7 @@ mod validation;
 pub const PROTOCOL_VERSION: u32 = 2;
 pub const DEFAULT_MAX_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_WORKSPACE_IMAGE_BYTES: usize = 3 * 1024 * 1024;
-pub use lankide_core::PROVIDER_CAPABILITY_TASK_SYSTEM;
+pub use meerkat_core::PROVIDER_CAPABILITY_TASK_SYSTEM;
 
 pub mod wire;
 
@@ -37,8 +37,8 @@ pub use transport::{
 };
 pub use validation::{validate_machine_hello, validate_runtime_frame};
 
-impl From<lankide_core::ResourceRef> for ResourceRef {
-    fn from(value: lankide_core::ResourceRef) -> Self {
+impl From<meerkat_core::ResourceRef> for ResourceRef {
+    fn from(value: meerkat_core::ResourceRef) -> Self {
         Self {
             resource_id: value.resource_id,
             file_name: value.file_name,
@@ -49,7 +49,7 @@ impl From<lankide_core::ResourceRef> for ResourceRef {
     }
 }
 
-impl From<ResourceRef> for lankide_core::ResourceRef {
+impl From<ResourceRef> for meerkat_core::ResourceRef {
     fn from(value: ResourceRef) -> Self {
         Self {
             resource_id: value.resource_id,

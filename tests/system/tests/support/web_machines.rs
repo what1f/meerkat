@@ -1,5 +1,5 @@
-use lankide_client::ManagementClient;
-use lankide_system_e2e::{Result, RigConfig, SystemRig};
+use meerkat_client::ManagementClient;
+use meerkat_system_e2e::{Result, RigConfig, SystemRig};
 use serde_json::{Value, json};
 use std::{path::PathBuf, process::Child, time::Duration};
 
@@ -18,7 +18,7 @@ impl Machines {
         // The product emits plain arguments, never a shell program. Do not execute it.
         let args: Vec<_> = command.split_whitespace().collect();
         let (url, code, pin) = match args.as_slice() {
-            ["lankide-machine", "pair", url, code, "--cert-sha256", pin] => (*url, *code, *pin),
+            ["meerkat-machine", "pair", url, code, "--cert-sha256", pin] => (*url, *code, *pin),
             _ => return Err("expected the displayed pinned Machine pairing command".into()),
         };
         // Only this rig's remote listener is allowed; never contact a real Runtime.
@@ -39,7 +39,7 @@ impl Machines {
             .to_path_buf();
         let child = std::process::Command::new(bin.join("system-machine"))
             .env(
-                "LANKIDE_SYSTEM_CONTROL_ROOT",
+                "MEERKAT_SYSTEM_CONTROL_ROOT",
                 rig.runtime_home().join("scripted-members"),
             )
             .arg("pair")
@@ -58,7 +58,7 @@ impl Machines {
                 if self.children.last_mut().unwrap().try_wait()?.is_some() {
                     return Err("paired Machine exited before registration".into());
                 }
-                if let Some(credentials) = lankide_machine::read_credentials(&home)? {
+                if let Some(credentials) = meerkat_machine::read_credentials(&home)? {
                     if rig
                         .management()
                         .get_machine_catalog(None)

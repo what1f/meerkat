@@ -4,8 +4,8 @@ use crate::{
     http::Transport,
     tasks::ListRequest,
 };
-use lankide_protocol::management::WorkspaceTasksInput;
-use lankide_provider::{InitContext, InvocationHandler, ProviderError, ProviderFuture};
+use meerkat_protocol::management::WorkspaceTasksInput;
+use meerkat_provider::{InitContext, InvocationHandler, ProviderError, ProviderFuture};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -82,7 +82,7 @@ impl TasksHandler {
         let app_id = text(&state, "tasklist_reader_app_id")?;
         let mut selected = None;
         for member in self.context.storage().team_members().await? {
-            let lankide_provider::ProviderTeamMember::Agent { agent_id } = member else {
+            let meerkat_provider::ProviderTeamMember::Agent { agent_id } = member else {
                 continue;
             };
             let config = self.context.storage().agent_config(&agent_id).await?;

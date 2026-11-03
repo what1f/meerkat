@@ -1,8 +1,8 @@
-# Lankide
+# Meerkat
 
 [简体中文](README.zh-CN.md)
 
-Lankide is a local multi-agent collaboration app for macOS. It brings Agent
+Meerkat is a local multi-agent collaboration app for macOS. It brings Agent
 harnesses, messaging providers, durable workspace state, and a Tauri
 desktop client into one product.
 
@@ -11,9 +11,9 @@ The current integrations are:
 - Feishu and Telegram messaging providers;
 - Pi, Codex, and Claude Code-compatible Agent harnesses;
 - a macOS desktop app with per-user Runtime and Machine services;
-- an execution-scoped `lankide` capability CLI for Agents.
+- an execution-scoped `meerkat` capability CLI for Agents.
 
-Lankide is under active development. Configuration and compatibility may change
+Meerkat is under active development. Configuration and compatibility may change
 before the first stable release.
 
 ## Requirements
@@ -67,6 +67,6 @@ are in [SECURITY.md](SECURITY.md).
 
 ## License
 
-Lankide is available under the [MIT License](LICENSE). Bundled fonts, icons, and
+Meerkat is available under the [MIT License](LICENSE). Bundled fonts, icons, and
 other third-party components are covered by their own terms in
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

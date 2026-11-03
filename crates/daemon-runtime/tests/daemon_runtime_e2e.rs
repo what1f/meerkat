@@ -1,4 +1,4 @@
-use lankide_daemon_runtime::{DaemonRuntimeError, InstanceGuard, create_private_directory};
+use meerkat_daemon_runtime::{DaemonRuntimeError, InstanceGuard, create_private_directory};
 use std::fs;
 
 #[cfg(unix)]

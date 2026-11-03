@@ -1,5 +1,5 @@
 {
-  "name": "@lankide/site",
+  "name": "@meerkat/site",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.6.1",

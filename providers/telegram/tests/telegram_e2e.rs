@@ -4,21 +4,21 @@
 //! public mention/normalization/polling boundaries and then calls the shared
 //! fail-closed prerequisite before the real Manager/Agent Bot flow.
 
-use lankide_core::ResourceRef;
-use lankide_core::{AgentId, ChannelId, MessageId, PersonId, WorkspaceId};
-use lankide_provider::{
+use meerkat_core::ResourceRef;
+use meerkat_core::{AgentId, ChannelId, MessageId, PersonId, WorkspaceId};
+use meerkat_provider::{
     AgentOnboardingContext, AgentRuntimeSpec, AgentSpec, AutoReactionSpec, EditMessageSpec,
     HostServices, LogLevel, MessageAttachment, OperationProgress, OperationUpdate, ProviderFuture,
     ProviderHost, ProviderLogger, ProviderMessage, ProviderOnboardingStatus,
     ProviderPersonIdentity, ProviderResource, ProviderStorage, RecallMessageSpec, ResourceSaver,
     ResourceUpload, SecretReader, SecretValue, SendMessageSpec, SendMessageStatus, TeamRole,
 };
-use lankide_provider_telegram::{
+use meerkat_provider_telegram::{
     Credentials, NormalizationConfig, PollRequest, Poller, ReqwestTransport, TelegramClient,
     TelegramProvider, Transport, TransportError, normalize_update, render_html_with_mentions,
 };
-use lankide_provider_telegram::{MentionTarget, dto::User};
-use lankide_testkit::{
+use meerkat_provider_telegram::{MentionTarget, dto::User};
+use meerkat_testkit::{
     GateSelection, ProbeConfig, ScenarioArtifact as Artifact, run_prerequisite_probe,
 };
 use serde_json::{Value, json};
@@ -102,7 +102,7 @@ async fn exercise_telegram_contract() -> Result<(), String> {
         }
     }))
     .map_err(|_| "Telegram normalization fixture could not be encoded".to_owned())?;
-    let update = lankide_provider_telegram::dto::Update::from_json(&raw)
+    let update = meerkat_provider_telegram::dto::Update::from_json(&raw)
         .map_err(|_| "Telegram normalization fixture could not be decoded".to_owned())?;
     let config = NormalizationConfig::new("telegram", "123", bot).with_agent(123, "agent_e2e");
     let events = normalize_update(&update, &config)
@@ -110,7 +110,7 @@ async fn exercise_telegram_contract() -> Result<(), String> {
     if events.len() != 1 {
         return Err("Telegram normalization produced an unexpected event count".to_owned());
     }
-    let lankide_provider_telegram::NormalizedEvent::Message(message) = &events[0] else {
+    let meerkat_provider_telegram::NormalizedEvent::Message(message) = &events[0] else {
         return Err("Telegram normalization did not produce a message".to_owned());
     };
     if message.event_id != "telegram:update:77" || message.mentioned_agent_ids != vec!["agent_e2e"]
@@ -128,11 +128,11 @@ async fn exercise_telegram_contract() -> Result<(), String> {
         }
     }))
     .map_err(|_| "Telegram edited-message fixture could not be encoded".to_owned())?;
-    let edited_update = lankide_provider_telegram::dto::Update::from_json(&edited_raw)
+    let edited_update = meerkat_provider_telegram::dto::Update::from_json(&edited_raw)
         .map_err(|_| "Telegram edited-message fixture could not be decoded".to_owned())?;
     let edited_events = normalize_update(&edited_update, &config)
         .map_err(|_| "Telegram edited-message normalization failed".to_owned())?;
-    let Some(lankide_provider_telegram::NormalizedEvent::Message(edited)) = edited_events.first()
+    let Some(meerkat_provider_telegram::NormalizedEvent::Message(edited)) = edited_events.first()
     else {
         return Err("Telegram edited update did not become a normal message".to_owned());
     };
@@ -162,7 +162,7 @@ async fn telegram_pending_agent_onboarding_resumes_after_reopen() {
         json!({"mode":"new","bot_username":"pending_agent_bot"}),
         services.clone(),
     );
-    let first = lankide_provider_telegram::agent_onboarding(context, "get".into(), json!({}))
+    let first = meerkat_provider_telegram::agent_onboarding(context, "get".into(), json!({}))
         .await
         .expect("initial onboarding");
     assert_eq!(first.status, ProviderOnboardingStatus::ActionRequired);
@@ -189,7 +189,7 @@ async fn telegram_pending_agent_onboarding_resumes_after_reopen() {
         json!({"mode":"new","bot_username":"pending_agent_bot"}),
         services,
     );
-    let restored = lankide_provider_telegram::agent_onboarding(reopened, "get".into(), json!({}))
+    let restored = meerkat_provider_telegram::agent_onboarding(reopened, "get".into(), json!({}))
         .await
         .expect("restored onboarding");
     assert_eq!(restored.step, first.step);
@@ -351,10 +351,10 @@ async fn telegram_provider_builds_cross_agent_mention_directory() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires explicit live opt-in, the secure Manager/Agent fixture, and an exclusive authorized chat"]
 async fn telegram_live_gate() {
-    let run_id = env::var("LANKIDE_E2E_RUN_ID").expect("LANKIDE_E2E_RUN_ID is required");
+    let run_id = env::var("MEERKAT_E2E_RUN_ID").expect("MEERKAT_E2E_RUN_ID is required");
     validate_run_id(&run_id).expect("invalid Telegram live run id");
-    let marker = format!("[lankide-e2e:{run_id}]");
-    assert_eq!(env::var("LANKIDE_E2E_LIVE").as_deref(), Ok("1"));
+    let marker = format!("[meerkat-e2e:{run_id}]");
+    assert_eq!(env::var("MEERKAT_E2E_LIVE").as_deref(), Ok("1"));
     let artifact = Artifact::new(
         std::path::Path::new("target/e2e-artifacts"),
         "provider-telegram",
@@ -402,15 +402,15 @@ impl RepeatingTransport {
 impl Transport for RepeatingTransport {
     fn execute(
         &self,
-        _request: lankide_provider_telegram::Request,
-    ) -> lankide_provider_telegram::http::TransportFuture<'_> {
+        _request: meerkat_provider_telegram::Request,
+    ) -> meerkat_provider_telegram::http::TransportFuture<'_> {
         Box::pin(async move {
             let response = self
                 .response
                 .lock()
                 .map_err(|_| TransportError::Failed("fixture lock poisoned".to_owned()))?
                 .clone();
-            Ok(lankide_provider_telegram::Response {
+            Ok(meerkat_provider_telegram::Response {
                 status: response.status,
                 headers: response.headers,
                 body: response.body,
@@ -421,14 +421,14 @@ impl Transport for RepeatingTransport {
 
 #[derive(Clone, Default)]
 struct IdentityTransport {
-    requests: Arc<Mutex<Vec<lankide_provider_telegram::Request>>>,
+    requests: Arc<Mutex<Vec<meerkat_provider_telegram::Request>>>,
 }
 
 impl Transport for IdentityTransport {
     fn execute(
         &self,
-        request: lankide_provider_telegram::Request,
-    ) -> lankide_provider_telegram::http::TransportFuture<'_> {
+        request: meerkat_provider_telegram::Request,
+    ) -> meerkat_provider_telegram::http::TransportFuture<'_> {
         Box::pin(async move {
             let result = if request.path.ends_with("/getMe") {
                 let (id, username, first_name) = if request.path.contains("bot100:alpha") {
@@ -468,7 +468,7 @@ impl Transport for IdentityTransport {
                 .lock()
                 .map_err(|_| TransportError::Failed("request journal poisoned".into()))?
                 .push(request);
-            Ok(lankide_provider_telegram::Response {
+            Ok(meerkat_provider_telegram::Response {
                 status: 200,
                 headers: vec![("content-type".into(), "application/json".into())],
                 body: serde_json::to_vec(&json!({"ok": true, "result": result}))
@@ -527,7 +527,7 @@ struct TelegramFixture {
 
 fn load_fixture() -> Result<TelegramFixture, String> {
     let config = ProbeConfig::from_environment(GateSelection::TelegramLiveMutating, true);
-    let fixture = lankide_testkit::read_telegram_fixture(&config.telegram_fixture)?;
+    let fixture = meerkat_testkit::read_telegram_fixture(&config.telegram_fixture)?;
     let chat_id = config
         .telegram_mutating_chat_id
         .as_deref()
@@ -567,7 +567,7 @@ impl SecretReader for LiveSecretReader {
                 .get(name)
                 .cloned()
                 .map(SecretValue::new)
-                .ok_or(lankide_provider::ProviderError::SecretAccessDenied)
+                .ok_or(meerkat_provider::ProviderError::SecretAccessDenied)
         })
     }
 }
@@ -618,7 +618,7 @@ impl ProviderStorage for MemoryStorage {
                     })
                     .is_ok()
             {
-                return Err(lankide_provider::ProviderError::External {
+                return Err(meerkat_provider::ProviderError::External {
                     operation: "offset_write",
                     retryable: true,
                 });
@@ -636,7 +636,7 @@ impl ProviderStorage for MemoryStorage {
                 .lock()
                 .ok()
                 .and_then(|messages| messages.get(&message_id.get()).cloned())
-                .ok_or(lankide_provider::ProviderError::NotFound { entity: "message" })
+                .ok_or(meerkat_provider::ProviderError::NotFound { entity: "message" })
         })
     }
 
@@ -647,7 +647,7 @@ impl ProviderStorage for MemoryStorage {
                 .ok()
                 .and_then(|resources| resources.get(&resource.resource_id).cloned())
                 .filter(|stored| stored.resource == *resource)
-                .ok_or(lankide_provider::ProviderError::NotFound { entity: "resource" })
+                .ok_or(meerkat_provider::ProviderError::NotFound { entity: "resource" })
         })
     }
 
@@ -680,7 +680,7 @@ impl ProviderStorage for MemoryStorage {
                 .values()
                 .find(|person| &person.person_id == person_id)
                 .cloned()
-                .ok_or(lankide_provider::ProviderError::NotFound { entity: "person" })
+                .ok_or(meerkat_provider::ProviderError::NotFound { entity: "person" })
         })
     }
 }
@@ -735,7 +735,7 @@ fn services_with_storage(
         secret_reader: Arc::new(LiveSecretReader {
             values: Arc::new(values),
         }),
-        secret_writer: Arc::new(lankide_provider::DeniedSecretWriter),
+        secret_writer: Arc::new(meerkat_provider::DeniedSecretWriter),
         storage,
         logger,
         resource_saver: Arc::new(LiveResourceSaver::default()),
@@ -1050,7 +1050,7 @@ async fn run_telegram_scenario(
             )
             .await
         } else {
-            Err(lankide_provider::ProviderError::External {
+            Err(meerkat_provider::ProviderError::External {
                 operation: "telegram_cleanup_guard",
                 retryable: false,
             })
@@ -1081,8 +1081,8 @@ async fn telegram_polling_recovers_transport_and_acceptance_failures() {
     impl Transport for PollFailureTransport {
         fn execute(
             &self,
-            request: lankide_provider_telegram::Request,
-        ) -> lankide_provider_telegram::http::TransportFuture<'_> {
+            request: meerkat_provider_telegram::Request,
+        ) -> meerkat_provider_telegram::http::TransportFuture<'_> {
             Box::pin(async move {
                 if !request.path.ends_with("/getUpdates") {
                     return self.identity.execute(request).await;
@@ -1104,7 +1104,7 @@ async fn telegram_polling_recovers_transport_and_acceptance_failures() {
                     tokio::time::sleep(Duration::from_millis(20)).await;
                     json!([])
                 };
-                Ok(lankide_provider_telegram::Response {
+                Ok(meerkat_provider_telegram::Response {
                     status: 200,
                     headers: Vec::new(),
                     body: serde_json::to_vec(&json!({"ok": true, "result": result})).unwrap(),

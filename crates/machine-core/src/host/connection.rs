@@ -4,9 +4,9 @@ use super::events::terminal_protocol_event;
 use super::{Inner, MachineError, MachineHandle, now_millis};
 use crate::STANDARD_HARNESS_IDS;
 use crate::state::assignment_key;
-use lankide_harness::HarnessAvailability as NativeHarnessAvailability;
-use lankide_protocol::link::{CloseReason, LinkError, MachineLink};
-use lankide_protocol::{
+use meerkat_harness::HarnessAvailability as NativeHarnessAvailability;
+use meerkat_protocol::link::{CloseReason, LinkError, MachineLink};
+use meerkat_protocol::{
     HarnessAvailability, HarnessInfo, MachineFrame, MachineHeartbeat, MachineHello, RuntimeFrame,
     machine_frame, runtime_frame,
 };
@@ -74,16 +74,16 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, MachineError> {
     let (url, secret) = match &inner.link_endpoint {
         Some(endpoint) => endpoint.clone(),
         None => {
-            let (url, _) = lankide_protocol::link::discover(&inner.runtime_run)?;
+            let (url, _) = meerkat_protocol::link::discover(&inner.runtime_run)?;
             (url, inner.device_credential.clone())
         }
     };
     let mut link = tokio::time::timeout(
         inner.config.reconnect.handshake_timeout,
-        lankide_protocol::link::connect_pinned(
+        meerkat_protocol::link::connect_pinned(
             &url,
             &secret,
-            lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES,
+            meerkat_protocol::DEFAULT_MAX_MESSAGE_BYTES,
             inner.cert_sha256.as_deref(),
         ),
     )
@@ -93,7 +93,7 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, MachineError> {
     tokio::time::timeout(
         inner.config.reconnect.handshake_timeout,
         link.send(MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::Hello(make_hello(&inner).await)),
         }),
     )
@@ -103,14 +103,14 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, MachineError> {
         .await
         .map_err(|_| LinkError::Closed(CloseReason::Timeout))??
         .ok_or(LinkError::Closed(CloseReason::Shutdown))?;
-    if first.protocol_version != lankide_protocol::PROTOCOL_VERSION {
+    if first.protocol_version != meerkat_protocol::PROTOCOL_VERSION {
         return Err(MachineError::ProtocolVersionUnsupported);
     }
     let first: RuntimeFrame = first;
-    lankide_protocol::validate_runtime_frame(&first)?;
+    meerkat_protocol::validate_runtime_frame(&first)?;
     let heartbeat_interval = match first.frame {
         Some(runtime_frame::Frame::Hello(hello))
-            if hello.protocol_version == lankide_protocol::PROTOCOL_VERSION =>
+            if hello.protocol_version == meerkat_protocol::PROTOCOL_VERSION =>
         {
             Duration::from_millis(hello.heartbeat_interval_ms.max(1))
         }
@@ -150,7 +150,7 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, MachineError> {
             },
             _ = heartbeat.tick() => {
                 let frame = MachineFrame {
-                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                    protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                     frame: Some(machine_frame::Frame::Heartbeat(MachineHeartbeat {
                         machine_id: inner.config.machine_id.clone(),
                         instance_id: inner.config.instance_id.clone(),
@@ -171,9 +171,9 @@ async fn run_connection(inner: Arc<Inner>) -> Result<Duration, MachineError> {
             }
             frame = inbound.recv() => match frame {
                 Some(Ok((frame, received_at))) => {
-                    if frame.protocol_version != lankide_protocol::PROTOCOL_VERSION { return Err(MachineError::ProtocolVersionUnsupported); }
+                    if frame.protocol_version != meerkat_protocol::PROTOCOL_VERSION { return Err(MachineError::ProtocolVersionUnsupported); }
                     deadline.as_mut().reset(tokio::time::Instant::now() + heartbeat_interval * 3);
-                    if !matches!(frame.frame, Some(lankide_protocol::link::RuntimePayload::Heartbeat)) {
+                    if !matches!(frame.frame, Some(meerkat_protocol::link::RuntimePayload::Heartbeat)) {
                         dispatch(inner.clone(), frame, received_at).await?
                     }
                 }
@@ -198,14 +198,14 @@ impl Drop for LinkTask {
 }
 async fn pump_link<
     L: MachineLink<
-            SendFrame = lankide_protocol::link::MachineFrame,
-            ReceiveFrame = lankide_protocol::link::RuntimeFrame,
+            SendFrame = meerkat_protocol::link::MachineFrame,
+            ReceiveFrame = meerkat_protocol::link::RuntimeFrame,
         >,
 >(
     mut link: L,
     mut outgoing: mpsc::Receiver<MachineFrame>,
     incoming: mpsc::Sender<
-        Result<(lankide_protocol::link::RuntimeFrame, tokio::time::Instant), LinkError>,
+        Result<(meerkat_protocol::link::RuntimeFrame, tokio::time::Instant), LinkError>,
     >,
     interval: Duration,
 ) {
@@ -250,7 +250,7 @@ async fn make_hello(inner: &Inner) -> MachineHello {
                 default_environment_variables: defaults
                     .environment
                     .into_iter()
-                    .map(|(name, value)| lankide_protocol::EnvironmentVariable { name, value })
+                    .map(|(name, value)| meerkat_protocol::EnvironmentVariable { name, value })
                     .collect(),
                 default_launch_arguments: defaults.launch_arguments,
                 capabilities: probe
@@ -303,7 +303,7 @@ async fn make_hello(inner: &Inner) -> MachineHello {
         })
         .collect();
     MachineHello {
-        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
         device_credential: inner.device_credential.clone(),
         machine_id: inner.config.machine_id.clone(),
         instance_id: inner.config.instance_id.clone(),
@@ -318,9 +318,9 @@ async fn publish_inventory(inner: &Inner) {
     send_frame(
         inner,
         MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::InventoryChanged(
-                lankide_protocol::InventoryChanged {
+                meerkat_protocol::InventoryChanged {
                     harnesses: make_hello(inner).await.harnesses,
                 },
             )),

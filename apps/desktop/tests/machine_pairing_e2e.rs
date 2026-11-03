@@ -9,7 +9,7 @@ static HELPER_LIFECYCLE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// A subprocess provides private environment variables without mutating this test process.
 #[test]
 fn owned_helpers_stop_on_cleanup_while_reused_helpers_stay_running() {
-    const CHILD: &str = "LANKIDE_QUIT_E2E_CHILD";
+    const CHILD: &str = "MEERKAT_QUIT_E2E_CHILD";
     const NAME: &str = concat!(
         module_path!(),
         "::owned_helpers_stop_on_cleanup_while_reused_helpers_stay_running"
@@ -26,7 +26,7 @@ fn owned_helpers_stop_on_cleanup_while_reused_helpers_stay_running() {
         let binaries = current.parent().unwrap().parent().unwrap();
         let executable = directory.path().join("quit-e2e");
         std::fs::hard_link(&current, &executable).unwrap();
-        for name in ["lankided", "lankide-machine"] {
+        for name in ["meerkatd", "meerkat-machine"] {
             std::fs::hard_link(binaries.join(name), directory.path().join(name)).unwrap();
         }
         let home = directory.path().join("home");
@@ -39,9 +39,9 @@ fn owned_helpers_stop_on_cleanup_while_reused_helpers_stay_running() {
         let output = std::process::Command::new(executable)
             .args(["--exact", NAME.split_once("::").unwrap().1, "--nocapture"])
             .env(CHILD, "1")
-            .env("LANKIDE_HOME", &home)
+            .env("MEERKAT_HOME", &home)
             .env("HOME", &home)
-            .env_remove("LANKIDE_RUNTIME_RUN")
+            .env_remove("MEERKAT_RUNTIME_RUN")
             .env("SHELL", "/bin/sh")
             .output()
             .unwrap();
@@ -98,7 +98,7 @@ fn owned_helpers_stop_on_cleanup_while_reused_helpers_stay_running() {
 /// build instead of reusing them.
 #[test]
 fn reopening_after_an_update_replaces_outdated_helpers() {
-    const CHILD: &str = "LANKIDE_UPDATE_E2E_CHILD";
+    const CHILD: &str = "MEERKAT_UPDATE_E2E_CHILD";
     const NAME: &str = concat!(
         module_path!(),
         "::reopening_after_an_update_replaces_outdated_helpers"
@@ -115,7 +115,7 @@ fn reopening_after_an_update_replaces_outdated_helpers() {
         let binaries = current.parent().unwrap().parent().unwrap();
         let executable = directory.path().join("update-e2e");
         std::fs::hard_link(&current, &executable).unwrap();
-        for name in ["lankided", "lankide-machine"] {
+        for name in ["meerkatd", "meerkat-machine"] {
             std::fs::hard_link(binaries.join(name), directory.path().join(name)).unwrap();
         }
         let home = directory.path().join("home");
@@ -128,9 +128,9 @@ fn reopening_after_an_update_replaces_outdated_helpers() {
         let output = std::process::Command::new(executable)
             .args(["--exact", NAME.split_once("::").unwrap().1, "--nocapture"])
             .env(CHILD, "1")
-            .env("LANKIDE_HOME", &home)
+            .env("MEERKAT_HOME", &home)
             .env("HOME", &home)
-            .env_remove("LANKIDE_RUNTIME_RUN")
+            .env_remove("MEERKAT_RUNTIME_RUN")
             .env("SHELL", "/bin/sh")
             .output()
             .unwrap();
@@ -152,8 +152,8 @@ fn reopening_after_an_update_replaces_outdated_helpers() {
     // Helpers run on their own, as launchd keeps them, not as Desktop children.
     let directory = std::env::current_exe().unwrap();
     let directory = directory.parent().unwrap();
-    let home = std::path::PathBuf::from(std::env::var_os("LANKIDE_HOME").unwrap());
-    for name in ["lankided", "lankide-machine"] {
+    let home = std::path::PathBuf::from(std::env::var_os("MEERKAT_HOME").unwrap());
+    for name in ["meerkatd", "meerkat-machine"] {
         let status = std::process::Command::new("/bin/sh")
             .arg("-c")
             .arg("\"$0\" --home \"$1\" >/dev/null 2>&1 &")
@@ -189,7 +189,7 @@ fn reopening_after_an_update_replaces_outdated_helpers() {
 
     // An update replaces the bundled helpers while the old Runtime keeps running.
     std::thread::sleep(Duration::from_millis(20));
-    for name in ["lankided", "lankide-machine"] {
+    for name in ["meerkatd", "meerkat-machine"] {
         let staged = directory.join(format!(".{name}.update"));
         std::fs::write(&staged, std::fs::read(directory.join(name)).unwrap()).unwrap();
         std::fs::set_permissions(

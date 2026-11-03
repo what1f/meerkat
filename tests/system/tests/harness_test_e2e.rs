@@ -1,6 +1,6 @@
 //! A4c tests enter through management HTTP and the real Machine link.
 use futures_util::StreamExt;
-use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use meerkat_system_e2e::{Result, RigConfig, Script, SystemRig};
 use serde_json::{Value, json};
 use std::{
     path::{Path, PathBuf},
@@ -41,9 +41,9 @@ fn request(machine: &str, journals: &Path, script: Script) -> Value {
         "cli_path":env!("CARGO_BIN_EXE_system-harness"),
         "launch_arguments":["one argument", "--literal=$HOME;echo hi"],
         "environment_variables":[
-            {"name":"LANKIDE_SYSTEM_CONTROLS", "value":journals.join("controls").to_str().unwrap()},
-            {"name":"LANKIDE_SYSTEM_INPUTS", "value":journals.join("inputs").to_str().unwrap()},
-            {"name":"LANKIDE_SYSTEM_SCRIPT", "value":serde_json::to_string(&script).unwrap()},
+            {"name":"MEERKAT_SYSTEM_CONTROLS", "value":journals.join("controls").to_str().unwrap()},
+            {"name":"MEERKAT_SYSTEM_INPUTS", "value":journals.join("inputs").to_str().unwrap()},
+            {"name":"MEERKAT_SYSTEM_SCRIPT", "value":serde_json::to_string(&script).unwrap()},
             {"name":"GREETING_VALUE", "value":"custom value"}
         ]
     })
@@ -260,7 +260,7 @@ async fn timeout_scenario(script: Script, short_budget: bool) -> Result<()> {
                 .as_ref()
                 .expect("network fixture")
                 .set_harness_test_budget(Duration::from_millis(1200));
-            lankide_machine::read_credentials(rig.machine_home())?
+            meerkat_machine::read_credentials(rig.machine_home())?
                 .expect("credentials")
                 .machine_id
         };

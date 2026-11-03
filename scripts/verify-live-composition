@@ -2,21 +2,21 @@
 set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
-[[ "${LANKIDE_E2E_LIVE:-}" == 1 ]] || { printf 'PREREQUISITE_MISSING: explicit live opt-in required\n' >&2; exit 4; }
-[[ -n "${LANKIDE_E2E_RUN_ID:-}" ]] || { printf 'PREREQUISITE_MISSING: unique run id required\n' >&2; exit 4; }
-[[ -x "${LANKIDE_E2E_LARK_CLI:-}" ]] || { printf 'PREREQUISITE_MISSING: LANKIDE_E2E_LARK_CLI must point to the official CLI\n' >&2; exit 4; }
+[[ "${MEERKAT_E2E_LIVE:-}" == 1 ]] || { printf 'PREREQUISITE_MISSING: explicit live opt-in required\n' >&2; exit 4; }
+[[ -n "${MEERKAT_E2E_RUN_ID:-}" ]] || { printf 'PREREQUISITE_MISSING: unique run id required\n' >&2; exit 4; }
+[[ -x "${MEERKAT_E2E_LARK_CLI:-}" ]] || { printf 'PREREQUISITE_MISSING: MEERKAT_E2E_LARK_CLI must point to the official CLI\n' >&2; exit 4; }
 profile=(--profile test)
-if [[ -n "${LANKIDE_RELEASE_BIN_DIR:-}" ]]; then
+if [[ -n "${MEERKAT_RELEASE_BIN_DIR:-}" ]]; then
   profile=(--release)
-  for binary in lankided lankide-machine lankide; do
-    [[ -x "$LANKIDE_RELEASE_BIN_DIR/$binary" ]] || { printf 'release composition binary missing: %s\n' "$binary" >&2; exit 4; }
+  for binary in meerkatd meerkat-machine meerkat; do
+    [[ -x "$MEERKAT_RELEASE_BIN_DIR/$binary" ]] || { printf 'release composition binary missing: %s\n' "$binary" >&2; exit 4; }
   done
-  LANKIDE_E2E_MACHINE_BIN="$LANKIDE_RELEASE_BIN_DIR/lankide-machine"
+  MEERKAT_E2E_MACHINE_BIN="$MEERKAT_RELEASE_BIN_DIR/meerkat-machine"
 else
-  [[ "${LANKIDE_RELEASE_REQUIRED:-}" != 1 ]] || { printf 'release binary directory missing\n' >&2; exit 4; }
-  cargo build --locked -p lankided -p lankide-machine -p lankide-cli
-  LANKIDE_E2E_MACHINE_BIN="${CARGO_TARGET_DIR:-$ROOT_DIR/target}/debug/lankide-machine"
+  [[ "${MEERKAT_RELEASE_REQUIRED:-}" != 1 ]] || { printf 'release binary directory missing\n' >&2; exit 4; }
+  cargo build --locked -p meerkatd -p meerkat-machine -p meerkat-cli
+  MEERKAT_E2E_MACHINE_BIN="${CARGO_TARGET_DIR:-$ROOT_DIR/target}/debug/meerkat-machine"
 fi
-export LANKIDE_E2E_MACHINE_BIN
-cargo test --locked "${profile[@]}" -p lankided --test e2e live_provider_management_e2e:: -- --ignored --nocapture
-cargo test --locked "${profile[@]}" -p lankided --test e2e feishu_team_live_e2e:: -- --ignored --nocapture
+export MEERKAT_E2E_MACHINE_BIN
+cargo test --locked "${profile[@]}" -p meerkatd --test e2e live_provider_management_e2e:: -- --ignored --nocapture
+cargo test --locked "${profile[@]}" -p meerkatd --test e2e feishu_team_live_e2e:: -- --ignored --nocapture

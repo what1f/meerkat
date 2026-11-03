@@ -1,12 +1,12 @@
 #[path = "support/management.rs"]
 mod management_fixture;
-use lankide_client::{
+use management_fixture::{MockManagementClient, MockState, local_harnesses};
+use meerkat_client::{
     AgentAvatarUpload, AgentDraft, Avatar, ClientError, ManagementClient, ManagementEventKind,
     RuntimeManagementClient, ThinkingLevel, WorkspaceDraft, WorkspaceStatus,
 };
-use lankide_protocol as wire;
-use lankide_protocol::Status;
-use management_fixture::{MockManagementClient, MockState, local_harnesses};
+use meerkat_protocol as wire;
+use meerkat_protocol::Status;
 use serde_json::json;
 use std::{
     collections::HashMap,
@@ -771,7 +771,7 @@ async fn common_contract<C: ManagementClient>(client: &C, prefix: &str) -> Resul
             .await
             .map_err(|e| e.to_string())?;
         need(
-            state.status == lankide_client::OnboardingStatus::ActionRequired,
+            state.status == meerkat_client::OnboardingStatus::ActionRequired,
             "unexpected onboarding state",
         )?;
         let ready = client
@@ -779,7 +779,7 @@ async fn common_contract<C: ManagementClient>(client: &C, prefix: &str) -> Resul
             .await
             .map_err(|e| e.to_string())?;
         need(
-            ready.status == lankide_client::OnboardingStatus::Ready,
+            ready.status == meerkat_client::OnboardingStatus::Ready,
             "onboarding did not advance",
         )?;
         need(
@@ -812,7 +812,7 @@ async fn common_contract<C: ManagementClient>(client: &C, prefix: &str) -> Resul
         name: "Builder".into(),
         role: "RD".into(),
         bio: "Ships".into(),
-        avatar: lankide_client::Avatar::Custom("B".into()),
+        avatar: meerkat_client::Avatar::Custom("B".into()),
         soul: "Care about quality".into(),
         machine_id: "fixture-machine".into(),
         harness_id: "claude_code".into(),
@@ -846,7 +846,7 @@ async fn common_contract<C: ManagementClient>(client: &C, prefix: &str) -> Resul
         .await
         .map_err(|error| error.to_string())?;
     need(
-        agent_onboarding.status == lankide_client::OnboardingStatus::ActionRequired,
+        agent_onboarding.status == meerkat_client::OnboardingStatus::ActionRequired,
         "unexpected Agent onboarding state",
     )?;
     let agent_ready = client
@@ -854,7 +854,7 @@ async fn common_contract<C: ManagementClient>(client: &C, prefix: &str) -> Resul
         .await
         .map_err(|error| error.to_string())?;
     need(
-        agent_ready.status == lankide_client::OnboardingStatus::Ready
+        agent_ready.status == meerkat_client::OnboardingStatus::Ready
             && agent_ready.payload == json!({"bot_ref":"opaque"})
             && agent_ready.verification_uri.is_none()
             && agent_ready.poll_interval_seconds.is_none(),
@@ -1076,7 +1076,7 @@ async fn runtime_scenario() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     need(
         observed.status == WorkspaceStatus::Active
-            && observed.observed_state == lankide_client::WorkspaceObservedState::Error
+            && observed.observed_state == meerkat_client::WorkspaceObservedState::Error
             && observed.status_message == "Connection needs attention"
             && observed.cover_resource_id == Some(9),
         "actual state, error and cover were lost in client conversion",

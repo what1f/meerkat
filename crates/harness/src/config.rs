@@ -85,7 +85,7 @@ pub(crate) fn refresh_config_overlay(
     if source == destination {
         return Ok(());
     }
-    let manifest = destination.join(".lankide-inherited.json");
+    let manifest = destination.join(".meerkat-inherited.json");
     let previous: Vec<String> = fs::read(&manifest)
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok())

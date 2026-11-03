@@ -51,7 +51,7 @@ const result = await build({
     lib: {
       entry: resolve(here, "entry.ts"),
       formats: ["iife"],
-      name: "LankideDesign",
+      name: "MeerkatDesign",
     },
   },
 });
@@ -68,7 +68,7 @@ const css = output
   .join("\n");
 await writeFile(
   resolve(here, "../prototype.html"),
-  `<!doctype html>\n<!-- Generated from the current app by preview/build.mjs. Edit preview sources, then rebuild. -->\n<html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lankide</title><style>${css}</style></head><body><div id="root"></div><script>${js.replace(/<\/script/gi, "<\\/script")}</script></body></html>\n`,
+  `<!doctype html>\n<!-- Generated from the current app by preview/build.mjs. Edit preview sources, then rebuild. -->\n<html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Meerkat</title><style>${css}</style></head><body><div id="root"></div><script>${js.replace(/<\/script/gi, "<\\/script")}</script></body></html>\n`,
 );
 console.log("Wrote docs/design/prototype.html");
 
@@ -105,7 +105,7 @@ if (process.argv.includes("--reference")) {
     .filter((p) => p.type === "chunk")
     .map((p) => p.code)
     .join("\n");
-  const prelude = `Object.defineProperty(navigator,'userAgent',{value:navigator.userAgent+' LankideDesktop/0.1'});localStorage.setItem('lankide.language','"zh"');localStorage.setItem('lankide.theme','"light"');localStorage.removeItem('lankide.workspace');window.__TAURI_INTERNALS__={invoke:async()=>null};window.WebSocket=class{close(){}};`;
+  const prelude = `Object.defineProperty(navigator,'userAgent',{value:navigator.userAgent+' MeerkatDesktop/0.1'});localStorage.setItem('meerkat.language','"zh"');localStorage.setItem('meerkat.theme','"light"');localStorage.removeItem('meerkat.workspace');window.__TAURI_INTERNALS__={invoke:async()=>null};window.WebSocket=class{close(){}};`;
   const reference = (await readFile(resolve(web, "dist/index.html"), "utf8"))
     .replace(
       "<head>",
@@ -115,6 +115,6 @@ if (process.argv.includes("--reference")) {
         "</script>",
     )
     .replaceAll("/assets/", "/reference/assets/");
-  await mkdir("/tmp/lankide-design-review", { recursive: true });
-  await writeFile("/tmp/lankide-design-review/reference.html", reference);
+  await mkdir("/tmp/meerkat-design-review", { recursive: true });
+  await writeFile("/tmp/meerkat-design-review/reference.html", reference);
 }

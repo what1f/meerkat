@@ -1,4 +1,4 @@
-use lankide_harness::{
+use meerkat_harness::{
     AgentEventKind, ExecuteRequest, HarnessCapability, HarnessConfig, HarnessFactory, ModelRef,
     SessionRequest, ToolDefinition, ToolResultError, ToolResultRequest,
 };
@@ -57,7 +57,7 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                 "Keep the native skill.",
             )?;
         }
-        let private = agent.join(".lankide").join(id).join("native-home");
+        let private = agent.join(".meerkat").join(id).join("native-home");
         fs::create_dir_all(&private)?;
         let credential = if id == "claude_code" {
             ".credentials.json"
@@ -96,11 +96,11 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                     native_config.display().to_string(),
                 ),
                 (
-                    "LANKIDE_CLAUDE_CONFIG_DIR".into(),
+                    "MEERKAT_CLAUDE_CONFIG_DIR".into(),
                     native_config.display().to_string(),
                 ),
                 (
-                    "LANKIDE_RUNTIME_RUN".into(),
+                    "MEERKAT_RUNTIME_RUN".into(),
                     home.path().join("run").display().to_string(),
                 ),
             ]),
@@ -108,7 +108,7 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
         let probe = factory.probe(&config).await?;
         assert_eq!(
             probe.availability,
-            lankide_harness::HarnessAvailability::Available
+            meerkat_harness::HarnessAvailability::Available
         );
         let capabilities = probe.capabilities.clone();
         assert_eq!(
@@ -209,7 +209,7 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                 "agent-owned credential"
             );
             let inherited: Vec<String> =
-                serde_json::from_slice(&fs::read(private.join(".lankide-inherited.json"))?)?;
+                serde_json::from_slice(&fs::read(private.join(".meerkat-inherited.json"))?)?;
             assert!(!inherited.iter().any(|name| name == credential));
             let settings = if id == "codex" {
                 "config.toml"
@@ -290,7 +290,7 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                     assert_eq!(Path::new(argv[index + 1]), agent.join("skills"));
                     assert_eq!(
                         launch["environment"]["PI_CODING_AGENT_DIR"].as_str(),
-                        agent.join(".lankide").join(id).join("native-home").to_str()
+                        agent.join(".meerkat").join(id).join("native-home").to_str()
                     );
                 }
                 "claude_code" => {
@@ -307,18 +307,18 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                     assert!(!argv.contains(&"--system-prompt"));
                     let index = argv.iter().position(|arg| *arg == "--mcp-config").unwrap();
                     let mcp: Value = serde_json::from_str(&fs::read_to_string(argv[index + 1])?)?;
-                    assert!(mcp["mcpServers"]["lankide"].is_object());
-                    assert_eq!(mcp["mcpServers"]["lankide"]["alwaysLoad"], true);
+                    assert!(mcp["mcpServers"]["meerkat"].is_object());
+                    assert_eq!(mcp["mcpServers"]["meerkat"]["alwaysLoad"], true);
                     assert_eq!(
                         launch["environment"]["CLAUDE_CONFIG_DIR"].as_str(),
-                        agent.join(".lankide").join(id).join("native-home").to_str()
+                        agent.join(".meerkat").join(id).join("native-home").to_str()
                     );
                 }
                 "codex" => {
                     assert_eq!(argv, ["app-server", "--listen", "stdio://"]);
                     assert_eq!(
                         launch["environment"]["CODEX_HOME"].as_str(),
-                        agent.join(".lankide").join(id).join("native-home").to_str()
+                        agent.join(".meerkat").join(id).join("native-home").to_str()
                     );
                 }
                 _ => unreachable!(),
@@ -338,7 +338,7 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                 assert!(params.get("permissions").is_none());
                 let namespace = &params["dynamicTools"][0];
                 assert_eq!(namespace["type"], "namespace");
-                assert_eq!(namespace["name"], "lankide");
+                assert_eq!(namespace["name"], "meerkat");
                 let tools = namespace["tools"].as_array().unwrap();
                 assert_eq!(tools[0]["name"], "report");
                 assert_eq!(tools[0]["deferLoading"], true);
@@ -379,7 +379,7 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                     assert!(
                         tools
                             .iter()
-                            .any(|t| t["name"] == "lankide_0_report" && t["exposure"] == "deferred")
+                            .any(|t| t["name"] == "meerkat_0_report" && t["exposure"] == "deferred")
                     );
                     assert!(
                         probe["active"]
@@ -389,7 +389,7 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                             .any(|t| t == "tool_search")
                     );
                 } else {
-                    assert!(tools.iter().all(|t| t["name"] != "lankide_0_report"));
+                    assert!(tools.iter().all(|t| t["name"] != "meerkat_0_report"));
                     assert_eq!(probe["discovered"][0]["name"], "report");
                     assert_eq!(probe["described"]["input_schema"]["type"], "object");
                     assert_eq!(probe["invoked"]["tool_name"], "report");

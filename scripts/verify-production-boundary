@@ -10,12 +10,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 # These executables/libraries are never shipped or linked by product code.
-TEST_ONLY = {"lankide-testkit", "lankide-system-e2e", "lankide-web-types"}
+TEST_ONLY = {"meerkat-testkit", "meerkat-system-e2e", "meerkat-web-types"}
 MARKERS = re.compile(
     r"\b(?:Mock|Fake|Fixture)[A-Z]\w*|\b(?:scripted_harness|run_scripted|QueueEventSource|AtomicFailure|InjectedFailure|ProcessHarnessFactory|ProcessHarnessSpec)\b"
     r"|--(?:scripted-harness|scripted-composition|visual-e2e|e2e)\b"
     r"|avatar-(?:clark|bruce|evan|rocky|alice|bob|emma|olivia|james)\.png|workspace-cover\.(?:png|jpg)"
-    r"|/" r"Users/|lankide-scripted-cli|deepseek-v4-flash|gpt-5\.6-luna"
+    r"|/" r"Users/|meerkat-scripted-cli|deepseek-v4-flash|gpt-5\.6-luna"
     r"|继续启用|Continue setup|(?:飞书|Feishu)[：:]\s*(?:继续|Continue)"
     r"|model-directory|模型列表未能加载|Could not load models"
 )

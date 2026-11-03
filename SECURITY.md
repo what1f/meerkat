@@ -16,7 +16,7 @@ mitigation. You should receive an acknowledgement within seven days.
 
 ## Credential handling
 
-Lankide credentials belong in the product's private storage or in explicitly
+Meerkat credentials belong in the product's private storage or in explicitly
 configured local test fixtures. They must never be committed to this repository.
 If a credential is committed, revoke it immediately before attempting history
 cleanup.

@@ -81,9 +81,9 @@ run_contract() {
       printf 'LIVE: prerequisites must be checked by the contract before any external side effect.\n'
     fi
     # A module command must also work independently of verify-all.
-    export LANKIDE_E2E_RUN_ID="${LANKIDE_E2E_RUN_ID:-e2e-$(date -u +%m%d%H%M%S)-$$}"
-    if [[ ${#LANKIDE_E2E_RUN_ID} -gt 30 || ! "$LANKIDE_E2E_RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
-      printf 'invalid LANKIDE_E2E_RUN_ID; expected 1-30 safe characters\n' >&2
+    export MEERKAT_E2E_RUN_ID="${MEERKAT_E2E_RUN_ID:-e2e-$(date -u +%m%d%H%M%S)-$$}"
+    if [[ ${#MEERKAT_E2E_RUN_ID} -gt 30 || ! "$MEERKAT_E2E_RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+      printf 'invalid MEERKAT_E2E_RUN_ID; expected 1-30 safe characters\n' >&2
       return 2
     fi
     printf 'running: %s\n' "$command"

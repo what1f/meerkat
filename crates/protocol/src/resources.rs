@@ -409,12 +409,12 @@ async fn download<P: RuntimePeer>(request: Request<Incoming>, peer: P) -> Respon
     };
     let execution = request
         .headers()
-        .get("x-lankide-execution")
+        .get("x-meerkat-execution")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<i64>().ok());
     let attempt = request
         .headers()
-        .get("x-lankide-attempt")
+        .get("x-meerkat-attempt")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u32>().ok());
     let (Some(execution_id), Some(attempt)) = (execution, attempt) else {

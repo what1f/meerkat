@@ -2,10 +2,10 @@ use super::connection::send_frame;
 use super::control::prepare_tool_arguments;
 use super::{Inner, now_millis};
 use crate::state::{AssignmentLifecycle, PersistedEvent, SessionRecovery};
-use lankide_harness::{
+use meerkat_harness::{
     AgentEvent, AgentEventKind, ExecuteRequest, HarnessSession, ToolResultError, ToolResultRequest,
 };
-use lankide_protocol::{
+use meerkat_protocol::{
     AgentRunContext, ExecutionEvent, ExecutionEventKind, ExecutionRef, MachineFrame, machine_frame,
 };
 use std::path::PathBuf;
@@ -27,7 +27,7 @@ pub(super) async fn run_events(
     context: AgentRunContext,
     agent_home: PathBuf,
     session: Arc<dyn HarnessSession>,
-    mut stream: lankide_harness::AgentEventStream,
+    mut stream: meerkat_harness::AgentEventStream,
     mut terminated: tokio::sync::watch::Receiver<Option<AgentEventKind>>,
     delivery_lock: Arc<tokio::sync::Mutex<()>>,
     proxy: super::proxy::AttemptProxy,
@@ -217,8 +217,8 @@ pub(super) async fn run_events(
             last_sequence + 1,
             AgentEventKind::Failed {
                 failure: Some(
-                    lankide_harness::HarnessError::new(
-                        lankide_harness::HarnessErrorCode::StreamInterrupted,
+                    meerkat_harness::HarnessError::new(
+                        meerkat_harness::HarnessErrorCode::StreamInterrupted,
                         "Harness stream ended before a terminal event",
                     )
                     .failure,
@@ -231,7 +231,7 @@ pub(super) async fn run_events(
     drop(proxy);
     let reusable = matches!(terminal_event.kind, AgentEventKind::Completed { .. })
         && session.reusable()
-        && session.entry().health == lankide_harness::SessionHealth::Healthy;
+        && session.entry().health == meerkat_harness::SessionHealth::Healthy;
     let idle = if reusable {
         inner
             .active
@@ -304,17 +304,17 @@ async fn emit_event(
             ..
         } => Some(super::failure::attempt_failure(failure)),
         AgentEventKind::Failed { code, message, .. } => Some(super::failure::attempt_failure(
-            &lankide_harness::HarnessFailure {
+            &meerkat_harness::HarnessFailure {
                 code: code.clone(),
-                category: lankide_harness::FailureCategory::Agent,
+                category: meerkat_harness::FailureCategory::Agent,
                 retryable: false,
                 detail: message.clone(),
             },
         )),
         AgentEventKind::Cancelled { reason } => Some(super::failure::attempt_failure(
-            &lankide_harness::HarnessFailure {
+            &meerkat_harness::HarnessFailure {
                 code: "harness_cancelled".into(),
-                category: lankide_harness::FailureCategory::Cancelled,
+                category: meerkat_harness::FailureCategory::Cancelled,
                 retryable: false,
                 detail: reason.clone(),
             },
@@ -375,7 +375,7 @@ async fn emit_event(
     send_frame(
         inner,
         MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::ExecutionEvent(event)),
         },
     )

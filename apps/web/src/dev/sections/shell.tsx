@@ -3,7 +3,7 @@ import { Spec, State } from '../Spec';
 const team = (
   <H.TeamSwitcher
     teams={[
-      { id: 'one', name: 'Lankide' },
+      { id: 'one', name: 'Meerkat' },
       { id: 'two', name: 'Studio' },
     ]}
     current="one"

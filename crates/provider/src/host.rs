@@ -1,5 +1,5 @@
 use crate::*;
-use lankide_core::{AgentId, ProviderId, WorkspaceId, is_canonical_tool_name};
+use meerkat_core::{AgentId, ProviderId, WorkspaceId, is_canonical_tool_name};
 use serde_json::Value;
 use std::{
     collections::BTreeMap,

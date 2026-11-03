@@ -2,7 +2,7 @@
 
 use crate::dto::{Chat, Message, MessageReactionUpdated, ReactionType, Update, User};
 use crate::mention::{mentioned_agent_ids, utf16_slice};
-use lankide_core::markdown_mention;
+use meerkat_core::markdown_mention;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -63,7 +63,7 @@ pub struct NormalizedMessage {
     pub raw: Vec<u8>,
 }
 
-pub use lankide_core::ReactionAction;
+pub use meerkat_core::ReactionAction;
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 pub struct NormalizedReaction {

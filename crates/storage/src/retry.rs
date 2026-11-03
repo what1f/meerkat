@@ -1,5 +1,5 @@
 use crate::{Result, Storage};
-use lankide_core::{AgentId, WorkspaceId};
+use meerkat_core::{AgentId, WorkspaceId};
 use rusqlite::{OptionalExtension, params};
 
 #[derive(Clone, Debug)]
@@ -85,7 +85,7 @@ impl Storage {
             for (chat, text) in chats {
                 let recent: Option<i64> = t.query_row("SELECT notice_id FROM failure_notices WHERE workspace_id=?1 AND agent_id=?2 AND chat_id=?3 AND fingerprint=?4 AND (sent_at IS NULL OR sent_at>?5 OR created_at>?5) LIMIT 1",params![w,a,chat,fingerprint,now.saturating_sub(dedupe_ms)],|r|r.get(0)).optional()?;
                 if recent.is_none() {
-                    t.execute("INSERT INTO failure_notices(workspace_id,agent_id,chat_id,fingerprint,content,created_at) VALUES(?1,?2,?3,?4,?5,?6)",params![w,a,chat,fingerprint,lankide_core::agent_failure_notice(&text),now])?;
+                    t.execute("INSERT INTO failure_notices(workspace_id,agent_id,chat_id,fingerprint,content,created_at) VALUES(?1,?2,?3,?4,?5,?6)",params![w,a,chat,fingerprint,meerkat_core::agent_failure_notice(&text),now])?;
                 }
             }
         }

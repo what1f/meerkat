@@ -4,7 +4,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .args([
             "test",
             "-p",
-            "lankide-system-e2e",
+            "meerkat-system-e2e",
             "--test",
             "agent_proxy_e2e",
             "--",

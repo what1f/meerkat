@@ -1,4 +1,4 @@
-use lankide_harness::*;
+use meerkat_harness::*;
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, time::Duration};
 
@@ -114,7 +114,7 @@ impl ScriptedHarness {
     pub fn new(journal: PathBuf) -> Self {
         Self {
             models: None,
-            controls: std::env::var_os("LANKIDE_SYSTEM_CONTROL_ROOT")
+            controls: std::env::var_os("MEERKAT_SYSTEM_CONTROL_ROOT")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| journal.parent().unwrap().join("scripted-members")),
             process: ProcessHarnessFactory::new(
@@ -149,24 +149,24 @@ impl ScriptedHarness {
             .map_err(|e| HarnessError::new(HarnessErrorCode::InvalidConfig, e.to_string()))?;
         let env = &mut request.config.environment;
         for (key, file) in [
-            ("LANKIDE_SYSTEM_INPUTS", "inputs.jsonl"),
-            ("LANKIDE_SYSTEM_CONTROLS", "controls.jsonl"),
-            ("LANKIDE_SYSTEM_STEERS", "steers.jsonl"),
-            ("LANKIDE_SYSTEM_RELEASE", "release"),
+            ("MEERKAT_SYSTEM_INPUTS", "inputs.jsonl"),
+            ("MEERKAT_SYSTEM_CONTROLS", "controls.jsonl"),
+            ("MEERKAT_SYSTEM_STEERS", "steers.jsonl"),
+            ("MEERKAT_SYSTEM_RELEASE", "release"),
         ] {
             env.entry(key.into())
                 .or_insert_with(|| dir.join(file).display().to_string());
         }
-        env.entry("LANKIDE_SYSTEM_SCRIPT".into())
+        env.entry("MEERKAT_SYSTEM_SCRIPT".into())
             .or_insert_with(|| serde_json::to_string(&Script::reply("hi")).unwrap());
         env.insert(
-            "LANKIDE_SYSTEM_HOLD".into(),
+            "MEERKAT_SYSTEM_HOLD".into(),
             dir.join("hold").display().to_string(),
         );
         Ok(request)
     }
     fn spawn_failure(request: &SessionRequest) -> Option<HarnessError> {
-        let script = request.config.environment.get("LANKIDE_SYSTEM_SCRIPT")?;
+        let script = request.config.environment.get("MEERKAT_SYSTEM_SCRIPT")?;
         if let Script::FailSpawn { text } = serde_json::from_str(script).ok()? {
             let mut error = HarnessError::new(HarnessErrorCode::SpawnFailed, text.clone());
             error.failure = scripted_failure(&text);

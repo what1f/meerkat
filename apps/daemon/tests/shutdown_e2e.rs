@@ -1,13 +1,13 @@
 //! Public Runtime lifecycle acceptance, without the OS socket boundary.
-use lankide_core::{ProviderId, WorkspaceId};
-use lankide_protocol::{MachineHello, MachinePeer, PROTOCOL_VERSION, RuntimePeer};
-use lankide_provider::{
+use meerkat_core::{ProviderId, WorkspaceId};
+use meerkat_protocol::{MachineHello, MachinePeer, PROTOCOL_VERSION, RuntimePeer};
+use meerkat_provider::{
     ChannelDefinition, InitContext, Provider, ProviderFuture, ProviderHost, ProviderInfo,
 };
-use lankide_runtime::{
+use meerkat_runtime::{
     ProviderFactoryRegistry, RuntimeApplication, RuntimeConfig, RuntimePeerAdapter,
 };
-use lankide_storage::{DatabaseConfig, Storage, WorkspaceSpec};
+use meerkat_storage::{DatabaseConfig, Storage, WorkspaceSpec};
 use sha2::Digest;
 use std::time::Duration;
 use tokio_stream::{StreamExt, wrappers::ReceiverStream};
@@ -25,10 +25,10 @@ impl Provider for ReceiverProvider {
     }
     fn send_message<'a>(
         &'a self,
-        _: lankide_provider::SendMessageContext,
-    ) -> ProviderFuture<'a, lankide_provider::SendMessageResult> {
+        _: meerkat_provider::SendMessageContext,
+    ) -> ProviderFuture<'a, meerkat_provider::SendMessageResult> {
         Box::pin(async {
-            Err(lankide_provider::ProviderError::External {
+            Err(meerkat_provider::ProviderError::External {
                 operation: "unexpected_send",
                 retryable: false,
             })
@@ -92,10 +92,10 @@ async fn shutdown_releases_connected_machine_and_provider_before_database_reopen
     .await
     .unwrap();
     application.start().await.unwrap();
-    lankide_storage::Storage::open(database.clone())
+    meerkat_storage::Storage::open(database.clone())
         .unwrap()
         .pair_machine(
-            &lankide_storage::MachineRecord {
+            &meerkat_storage::MachineRecord {
                 is_local: false,
                 machine_id: "machine".into(),
                 display_name: "machine".into(),
@@ -151,7 +151,7 @@ async fn shutdown_releases_connected_machine_and_provider_before_database_reopen
     .unwrap();
     let peer = RuntimePeerAdapter::new(reopened.clone());
     assert_eq!(
-        peer.list_workspaces(lankide_protocol::ListWorkspacesRequest {
+        peer.list_workspaces(meerkat_protocol::ListWorkspacesRequest {
             request_id: "reopened".into(),
         })
         .await
