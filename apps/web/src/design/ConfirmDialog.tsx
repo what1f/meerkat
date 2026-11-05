@@ -13,6 +13,8 @@ export type ConfirmDialogProps = Omit<UIProps, 'className' | 'style'> & {
   cancelLabel: string;
   onConfirm: () => void;
   tone?: 'danger';
+  /** The confirmed action is in flight; the confirm button waits for it. */
+  pending?: boolean;
 };
 export function ConfirmDialog({
   open,
@@ -24,6 +26,7 @@ export function ConfirmDialog({
   cancelLabel,
   onConfirm,
   tone,
+  pending,
   ...rest
 }: ConfirmDialogProps) {
   return (
@@ -37,7 +40,11 @@ export function ConfirmDialog({
       footer={
         <div className={css.root}>
           <Button onClick={onClose}>{cancelLabel}</Button>
-          <Button variant={tone === 'danger' ? 'danger' : 'primary'} onClick={onConfirm}>
+          <Button
+            variant={tone === 'danger' ? 'danger' : 'primary'}
+            loading={pending}
+            onClick={onConfirm}
+          >
             {confirmLabel}
           </Button>
         </div>

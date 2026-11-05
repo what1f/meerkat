@@ -181,8 +181,10 @@ export function MemberBench({
           name={m.draft.name}
           avatar={m.avatarSrc}
           onClose={() => setConfirming(false)}
+          pending={remove.isPending}
           onConfirm={() =>
             ref &&
+            !remove.isPending &&
             remove.mutate(
               { request_id: crypto.randomUUID(), agent: ref },
               { onSuccess: onBack, onError: fail, onSettled: () => setConfirming(false) },

@@ -7,12 +7,14 @@ export function DeleteMemberDialog({
   avatar,
   onClose,
   onConfirm,
+  pending,
 }: {
   open: boolean;
   name: string;
   avatar?: string;
   onClose: () => void;
   onConfirm: () => void;
+  pending: boolean;
 }) {
   const t = useT();
   return (
@@ -25,6 +27,7 @@ export function DeleteMemberDialog({
       confirmLabel={t('members.delete')}
       cancelLabel={t('common.cancel')}
       onConfirm={onConfirm}
+      pending={pending}
       tone="danger"
       data-testid="confirm-delete-member"
     />
