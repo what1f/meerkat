@@ -1,8 +1,8 @@
-import type { CSSProperties } from 'react';
+import { useEffect, type CSSProperties } from 'react';
 import type { UIProps } from '../design/index';
 import { Tooltip } from '../design';
 import { Figure } from './Figure';
-import { figureFrame, type FigurePack, type Pose } from './figures';
+import { deskFigure, deskMoves, figureFrame, moveStrip, type FigurePack } from './figures';
 import { desks } from './desks';
 import type { CarryHandle } from './drag/useCarry';
 import laptop from '../assets/office/desk-laptop.png';
@@ -15,7 +15,7 @@ import badgeArt from '../assets/office/props/badge.webp';
 import confetti from '../assets/office/props/confetti.webp';
 import css from './Seat.module.css';
 import screenCss from './SeatScreen.module.css';
-import { mainScreen, moods, MoodProps, sideScreen, type SeatScreen } from './SeatMood';
+import { mainScreen, moves, MoodProps, sideScreen, type SeatScreen } from './SeatMood';
 export type { SeatScreen } from './SeatMood';
 export type SeatProps = Omit<UIProps, 'className' | 'style'> & {
   setup: 'laptop' | 'mini';
@@ -90,26 +90,30 @@ export function Seat({
     'data-carry-height': carried?.height,
     'data-carry-factor': carried?.factor,
   };
-  // A figure pack without a desk mood keeps its working pose.
-  const has = (p: Pose) => !pack || !!pack.frames[p];
-  const mood = moods[screen];
-  const pose = mood && has(mood) ? mood : 'work';
-  const slack = screen === 'ok' ? (['sip', 'phone'] as const).filter(has) : [];
-  const body = (
-    <>
-      <Figure id={figure ?? ''} pose={pose} scale={sitter} pack={pack} seed={seed} />
-      {slack.map((p) => (
-        <Figure
-          key={p}
-          id={figure ?? ''}
-          pose={p}
-          scale={sitter}
-          pack={pack}
-          seed={seed}
-          data-pose={p}
-        />
+  // Built-in figures play a strip of frames per move; a figure pack sits still in its own frame.
+  const live = figure ? deskFigure(figure, pack, seed) : null;
+  useEffect(() => {
+    // Warm every move so a change of screen never shows an empty chair.
+    if (live) for (const m of deskMoves) new Image().src = moveStrip(live, m) ?? '';
+  }, [live]);
+  const asleep = screen === 'dark' || screen === 'asleep';
+  const body = live ? (
+    <span className={css.live}>
+      {moves[screen].map((m) => (
+        <span key={m} className={css.frames} data-move={m}>
+          <img className={css.strip} src={moveStrip(live, m)} alt="" />
+        </span>
       ))}
-    </>
+      <img className={css.back} src={chair} alt="" />
+    </span>
+  ) : (
+    <Figure
+      id={figure ?? ''}
+      pose={asleep ? 'sleep' : 'work'}
+      scale={sitter}
+      pack={pack}
+      seed={seed}
+    />
   );
   const main = rects[0]!;
   const phase = phaseOf(seed ?? label);

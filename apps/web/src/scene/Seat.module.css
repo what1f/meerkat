@@ -361,7 +361,93 @@
   animation: fly 2.8s ease-in infinite;
 }
 
-/* The figure's mood; every desk starts its loop at its own point. */
+/* A built-in figure plays its move as a strip of eight frames, with the chair drawn back over it. */
+.live {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 90%;
+}
+
+.back {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* The frames carry a margin around the body, so they spill past the chair's box. */
+.frames {
+  position: absolute;
+  top: -3px;
+  left: -5.75px;
+  width: 96px;
+  height: 128px;
+  overflow: hidden;
+}
+
+.strip {
+  --beat: 1.76s;
+
+  display: block;
+  width: 800%;
+  max-width: none;
+  height: 100%;
+  animation: frames var(--beat) steps(8) infinite;
+  animation-delay: calc(var(--phase) * -4s);
+}
+
+[data-move='sip'] > .strip {
+  --beat: 1.6s;
+}
+
+[data-move='phone'] > .strip,
+[data-move='think'] > .strip {
+  --beat: 2.08s;
+}
+
+[data-move='sleep'] > .strip {
+  --beat: 3.04s;
+}
+
+[data-move='fret'] > .strip {
+  --beat: 1.28s;
+}
+
+[data-move='cheer'] > .strip {
+  --beat: 1.2s;
+}
+
+/* Idle desks follow the screen's 40s loop: work through pong and the fish tank,
+   coffee with the cat video, the phone while the screen is locked. */
+.root[data-screen='ok'] .strip {
+  animation:
+    frames var(--beat) steps(8) infinite,
+    idle-work 40s step-end infinite;
+  animation-delay: calc(var(--phase) * -4s), calc(var(--phase) * -40s);
+}
+
+.root[data-screen='ok'] [data-move='sip'] > .strip,
+.root[data-screen='ok'] [data-move='phone'] > .strip {
+  opacity: 0;
+  animation: idle-sip 40s step-end infinite;
+  animation-delay: calc(var(--phase) * -40s);
+}
+
+.root[data-screen='ok'] [data-move='phone'] > .strip {
+  animation-name: idle-phone;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .strip {
+    animation: none !important;
+  }
+
+  .frames + .frames {
+    display: none;
+  }
+}
+
+/* A figure pack's still frame gets a little life from its mood; every desk starts at its own point. */
 .root[data-screen='ok'] .who > img {
   animation: idle 10s var(--ease) infinite;
   animation-delay: calc(var(--phase) * -10s);
@@ -390,34 +476,6 @@
 .root[data-screen='dark'] .who > img,
 .root[data-screen='asleep'] .who > img {
   animation: breathe 3.6s ease-in-out infinite;
-}
-
-/* Idle poses take turns with the screen: coffee with the cat video, the phone while it sleeps. */
-.root[data-screen='ok'] .who > img[data-pose] {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  animation-name: idle, slack;
-  animation-duration: 10s, 40s;
-  animation-timing-function: var(--ease), linear;
-  animation-iteration-count: infinite;
-}
-
-.root[data-screen='ok'] .who > img[data-pose='sip'] {
-  animation-delay: calc(var(--phase) * -10s), calc(var(--phase) * -40s - 30s);
-}
-
-.root[data-screen='ok'] .who > img[data-pose='phone'] {
-  animation-delay: calc(var(--phase) * -10s), calc(var(--phase) * -40s - 20s);
-}
-
-/* The working pose steps aside while another one is showing. */
-.root[data-screen='ok']:has(img[data-pose]) .who > img:first-child {
-  animation-name: idle, at-desk;
-  animation-duration: 10s, 40s;
-  animation-timing-function: var(--ease), linear;
-  animation-iteration-count: infinite;
-  animation-delay: calc(var(--phase) * -10s), calc(var(--phase) * -40s - 10.8s);
 }
 
 @keyframes idle {
@@ -650,35 +708,167 @@
   }
 }
 
-@keyframes slack {
-  0% {
-    opacity: 0;
+@keyframes frames {
+  to {
+    translate: -100%;
   }
+}
 
-  2%,
-  23% {
+@keyframes idle-work {
+  0%,
+  75%,
+  100% {
     opacity: 1;
   }
 
-  25%,
-  100% {
+  25% {
     opacity: 0;
   }
 }
 
-@keyframes at-desk {
-  0% {
-    opacity: 0;
-  }
-
-  2%,
-  52% {
-    opacity: 1;
-  }
-
-  54%,
+@keyframes idle-sip {
+  0%,
+  50%,
   100% {
     opacity: 0;
+  }
+
+  25% {
+    opacity: 1;
+    translate: 0;
+  }
+
+  26.5% {
+    translate: -12.5%;
+  }
+
+  27.25% {
+    translate: -25%;
+  }
+
+  28% {
+    translate: -37.5%;
+  }
+
+  29% {
+    translate: -50%;
+  }
+
+  35% {
+    translate: -62.5%;
+  }
+
+  36% {
+    translate: -75%;
+  }
+
+  37% {
+    translate: -87.5%;
+  }
+
+  38% {
+    translate: 0;
+  }
+
+  42% {
+    translate: -12.5%;
+  }
+
+  42.75% {
+    translate: -25%;
+  }
+
+  43.5% {
+    translate: -37.5%;
+  }
+
+  44.5% {
+    translate: -50%;
+  }
+
+  47% {
+    translate: -62.5%;
+  }
+
+  47.75% {
+    translate: -75%;
+  }
+
+  48.5% {
+    translate: -87.5%;
+  }
+
+  49.25% {
+    translate: 0;
+  }
+}
+
+@keyframes idle-phone {
+  0%,
+  75%,
+  100% {
+    opacity: 0;
+  }
+
+  50% {
+    opacity: 1;
+    translate: 0;
+  }
+
+  51% {
+    translate: -12.5%;
+  }
+
+  52% {
+    translate: -25%;
+  }
+
+  54% {
+    translate: -37.5%;
+  }
+
+  55% {
+    translate: -25%;
+  }
+
+  57% {
+    translate: -50%;
+  }
+
+  60% {
+    translate: -62.5%;
+  }
+
+  61% {
+    translate: -25%;
+  }
+
+  64% {
+    translate: -37.5%;
+  }
+
+  65% {
+    translate: -25%;
+  }
+
+  67.5% {
+    translate: -50%;
+  }
+
+  70% {
+    translate: -62.5%;
+  }
+
+  71% {
+    translate: -25%;
+  }
+
+  73% {
+    translate: -75%;
+  }
+
+  74% {
+    translate: -87.5%;
   }
 }
 

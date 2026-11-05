@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import type { Pose } from './figures';
+import type { Move } from './figures';
 import fish from '../assets/office/props/fish.webp';
 import blanket from '../assets/office/props/blanket.webp';
 import smoke from '../assets/office/props/smoke.webp';
@@ -76,14 +76,17 @@ export function mainScreen(screen: SeatScreen, avatar?: string) {
       return null;
   }
 }
-// The pose for each screen; idle desks switch poses as the screen changes.
-export const moods: Partial<Record<SeatScreen, Pose>> = {
-  dark: 'sleep',
-  asleep: 'sleep',
-  boot: 'stretch',
-  think: 'think',
-  alert: 'fret',
-  done: 'cheer',
+// What a built-in figure does for each screen; an idle desk takes turns with the screen.
+export const moves: Record<SeatScreen, readonly Move[]> = {
+  dark: ['sleep'],
+  asleep: ['sleep'],
+  boot: ['stretch'],
+  busy: ['work'],
+  think: ['think'],
+  reply: ['work'],
+  alert: ['fret'],
+  done: ['cheer'],
+  ok: ['work', 'sip', 'phone'],
 };
 export const sideScreen = () => shot(dashboardShot, 'side');
 // What sits around the figure in each state, placed against the main screen.

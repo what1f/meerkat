@@ -106,7 +106,8 @@
   }
 }
 
-/* Slacking off: each idle desk takes turns between pong, the fish tank and the phone. */
+/* Slacking off: over the cat video, each idle desk takes turns between pong (0–10s), the phone (20–30s)
+   and the fish tank (30–40s). A layer is up before the one above it fades, so the video never flashes through. */
 .pong,
 .tank,
 .lock {
@@ -114,24 +115,27 @@
   inset: 0;
   z-index: 2;
   opacity: 0;
-  animation: slack 40s linear infinite;
+  animation-duration: 40s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
   animation-delay: calc(var(--phase) * -40s);
+}
+
+.pong {
+  background: var(--screen-off);
+  animation-name: pong;
 }
 
 .tank {
   overflow: hidden;
   background: var(--tank);
-  animation-delay: calc(var(--phase) * -40s - 10s);
-}
-
-.pong {
-  background: var(--screen-off);
+  animation-name: tank;
 }
 
 /* While the phone is out the monitor dims. */
 .lock {
   background: var(--screen-off);
-  animation-delay: calc(var(--phase) * -40s - 20s);
+  animation-name: lock;
 }
 
 .tank > i {
@@ -264,19 +268,44 @@
   animation-delay: calc(var(--phase) * -10s);
 }
 
-@keyframes slack {
-  0% {
-    opacity: 0;
-  }
-
-  2%,
-  23% {
+@keyframes pong {
+  0%,
+  23%,
+  96%,
+  100% {
     opacity: 1;
   }
 
   25%,
+  95% {
+    opacity: 0;
+  }
+}
+
+@keyframes lock {
+  0%,
+  50%,
+  75%,
   100% {
     opacity: 0;
+  }
+
+  52%,
+  73% {
+    opacity: 1;
+  }
+}
+
+@keyframes tank {
+  0%,
+  70%,
+  100% {
+    opacity: 0;
+  }
+
+  71%,
+  98% {
+    opacity: 1;
   }
 }
 
