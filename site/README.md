@@ -1,6 +1,6 @@
 # Meerkat site
 
-The landing page at `lankide.dev`. A static Astro site, independent of the app.
+The landing page at `meerkat.shens.dev`. A static Astro site, independent of the app.
 
 ```bash
 pnpm install
