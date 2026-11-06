@@ -38,7 +38,11 @@ function rpc(method, params) {
 function open(value, resume) {
   request = value;
   paths = prepare(request);
-  processId = launch(request.config, ["app-server", "--listen", "stdio://"], {
+  const args = ["app-server", "--listen", "stdio://"];
+  const compact = compactTokens(request.config);
+  if (compact && !request.config.launch_arguments.some((a) => a.includes("model_auto_compact_token_limit")))
+    args.push("-c", "model_auto_compact_token_limit=" + compact);
+  processId = launch(request.config, args, {
     cwd: request.working_directory,
     env: paths.env,
     stderr: paths.root + "/app-server-" + ctx.uuid() + ".stderr.log",

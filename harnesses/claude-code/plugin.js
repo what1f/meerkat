@@ -158,6 +158,9 @@ defineHarness({
       args.push("--effort", request.config.thinking_level);
       env.CLAUDE_CODE_DISABLE_THINKING = "0";
     }
+    const compact = compactTokens(request.config);
+    if (compact && request.config.environment.CLAUDE_CODE_AUTO_COMPACT_WINDOW === undefined)
+      env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(compact);
     args.push(sessionExists() ? "--resume" : "--session-id", nativeId);
     processId = launch(request.config, args, {
       cwd: request.working_directory,

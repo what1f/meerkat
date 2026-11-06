@@ -135,6 +135,8 @@ declare function launch(
   options?: Record<string, any>,
 ): number;
 declare function failure(code: string, message: string): never;
+/** Context size at which the native CLI compacts; 0 keeps the CLI default. */
+declare function compactTokens(config: HarnessConfig): number;
 /** Refresh a private config overlay using the adapter's native directory rules. */
 declare function prepareNative(
   request: Pick<SessionRequest, "working_directory" | "config">,

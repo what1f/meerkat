@@ -4877,7 +4877,7 @@ async fn fresh_session_recovery_scenario() {
         agent: profile_agent_ref(),
         environment_variables: Some(meerkat_protocol::EnvironmentVariableSet {
             entries: vec![meerkat_protocol::EnvironmentVariable {
-                name: "MEERKAT_SESSION_IDLE_SECONDS".into(),
+                name: "MEERKAT_RESET_IDLE_SECONDS".into(),
                 value: "0".into(),
             }],
         }),

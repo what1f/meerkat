@@ -188,3 +188,81 @@ async fn resume_accepts_large_history_and_the_canonical_working_directory()
     assert!(error.message.contains("64 KiB"), "{error}");
     Ok(())
 }
+
+/// A turn that ends above the compaction threshold is compacted before it
+/// completes; a zero threshold leaves compaction to Pi.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn large_turn_compacts_before_completing() -> Result<(), Box<dyn std::error::Error>> {
+    for (threshold, compacts) in [(None, true), (Some("0"), false)] {
+        let root = tempfile::tempdir()?;
+        let cli = root.path().join("pi");
+        fs::copy(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/pi_native_peer.py"
+            ),
+            &cli,
+        )?;
+        fs::set_permissions(&cli, fs::Permissions::from_mode(0o700))?;
+        let agent = root.path().join("agent");
+        fs::create_dir(&agent)?;
+        for name in ["auth.json", "models.json", "settings.json"] {
+            fs::write(agent.join(name), "{}")?;
+        }
+        let working_directory = root.path().join("agents/large-agent");
+        fs::create_dir_all(&working_directory)?;
+        let record = root.path().join("commands.jsonl");
+        let mut environment = BTreeMap::from([
+            ("PI_CODING_AGENT_DIR".into(), agent.display().to_string()),
+            ("PI_NATIVE_FAULT".into(), "large_context".into()),
+            ("NATIVE_START_RECORD".into(), record.display().to_string()),
+        ]);
+        if let Some(threshold) = threshold {
+            environment.insert("MEERKAT_COMPACT_TOKENS".into(), threshold.into());
+        }
+        let session = PiHarness::new()
+            .start(SessionRequest {
+                cli_version: None,
+                permission_policy: Default::default(),
+                config: HarnessConfig {
+                    launch_arguments: Default::default(),
+                    harness_id: "pi".into(),
+                    model: ModelRef::new("local", "Local"),
+                    thinking_level: "off".into(),
+                    cli_path: cli,
+                    config_fingerprint: "compaction-scenario".into(),
+                    environment,
+                },
+                working_directory,
+                system_prompt: "Respond.".into(),
+                tools: vec![],
+                native_session_id: None,
+            })
+            .await?;
+        let mut stream = session
+            .execute(ExecuteRequest {
+                input: "Finish a large turn.".into(),
+            })
+            .await?;
+        let output = tokio::time::timeout(Duration::from_secs(15), async {
+            while let Some(event) = stream.next().await {
+                if let AgentEventKind::Completed { final_output } = event?.kind {
+                    return Ok::<_, meerkat_harness::HarnessError>(final_output);
+                }
+            }
+            panic!("Pi stream ended before completion");
+        })
+        .await??;
+        assert_eq!(output, "OK");
+        let compacted = fs::read_to_string(&record)?
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .any(|line| line["command"]["type"] == "compact");
+        assert_eq!(
+            compacted, compacts,
+            "compaction must run before completion only above the threshold"
+        );
+        session.close().await?;
+    }
+    Ok(())
+}

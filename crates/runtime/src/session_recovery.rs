@@ -10,7 +10,9 @@ use std::collections::BTreeSet;
 use meerkat_storage::{AttentionRecord, RecentConversationView, SnapshotView};
 
 /// Context size above which a cold session is replaced instead of resumed.
-const MIN_CONTEXT_TOKENS: u64 = 128_000;
+/// The Harnesses compact at 128k by default, so a replaced session is one
+/// that grew past half of that since its last compaction.
+const RESET_TOKENS: u64 = 64_000;
 const MINUTE_MS: i64 = 60_000;
 const HOUR_MS: i64 = 60 * MINUTE_MS;
 
@@ -46,8 +48,17 @@ fn idle_limit_ms(harness_id: &str, model: &str) -> i64 {
     }
 }
 
-/// Agent environment variable that replaces the per-model idle limit.
-const IDLE_OVERRIDE_VARIABLE: &str = "MEERKAT_SESSION_IDLE_SECONDS";
+/// Agent environment variables that replace the defaults above.
+const RESET_TOKENS_VARIABLE: &str = "MEERKAT_RESET_TOKENS";
+const RESET_IDLE_VARIABLE: &str = "MEERKAT_RESET_IDLE_SECONDS";
+
+fn variable(harness: &meerkat_protocol::HarnessConfig, name: &str) -> Option<i64> {
+    harness
+        .environment_variables
+        .iter()
+        .find(|variable| variable.name == name)
+        .and_then(|variable| variable.value.trim().parse::<i64>().ok())
+}
 
 /// True when the next run should start a new native session.
 pub(crate) fn should_start_fresh(
@@ -56,15 +67,14 @@ pub(crate) fn should_start_fresh(
     last_context_tokens: Option<u64>,
     now: i64,
 ) -> bool {
-    let limit = harness
-        .environment_variables
-        .iter()
-        .find(|variable| variable.name == IDLE_OVERRIDE_VARIABLE)
-        .and_then(|variable| variable.value.trim().parse::<i64>().ok())
+    let idle_ms = variable(harness, RESET_IDLE_VARIABLE)
         .map(|seconds| seconds.saturating_mul(1_000))
         .unwrap_or_else(|| idle_limit_ms(&harness.harness_id, &harness.model));
-    now.saturating_sub(last_completed_at) >= limit
-        && last_context_tokens.is_some_and(|tokens| tokens > MIN_CONTEXT_TOKENS)
+    let tokens = variable(harness, RESET_TOKENS_VARIABLE)
+        .map(|tokens| tokens.max(0) as u64)
+        .unwrap_or(RESET_TOKENS);
+    now.saturating_sub(last_completed_at) >= idle_ms
+        && last_context_tokens.is_some_and(|context| context > tokens)
 }
 
 /// Recent conversations as one XML-delimited section, or empty when there is

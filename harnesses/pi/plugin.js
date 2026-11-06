@@ -16,7 +16,10 @@ let request,
   output = "",
   nextId = 0,
   cancelReason = null,
-  cancelAt = 0;
+  cancelAt = 0,
+  contextTokens = 0,
+  // Pi compacts near the full window; Meerkat asks for it earlier, after the turn.
+  compaction = null;
 const toolNames = new Map(),
   observed = new Set(),
   uiRequests = new Map(),
@@ -224,6 +227,7 @@ defineHarness({
     observed.clear();
     uiRequests.clear();
     results.clear();
+    contextTokens = 0;
     started(nativeId);
     rpc("prompt", { message: value.input });
   },
@@ -236,6 +240,14 @@ defineHarness({
       inject(uiRequests.get(value.tool_call_id), value);
   },
   cancel(value) {
+    if (compaction) {
+      // Pi cannot abort a compaction; the turn itself already finished.
+      active = false;
+      const text = compaction.text;
+      compaction = { id: compaction.id, text: null };
+      completed(text);
+      return { accepted: true };
+    }
     cancelReason = value.reason;
     cancelAt = Date.now();
     send("abort");
@@ -262,6 +274,16 @@ defineHarness({
     const v = packet.message;
     if (v.invalid_output) failure("invalid_event", "Invalid Pi RPC event");
     if (v.type === "response") {
+      if (compaction && v.id === compaction.id) {
+        // The turn already finished; a failed compaction leaves Pi's own.
+        const text = compaction.text;
+        compaction = null;
+        if (text !== null) {
+          active = false;
+          completed(text);
+        }
+        return;
+      }
       if (v.command === "prompt" && !v.success && active) {
         active = false;
         failed(v.error || "Pi rejected prompt");
@@ -297,13 +319,13 @@ defineHarness({
       case "message_end": {
         const text = assistant(v.message);
         if (text !== null) output = text;
-        if (v.message?.usage)
-          usage(
+        if (v.message?.usage) {
+          contextTokens =
             (v.message.usage.input || 0) +
-              (v.message.usage.cacheRead || 0) +
-              (v.message.usage.cacheWrite || 0),
-            v.message.usage.output,
-          );
+            (v.message.usage.cacheRead || 0) +
+            (v.message.usage.cacheWrite || 0);
+          usage(contextTokens, v.message.usage.output);
+        }
         break;
       }
       case "tool_execution_start":
@@ -327,10 +349,15 @@ defineHarness({
           });
         break;
       case "agent_end": {
-        active = false;
         const last = (v.messages || [])
           .filter((m) => m.role === "assistant")
           .pop();
+        const limit = compactTokens(request.config);
+        if (!cancelReason && !["error", "aborted"].includes(last?.stopReason) && limit && contextTokens > limit) {
+          compaction = { id: send("compact"), text: assistant(last) ?? output };
+          break;
+        }
+        active = false;
         if (cancelReason) ctx.emit({ kind: "cancelled", reason: cancelReason });
         else if (["error", "aborted"].includes(last?.stopReason))
           failed(last.errorMessage || last.stopReason);

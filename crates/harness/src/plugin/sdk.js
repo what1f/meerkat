@@ -187,6 +187,13 @@ function failed(message, code = "agent_error") {
   const error = classifyError({ message, code });
   ctx.emit({ kind: "failed", code, message, failure: error.failure });
 }
+/** Context size at which the native CLI compacts; 0 keeps the CLI default. */
+function compactTokens(config) {
+  const value = config.environment.MEERKAT_COMPACT_TOKENS;
+  if (value === undefined || value.trim() === "") return 128000;
+  const tokens = Math.floor(Number(value));
+  return tokens > 0 ? tokens : 0;
+}
 function usage(input, output) {
   ctx.emit({
     kind: "usage",

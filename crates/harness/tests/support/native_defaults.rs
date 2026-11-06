@@ -299,6 +299,10 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                         .position(|arg| *arg == "--permission-mode")
                         .unwrap();
                     assert_eq!(launch["environment"]["ENABLE_TOOL_SEARCH"], "true");
+                    assert_eq!(
+                        launch["environment"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"],
+                        "128000"
+                    );
                     assert_eq!(argv[index + 1], "bypassPermissions");
                     assert!(!argv.contains(&"--setting-sources"));
                     assert!(!argv.contains(&"--strict-mcp-config"));
@@ -315,7 +319,16 @@ pub async fn agent_native_defaults(factory: &dyn HarnessFactory, fixture: &Path)
                     );
                 }
                 "codex" => {
-                    assert_eq!(argv, ["app-server", "--listen", "stdio://"]);
+                    assert_eq!(
+                        argv,
+                        [
+                            "app-server",
+                            "--listen",
+                            "stdio://",
+                            "-c",
+                            "model_auto_compact_token_limit=128000"
+                        ]
+                    );
                     assert_eq!(
                         launch["environment"]["CODEX_HOME"].as_str(),
                         agent.join(".meerkat").join(id).join("native-home").to_str()

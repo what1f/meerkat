@@ -13,7 +13,7 @@ def write(value):
 def emit(value):
     print(json.dumps(value), flush=True)
 
-write({"argv": sys.argv[1:], "cwd": os.getcwd(), "environment": {key: os.environ[key] for key in ("HOME", "PI_CODING_AGENT_DIR", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "MEERKAT_RUNTIME_RUN", "ENABLE_TOOL_SEARCH") if key in os.environ}})
+write({"argv": sys.argv[1:], "cwd": os.getcwd(), "environment": {key: os.environ[key] for key in ("HOME", "PI_CODING_AGENT_DIR", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "MEERKAT_RUNTIME_RUN", "ENABLE_TOOL_SEARCH", "CLAUDE_CODE_AUTO_COMPACT_WINDOW") if key in os.environ}})
 if "--version" in sys.argv:
     print("native-fixture")
     sys.exit(0)
@@ -32,7 +32,14 @@ if os.environ["NATIVE_ADAPTER"] == "claude_code":
     for authorization in ("", "Authorization: Bearer wrong-token\r\n"):
         with socket.create_connection((address.hostname, address.port), timeout=2) as connection:
             connection.sendall(("POST /mcp HTTP/1.1\r\nHost: localhost\r\n" + authorization + "Content-Length: 100\r\n\r\n").encode())
-            assert connection.recv(4096).startswith(b"HTTP/1.1 401 Unauthorized")
+            # The status line can arrive split across reads.
+            status = b""
+            while b"\r\n" not in status:
+                chunk = connection.recv(4096)
+                if not chunk:
+                    break
+                status += chunk
+            assert status.startswith(b"HTTP/1.1 401 Unauthorized"), status
     headers = {"Content-Type": "application/json", "aUtHoRiZaTiOn": server["headers"]["Authorization"]}
     connection = http.client.HTTPConnection(address.hostname, address.port, timeout=2)
     connection.request("POST", "/mcp", body=json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/list"}), headers=headers)

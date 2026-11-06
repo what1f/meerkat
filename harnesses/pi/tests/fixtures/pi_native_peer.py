@@ -52,6 +52,12 @@ for line in sys.stdin:
         print(json.dumps({"id": command_id, "type": "response", "command": "prompt", "success": True}), flush=True)
         if mode == "success":
             print(json.dumps({"type": "agent_end", "messages": [{"role": "assistant", "content": [{"type": "text", "text": "OK"}], "stopReason": "stop"}]}), flush=True)
+        elif mode == "large_context":
+            reply = {"role": "assistant", "content": [{"type": "text", "text": "OK"}], "stopReason": "stop", "usage": {"input": 2000, "cacheRead": 130000, "cacheWrite": 0, "output": 10}}
+            print(json.dumps({"type": "message_end", "message": reply}), flush=True)
+            print(json.dumps({"type": "agent_end", "messages": [reply]}), flush=True)
+    elif kind == "compact":
+        print(json.dumps({"id": command_id, "type": "response", "command": "compact", "success": True, "data": {}}), flush=True)
     elif kind == "steer":
         print(json.dumps({"id": command_id, "type": "response", "command": "steer", "success": True}), flush=True)
     elif kind == "abort" and mode == "agent_end":
