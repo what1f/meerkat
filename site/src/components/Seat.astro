@@ -8,6 +8,8 @@ import zzz from '../assets/office/props/zzz.webp';
 import mug from '../assets/office/props/mug.webp';
 import plant from '../assets/office/props/plant.webp';
 import thought from '../assets/office/props/bubble-thought.webp';
+import keycap from '../assets/office/props/keycap.webp';
+import confetti from '../assets/office/props/confetti.webp';
 import code from '../assets/office/screens/code.webp';
 import chat from '../assets/office/screens/chat.webp';
 import dashboard from '../assets/office/screens/dashboard.webp';
@@ -24,8 +26,9 @@ interface Props {
   label: string;
 }
 const { setup, screen, figure, pose = 'work', label } = Astro.props;
-const frames = import.meta.glob<{ default: ImageMetadata }>('../assets/figures/*/*.png', { eager: true });
-const frame = figure ? frames[`../assets/figures/${figure}/${pose}.png`]?.default : undefined;
+// Each pose is a strip of eight frames, copied from the app's desk moves.
+const strips = import.meta.glob<{ default: ImageMetadata }>('../assets/figures/*/desk/*.webp', { eager: true });
+const strip = figure ? strips[`../assets/figures/${figure}/desk/${pose}.webp`]?.default : undefined;
 const shots = { code, chat, dashboard, done, search } as Record<string, ImageMetadata>;
 
 // Desk art is 440 wide, drawn at 220. Screen holes are corner quads in asset pixels;
@@ -69,9 +72,11 @@ const lit = screen !== 'off';
 // The desk and figure art ships as PNG; serve it as WebP.
 const webp = async (m: ImageMetadata) => (await getImage({ src: m, format: 'webp' })).src;
 const deskSrc = await webp(desk.src);
-const whoSrc = await webp(frame ?? chair);
+const chairSrc = await webp(chair);
+// Desks in a row never move in step.
+const phase = ([...label].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 11) % 997) / 997;
 ---
-<div class="seat" data-screen={screen} title={label}>
+<div class="seat" data-screen={screen} data-pose={pose} title={label} style={`--phase:${phase}`}>
   <span class="floor"></span>
   <span class="screen" style={box(desk.screens[0]!)}>
     {lit && <img loading="lazy" decoding="async" src={shots[screen]!.src} alt="" data-kind={screen} />}
@@ -84,11 +89,16 @@ const whoSrc = await webp(frame ?? chair);
   <img loading="lazy" decoding="async" class="desk" src={deskSrc} alt="" width="220" />
   {figure && lit && <img loading="lazy" decoding="async" class="prop" src={mug.src} alt="" style={`${at(desk.mug)};width:16px`} />}
   {desk.plant && <img loading="lazy" decoding="async" class="prop" src={plant.src} alt="" style={`${at(desk.plant)};width:22px`} />}
-  {frame ? (
-    <img loading="lazy" decoding="async" class="who" src={whoSrc} alt={label} width="84.5" height="125" />
+  {figure && pose === 'cheer' && <img loading="lazy" decoding="async" class="confetti" src={confetti.src} alt="" />}
+  {strip ? (
+    <span class="who" role="img" aria-label={label}>
+      <span class="frames"><img loading="lazy" decoding="async" class="strip" src={strip.src} alt="" /></span>
+      <img loading="lazy" decoding="async" class="back" src={chairSrc} alt="" />
+    </span>
   ) : (
-    <img loading="lazy" decoding="async" class="who chair" src={whoSrc} alt="" width="84.5" height="125" />
+    <img loading="lazy" decoding="async" class="who chair" src={chairSrc} alt="" width="84.5" height="125" />
   )}
+  {screen === 'code' && <img loading="lazy" decoding="async" class="key" src={keycap.src} alt="" />}
   {figure && !lit && <img loading="lazy" decoding="async" class="blanket" src={blanket.src} alt="" />}
   {figure && !lit && <img loading="lazy" decoding="async" class="zz" src={zzz.src} alt="" />}
   {pose === 'think' && <img loading="lazy" decoding="async" class="thought" src={thought.src} alt="" />}
@@ -184,12 +194,45 @@ const whoSrc = await webp(frame ?? chair);
     rotate: 4deg;
   }
 
-  .seat[data-screen='code'] .who {
-    animation: type 0.5s steps(2) infinite;
+  /* The figure plays its pose as a strip of eight frames, with the chair drawn back over it.
+     The frames carry a margin around the body, so they spill past the chair's box. */
+  .frames {
+    position: absolute;
+    top: -3px;
+    left: -5.75px;
+    width: 96px;
+    height: 128px;
+    overflow: hidden;
   }
 
-  .seat[data-screen='done'] .who {
-    animation: hop 1.6s var(--ease) infinite;
+  .strip {
+    --beat: 1.76s;
+
+    display: block;
+    width: 800%;
+    max-width: none;
+    height: 100%;
+    animation: frames var(--beat) steps(8) infinite;
+    animation-delay: calc(var(--phase) * -4s);
+  }
+
+  .seat[data-pose='think'] .strip {
+    --beat: 2.08s;
+  }
+
+  .seat[data-pose='sleep'] .strip {
+    --beat: 3.04s;
+  }
+
+  .seat[data-pose='cheer'] .strip {
+    --beat: 1.2s;
+  }
+
+  .back {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
   }
 
   .zz {
@@ -210,27 +253,45 @@ const whoSrc = await webp(frame ?? chair);
     animation: breathe 3.6s ease-in-out infinite;
   }
 
-  .seat[data-screen='off'] .who {
-    transform-origin: 50% 90%;
-    animation: breathe 3.6s ease-in-out infinite;
-  }
-
   .thought {
     top: 2px;
     left: 140px;
     width: 34px;
-    animation: bob 2.6s ease-in-out infinite;
+    transform-origin: 0 100%;
+    animation: ponder 2.4s ease-in-out infinite;
   }
 
-  /* Idle loops wait for a hover instead of running all the time. */
-  .seat :global(*),
-  .seat * {
+  /* A key pops off the keyboard now and then. */
+  .key {
+    top: 68px;
+    left: 146px;
+    width: 9px;
+    opacity: 0;
+    animation: key 2.6s var(--ease) infinite;
+    animation-delay: calc(var(--phase) * -2.6s);
+  }
+
+  .confetti {
+    top: -14px;
+    left: 82px;
+    width: 56px;
+    transform-origin: 50% 100%;
+    animation: burst 2.4s var(--ease-pop) infinite;
+  }
+
+  /* Off screen, nothing moves. */
+  :global(.js) .seat:not([data-near]) * {
     animation-play-state: paused;
   }
 
-  .seat:hover :global(*),
-  .seat:hover * {
-    animation-play-state: running;
+  @media (prefers-reduced-motion: reduce) {
+    .strip {
+      animation: none !important;
+    }
+  }
+
+  @keyframes frames {
+    to { translate: -100%; }
   }
 
   @keyframes scroll {
@@ -239,17 +300,6 @@ const whoSrc = await webp(frame ?? chair);
 
   @keyframes drift {
     to { transform: translateY(-14%); }
-  }
-
-  @keyframes type {
-    50% { transform: translateY(-1px); }
-  }
-
-  @keyframes hop {
-    0%, 60%, 100% { transform: none; }
-    70% { transform: translateY(-6px); }
-    80% { transform: none; }
-    88% { transform: translateY(-3px); }
   }
 
   @keyframes zz {
@@ -270,7 +320,54 @@ const whoSrc = await webp(frame ?? chair);
     50% { transform: scaleY(1.015) translateY(-0.5px); }
   }
 
-  @keyframes bob {
-    50% { transform: translateY(-3px); }
+  @keyframes ponder {
+    50% { transform: translateY(-2px) scale(1.04); }
+  }
+
+  @keyframes key {
+    0%, 60% {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+
+    66% {
+      opacity: 1;
+      transform: translateY(-6px) rotate(-18deg);
+    }
+
+    82% {
+      opacity: 1;
+      transform: translateY(-9px) rotate(-40deg);
+    }
+
+    100% {
+      opacity: 0;
+      transform: translateY(-2px) rotate(-60deg);
+    }
+  }
+
+  @keyframes burst {
+    0% {
+      opacity: 0;
+      transform: translateY(10px) scale(0.4);
+    }
+
+    25%, 70% {
+      opacity: 1;
+      transform: none;
+    }
+
+    100% {
+      opacity: 0;
+      transform: translateY(-4px) scale(1.05);
+    }
   }
 </style>
+
+<script>
+  // Desks play only while they are on screen.
+  const near = new IntersectionObserver((entries) => {
+    for (const e of entries) e.target.toggleAttribute('data-near', e.isIntersecting);
+  });
+  document.querySelectorAll('.seat').forEach((el) => near.observe(el));
+</script>

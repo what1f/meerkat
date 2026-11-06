@@ -114,7 +114,10 @@ const { label } = Astro.props;
       const root = document.documentElement;
       const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
       root.dataset.theme = next;
-      localStorage.setItem('meerkat-theme', next);
+      // Pulling back to the browser's theme returns to following it.
+      const system = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      if (next === system) localStorage.removeItem('meerkat-theme');
+      else localStorage.setItem('meerkat-theme', next);
       cord.removeAttribute('data-snap');
       void cord.offsetWidth;
       cord.setAttribute('data-snap', '');

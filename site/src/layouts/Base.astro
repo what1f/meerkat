@@ -35,8 +35,15 @@ const canonical = new URL(pathFor(lang), Astro.site);
       (() => {
         const root = document.documentElement;
         root.classList.add('js');
-        const saved = localStorage.getItem('meerkat-theme');
-        root.dataset.theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        // Follow the browser; a pulled cord overrides it until the browser flips again.
+        const key = 'meerkat-theme';
+        const dark = matchMedia('(prefers-color-scheme: dark)');
+        const system = () => (dark.matches ? 'dark' : 'light');
+        root.dataset.theme = localStorage.getItem(key) || system();
+        dark.addEventListener('change', () => {
+          localStorage.removeItem(key);
+          root.dataset.theme = system();
+        });
       })();
     </script>
   </head>
