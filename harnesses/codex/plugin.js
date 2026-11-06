@@ -44,7 +44,7 @@ function open(value, resume) {
     stderr: paths.root + "/app-server-" + ctx.uuid() + ".stderr.log",
   });
   rpc("initialize", {
-    clientInfo: { name: "lankide", version: "1" },
+    clientInfo: { name: "meerkat", version: "1" },
     capabilities: { experimentalApi: true },
   });
   ctx.send(processId, { method: "initialized", params: {} });
@@ -57,8 +57,8 @@ function open(value, resume) {
     dynamicTools: [
       {
         type: "namespace",
-        name: "lankide",
-        description: "Lankide workspace tools",
+        name: "meerkat",
+        description: "Meerkat workspace tools",
         tools: request.tools.map((t) => ({
           type: "function",
           name: t.name,
@@ -98,7 +98,7 @@ defineHarness({
     });
     try {
       rpc("initialize", {
-        clientInfo: { name: "lankide-catalog", version: "1" },
+        clientInfo: { name: "meerkat-catalog", version: "1" },
         capabilities: { experimentalApi: true },
       });
       ctx.send(processId, { method: "initialized", params: {} });

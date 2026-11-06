@@ -2,7 +2,7 @@ use crate::agent::aid;
 use crate::error::conv;
 use crate::workspace::{ensure_workspace_provider, pid, wid};
 use crate::{AttentionRecord, Result, Storage, StorageError};
-use lankide_core::{AgentId, ChannelId, MessageAuthorType, ProviderId, ResourceId, WorkspaceId};
+use meerkat_core::{AgentId, ChannelId, MessageAuthorType, ProviderId, ResourceId, WorkspaceId};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
 
@@ -119,7 +119,7 @@ pub struct IngestResult {
     pub new_inbox_items: Vec<(AgentId, i64)>,
 }
 
-pub use lankide_core::ReactionAction;
+pub use meerkat_core::ReactionAction;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]

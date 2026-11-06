@@ -2191,391 +2191,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lankide-cli"
-version = "0.1.0"
-dependencies = [
- "lankide-protocol",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "tokio",
- "tokio-stream",
-]
-
-[[package]]
-name = "lankide-client"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "futures-util",
- "lankide-protocol",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "tokio",
- "tokio-stream",
- "tokio-tungstenite",
-]
-
-[[package]]
-name = "lankide-core"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "lankide-daemon-runtime"
-version = "0.1.0"
-dependencies = [
- "log",
- "tempfile",
-]
-
-[[package]]
-name = "lankide-desktop"
-version = "0.1.0"
-dependencies = [
- "lankide-client",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "objc2-service-management",
- "objc2-web-kit",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tempfile",
- "tokio",
- "window-vibrancy 0.7.1",
-]
-
-[[package]]
-name = "lankide-harness"
-version = "0.1.0"
-dependencies = [
- "lankide-core",
- "rquickjs",
- "rustix",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-stream",
- "toml 0.8.23",
- "uuid",
-]
-
-[[package]]
-name = "lankide-harness-claude-code"
-version = "0.1.0"
-dependencies = [
- "lankide-core",
- "lankide-harness",
- "lankide-testkit",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-stream",
-]
-
-[[package]]
-name = "lankide-harness-codex"
-version = "0.1.0"
-dependencies = [
- "lankide-harness",
- "lankide-testkit",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-stream",
-]
-
-[[package]]
-name = "lankide-harness-pi"
-version = "0.1.0"
-dependencies = [
- "lankide-harness",
- "lankide-testkit",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-stream",
-]
-
-[[package]]
-name = "lankide-machine"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "lankide-client",
- "lankide-daemon-runtime",
- "lankide-harness",
- "lankide-harness-claude-code",
- "lankide-harness-codex",
- "lankide-harness-pi",
- "lankide-machine-core",
- "lankide-protocol",
- "lankide-runtime",
- "lankided",
- "log",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "tokio",
- "tokio-stream",
-]
-
-[[package]]
-name = "lankide-machine-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "lankide-core",
- "lankide-harness",
- "lankide-protocol",
- "log",
- "mime_guess",
- "pulldown-cmark",
- "reqwest 0.12.28",
- "rustix",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "tokio",
- "tokio-stream",
- "uuid",
-]
-
-[[package]]
-name = "lankide-protocol"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.23.1",
- "bytes",
- "futures-util",
- "http-body-util",
- "hyper",
- "hyper-util",
- "lankide-client",
- "lankide-core",
- "rustls",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "subtle",
- "tempfile",
- "tokio",
- "tokio-rustls",
- "tokio-stream",
- "tokio-tungstenite",
- "ts-rs",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "lankide-provider"
-version = "0.1.0"
-dependencies = [
- "lankide-core",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "lankide-provider-feishu"
-version = "0.1.0"
-dependencies = [
- "base64 0.23.1",
- "chrono",
- "flate2",
- "futures-util",
- "image",
- "lankide-core",
- "lankide-protocol",
- "lankide-provider",
- "lankide-runtime",
- "lankide-storage",
- "lankide-testkit",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "tokio",
- "tokio-tungstenite",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "lankide-provider-telegram"
-version = "0.1.0"
-dependencies = [
- "lankide-core",
- "lankide-provider",
- "lankide-runtime",
- "lankide-storage",
- "lankide-testkit",
- "reqwest 0.12.28",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "lankide-runtime"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.23.1",
- "image",
- "lankide-client",
- "lankide-core",
- "lankide-protocol",
- "lankide-provider",
- "lankide-storage",
- "log",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "subtle",
- "tempfile",
- "tokio",
- "tokio-stream",
- "uuid",
- "zip",
-]
-
-[[package]]
-name = "lankide-storage"
-version = "0.1.0"
-dependencies = [
- "lankide-core",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "uuid",
-]
-
-[[package]]
-name = "lankide-system-e2e"
-version = "0.1.0"
-dependencies = [
- "base64 0.23.1",
- "futures-util",
- "image",
- "lankide-cli",
- "lankide-client",
- "lankide-core",
- "lankide-daemon-runtime",
- "lankide-harness",
- "lankide-machine",
- "lankide-machine-core",
- "lankide-protocol",
- "lankide-provider",
- "lankide-provider-feishu",
- "lankide-provider-telegram",
- "lankide-runtime",
- "lankide-storage",
- "lankided",
- "log",
- "reqwest 0.12.28",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "tokio",
- "tokio-stream",
- "tokio-tungstenite",
- "zip",
-]
-
-[[package]]
-name = "lankide-testkit"
-version = "0.1.0"
-dependencies = [
- "lankide-core",
- "lankide-harness",
- "lankide-machine-core",
- "lankide-protocol",
- "lankide-provider",
- "lankide-runtime",
- "lankide-storage",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "lankide-web-assets"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "http-body-util",
- "hyper",
- "mime_guess",
- "rust-embed",
-]
-
-[[package]]
-name = "lankide-web-types"
-version = "0.1.0"
-dependencies = [
- "lankide-protocol",
- "ts-rs",
-]
-
-[[package]]
-name = "lankided"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "lankide-client",
- "lankide-core",
- "lankide-daemon-runtime",
- "lankide-protocol",
- "lankide-provider",
- "lankide-provider-feishu",
- "lankide-provider-telegram",
- "lankide-runtime",
- "lankide-storage",
- "lankide-testkit",
- "lankide-web-assets",
- "log",
- "nix",
- "rcgen",
- "rusqlite",
- "rustls",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "socket2",
- "tempfile",
- "tokio",
- "tokio-rustls",
- "tokio-stream",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2692,6 +2307,391 @@ dependencies = [
  "log",
  "tendril",
  "web_atoms",
+]
+
+[[package]]
+name = "meerkat-cli"
+version = "0.1.0"
+dependencies = [
+ "meerkat-protocol",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
+name = "meerkat-client"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures-util",
+ "meerkat-protocol",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite",
+]
+
+[[package]]
+name = "meerkat-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "meerkat-daemon-runtime"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "tempfile",
+]
+
+[[package]]
+name = "meerkat-desktop"
+version = "0.1.0"
+dependencies = [
+ "meerkat-client",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-service-management",
+ "objc2-web-kit",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "tempfile",
+ "tokio",
+ "window-vibrancy 0.7.1",
+]
+
+[[package]]
+name = "meerkat-harness"
+version = "0.1.0"
+dependencies = [
+ "meerkat-core",
+ "rquickjs",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "toml 0.8.23",
+ "uuid",
+]
+
+[[package]]
+name = "meerkat-harness-claude-code"
+version = "0.1.0"
+dependencies = [
+ "meerkat-core",
+ "meerkat-harness",
+ "meerkat-testkit",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
+name = "meerkat-harness-codex"
+version = "0.1.0"
+dependencies = [
+ "meerkat-harness",
+ "meerkat-testkit",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
+name = "meerkat-harness-pi"
+version = "0.1.0"
+dependencies = [
+ "meerkat-harness",
+ "meerkat-testkit",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
+name = "meerkat-machine"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "log",
+ "meerkat-client",
+ "meerkat-daemon-runtime",
+ "meerkat-harness",
+ "meerkat-harness-claude-code",
+ "meerkat-harness-codex",
+ "meerkat-harness-pi",
+ "meerkat-machine-core",
+ "meerkat-protocol",
+ "meerkat-runtime",
+ "meerkatd",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
+name = "meerkat-machine-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "log",
+ "meerkat-core",
+ "meerkat-harness",
+ "meerkat-protocol",
+ "mime_guess",
+ "pulldown-cmark",
+ "reqwest 0.12.28",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "uuid",
+]
+
+[[package]]
+name = "meerkat-protocol"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "bytes",
+ "futures-util",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "meerkat-client",
+ "meerkat-core",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "subtle",
+ "tempfile",
+ "tokio",
+ "tokio-rustls",
+ "tokio-stream",
+ "tokio-tungstenite",
+ "ts-rs",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "meerkat-provider"
+version = "0.1.0"
+dependencies = [
+ "meerkat-core",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "meerkat-provider-feishu"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "chrono",
+ "flate2",
+ "futures-util",
+ "image",
+ "meerkat-core",
+ "meerkat-protocol",
+ "meerkat-provider",
+ "meerkat-runtime",
+ "meerkat-storage",
+ "meerkat-testkit",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "meerkat-provider-telegram"
+version = "0.1.0"
+dependencies = [
+ "meerkat-core",
+ "meerkat-provider",
+ "meerkat-runtime",
+ "meerkat-storage",
+ "meerkat-testkit",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "meerkat-runtime"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "image",
+ "log",
+ "meerkat-client",
+ "meerkat-core",
+ "meerkat-protocol",
+ "meerkat-provider",
+ "meerkat-storage",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "subtle",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "uuid",
+ "zip",
+]
+
+[[package]]
+name = "meerkat-storage"
+version = "0.1.0"
+dependencies = [
+ "meerkat-core",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "uuid",
+]
+
+[[package]]
+name = "meerkat-system-e2e"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "futures-util",
+ "image",
+ "log",
+ "meerkat-cli",
+ "meerkat-client",
+ "meerkat-core",
+ "meerkat-daemon-runtime",
+ "meerkat-harness",
+ "meerkat-machine",
+ "meerkat-machine-core",
+ "meerkat-protocol",
+ "meerkat-provider",
+ "meerkat-provider-feishu",
+ "meerkat-provider-telegram",
+ "meerkat-runtime",
+ "meerkat-storage",
+ "meerkatd",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite",
+ "zip",
+]
+
+[[package]]
+name = "meerkat-testkit"
+version = "0.1.0"
+dependencies = [
+ "meerkat-core",
+ "meerkat-harness",
+ "meerkat-machine-core",
+ "meerkat-protocol",
+ "meerkat-provider",
+ "meerkat-runtime",
+ "meerkat-storage",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "meerkat-web-assets"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "http-body-util",
+ "hyper",
+ "mime_guess",
+ "rust-embed",
+]
+
+[[package]]
+name = "meerkat-web-types"
+version = "0.1.0"
+dependencies = [
+ "meerkat-protocol",
+ "ts-rs",
+]
+
+[[package]]
+name = "meerkatd"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "log",
+ "meerkat-client",
+ "meerkat-core",
+ "meerkat-daemon-runtime",
+ "meerkat-protocol",
+ "meerkat-provider",
+ "meerkat-provider-feishu",
+ "meerkat-provider-telegram",
+ "meerkat-runtime",
+ "meerkat-storage",
+ "meerkat-testkit",
+ "meerkat-web-assets",
+ "nix",
+ "rcgen",
+ "rusqlite",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "socket2",
+ "tempfile",
+ "tokio",
+ "tokio-rustls",
+ "tokio-stream",
 ]
 
 [[package]]

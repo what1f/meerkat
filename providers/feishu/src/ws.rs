@@ -269,7 +269,7 @@ impl FeishuWebSocketSource {
             // stable UA keeps this transport distinguishable without exposing
             // credentials.
             .header("locale", "zh")
-            .header("User-Agent", "lankide-feishu-provider/0.1")
+            .header("User-Agent", "meerkat-feishu-provider/0.1")
             .json(&json!({
                 "AppID": credentials.app_id,
                 "AppSecret": credentials.app_secret()
@@ -541,7 +541,7 @@ impl EventSource for FeishuWebSocketSource {
 
 /// Connect with the Provider's shared HTTP client.
 pub fn native_event_source_factory<'a>(
-    _workspace_id: &'a lankide_core::WorkspaceId,
+    _workspace_id: &'a meerkat_core::WorkspaceId,
     credentials: &'a Credentials,
     domain: &'a Domain,
     transport: &'a dyn Transport,

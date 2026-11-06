@@ -10,6 +10,7 @@ pub mod dto;
 pub mod events;
 pub mod http;
 mod identity;
+mod lark_cli;
 pub mod mention;
 pub mod normalize;
 mod onboarding;

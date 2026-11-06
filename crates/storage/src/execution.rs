@@ -2,7 +2,7 @@ use crate::agent::aid;
 use crate::message::load_snapshot;
 use crate::workspace::wid;
 use crate::{DispatchReason, Result, SnapshotChatView, SnapshotView, Storage, StorageError};
-use lankide_core::{AgentId, WorkspaceId};
+use meerkat_core::{AgentId, WorkspaceId};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
 use std::fmt;

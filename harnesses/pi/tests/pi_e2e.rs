@@ -3,12 +3,12 @@ const DEFAULT_MODEL: &str = "deepseek-v4-flash";
 mod process_support;
 use process_support::{ProcessHarnessFactory, ProcessHarnessSpec};
 
-use lankide_harness::{
+use meerkat_harness::{
     AgentEventKind, ExecuteRequest, HarnessConfig, HarnessErrorCode, HarnessFactory, HarnessInfo,
     ModelRef, SessionRequest, ToolDefinition, ToolResultRequest,
 };
-use lankide_harness_pi::PiHarness;
-use lankide_testkit::{GateSelection, ProbeConfig, run_prerequisite_probe};
+use meerkat_harness_pi::PiHarness;
+use meerkat_testkit::{GateSelection, ProbeConfig, run_prerequisite_probe};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::fs;
@@ -24,8 +24,8 @@ const TURN_TIMEOUT: Duration = Duration::from_secs(120);
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires Pi CLI, deepseek-v4-flash, and explicit live opt-in"]
 async fn pi_e2e() -> Result<(), String> {
-    if std::env::var("LANKIDE_E2E_LIVE").as_deref() != Ok("1") {
-        return Err("set LANKIDE_E2E_LIVE=1 for the Pi live gate".to_owned());
+    if std::env::var("MEERKAT_E2E_LIVE").as_deref() != Ok("1") {
+        return Err("set MEERKAT_E2E_LIVE=1 for the Pi live gate".to_owned());
     }
     let prerequisite = run_prerequisite_probe(&ProbeConfig::from_environment(
         GateSelection::HarnessLive,
@@ -38,7 +38,7 @@ async fn pi_e2e() -> Result<(), String> {
         ));
     }
 
-    let run_id = std::env::var("LANKIDE_E2E_RUN_ID").unwrap_or_else(|_| {
+    let run_id = std::env::var("MEERKAT_E2E_RUN_ID").unwrap_or_else(|_| {
         format!(
             "{}-{}",
             std::process::id(),
@@ -48,9 +48,9 @@ async fn pi_e2e() -> Result<(), String> {
                 .as_nanos()
         )
     });
-    let nonce = format!("lankide-pi-e2e-{run_id}");
+    let nonce = format!("meerkat-pi-e2e-{run_id}");
     let root = std::env::temp_dir()
-        .join("lankide-pi-e2e-artifacts")
+        .join("meerkat-pi-e2e-artifacts")
         .join(&run_id);
     let workspace = root.join("workspace");
     let agent_dir = root.join("overlay/agent");
@@ -76,7 +76,7 @@ async fn pi_e2e() -> Result<(), String> {
     .map_err(|error| error.to_string())?;
     eprintln!("Pi E2E artifact: {}", artifact_dir.display());
 
-    let cli_path = std::env::var_os("LANKIDE_PI_PATH")
+    let cli_path = std::env::var_os("MEERKAT_PI_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/opt/homebrew/bin/pi"));
     let mut environment = BTreeMap::new();
@@ -89,11 +89,11 @@ async fn pi_e2e() -> Result<(), String> {
         session_dir.display().to_string(),
     );
     environment.insert(
-        "LANKIDE_PI_PID_JOURNAL".to_owned(),
+        "MEERKAT_PI_PID_JOURNAL".to_owned(),
         pid_journal.display().to_string(),
     );
     environment.insert(
-        "LANKIDE_PI_ARTIFACT_DIR".to_owned(),
+        "MEERKAT_PI_ARTIFACT_DIR".to_owned(),
         artifact_dir.display().to_string(),
     );
     let config = HarnessConfig {
@@ -341,7 +341,7 @@ async fn verify_abort_without_response(root: &Path, pid_journal: &Path) -> Resul
             session_dir.display().to_string(),
         );
         environment.insert(
-            "LANKIDE_PI_PID_JOURNAL".to_owned(),
+            "MEERKAT_PI_PID_JOURNAL".to_owned(),
             pid_journal.display().to_string(),
         );
         let session = PiHarness::new()
@@ -385,8 +385,8 @@ async fn verify_abort_without_response(root: &Path, pid_journal: &Path) -> Resul
 }
 
 async fn drive_tool_turn(
-    session: &dyn lankide_harness::HarnessSession,
-    mut stream: lankide_harness::AgentEventStream,
+    session: &dyn meerkat_harness::HarnessSession,
+    mut stream: meerkat_harness::AgentEventStream,
     nonce: &str,
 ) -> Result<(), String> {
     let deadline = timeout(TURN_TIMEOUT, async {
@@ -453,7 +453,7 @@ async fn drive_tool_turn(
 }
 
 async fn collect_terminal(
-    stream: &mut lankide_harness::AgentEventStream,
+    stream: &mut meerkat_harness::AgentEventStream,
 ) -> Result<String, String> {
     timeout(TURN_TIMEOUT, async {
         while let Some(event) = stream.next().await {
@@ -474,7 +474,7 @@ async fn collect_terminal(
     .map_err(|_| "Pi turn timed out".to_owned())?
 }
 
-async fn wait_for_delta(stream: &mut lankide_harness::AgentEventStream) -> Result<(), String> {
+async fn wait_for_delta(stream: &mut meerkat_harness::AgentEventStream) -> Result<(), String> {
     timeout(TURN_TIMEOUT, async {
         while let Some(event) = stream.next().await {
             match event.map_err(|error| error.to_string())?.kind {
@@ -496,7 +496,7 @@ async fn wait_for_delta(stream: &mut lankide_harness::AgentEventStream) -> Resul
     .map_err(|_| "Pi long turn timed out before delta".to_owned())?
 }
 
-async fn wait_for_cancelled(stream: &mut lankide_harness::AgentEventStream) -> Result<(), String> {
+async fn wait_for_cancelled(stream: &mut meerkat_harness::AgentEventStream) -> Result<(), String> {
     timeout(Duration::from_secs(15), async {
         while let Some(event) = stream.next().await {
             match event.map_err(|error| error.to_string())?.kind {
@@ -517,9 +517,9 @@ async fn wait_for_cancelled(stream: &mut lankide_harness::AgentEventStream) -> R
 }
 
 fn copy_auth_overlay(agent_dir: &Path) -> Result<(), String> {
-    let source = std::env::var_os("LANKIDE_PI_MODELS_PATH")
+    let source = std::env::var_os("MEERKAT_PI_MODELS_PATH")
         .map(PathBuf::from)
-        .ok_or("LANKIDE_PI_MODELS_PATH is required")?;
+        .ok_or("MEERKAT_PI_MODELS_PATH is required")?;
     fs::copy(&source, agent_dir.join("models.json"))
         .map(|_| ())
         .map_err(|error| format!("copy isolated Pi model config: {error}"))
@@ -604,10 +604,10 @@ async fn native_model_catalog() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "S7.3 requires Pi CLI, isolated model config, and LANKIDE_E2E_LIVE=1"]
+#[ignore = "S7.3 requires Pi CLI, isolated model config, and MEERKAT_E2E_LIVE=1"]
 async fn s7_3_real_pi_uses_a_skill_authored_in_its_agent_home() -> Result<(), String> {
-    if std::env::var("LANKIDE_E2E_LIVE").as_deref() != Ok("1") {
-        return Err("set LANKIDE_E2E_LIVE=1 for the Pi live gate".into());
+    if std::env::var("MEERKAT_E2E_LIVE").as_deref() != Ok("1") {
+        return Err("set MEERKAT_E2E_LIVE=1 for the Pi live gate".into());
     }
     let prerequisite = run_prerequisite_probe(&ProbeConfig::from_environment(
         GateSelection::HarnessLive,
@@ -647,7 +647,7 @@ async fn s7_3_real_pi_uses_a_skill_authored_in_its_agent_home() -> Result<(), St
                 harness_id: "pi".into(),
                 model: ModelRef::new(DEFAULT_MODEL, "DeepSeek V4 Flash"),
                 thinking_level: "low".into(),
-                cli_path: std::env::var_os("LANKIDE_PI_PATH")
+                cli_path: std::env::var_os("MEERKAT_PI_PATH")
                     .map(PathBuf::from)
                     .unwrap_or_else(|| "/opt/homebrew/bin/pi".into()),
                 environment: BTreeMap::from([

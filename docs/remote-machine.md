@@ -37,7 +37,7 @@ Tauri / Browser ──HTTP JSON + WS events──▶ Runtime ◀──WS (outbou
                                      │                                          │
                                   storage                       local proxy socket
                                   resources                                     │
-                                  IM Providers                     lankide-cli / MCP / extension
+                                  IM Providers                     meerkat-cli / MCP / extension
                                                                                 │
                                                                          Harness process
 ```
@@ -97,7 +97,7 @@ Delivery rules:
 
 1. The Desktop asks the Runtime for a pairing code. Codes are single-use and
    expire after ten minutes.
-2. The Machine runs `lankide-machine pair <wss-url> <code> --cert-sha256 <hex>`. It stays in the foreground after pairing. On
+2. The Machine runs `meerkat-machine pair <wss-url> <code> --cert-sha256 <hex>`. It stays in the foreground after pairing. On
    successful pairing the Runtime generates a random `machine_id`. The Machine
    stores it with the device
    credential in its home directory, readable only by its owner.
@@ -123,7 +123,7 @@ Machine automatically, so the user never sees a code.
 
 1. For each attempt, the Machine opens a private local socket inside the
    Agent's run directory and passes its path to the Harness.
-2. `lankide-cli`, the Claude MCP bridge, and the Pi extension call that socket.
+2. `meerkat-cli`, the Claude MCP bridge, and the Pi extension call that socket.
 3. The Machine forwards each call as a `capability_request` frame and returns
    the matching `capability_response`.
 
@@ -246,7 +246,7 @@ Runtime and Machine act on those declarations instead of on Harness IDs.
 | 1 | Transport-independent fixes above | runtime, storage, machine, harnesses, providers |
 | 2 | JSON frame types and WS transport for the Machine entry point; HTTP resources | protocol, runtime, machine, machine-daemon |
 | 3 | Pairing, `machines` table, device credentials, placement generation, Agent placement validation | runtime, storage, machine-daemon, desktop |
-| 4 | Machine local proxy; `lankide-cli`, MCP bridge, and Pi extension use it | machine, lankide-cli, harnesses |
+| 4 | Machine local proxy; `meerkat-cli`, MCP bridge, and Pi extension use it | machine, meerkat-cli, harnesses |
 | 5 | Management HTTP API and event WS; remove tonic and prost | client, runtime-daemon, desktop |
 
 Each phase keeps `just check` and `just test` green and updates the module E2E
@@ -275,18 +275,18 @@ or `http://localhost:<port>`. POST requires `application/json` (optionally
 `; charset=utf-8`). Event subscriptions use
 `/api/v1/events?workspace=<id>&after=<seq>`; both parameters are optional.
 Other OS users on the same host can access management.
-`LANKIDE_RUNTIME_RUN` selects the run directory for an externally managed
+`MEERKAT_RUNTIME_RUN` selects the run directory for an externally managed
 Desktop connection. Native Agent calls use only their private attempt socket.
 
 Live Telegram scenarios read an owner-only JSON fixture selected by
-`LANKIDE_TELEGRAM_E2E_FIXTURE`. Its fields are `provider_id`, `agent_id`,
+`MEERKAT_TELEGRAM_E2E_FIXTURE`. Its fields are `provider_id`, `agent_id`,
 `account_id`, `username`, `token`, `manager_account_id`, `manager_token`, and
 `chat_ids` (an array of authorized chat IDs). The Feishu team scenario reads two
 application objects from the owner-only JSON array selected by
-`LANKIDE_FEISHU_E2E_APPS`: `app_id`, `app_secret`, `domain`, `bot_open_id`, and
+`MEERKAT_FEISHU_E2E_APPS`: `app_id`, `app_secret`, `domain`, `bot_open_id`, and
 `bot_name`. These fixtures belong to isolated live test accounts.
 
-The Feishu provider fixture root (`LANKIDE_E2E_TEAM_ROOT`) contains
+The Feishu provider fixture root (`MEERKAT_E2E_TEAM_ROOT`) contains
 `feishu-app.json` (`app_id`, `app_secret`, `domain`) and `feishu-e2e.json`
 (test chat, Agent, task list, and user OAuth metadata). These are scenario
 fixtures, separate from application configuration.
@@ -317,4 +317,4 @@ and can be used once. The Desktop renews expired commands while the dialog is
 open and detects new online registrations by polling the public catalog.
 
 No installer is included. The remote machine must already have
-`lankide-machine` on PATH. Its `pair` command stays in the foreground.
+`meerkat-machine` on PATH. Its `pair` command stays in the foreground.

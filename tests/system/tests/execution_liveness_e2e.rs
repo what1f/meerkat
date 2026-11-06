@@ -1,4 +1,4 @@
-use lankide_system_e2e::{Agent, Result, RigConfig, Script, SystemRig};
+use meerkat_system_e2e::{Agent, Result, RigConfig, Script, SystemRig};
 use std::{
     process::{Command, Stdio},
     time::Duration,
@@ -8,12 +8,12 @@ use tokio::time::{Instant, timeout};
 fn config(idle: Duration, total: Duration) -> RigConfig {
     RigConfig {
         harness_executable: env!("CARGO_BIN_EXE_system-harness").into(),
-        execution_liveness: lankide_machine_core::ExecutionLiveness {
+        execution_liveness: meerkat_machine_core::ExecutionLiveness {
             idle_timeout: idle,
             total_budget: total,
             cancel_grace: Duration::from_millis(200),
         },
-        retry: lankide_runtime::RetryConfig {
+        retry: meerkat_runtime::RetryConfig {
             base_ms: 30_000,
             max_ms: 30_000,
             ..Default::default()
@@ -22,7 +22,7 @@ fn config(idle: Duration, total: Duration) -> RigConfig {
     }
 }
 
-async fn terminal(rig: &SystemRig, id: i64) -> Result<lankide_client::ExecutionDetails> {
+async fn terminal(rig: &SystemRig, id: i64) -> Result<meerkat_client::ExecutionDetails> {
     timeout(Duration::from_secs(8), async {
         loop {
             let details = rig.execution_details(id).await?;

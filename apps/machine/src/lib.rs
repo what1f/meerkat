@@ -1,12 +1,12 @@
 #![forbid(unsafe_code)]
 
-pub use lankide_daemon_runtime::InstanceGuard;
-use lankide_daemon_runtime::{DaemonRuntimeError, create_private_directory};
-use lankide_harness::{HarnessConfig, ModelRef};
-use lankide_harness_claude_code::ClaudeCodeHarness;
-use lankide_harness_codex::CodexHarness;
-use lankide_harness_pi::PiHarness;
-use lankide_machine_core::{Machine, MachineConfig, ReconnectPolicy, RegisteredHarness};
+pub use meerkat_daemon_runtime::InstanceGuard;
+use meerkat_daemon_runtime::{DaemonRuntimeError, create_private_directory};
+use meerkat_harness::{HarnessConfig, ModelRef};
+use meerkat_harness_claude_code::ClaudeCodeHarness;
+use meerkat_harness_codex::CodexHarness;
+use meerkat_harness_pi::PiHarness;
+use meerkat_machine_core::{Machine, MachineConfig, ReconnectPolicy, RegisteredHarness};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::io;
@@ -40,7 +40,7 @@ impl MachineDaemonPaths {
 
     pub fn local_default() -> Result<Self, AppError> {
         let user_home = std::env::var_os("HOME").ok_or(AppError::MissingHome)?;
-        Self::for_home(PathBuf::from(user_home).join(".lankide"))
+        Self::for_home(PathBuf::from(user_home).join(".meerkat"))
     }
 
     pub fn prepare(&self) -> Result<(), AppError> {
@@ -53,7 +53,7 @@ impl MachineDaemonPaths {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DaemonConfig {
-    pub execution_liveness: lankide_machine_core::ExecutionLiveness,
+    pub execution_liveness: meerkat_machine_core::ExecutionLiveness,
     pub paths: MachineDaemonPaths,
     pub instance_id: String,
     pub runtime_url: Option<String>,
@@ -108,11 +108,11 @@ impl DaemonConfig {
 // Local Machine settings; absent fields retain production defaults.
 fn read_execution_liveness(
     home: &std::path::Path,
-) -> Result<lankide_machine_core::ExecutionLiveness, AppError> {
+) -> Result<meerkat_machine_core::ExecutionLiveness, AppError> {
     #[derive(serde::Deserialize, Default)]
     struct Settings {
         #[serde(default)]
-        execution_liveness: lankide_machine_core::ExecutionLiveness,
+        execution_liveness: meerkat_machine_core::ExecutionLiveness,
     }
     match std::fs::read(home.join("machine.json")) {
         Ok(bytes) => Ok(serde_json::from_slice::<Settings>(&bytes)?.execution_liveness),
@@ -201,7 +201,7 @@ pub async fn run_with_harnesses(
                     async {
                         loop {
                             if let Ok(endpoint) =
-                                lankide_protocol::link::discover(&config.paths.runtime_run)
+                                meerkat_protocol::link::discover(&config.paths.runtime_run)
                             {
                                 break endpoint;
                             }
@@ -329,7 +329,7 @@ pub fn load_harness_plugins(
                 .any(|p| !matches!(p, std::path::Component::Normal(_)))
             || !loaded.insert(manifest.id.clone())
         {
-            return Err(lankide_harness::HarnessError::invalid_config(
+            return Err(meerkat_harness::HarnessError::invalid_config(
                 "Invalid or duplicate Harness plugin manifest",
             )
             .into());
@@ -337,12 +337,12 @@ pub fn load_harness_plugins(
         let root = path.canonicalize()?;
         let entry = path.join(manifest.entry).canonicalize()?;
         if !entry.starts_with(root) {
-            return Err(lankide_harness::HarnessError::invalid_config(
+            return Err(meerkat_harness::HarnessError::invalid_config(
                 "Harness plugin entry escapes its package",
             )
             .into());
         }
-        let plugin = lankide_harness::JsHarnessFactory::new(
+        let plugin = meerkat_harness::JsHarnessFactory::new(
             &manifest.id,
             &manifest.name,
             std::fs::read_to_string(entry)?,
@@ -389,8 +389,8 @@ fn unique_run_id() -> String {
 pub enum AppError {
     Io(io::Error),
     Json(serde_json::Error),
-    Machine(lankide_machine_core::MachineError),
-    MachineHarness(lankide_harness::HarnessError),
+    Machine(meerkat_machine_core::MachineError),
+    MachineHarness(meerkat_harness::HarnessError),
     MissingHome,
     InvalidHome,
     InvalidInstanceLock,
@@ -502,7 +502,7 @@ async fn pair_inner(
         .trim_end_matches('/')
         .replacen("http://", "ws://", 1)
         .replacen("https://", "wss://", 1);
-    lankide_protocol::tls::validate_url(&runtime_url, pin)?;
+    meerkat_protocol::tls::validate_url(&runtime_url, pin)?;
     let url = runtime_url
         .trim_end_matches('/')
         .replacen("ws://", "http://", 1)
@@ -512,13 +512,13 @@ async fn pair_inner(
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(10));
     if let Some(pin) = pin {
-        client = client.use_preconfigured_tls(lankide_protocol::tls::client_config(pin)?);
+        client = client.use_preconfigured_tls(meerkat_protocol::tls::client_config(pin)?);
     }
     let response = client
         .build()
         .map_err(|e| io::Error::other(e.to_string()))?
         .post(format!("{url}/machines/pair"))
-        .json(&lankide_protocol::link::PairMachineRequest {
+        .json(&meerkat_protocol::link::PairMachineRequest {
             code: code.into(),
             display_name: machine_name(),
             os: std::env::consts::OS.into(),
@@ -539,7 +539,7 @@ async fn pair_inner(
             "Pairing code was rejected or expired. Copy a new command.",
         ));
     }
-    let paired: lankide_protocol::link::PairMachineResponse = response
+    let paired: meerkat_protocol::link::PairMachineResponse = response
         .json()
         .await
         .map_err(|e| io::Error::other(e.to_string()))?;
@@ -594,8 +594,8 @@ fn command_name(command: &str, args: &[&str]) -> Option<String> {
     (output.status.success() && !name.is_empty()).then_some(name)
 }
 
-impl From<lankide_harness::HarnessError> for AppError {
-    fn from(error: lankide_harness::HarnessError) -> Self {
+impl From<meerkat_harness::HarnessError> for AppError {
+    fn from(error: meerkat_harness::HarnessError) -> Self {
         Self::MachineHarness(error)
     }
 }

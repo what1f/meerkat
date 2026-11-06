@@ -10,15 +10,15 @@ const wall = { rules: { x: 7, y: 1 }, tasks: { x: 24, y: 1 }, shift: { x: 34, y:
 const hang = (page: Page, workspace: string, layout: object = wall) =>
   page.addInitScript(
     ([id, saved]) => {
-      if (!localStorage.getItem(`lankide.team.wall.${id}`))
-        localStorage.setItem(`lankide.team.wall.${id}`, saved!);
+      if (!localStorage.getItem(`meerkat.team.wall.${id}`))
+        localStorage.setItem(`meerkat.team.wall.${id}`, saved!);
     },
     [workspace, JSON.stringify(layout)],
   );
 const open = async (page: Page, workspace: string, hash: string) => {
   await page.addInitScript((id) => {
-    localStorage.setItem('lankide.workspace', JSON.stringify(id));
-    localStorage.setItem('lankide.language', JSON.stringify('en'));
+    localStorage.setItem('meerkat.workspace', JSON.stringify(id));
+    localStorage.setItem('meerkat.language', JSON.stringify('en'));
   }, workspace);
   await page.goto(`/#/${hash}`);
 };
@@ -62,7 +62,7 @@ test('a team sign hung far to the right is brought back inside a narrow board', 
   const workspace = 'min_team';
   await rig({ op: 'create_workspace', workspace, provider: 'feishu' });
   await page.addInitScript(
-    ([id, wall]) => localStorage.setItem(`lankide.team.wall.${id}`, wall!),
+    ([id, wall]) => localStorage.setItem(`meerkat.team.wall.${id}`, wall!),
     [
       workspace,
       JSON.stringify({ rules: { x: 7, y: 1 }, tasks: { x: 24, y: 1 }, shift: { x: 34, y: 1 } }),
@@ -168,7 +168,7 @@ test('moving one piece on a narrow board leaves the others as they were hung', a
   await expect(page.getByTestId('team-shift')).toBeVisible();
   const [rules, tasks] = await boxes(page);
   const saved = () =>
-    page.evaluate((id) => JSON.parse(localStorage.getItem(`lankide.team.wall.${id}`)!), workspace);
+    page.evaluate((id) => JSON.parse(localStorage.getItem(`meerkat.team.wall.${id}`)!), workspace);
 
   await page.setViewportSize({ width: 960, height: 660 });
   const sign = page.getByTestId('team-shift');

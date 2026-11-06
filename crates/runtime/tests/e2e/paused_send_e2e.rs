@@ -92,7 +92,7 @@ async fn paused_send(db: &Path) -> Result<(), String> {
     });
     machine.started.notified().await;
     runtime.pause_workspace(&workspace, 4).await.map_err(err)?;
-    let send_request = lankide_storage::SendRequest {
+    let send_request = meerkat_storage::SendRequest {
         workspace_id: workspace.clone(),
         channel_id: channel.clone(),
         provider_chat_id: "pause-chat".into(),
@@ -110,7 +110,7 @@ async fn paused_send(db: &Path) -> Result<(), String> {
         .send_message(
             &workspace,
             agent.clone(),
-            lankide_provider::SendMessageSpec {
+            meerkat_provider::SendMessageSpec {
                 channel_id: channel,
                 chat_id: "pause-chat".into(),
                 message_id: MessageId::new(attempt.message_id).map_err(err)?,
@@ -126,7 +126,7 @@ async fn paused_send(db: &Path) -> Result<(), String> {
         .await
         .map_err(err)?;
     ensure(
-        result.status == lankide_provider::SendMessageStatus::Sent,
+        result.status == meerkat_provider::SendMessageStatus::Sent,
         "paused send returns success",
     )?;
     let stored = runtime

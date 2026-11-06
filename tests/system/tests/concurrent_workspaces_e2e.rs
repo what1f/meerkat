@@ -1,5 +1,5 @@
-use lankide_client::ManagementClient;
-use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use meerkat_client::ManagementClient;
+use meerkat_system_e2e::{Result, RigConfig, Script, SystemRig};
 use std::time::Duration;
 
 #[tokio::test]

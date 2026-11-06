@@ -20,7 +20,7 @@ Path(sys.argv[1]).write_text(
     + ''.join(f'{key} = {json.dumps(package[key])}\n' for key in fields)
 )
 PY
-if CARGO_TARGET_DIR="$TEMP_DIR/target" cargo build --release --offline --manifest-path "$TEMP_DIR/Cargo.toml" -p lankide-web-assets >"$TEMP_DIR/build.log" 2>&1; then
+if CARGO_TARGET_DIR="$TEMP_DIR/target" cargo build --release --offline --manifest-path "$TEMP_DIR/Cargo.toml" -p meerkat-web-assets >"$TEMP_DIR/build.log" 2>&1; then
     cat "$TEMP_DIR/build.log"
     printf 'FAIL: release accepted a missing frontend\n' >&2
     exit 1

@@ -4,7 +4,7 @@ mod composition;
 mod e2e;
 mod scripted_harness;
 
-use lankide_machine::{AppError, DaemonConfig};
+use meerkat_machine::{AppError, DaemonConfig};
 use std::path::PathBuf;
 
 #[tokio::main]
@@ -25,7 +25,7 @@ async fn execute() -> Result<(), AppError> {
         return Ok(());
     }
     if raw.first().is_some_and(|argument| argument == "--version") {
-        println!("lankide-scripted-cli 1.0");
+        println!("meerkat-scripted-cli 1.0");
         return Ok(());
     }
     if raw == ["app-server", "--help"] {
@@ -92,5 +92,5 @@ async fn execute() -> Result<(), AppError> {
         )
         .await;
     }
-    lankide_machine::run(config).await
+    meerkat_machine::run(config).await
 }

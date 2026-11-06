@@ -10,7 +10,7 @@ mod types;
 pub use context::*;
 pub use error::*;
 pub use host::*;
-pub use lankide_core::PROVIDER_CAPABILITY_TASK_SYSTEM;
+pub use meerkat_core::PROVIDER_CAPABILITY_TASK_SYSTEM;
 pub use types::*;
 
 use std::{future::Future, pin::Pin};

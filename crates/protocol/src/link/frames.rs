@@ -72,6 +72,8 @@ pub struct CliCommand {
     pub name: String,
     pub description: String,
     pub argv: Vec<String>,
+    #[serde(default)]
+    pub wraps: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]

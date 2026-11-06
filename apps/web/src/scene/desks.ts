@@ -1,9 +1,19 @@
-export type DeskGeometry = { width: number; height: number; screens: [number, number][][] };
+export type DeskGeometry = {
+  width: number;
+  height: number;
+  screens: [number, number][][];
+  // Where the mug stands, in asset pixels.
+  mug: [number, number];
+  // A small plant where the art has room for one.
+  plant?: [number, number];
+};
 // Intrinsic asset size and the screen holes as corner quads (main screen first), in asset pixels.
 export const desks: Record<'laptop' | 'mini', DeskGeometry> = {
   laptop: {
     width: 440,
     height: 283,
+    mug: [336, 112],
+    plant: [372, 96],
     screens: [
       [
         [145, 6],
@@ -22,6 +32,7 @@ export const desks: Record<'laptop' | 'mini', DeskGeometry> = {
   mini: {
     width: 440,
     height: 280,
+    mug: [104, 122],
     screens: [
       [
         [127, 5],

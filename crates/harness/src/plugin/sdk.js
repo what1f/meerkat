@@ -195,7 +195,7 @@ function usage(input, output) {
   });
 }
 function prepareNative(request, plan) {
-  const root = request.working_directory + "/.lankide/" + harness.id;
+  const root = request.working_directory + "/.meerkat/" + harness.id;
   const directory = root + "/native-home";
   ctx.prepare({ ...plan, directory, environment: request.config.environment });
   if (plan.skills) ctx.skills(plan.skills);

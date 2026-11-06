@@ -5,7 +5,7 @@ mod support;
 async fn s7_2_agent_starts_with_full_access_and_native_home_skills()
 -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     support::agent_native_defaults(
-        &lankide_harness_codex::CodexHarness::new(),
+        &meerkat_harness_codex::CodexHarness::new(),
         std::path::Path::new(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../crates/harness/tests/support/native_defaults_peer.py"

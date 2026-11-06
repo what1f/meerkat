@@ -1,7 +1,7 @@
-use lankide_client::ManagementClient;
-use lankide_machine::{MachineDaemonPaths, pair, read_credentials};
-use lankide_protocol::link::{self, CloseReason, LinkError, MachineLink, MachinePayload};
-use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use meerkat_client::ManagementClient;
+use meerkat_machine::{MachineDaemonPaths, pair, read_credentials};
+use meerkat_protocol::link::{self, CloseReason, LinkError, MachineLink, MachinePayload};
+use meerkat_system_e2e::{Result, RigConfig, Script, SystemRig};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::time::timeout;
 
@@ -12,7 +12,7 @@ fn config() -> RigConfig {
         ..Default::default()
     }
 }
-async fn pair_rig(rig: &SystemRig) -> Result<lankide_machine::DeviceCredentials> {
+async fn pair_rig(rig: &SystemRig) -> Result<meerkat_machine::DeviceCredentials> {
     let code = rig.management().create_pairing_code().await?;
     let (url, _) = rig.local_pairing_endpoint()?;
     Ok(pair(
@@ -240,7 +240,7 @@ async fn local_self_pairing_places_new_agents_and_reuses_credentials() -> Result
         rig.management()
             .revoke_machine(&credentials.machine_id)
             .await,
-        Err(lankide_client::ClientError::LocalMachineCannotBeRemoved)
+        Err(meerkat_client::ClientError::LocalMachineCannotBeRemoved)
     ));
     assert!(rig.management().get_machine_catalog(None).await?[0].available);
     let agent = team
@@ -278,7 +278,7 @@ async fn local_secret_and_unknown_or_mismatched_devices_cannot_authorize_links()
         link::connect(
             &url,
             &local_secret,
-            lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES
+            meerkat_protocol::DEFAULT_MAX_MESSAGE_BYTES
         )
         .await,
         Err(LinkError::Closed(CloseReason::MachineUnknown))
@@ -286,14 +286,14 @@ async fn local_secret_and_unknown_or_mismatched_devices_cannot_authorize_links()
     let mut socket = link::connect(
         &url,
         &device.device_credential,
-        lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES,
+        meerkat_protocol::DEFAULT_MAX_MESSAGE_BYTES,
     )
     .await?;
     socket
         .send(link::MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(MachinePayload::Hello(link::MachineHello {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 machine_id: "unknown".into(),
                 device_credential: device.device_credential.clone(),
                 instance_id: "one".into(),
@@ -309,7 +309,7 @@ async fn local_secret_and_unknown_or_mismatched_devices_cannot_authorize_links()
         Err(LinkError::Closed(CloseReason::MachineUnknown))
     ));
     let unknown_home = tempfile::tempdir()?;
-    let unknown = lankide_machine::DeviceCredentials {
+    let unknown = meerkat_machine::DeviceCredentials {
         cert_sha256: None,
         machine_id: "unknown".into(),
         ..device
@@ -318,10 +318,10 @@ async fn local_secret_and_unknown_or_mismatched_devices_cannot_authorize_links()
         unknown_home.path().join("machine-credentials.json"),
         serde_json::to_vec(&unknown)?,
     )?;
-    let config = lankide_machine::DaemonConfig::for_home(unknown_home.path())?;
+    let config = meerkat_machine::DaemonConfig::for_home(unknown_home.path())?;
     let error = timeout(
         Duration::from_secs(3),
-        lankide_machine::run_with_harnesses(config, vec![]),
+        meerkat_machine::run_with_harnesses(config, vec![]),
     )
     .await?
     .expect_err("unknown Machine must stop");
@@ -331,7 +331,7 @@ async fn local_secret_and_unknown_or_mismatched_devices_cannot_authorize_links()
 
 #[tokio::test]
 async fn owner_renames_machine_and_name_survives_daemon_and_runtime_restart() -> Result<()> {
-    use lankide_client::{ClientError, ManagementEventKind};
+    use meerkat_client::{ClientError, ManagementEventKind};
     let mut rig = SystemRig::start(config()).await?;
     let device = pair_rig(&rig).await?;
     rig.start_paired_machine()?;

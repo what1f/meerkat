@@ -1,8 +1,8 @@
 //! A4a public management and mock-IM business scenarios.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use futures_util::StreamExt;
-use lankide_protocol::management;
-use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use meerkat_protocol::management;
+use meerkat_system_e2e::{Result, RigConfig, Script, SystemRig};
 use serde_json::{Value, json};
 use std::{
     io::{Cursor, Write},
@@ -158,7 +158,7 @@ async fn a4d_management_reads_workspace_resources_with_local_guards() -> Result<
             ("attachment.html", "text/html", b"<script>alert(document.origin)</script>".as_slice()),
             ("attachment.svg", "image/svg+xml", b"<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(document.origin)</script></svg>".as_slice()),
         ] {
-            let resource = team.save_attachment(lankide_provider::ResourceUpload {
+            let resource = team.save_attachment(meerkat_provider::ResourceUpload {
                 file_name: name.into(), media_type: media_type.into(), bytes: bytes.to_vec(),
             }).await?;
             let response = http.client.get(format!("{}/api/v1/resources/{}?workspace=team", http.url, resource.resource_id)).send().await?;
@@ -415,7 +415,7 @@ async fn a4a_4_model_catalog_is_machine_scoped_and_plain_model_runs_without_thin
         let http = Http::new(&rig)?;
         let initial = http.post("get_machine_catalog",json!({"request_id":"initial","workspace":null})).await?;
         let local_id = initial["machines"][0]["machine_id"].as_str().ok_or("missing machine")?;
-        let remote = rig.add_machine_with_models(Some(vec![lankide_harness::NativeModel {
+        let remote = rig.add_machine_with_models(Some(vec![meerkat_harness::NativeModel {
             id: "remote-only".into(), name: "Remote".into(), description: String::new(), thinking_levels: vec!["max".into()],
         }])).await?;
         let team = rig.workspace("team").await?;

@@ -7,7 +7,7 @@ use std::{
 
 pub fn cli(binary: &str, args: Vec<String>) -> Value {
     use std::io::Write as _;
-    let home = std::env::var("LANKIDE_AGENT_HOME").expect("Agent home");
+    let home = std::env::var("MEERKAT_AGENT_HOME").expect("Agent home");
     let mut journal = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -17,7 +17,7 @@ pub fn cli(binary: &str, args: Vec<String>) -> Value {
     let output = Command::new(binary)
         .args(&args)
         .output()
-        .expect("run real lankide CLI");
+        .expect("run real meerkat CLI");
     writeln!(journal, "finished {args:?}: {}", output.status).unwrap();
     assert!(
         output.status.success(),
@@ -27,10 +27,10 @@ pub fn cli(binary: &str, args: Vec<String>) -> Value {
     serde_json::from_slice(&output.stdout).expect("CLI JSON")
 }
 pub fn run(binary: &str, input: &str) {
-    let home = std::env::var("LANKIDE_AGENT_HOME").expect("Agent home");
+    let home = std::env::var("MEERKAT_AGENT_HOME").expect("Agent home");
     let home = Path::new(&home);
     let env = std::env::vars()
-        .filter(|(key, _)| key.starts_with("LANKIDE_"))
+        .filter(|(key, _)| key.starts_with("MEERKAT_"))
         .collect::<std::collections::BTreeMap<_, _>>();
     let chat_input = input.split("\n\n### ").nth(1).expect("chat snapshot");
     let channel = chat_input
@@ -148,7 +148,7 @@ pub fn run(binary: &str, input: &str) {
     )
     .unwrap();
     std::fs::rename(path.with_extension("tmp"), &path).unwrap();
-    let release = std::env::var("LANKIDE_SYSTEM_RELEASE").expect("release gate");
+    let release = std::env::var("MEERKAT_SYSTEM_RELEASE").expect("release gate");
     let deadline = Instant::now() + Duration::from_secs(20);
     while !Path::new(&release).exists() {
         assert!(

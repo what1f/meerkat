@@ -10,7 +10,7 @@ const tasksEnabled = async (baseURL: string, workspace: string) =>
 
 async function openTeam(page: Page, workspace: string) {
   await page.addInitScript((id) => {
-    localStorage.setItem('lankide.workspace', JSON.stringify(id));
+    localStorage.setItem('meerkat.workspace', JSON.stringify(id));
   }, workspace);
   await page.goto('/#/team');
   await expect(page.getByTestId('team-name')).toContainText(workspace);

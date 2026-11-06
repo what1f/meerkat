@@ -725,7 +725,7 @@ fn multipart(
             "Telegram multipart file field and name are required".to_owned(),
         ));
     }
-    let boundary = "lankide-telegram-boundary-4a3b";
+    let boundary = "meerkat-telegram-boundary-4a3b";
     let mut body = Vec::new();
     for (name, value) in fields {
         body.extend_from_slice(

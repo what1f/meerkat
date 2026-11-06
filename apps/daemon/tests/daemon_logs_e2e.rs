@@ -11,10 +11,10 @@ fn failed_daemon_start_keeps_private_bounded_diagnostics() {
     fs::write(home.path().join("runtime.json"), "invalid configuration").unwrap();
     let directory = home.path().join("logs");
     fs::create_dir(&directory).unwrap();
-    let log = directory.join("lankided.log");
+    let log = directory.join("meerkatd.log");
     // A previous run has filled the log. The next diagnostic rotates it once.
     fs::write(&log, vec![b'x'; 4 * 1024 * 1024]).unwrap();
-    let status = Command::new(env!("CARGO_BIN_EXE_lankided"))
+    let status = Command::new(env!("CARGO_BIN_EXE_meerkatd"))
         .arg("--home")
         .arg(home.path())
         .stdin(Stdio::null())

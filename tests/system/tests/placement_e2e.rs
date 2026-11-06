@@ -1,9 +1,9 @@
-use lankide_client::{AgentDraft, ClientError, ManagementClient};
-use lankide_protocol::{
+use meerkat_client::{AgentDraft, ClientError, ManagementClient};
+use meerkat_protocol::{
     link::{self, MachineLink},
     *,
 };
-use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use meerkat_system_e2e::{Result, RigConfig, Script, SystemRig};
 
 use std::time::Duration;
 use tokio::time::timeout;
@@ -130,8 +130,8 @@ async fn s13_2_each_agent_runs_only_on_its_own_machine() -> Result<()> {
         (second.home.path(), "clark", "bruce"),
     ] {
         let root = home.join("workspaces");
-        assert!(lankide_machine_core::agent_directory(&root, "team", present)?.exists());
-        assert!(!lankide_machine_core::agent_directory(&root, "team", absent)?.exists());
+        assert!(meerkat_machine_core::agent_directory(&root, "team", present)?.exists());
+        assert!(!meerkat_machine_core::agent_directory(&root, "team", absent)?.exists());
     }
     drop(second);
     rig.close().await
@@ -184,7 +184,7 @@ async fn s13_4_assigned_machine_removal_is_refused_and_its_result_is_preserved()
         ..config()
     })
     .await?;
-    let device = lankide_machine::read_credentials(rig.machine_home())?.unwrap();
+    let device = meerkat_machine::read_credentials(rig.machine_home())?.unwrap();
     let team = rig.workspace("team").await?;
     let agent = team
         .agent("bruce")
@@ -268,8 +268,8 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
     agent.wait_until_running().await?;
     let auth = cutter.downloads().remove(0);
     assert!(auth.range.is_none());
-    let context = lankide_protocol::AgentRunContext {
-        execution: Some(lankide_protocol::ExecutionRef {
+    let context = meerkat_protocol::AgentRunContext {
+        execution: Some(meerkat_protocol::ExecutionRef {
             execution_id: auth.execution.parse()?,
             attempt: auth.attempt.parse()?,
         }),
@@ -286,8 +286,8 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
                 resource.resource_id
             ))
             .bearer_auth(&auth.token)
-            .header("x-lankide-execution", &auth.execution)
-            .header("x-lankide-attempt", &auth.attempt)
+            .header("x-meerkat-execution", &auth.execution)
+            .header("x-meerkat-attempt", &auth.attempt)
     };
     // Replay through an authenticated Machine link, without heartbeat-driven
     // cancellation masking the placement authorization being checked here.
@@ -295,7 +295,7 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
     let team = rig.existing_workspace("team");
     let agent = team.existing_agent("bruce");
     let mut link = capability_link(&url, rig.machine_home()).await?;
-    let capability = || lankide_protocol::CapabilityInvokeRequest {
+    let capability = || meerkat_protocol::CapabilityInvokeRequest {
         context: Some(context.clone()),
         capability_name: "unread_current".into(),
         arguments_json: "{}".into(),
@@ -305,7 +305,7 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
     let response = invoke(&mut link, capability()).await?;
     assert_eq!(response.error_code, 0, "{response:?}");
     assert!(
-        lankide_protocol::agent::decode::<lankide_protocol::CapabilityInvokeResult>(
+        meerkat_protocol::agent::decode::<meerkat_protocol::CapabilityInvokeResult>(
             response.payload.as_slice()
         )?
         .success
@@ -322,13 +322,13 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
     let response = invoke(&mut other_link, capability()).await?;
     assert_eq!(
         response.error_code,
-        lankide_protocol::Code::PermissionDenied as i32,
+        meerkat_protocol::Code::PermissionDenied as i32,
         "{response:?}"
     );
     let response = invoke(&mut link, capability()).await?;
     assert_eq!(response.error_code, 0, "{response:?}");
     assert!(
-        lankide_protocol::agent::decode::<lankide_protocol::CapabilityInvokeResult>(
+        meerkat_protocol::agent::decode::<meerkat_protocol::CapabilityInvokeResult>(
             response.payload.as_slice()
         )?
         .success
@@ -347,7 +347,7 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
     let response = invoke(&mut link, capability()).await?;
     assert_eq!(response.error_code, 0, "{response:?}");
     assert!(
-        lankide_protocol::agent::decode::<lankide_protocol::CapabilityInvokeResult>(
+        meerkat_protocol::agent::decode::<meerkat_protocol::CapabilityInvokeResult>(
             response.payload.as_slice()
         )?
         .success
@@ -361,7 +361,7 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
         let response = invoke(&mut link, capability()).await?;
         assert_eq!(
             response.error_code,
-            lankide_protocol::Code::PermissionDenied as i32,
+            meerkat_protocol::Code::PermissionDenied as i32,
             "{response:?}"
         );
     }
@@ -380,8 +380,8 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
                 resource.resource_id
             ))
             .bearer_auth(&auth.token)
-            .header("x-lankide-execution", &auth.execution)
-            .header("x-lankide-attempt", &auth.attempt)
+            .header("x-meerkat-execution", &auth.execution)
+            .header("x-meerkat-attempt", &auth.attempt)
             .send()
             .await?
             .status(),
@@ -391,7 +391,7 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
     let response = invoke(&mut link, capability()).await?;
     assert_eq!(
         response.error_code,
-        lankide_protocol::Code::PermissionDenied as i32,
+        meerkat_protocol::Code::PermissionDenied as i32,
         "{response:?}"
     );
     rig.close().await
@@ -435,7 +435,7 @@ async fn invoke(
                 request_id: request.invocation_id.clone(),
                 method: "invoke_capability".into(),
                 context: request.context.clone(),
-                payload: lankide_protocol::agent::encode(&request).expect("capability JSON"),
+                payload: meerkat_protocol::agent::encode(&request).expect("capability JSON"),
                 offset: 0,
                 eof: true,
             },

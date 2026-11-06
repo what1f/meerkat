@@ -21,7 +21,7 @@ def run_suite(target, environment):
 def main():
     build = subprocess.Popen(
         ["cargo", "test", "--workspace", "--tests", "--examples", "--locked", "--no-run",
-         "--features", "lankide-machine-core/test-support,lankide-harness/test-support",
+         "--features", "meerkat-machine-core/test-support,meerkat-harness/test-support",
          "--message-format=json"],
         cwd=ROOT, stdout=subprocess.PIPE, text=True,
     )
@@ -39,7 +39,7 @@ def main():
         if (event["reason"] == "compiler-artifact" and event.get("executable")
                 and "example" in event["target"]["kind"]
                 and event["target"]["name"] in {"runtime_daemon_e2e", "machine_daemon_e2e"}):
-            environment["LANKIDE_E2E_HELPER_" + event["target"]["name"].upper()] = event["executable"]
+            environment["MEERKAT_E2E_HELPER_" + event["target"]["name"].upper()] = event["executable"]
         if (event["reason"] == "compiler-artifact" and event.get("executable")
                 and "test" in event["target"]["kind"]):
             target = event["target"]

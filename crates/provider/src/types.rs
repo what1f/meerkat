@@ -1,5 +1,5 @@
 use crate::{ProviderError, ProviderFuture};
-use lankide_core::{
+use meerkat_core::{
     AgentId, AttentionLevel, ChannelAbility, ChannelId, MessageId, ProviderId, ResourceRef,
 };
 use serde::{Deserialize, Serialize};
@@ -152,7 +152,7 @@ pub struct MessageEvent {
     pub mentioned_agent_ids: Vec<AgentId>,
     pub attachments: Vec<ResourceRef>,
 }
-pub use lankide_core::ReactionAction;
+pub use meerkat_core::ReactionAction;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReactionEvent {
     pub target_provider_message_id: String,
@@ -271,6 +271,11 @@ pub struct ToolDefinition {
 pub struct CliCommandDefinition {
     pub id: String,
     pub description: String,
+    /// User executable this command stands in for, e.g. `lark-cli`. Empty for
+    /// ordinary commands. Machine installs a same-named shim only when the
+    /// executable exists, and the command result becomes that program's
+    /// environment and arguments instead of output.
+    pub wraps: String,
     pub handler: Arc<dyn InvocationHandler>,
 }
 macro_rules! definition_debug {
@@ -280,7 +285,7 @@ macro_rules! definition_debug {
 }
 definition_debug!(InterfaceDefinition, id, input_schema, output_schema);
 definition_debug!(ToolDefinition, id, description, input_schema, output_schema);
-definition_debug!(CliCommandDefinition, id, description);
+definition_debug!(CliCommandDefinition, id, description, wraps);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MessageAttachment {

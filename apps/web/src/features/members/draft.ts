@@ -35,8 +35,7 @@ export const fields = Object.keys(blank) as (keyof Draft)[];
 export const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 // Member ids are internal; they only need to satisfy the Runtime identifier rule.
 export const newId = () => `m${crypto.randomUUID().replaceAll('-', '').slice(0, 12)}`;
-export const dataUrl = (file: { media_type: string; bytes: string }) =>
-  `data:${file.media_type};base64,${file.bytes}`;
+export { dataUrl } from '../../lib/assets';
 // A read counts as failed once its retries are used up, even while it is tried again.
 export const broken = (query: { isError: boolean; data: unknown; errorUpdateCount: number }) =>
   query.isError || (!query.data && query.errorUpdateCount > 0);

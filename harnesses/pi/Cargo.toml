@@ -1,15 +1,15 @@
 [package]
 autotests = false
-name = "lankide-harness-pi"
+name = "meerkat-harness-pi"
 version.workspace = true
 edition.workspace = true
-description = "Pi Harness adapter for Lankide"
+description = "Pi Harness adapter for Meerkat"
 license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-lankide-harness = { path = "../../crates/harness" }
+meerkat-harness = { path = "../../crates/harness" }
 serde_json.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
@@ -17,19 +17,19 @@ tokio-stream.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 serde.workspace = true
-lankide-testkit = { path = "../../crates/testkit" }
+meerkat-testkit = { path = "../../crates/testkit" }
 
-[package.metadata.lankide.e2e]
-command = "LANKIDE_E2E_LIVE=1 cargo test -p lankide-harness-pi --test e2e pi_e2e:: -- --ignored --nocapture"
+[package.metadata.meerkat.e2e]
+command = "MEERKAT_E2E_LIVE=1 cargo test -p meerkat-harness-pi --test e2e pi_e2e:: -- --ignored --nocapture"
 scenario = "Start and resume a Pi Native Session, execute a native shell command, exchange an injected Tool Result, steer, cancel, and verify process cleanup. Verify S7.3: a real Pi Agent uses a skill authored in its home (live opt-in only)."
 prerequisites = "Pi CLI; deepseek-v4-flash; harness-live prerequisite probe"
 classification = "live"
 unattended = "yes after live opt-in and preflight"
 status = "implemented"
 
-[package.metadata.lankide.e2e-additional.harness-pi-hermetic]
-command = "cargo test -p lankide-harness-pi --test e2e"
-scenario = "Stream ten thousand Pi deltas through a configured native CLI, retain final events without streaming deltas, and rotate bounded output records. Classify missing CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through native process boundaries. Start native executions in isolated process groups for Machine-owned tree cleanup. Verify S7.2: full-access native launch, enabled skills/context/templates, Agent-home skills and newly authored skills reachable, and model catalog without native resource suppression. Classify missing or non-executable CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through native process boundaries. Native execution receives the private LANKIDE_AGENT_SOCKET and strips inherited Runtime directory settings; tool calls use the Machine capability link. A4a appends independent launch arguments and omits the thinking option when no level is selected; cross-module acceptance is in system-member-fields. A4c cleans native process groups on startup failure and session close; cross-module acceptance is in system-harness-test."
+[package.metadata.meerkat.e2e-additional.harness-pi-hermetic]
+command = "cargo test -p meerkat-harness-pi --test e2e"
+scenario = "Stream ten thousand Pi deltas through a configured native CLI, retain final events without streaming deltas, and rotate bounded output records. Classify missing CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through native process boundaries. Start native executions in isolated process groups for Machine-owned tree cleanup. Verify S7.2: full-access native launch, enabled skills/context/templates, Agent-home skills and newly authored skills reachable, and model catalog without native resource suppression. Classify missing or non-executable CLI, model, authentication, rate-limit, timeout, cancellation, Agent, and process-exit failures through native process boundaries. Native execution receives the private MEERKAT_AGENT_SOCKET and strips inherited Runtime directory settings; tool calls use the Machine capability link. A4a appends independent launch arguments and omits the thinking option when no level is selected; cross-module acceptance is in system-member-fields. A4c cleans native process groups on startup failure and session close; cross-module acceptance is in system-harness-test."
 prerequisites = "Python 3"
 classification = "hermetic"
 unattended = "yes"

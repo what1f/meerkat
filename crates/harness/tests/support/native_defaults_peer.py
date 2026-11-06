@@ -13,7 +13,7 @@ def write(value):
 def emit(value):
     print(json.dumps(value), flush=True)
 
-write({"argv": sys.argv[1:], "cwd": os.getcwd(), "environment": {key: os.environ[key] for key in ("HOME", "PI_CODING_AGENT_DIR", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "LANKIDE_RUNTIME_RUN", "ENABLE_TOOL_SEARCH") if key in os.environ}})
+write({"argv": sys.argv[1:], "cwd": os.getcwd(), "environment": {key: os.environ[key] for key in ("HOME", "PI_CODING_AGENT_DIR", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "MEERKAT_RUNTIME_RUN", "ENABLE_TOOL_SEARCH") if key in os.environ}})
 if "--version" in sys.argv:
     print("native-fixture")
     sys.exit(0)
@@ -24,7 +24,7 @@ if os.environ["NATIVE_ADAPTER"] == "claude_code":
     import urllib.request
     import http.client
     config=json.loads(Path(sys.argv[sys.argv.index("--mcp-config")+1]).read_text())
-    server = config["mcpServers"]["lankide"]
+    server = config["mcpServers"]["meerkat"]
     # Reject unauthenticated requests before decoding or waiting for a body.
     import socket
     from urllib.parse import urlparse
@@ -56,7 +56,7 @@ for line in sys.stdin:
             emit({"id": command["id"], "result": {"thread": {"id": command["params"].get("threadId", "native-thread")}}})
         elif method == "turn/start":
             emit({"id": command["id"], "result": {"turn": {"id": "native-turn"}}})
-            emit({"id": "namespace-call", "method": "item/tool/call", "params": {"threadId": "native-thread", "turnId": "native-turn", "callId": "report-call", "namespace": "lankide", "tool": "report", "arguments": {"value": "namespace-roundtrip"}}})
+            emit({"id": "namespace-call", "method": "item/tool/call", "params": {"threadId": "native-thread", "turnId": "native-turn", "callId": "report-call", "namespace": "meerkat", "tool": "report", "arguments": {"value": "namespace-roundtrip"}}})
         elif command.get("id") == "namespace-call":
             assert command["result"]["success"] is True
             assert "namespace-roundtrip" in command["result"]["contentItems"][0]["text"]

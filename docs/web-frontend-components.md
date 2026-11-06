@@ -18,7 +18,7 @@ features/  业务：取数据、管理状态、组合下层组件。每个 featu
   ↓
 shell/     窗口外壳：dock、顶栏、toast 容器
   ↓
-scene/     Lankide 的“实物”：洞洞板、工卡、吊牌、操控台、工位。只接 props，不取数据
+scene/     Meerkat 的“实物”：洞洞板、工卡、吊牌、操控台、工位。只接 props，不取数据
   ↓
 design/    通用控件：按钮、输入框、菜单、弹窗……与业务和场景都无关
 lib/       api、事件、query、i18n、主题、存储。可以被 app、features、shell 使用
@@ -197,7 +197,7 @@ chev chevl smile refresh plus x check more pause play trash pencil out copy shuf
 
 ## scene/ 组件
 
-scene 是 Lankide 的视觉语言：洞洞板、挂钩、工卡、吊牌、写字板、操控台、工位。
+scene 是 Meerkat 的视觉语言：洞洞板、挂钩、工卡、吊牌、写字板、操控台、工位。
 它们只负责“长什么样、怎么动”，不认识 Agent、Workspace 等业务概念。
 
 | 组件            | Props                                                                                                                                                                                                                                                                                          | 说明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |

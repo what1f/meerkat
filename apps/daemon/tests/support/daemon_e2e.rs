@@ -2,20 +2,20 @@
 mod registered_machine;
 #[path = "../../../../crates/protocol/tests/support/ws.rs"]
 mod ws;
-use lankide_core::{AgentId, AttentionLevel, ChannelAbility, ChannelId, ProviderId, WorkspaceId};
-use lankide_protocol::{
+use meerkat_core::{AgentId, AttentionLevel, ChannelAbility, ChannelId, ProviderId, WorkspaceId};
+use meerkat_protocol::{
     AgentRef, AgentRunContext, AssignmentResult, ContentKind, ContentRequest,
     DEFAULT_MAX_MESSAGE_BYTES, DeleteAgentRequest, DeliveryResult, DesiredState, ExecutionEvent,
     ExecutionEventKind, ListWorkspacesRequest, MachineFrame, MachineHello, PROTOCOL_VERSION,
     ResourceChunk, ResourceDescriptor, ResourceRequest, SetWorkspaceStateRequest, WorkspaceRef,
     machine_frame, runtime_frame,
 };
-use lankide_provider::{
+use meerkat_provider::{
     AgentContext, ChannelDefaultAttention, ChannelDefinition, InitContext, Provider, ProviderError,
     ProviderFuture, ProviderHost, ProviderInfo, SendMessageContext, SendMessageResult,
 };
-use lankide_runtime::ProviderFactoryRegistry;
-use lankide_storage::{
+use meerkat_runtime::ProviderFactoryRegistry;
+use meerkat_storage::{
     AgentSpec, AttentionRecord, DatabaseConfig, DispatchReason, InboxDispatch, IngestEvent,
     MessageInput, Storage, WorkspaceSpec,
 };
@@ -32,7 +32,7 @@ use tokio_stream::wrappers::ReceiverStream;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-use lankided::{AppError, InstanceGuard, RuntimePaths};
+use meerkatd::{AppError, InstanceGuard, RuntimePaths};
 const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
 const PRIVATE_FILE_MODE: u32 = 0o600;
 
@@ -55,7 +55,7 @@ pub async fn run_e2e(selected: Option<&str>) -> Result<PathBuf, AppError> {
     let temp = tempfile::Builder::new()
         .prefix("lkrt-")
         .tempdir_in("/tmp")?;
-    let paths = RuntimePaths::for_home(temp.path().join(".lankide"))?;
+    let paths = RuntimePaths::for_home(temp.path().join(".meerkat"))?;
     let scenario = async {
         if selected.is_none() {
             daemon_e2e_scenario(&paths).await?;
@@ -116,7 +116,7 @@ pub async fn run_e2e(selected: Option<&str>) -> Result<PathBuf, AppError> {
 }
 
 pub fn fixture_factories() -> Result<ProviderFactoryRegistry, AppError> {
-    let factories = lankided::production_factories()?;
+    let factories = meerkatd::production_factories()?;
     factories.register_host_factory::<FixtureProvider, _>(
         FixtureProvider::info_value(),
         |workspace, services| {
@@ -150,7 +150,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     let guard = InstanceGuard::acquire(&paths.run, &paths.instance_lock, "preflight")?;
     if !matches!(
         InstanceGuard::acquire(&paths.run, &paths.instance_lock, "second-instance"),
-        Err(lankide_daemon_runtime::DaemonRuntimeError::AlreadyRunning)
+        Err(meerkat_daemon_runtime::DaemonRuntimeError::AlreadyRunning)
     ) {
         return Err(AppError::Invariant("second instance was not rejected"));
     }
@@ -188,7 +188,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     let storage = Storage::open(DatabaseConfig::new(&paths.database))?;
     registered_machine::register(&storage, &["fixture-machine"])?;
     storage.pair_machine(
-        &lankide_storage::MachineRecord {
+        &meerkat_storage::MachineRecord {
             is_local: false,
             machine_id: "machine-a".into(),
             display_name: "Machine A".into(),
@@ -277,7 +277,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         provider_event_id: Some("daemon-event-1".into()),
         provider_message_id: "daemon-message-1".into(),
         message: MessageInput {
-            sender_kind: lankide_core::MessageAuthorType::Human,
+            sender_kind: meerkat_core::MessageAuthorType::Human,
             sender_id: "human".into(),
             sender_name: "Human".into(),
             content: "daemon trigger".into(),
@@ -313,7 +313,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         ));
     }
     let management =
-        lankide_client::http::HttpManagementTransport::local(&paths.run, DEFAULT_MAX_MESSAGE_BYTES);
+        meerkat_client::http::HttpManagementTransport::local(&paths.run, DEFAULT_MAX_MESSAGE_BYTES);
     let listed = management
         .list_workspaces(ListWorkspacesRequest {
             request_id: "daemon-list-1".into(),
@@ -331,7 +331,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         ));
     }
     let second_connection =
-        lankide_client::http::HttpManagementTransport::local(&paths.run, DEFAULT_MAX_MESSAGE_BYTES);
+        meerkat_client::http::HttpManagementTransport::local(&paths.run, DEFAULT_MAX_MESSAGE_BYTES);
     second_connection
         .list_workspaces(ListWorkspacesRequest {
             request_id: "daemon-list-after-second-instance".into(),
@@ -372,7 +372,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     let (machine_tx, machine_rx) = mpsc::channel(16);
     machine_tx
         .send(MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::Hello(MachineHello {
                 device_credential: "fixture-machine-a".into(),
                 protocol_version: PROTOCOL_VERSION,
@@ -401,9 +401,9 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     // As on the production Machine, report attempts before accepting new work.
     machine_tx
         .send(MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::Heartbeat(
-                lankide_protocol::MachineHeartbeat {
+                meerkat_protocol::MachineHeartbeat {
                     machine_id: "machine-a".into(),
                     instance_id: "instance-a".into(),
                     sent_at: 0,
@@ -437,7 +437,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     };
     machine_tx
         .send(MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::AssignmentResult(AssignmentResult {
                 failure: None,
                 execution: Some(execution.clone()),
@@ -450,7 +450,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         .map_err(|_| AppError::Invariant("assignment result channel closed"))?;
     machine_tx
         .send(MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::DeliveryResult(DeliveryResult {
                 execution: Some(execution.clone()),
                 delivery_id: assignment
@@ -471,7 +471,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    let upload = lankide_protocol::agent::encode(&vec![ResourceChunk {
+    let upload = meerkat_protocol::agent::encode(&vec![ResourceChunk {
         transfer_id: "daemon-upload".into(),
         resource_id: 0,
         offset: 0,
@@ -495,14 +495,14 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     )
     .await?;
     let uploaded =
-        lankide_protocol::agent::decode::<lankide_protocol::ResourceRef>(response.as_slice())
+        meerkat_protocol::agent::decode::<meerkat_protocol::ResourceRef>(response.as_slice())
             .map_err(|_| AppError::Invariant("decode upload"))?;
     let response = agent_call(
         &machine_tx,
         &mut runtime_frames,
         &context,
         "download_resource",
-        lankide_protocol::agent::encode(&ResourceRequest {
+        meerkat_protocol::agent::encode(&ResourceRequest {
             resource_id: uploaded.resource_id,
             transfer_id: "daemon-download".into(),
             context: Some(context.clone()),
@@ -510,7 +510,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         .expect("capability JSON"),
     )
     .await?;
-    let downloaded: Vec<u8> = lankide_protocol::agent::decode_chunks(&response)
+    let downloaded: Vec<u8> = meerkat_protocol::agent::decode_chunks(&response)
         .map_err(AppError::Status)?
         .into_iter()
         .flat_map(|chunk| chunk.bytes)
@@ -523,7 +523,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
         &mut runtime_frames,
         &context,
         "get_content",
-        lankide_protocol::agent::encode(&ContentRequest {
+        meerkat_protocol::agent::encode(&ContentRequest {
             context: Some(context.clone()),
             kind: ContentKind::Message as i32,
             content_id: ingested.message_id.to_string(),
@@ -532,7 +532,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     )
     .await?;
     let content =
-        lankide_protocol::agent::decode::<lankide_protocol::ContentResult>(response.as_slice())
+        meerkat_protocol::agent::decode::<meerkat_protocol::ContentResult>(response.as_slice())
             .map_err(|_| AppError::Invariant("decode content"))?;
     if content.content_markdown != "daemon trigger" {
         return Err(AppError::Invariant("content gateway mismatch"));
@@ -543,7 +543,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     ] {
         machine_tx
             .send(MachineFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(machine_frame::Frame::ExecutionEvent(ExecutionEvent {
                     execution: Some(execution.clone()),
                     sequence,
@@ -614,9 +614,9 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     fs::remove_dir_all(&deletable_directory)?;
     machine_tx
         .send(MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::DeleteAgentFilesResult(
-                lankide_protocol::DeleteAgentFilesResult {
+                meerkat_protocol::DeleteAgentFilesResult {
                     request_id: cleanup.request_id,
                     success: true,
                     error_code: String::new(),
@@ -668,7 +668,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     if storage
         .resource_metadata(
             &active_workspace,
-            lankide_core::ResourceId::new(uploaded.resource_id)
+            meerkat_core::ResourceId::new(uploaded.resource_id)
                 .map_err(|_| AppError::Invariant("resource id"))?,
         )?
         .is_none()
@@ -679,7 +679,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
     let mut restarted = DaemonChild::spawn(paths)?;
     restarted.wait_ready()?;
     let restart_client =
-        lankide_client::http::HttpManagementTransport::local(&paths.run, DEFAULT_MAX_MESSAGE_BYTES);
+        meerkat_client::http::HttpManagementTransport::local(&paths.run, DEFAULT_MAX_MESSAGE_BYTES);
     if restart_client
         .list_workspaces(ListWorkspacesRequest {
             request_id: "daemon-list-restart".into(),
@@ -960,9 +960,9 @@ async fn agent_call(
 ) -> Result<Vec<u8>, AppError> {
     sender
         .send(MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::CapabilityRequest(
-                lankide_protocol::CapabilityRequest {
+                meerkat_protocol::CapabilityRequest {
                     request_id: method.into(),
                     method: method.into(),
                     context: Some(context.clone()),
@@ -987,8 +987,8 @@ async fn agent_call(
                     return Err(AppError::Invariant("capability correlation mismatch"));
                 }
                 if response.error_code != 0 {
-                    return Err(AppError::Status(lankide_protocol::Status::new(
-                        lankide_protocol::Code::from_i32(response.error_code),
+                    return Err(AppError::Status(meerkat_protocol::Status::new(
+                        meerkat_protocol::Code::from_i32(response.error_code),
                         response.error_message,
                     )));
                 }

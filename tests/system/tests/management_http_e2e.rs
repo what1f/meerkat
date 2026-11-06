@@ -1,8 +1,8 @@
 //! Local browser access control on the shared management listener.
 use futures_util::StreamExt;
-use lankide_client::{ManagementClient, ManagementEventKind};
-use lankide_protocol::management;
-use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use meerkat_client::{ManagementClient, ManagementEventKind};
+use meerkat_protocol::management;
+use meerkat_system_e2e::{Result, RigConfig, Script, SystemRig};
 use std::time::Duration;
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::{Error, Message, client::IntoClientRequest};
@@ -234,7 +234,7 @@ async fn occupied_port_scenario(default_port: bool) -> Result<()> {
     let stderr = format!(
         "{}\n{}",
         String::from_utf8(output.stderr)?,
-        std::fs::read_to_string(home.path().join("logs/lankided.log")).unwrap_or_default()
+        std::fs::read_to_string(home.path().join("logs/meerkatd.log")).unwrap_or_default()
     );
     assert!(stderr.contains(&address.port().to_string()), "{stderr}");
     assert!(!home.path().join("run").join(management::URL_FILE).exists());
@@ -243,7 +243,7 @@ async fn occupied_port_scenario(default_port: bool) -> Result<()> {
 
 #[tokio::test]
 async fn loopback_management_closes_events_on_shutdown() -> Result<()> {
-    use lankided::{RuntimePaths, ShutdownReason, run_daemon};
+    use meerkatd::{RuntimePaths, ShutdownReason, run_daemon};
     let home = tempfile::tempdir()?;
     std::fs::write(
         home.path().join("runtime.json"),
@@ -259,7 +259,7 @@ async fn loopback_management_closes_events_on_shutdown() -> Result<()> {
         let client = timeout(Duration::from_secs(5), async {
             loop {
                 if let Ok(client) =
-                    lankide_client::RuntimeManagementClient::connect_local(&paths.run).await
+                    meerkat_client::RuntimeManagementClient::connect_local(&paths.run).await
                 {
                     return client;
                 }
@@ -285,8 +285,8 @@ async fn loopback_management_closes_events_on_shutdown() -> Result<()> {
 
 #[tokio::test]
 async fn paused_workspace_agent_can_be_renamed_and_runs_after_resume() -> Result<()> {
-    use lankide_client::WorkspaceStatus;
-    use lankide_system_e2e::Script;
+    use meerkat_client::WorkspaceStatus;
+    use meerkat_system_e2e::Script;
     let mut rig = SystemRig::start(RigConfig::default()).await?;
     let team = rig.workspace("team").await?;
     team.agent("bruce")
@@ -316,7 +316,7 @@ async fn paused_workspace_agent_can_be_renamed_and_runs_after_resume() -> Result
 
 #[tokio::test]
 async fn management_cannot_be_configured_on_a_public_plaintext_listener() -> Result<()> {
-    use lankided::{RuntimePaths, run_daemon};
+    use meerkatd::{RuntimePaths, run_daemon};
     let home = tempfile::tempdir()?;
     std::fs::write(
         home.path().join("runtime.json"),
@@ -331,7 +331,7 @@ async fn management_cannot_be_configured_on_a_public_plaintext_listener() -> Res
 
 #[tokio::test]
 async fn local_client_sees_machine_pairing_presence_and_revocation_from_events() -> Result<()> {
-    use lankide_machine::{MachineDaemonPaths, pair};
+    use meerkat_machine::{MachineDaemonPaths, pair};
     let mut rig = SystemRig::start(RigConfig {
         auto_start_machine: false,
         ..Default::default()

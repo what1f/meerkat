@@ -1,7 +1,7 @@
 {
-  "productName": "Lankide",
+  "productName": "Meerkat",
   "version": "0.1.0",
-  "identifier": "com.lankide.desktop",
+  "identifier": "com.meerkat.desktop",
   "build": { "frontendDist": "boot" },
   "app": { "withGlobalTauri": false, "macOSPrivateApi": true, "windows": [] },
   "bundle": { "active": false, "icon": ["assets/app-icon.png"] }

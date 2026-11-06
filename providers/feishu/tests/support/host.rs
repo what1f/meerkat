@@ -1,12 +1,12 @@
 //! Host services backed by the real SQLite and Runtime resource stores.
 #[path = "../../../../tests/support/registered_machine.rs"]
 mod registered_machine;
-use lankide_core::{
+use meerkat_core::{
     AgentId, ChannelId, MessageId, PersonId, ProviderId, ResourceId, ResourceRef, WorkspaceId,
 };
-use lankide_provider::*;
-use lankide_runtime::{LocalResourceStore, ResourceStore};
-use lankide_storage::{DatabaseConfig, Storage};
+use meerkat_provider::*;
+use meerkat_runtime::{LocalResourceStore, ResourceStore};
+use meerkat_storage::{DatabaseConfig, Storage};
 use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
 
@@ -25,7 +25,7 @@ fn error(_: impl std::fmt::Display) -> ProviderError {
         retryable: false,
     }
 }
-fn person(value: lankide_storage::PersonRecord) -> ProviderPersonIdentity {
+fn person(value: meerkat_storage::PersonRecord) -> ProviderPersonIdentity {
     ProviderPersonIdentity {
         person_id: value.person_id,
         external_id: value.external_id,
@@ -43,7 +43,7 @@ impl Services {
         registered_machine::register(&db, &["fixture-machine"]).unwrap();
         let workspace = WorkspaceId::new("im_scenarios").unwrap();
         let provider = ProviderId::new(provider).unwrap();
-        db.create_workspace(lankide_storage::WorkspaceSpec {
+        db.create_workspace(meerkat_storage::WorkspaceSpec {
             id: workspace.clone(),
             name: "IM scenarios".into(),
             provider_id: provider.clone(),
@@ -62,8 +62,8 @@ impl Services {
             _directory: directory,
         })
     }
-    pub fn runtime(&self) -> lankide_runtime::Runtime {
-        lankide_runtime::Runtime::new(lankide_runtime::RuntimeConfig {
+    pub fn runtime(&self) -> meerkat_runtime::Runtime {
+        meerkat_runtime::Runtime::new(meerkat_runtime::RuntimeConfig {
             database: DatabaseConfig::new(self._directory.path().join("runtime.sqlite")),
             retry: Default::default(),
         })
@@ -71,7 +71,7 @@ impl Services {
     }
     pub fn agent(&self, id: &AgentId, secret_name: &str, secret: &str) {
         self.db
-            .create_agent(lankide_storage::AgentSpec {
+            .create_agent(meerkat_storage::AgentSpec {
                 machine_id: "fixture-machine".into(),
                 workspace_id: self.workspace.clone(),
                 id: id.clone(),
@@ -84,7 +84,7 @@ impl Services {
                 &self.workspace,
                 id,
                 secret_name,
-                lankide_storage::SecretValue::new(secret),
+                meerkat_storage::SecretValue::new(secret),
                 1,
             )
             .unwrap();
@@ -92,7 +92,7 @@ impl Services {
     pub fn host(self: &Arc<Self>) -> HostServices {
         HostServices {
             secret_reader: self.clone(),
-            secret_writer: Arc::new(DeniedSecretWriter),
+            secret_writer: self.clone(),
             storage: self.clone(),
             logger: self.clone(),
             resource_saver: self.clone(),
@@ -104,7 +104,7 @@ impl Services {
     pub fn remember(&self, chat: &str, external: &str) -> MessageId {
         let result = self
             .db
-            .receive_message(lankide_storage::IncomingMessage {
+            .receive_message(meerkat_storage::IncomingMessage {
                 workspace_id: self.workspace.clone(),
                 channel_id: ChannelId::new("group_chat").unwrap(),
                 channel_name: "Group".into(),
@@ -129,6 +129,25 @@ impl SecretReader for Services {
                 .map_err(error)?
                 .map(|value| SecretValue::new(value.expose_secret()))
                 .ok_or(ProviderError::SecretAccessDenied)
+        })
+    }
+}
+impl SecretWriter for Services {
+    fn write<'a>(&'a self, name: &'a str, value: SecretValue) -> ProviderFuture<'a, ()> {
+        Box::pin(async move {
+            let (agent_id, secret_name) = name
+                .strip_prefix("agent:")
+                .and_then(|scoped| scoped.split_once(':'))
+                .ok_or(ProviderError::SecretAccessDenied)?;
+            self.db
+                .put_agent_secret(
+                    &self.workspace,
+                    &AgentId::new(agent_id).unwrap(),
+                    secret_name,
+                    meerkat_storage::SecretValue::new(value.expose_secret()),
+                    1,
+                )
+                .map_err(error)
         })
     }
 }

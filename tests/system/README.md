@@ -8,7 +8,7 @@ homes. No live credentials or model are required.
 Run from the workspace root:
 
 ```sh
-cargo test -p lankide-system-e2e
+cargo test -p meerkat-system-e2e
 ```
 
 The `system` row in `tests/e2e-modules.tsv` also runs these scenarios in
@@ -38,7 +38,7 @@ mid-turn failure, hang, timed progress, child process, and CLI capability calls.
 Scenarios can hold a reply with `Script::reply(...).held()` and release it with
 `agent.release_run()`; queue and restart steps do not depend on sleep timing.
 Only reply, streaming, queueing, and restart are exercised in Task 0. Replies use
-the real execution-scoped `lankide-cli` capability API, then emit terminal output
+the real execution-scoped `meerkat-cli` capability API, then emit terminal output
 `OK`, as required by the existing completion protocol.
 
 The Machine daemon runs on a separate Tokio executor thread in the test process.
@@ -65,7 +65,7 @@ only after its first active-attempt report is reconciled.
 Run S6.1–S6.4 with:
 
 ```sh
-cargo test -p lankide-system-e2e --test execution_liveness_e2e
+cargo test -p meerkat-system-e2e --test execution_liveness_e2e
 ```
 
 Each test name begins with `s6_1_`, `s6_2_`, `s6_3_`, or `s6_4_`.
@@ -107,7 +107,7 @@ deletes a running Agent without sending an unsupported native cancel.
 Task 5 retry scenarios are in `tests/retry_policy_e2e.rs`. Run them with:
 
 ```sh
-cargo test -p lankide-system-e2e --test retry_policy_e2e
+cargo test -p meerkat-system-e2e --test retry_policy_e2e
 ```
 
 They set `RuntimeConfig.retry` through the daemon's optional `retry-policy.json`
@@ -130,7 +130,7 @@ serves management listings during their runs, and checks each reply exactly once
 ## Network delivery (Task 10)
 
 ```sh
-cargo test -p lankide-system-e2e --test network_delivery_e2e
+cargo test -p meerkat-system-e2e --test network_delivery_e2e
 ```
 
 Scenario prefixes `s10_1_` through `s10_4_` select each acceptance scenario.
@@ -167,7 +167,7 @@ keep these production defaults. Each reconnect delay has 75%-125% jitter.
 Task 12 registration scenarios:
 
 ```sh
-cargo test -p lankide-system-e2e --test pairing_e2e
+cargo test -p meerkat-system-e2e --test pairing_e2e
 ```
 
 Prefixes `s12_1_` through `s12_5_` select the five acceptance scenarios.
@@ -188,8 +188,8 @@ copied home.
 Recovery regression scenarios:
 
 ```sh
-cargo test -p lankide-system-e2e --test reconnect_recovery_e2e
-cargo test -p lankide-system-e2e --test retry_policy_e2e ownership_conflicts
+cargo test -p meerkat-system-e2e --test reconnect_recovery_e2e
+cargo test -p meerkat-system-e2e --test retry_policy_e2e ownership_conflicts
 ```
 
 The first holds an active native run through four observed disconnect/re-adoption

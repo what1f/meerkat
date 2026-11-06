@@ -4,11 +4,11 @@ mod paused_send_e2e;
 mod registered_machine;
 #[path = "../../protocol/tests/support/ws.rs"]
 mod ws;
-use lankide_core::{
+use meerkat_core::{
     AgentId, AttentionLevel, ChannelAbility, ChannelId, MessageId, PersonId, ProviderId,
     ScheduleInterval, WorkspaceId,
 };
-use lankide_protocol::{
+use meerkat_protocol::{
     ActiveAttempt, AgentAttention, AgentAvatarUpload, AgentRef, AgentRunContext,
     AgentRuntimeProfile, AssignExecution, AssignmentResult, AttentionMode, CapabilityInvokeRequest,
     ChannelAttention, ContentKind, ContentRequest, CreateAgentRequest, CreateWorkspaceRequest,
@@ -19,7 +19,7 @@ use lankide_protocol::{
     SessionAction, SessionDirective, TransportConfig, UpdateAgentRequest, UpdateSelfProfileRequest,
     UpdateWorkspaceRequest, WorkspaceRef, machine_frame, runtime_frame,
 };
-use lankide_provider::{
+use meerkat_provider::{
     AgentContext, AgentRuntimeContext, AutoReactionContext, ChannelDefaultAttention,
     ChannelDefinition, EditMessageContext, EventSender, EventSenderType, EventSink, HostServices,
     InitContext, InterfaceDefinition, InvocationHandler, JsonSchema, LogLevel, MessageEvent,
@@ -28,12 +28,12 @@ use lankide_provider::{
     RecallMessageContext, ResourceSaver, ResourceUpload, SecretReader, SecretValue,
     SendMessageContext, SendMessageResult, ToolDefinition, WorkspaceContext,
 };
-use lankide_runtime::{
+use meerkat_runtime::{
     AgentRuntimeConfig, AttentionPolicy, ExecutionProgress, ExecutionReply, MachineCompletion,
     MachineError, MachineExecutor, MachineFuture, MachineOutcome, ProviderFactoryRegistry,
     ProviderTypeFactory, Runtime, RuntimeApplication, RuntimeConfig, RuntimePeerAdapter,
 };
-use lankide_storage::{
+use meerkat_storage::{
     AgentSpec, AttemptAuthorization, AttemptCapability, AttentionRecord, DatabaseConfig,
     DispatchReason, ExecutionAuthSpec, InboxDispatch, InboxState, IngestEvent, MessageInput,
     Storage, TeamRole, ToolInvocationRequest, WorkspaceRecord, WorkspaceSpec,
@@ -344,12 +344,12 @@ async fn scenario(db: &Path) -> Result<(), String> {
     }
     let first = pull(&runtime, &workspace_a, 10).await?;
     ensure(
-        matches!(first, lankide_runtime::CoordinatedEvent::Message { ref result, .. } if !result.duplicate),
+        matches!(first, meerkat_runtime::CoordinatedEvent::Message { ref result, .. } if !result.duplicate),
         "auto reaction failure must not suppress ingest",
     )?;
     let duplicate = pull(&runtime, &workspace_a, 11).await?;
     ensure(
-        matches!(duplicate, lankide_runtime::CoordinatedEvent::Message { ref result, .. } if result.duplicate),
+        matches!(duplicate, meerkat_runtime::CoordinatedEvent::Message { ref result, .. } if result.duplicate),
         "duplicate callback",
     )?;
     pull(&runtime, &workspace_a, 12).await?;
@@ -521,7 +521,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
         arguments: json!({"value": "ok"}),
         now: 20,
     };
-    let frozen_spec = lankide_provider::AgentRuntimeSpec {
+    let frozen_spec = meerkat_provider::AgentRuntimeSpec {
         agent_config: provider_contexts[0].agent_config.clone(),
         provider_agent_config: provider_contexts[0].provider_agent_config.clone(),
         machine_id: provider_contexts[0].machine_id.clone(),
@@ -638,7 +638,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
         .await?;
     let ignored_reaction = pull(&runtime, &workspace_a, 24).await?;
     ensure(
-        matches!(ignored_reaction, lankide_runtime::CoordinatedEvent::Reaction(ref value) if value.ignored_unknown_target && value.inbox_item_ids.is_empty()),
+        matches!(ignored_reaction, meerkat_runtime::CoordinatedEvent::Reaction(ref value) if value.ignored_unknown_target && value.inbox_item_ids.is_empty()),
         "unknown historical reaction is accepted without blocking later events",
     )?;
     state_a
@@ -646,7 +646,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
         .await?;
     let reaction = pull(&runtime, &workspace_a, 25).await?;
     ensure(
-        matches!(reaction, lankide_runtime::CoordinatedEvent::Reaction(ref value) if !value.duplicate && value.inbox_item_ids.len() == 1),
+        matches!(reaction, meerkat_runtime::CoordinatedEvent::Reaction(ref value) if !value.duplicate && value.inbox_item_ids.len() == 1),
         "reaction trigger",
     )?;
     state_a.push_send(SendMode::Sent("provider_reaction_reply".into()));
@@ -845,7 +845,7 @@ async fn scenario(db: &Path) -> Result<(), String> {
         .await
         .map_err(err)?;
     ensure(
-        matches!(command, lankide_runtime::CoordinatedEvent::Message { ref result, .. } if result.new_inbox_items.is_empty()),
+        matches!(command, meerkat_runtime::CoordinatedEvent::Message { ref result, .. } if result.new_inbox_items.is_empty()),
         "team command must not dispatch to Agents",
     )?;
     ensure(
@@ -1132,7 +1132,7 @@ async fn collaboration_fencing_scenario(db: &Path) -> Result<(), String> {
     state.emit(callback).await?;
     let callback = pull(&runtime, &workspace, 5).await?;
     ensure(
-        matches!(callback, lankide_runtime::CoordinatedEvent::Dropped),
+        matches!(callback, meerkat_runtime::CoordinatedEvent::Dropped),
         "an outbound echo neither creates a message nor wakes an Agent",
     )?;
     ensure(
@@ -1207,7 +1207,7 @@ async fn collaboration_fencing_scenario(db: &Path) -> Result<(), String> {
     ensure(
         matches!(
             unmentioned_callback,
-            lankide_runtime::CoordinatedEvent::Dropped
+            meerkat_runtime::CoordinatedEvent::Dropped
         ) && runtime.storage().message_count(&workspace).map_err(err)? == before_echo,
         "an Agent-ID echo with an unknown native ID creates no row or turn",
     )?;
@@ -1275,7 +1275,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             provider_event_id: Some("attempt-event".into()),
             provider_message_id: "attempt-message".into(),
             message: MessageInput {
-                sender_kind: lankide_core::MessageAuthorType::Human,
+                sender_kind: meerkat_core::MessageAuthorType::Human,
                 sender_id: "human".into(),
                 sender_name: "Human".into(),
                 content: "run".into(),
@@ -1352,8 +1352,8 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
     ensure(
         matches!(
             first.next().await,
-            Some(Ok(lankide_protocol::RuntimeFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            Some(Ok(meerkat_protocol::RuntimeFrame {
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::AssignExecution(_))
             }))
         ),
@@ -1364,7 +1364,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             "machine-attempt",
             "instance-stable",
             MachineFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(machine_frame::Frame::AssignmentResult(AssignmentResult {
                     failure: None,
                     execution: Some(execution.clone()),
@@ -1381,7 +1381,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             "machine-attempt",
             "instance-stable",
             MachineFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(machine_frame::Frame::DeliveryResult(DeliveryResult {
                     execution: Some(execution.clone()),
                     delivery_id: created.delivery_id,
@@ -1398,7 +1398,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             "machine-attempt",
             "instance-stable",
             MachineFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(machine_frame::Frame::ExecutionEvent(ExecutionEvent {
                     execution: Some(execution.clone()),
                     sequence: 1,
@@ -1413,8 +1413,8 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
     ensure(
         matches!(
             first.next().await,
-            Some(Ok(lankide_protocol::RuntimeFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            Some(Ok(meerkat_protocol::RuntimeFrame {
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::ExecutionEventAck(_))
             }))
         ),
@@ -1443,7 +1443,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
                     "machine-attempt",
                     "instance-stable",
                     MachineFrame {
-                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                         frame: Some(machine_frame::Frame::Heartbeat(MachineHeartbeat {
                             machine_id: "machine-attempt".into(),
                             instance_id: "instance-stable".into(),
@@ -1470,8 +1470,8 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         ensure(
             matches!(
                 first.next().await,
-                Some(Ok(lankide_protocol::RuntimeFrame {
-                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                Some(Ok(meerkat_protocol::RuntimeFrame {
+                    protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                     frame: Some(runtime_frame::Frame::CancelExecution(_))
                 }))
             ),
@@ -1483,7 +1483,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
                 .execution(created.execution_id)
                 .map_err(err)?
                 .state
-                == lankide_storage::ExecutionState::Failed,
+                == meerkat_storage::ExecutionState::Failed,
             "lost execution is finalized",
         )?;
         broker
@@ -1507,7 +1507,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             .execution(created.execution_id)
             .map_err(err)?
             .state
-            == lankide_storage::ExecutionState::Recovering,
+            == meerkat_storage::ExecutionState::Recovering,
         "execution recovering",
     )?;
 
@@ -1518,7 +1518,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             "machine-attempt",
             "instance-stable",
             MachineFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(machine_frame::Frame::Heartbeat(MachineHeartbeat {
                     machine_id: "machine-attempt".into(),
                     instance_id: "instance-stable".into(),
@@ -1539,11 +1539,11 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             .execution(created.execution_id)
             .map_err(err)?
             .state
-            == lankide_storage::ExecutionState::Running,
+            == meerkat_storage::ExecutionState::Running,
         "same instance continues",
     )?;
     let completed = MachineFrame {
-        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
         frame: Some(machine_frame::Frame::ExecutionEvent(ExecutionEvent {
             execution: Some(execution.clone()),
             sequence: 2,
@@ -1569,8 +1569,8 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
     ensure(
         matches!(
             resumed.next().await,
-            Some(Ok(lankide_protocol::RuntimeFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            Some(Ok(meerkat_protocol::RuntimeFrame {
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::ExecutionEventAck(_))
             }))
         ),
@@ -1579,8 +1579,8 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
     ensure(
         matches!(
             resumed.next().await,
-            Some(Ok(lankide_protocol::RuntimeFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            Some(Ok(meerkat_protocol::RuntimeFrame {
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::ExecutionCommitted(_))
             }))
         ),
@@ -1594,8 +1594,8 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
     ensure(
         matches!(
             resumed.next().await,
-            Some(Ok(lankide_protocol::RuntimeFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            Some(Ok(meerkat_protocol::RuntimeFrame {
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::ExecutionCommitted(_))
             }))
         ),
@@ -1607,7 +1607,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
             .execution(created.execution_id)
             .map_err(err)?
             .state
-            == lankide_storage::ExecutionState::Succeeded,
+            == meerkat_storage::ExecutionState::Succeeded,
         "attempt committed",
     )?;
     ensure(
@@ -1647,7 +1647,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     for machine_id in ["machine-a", "machine-b", "machine-delete"] {
         storage
             .pair_machine(
-                &lankide_storage::MachineRecord {
+                &meerkat_storage::MachineRecord {
                     is_local: false,
                     machine_id: machine_id.into(),
                     display_name: machine_id.into(),
@@ -1661,7 +1661,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
                     os: "test".into(),
                     version: "1".into(),
                     inventory_json: serde_json::to_string(&vec![
-                        lankide_protocol::link::HarnessInfo {
+                        meerkat_protocol::link::HarnessInfo {
                             harness_id: "fixture".into(),
                             ..Default::default()
                         },
@@ -1721,7 +1721,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         provider_event_id: Some("application-event-1".into()),
         provider_message_id: "application-message-1".into(),
         message: MessageInput {
-            sender_kind: lankide_core::MessageAuthorType::Human,
+            sender_kind: meerkat_core::MessageAuthorType::Human,
             sender_id: "human".into(),
             sender_name: "Human".into(),
             content: application_trigger.clone(),
@@ -1808,7 +1808,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
                 name: name.into(),
                 display_name: name.into(),
                 description: name.into(),
-                kind: lankide_protocol::CapabilityKind::Tool as i32,
+                kind: meerkat_protocol::CapabilityKind::Tool as i32,
                 input_schema_json: "{}".into(),
                 output_schema_json: "{}".into(),
             })
@@ -1816,7 +1816,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
                 name: "echo".into(),
                 display_name: "echo".into(),
                 description: "echo".into(),
-                kind: lankide_protocol::CapabilityKind::Tool as i32,
+                kind: meerkat_protocol::CapabilityKind::Tool as i32,
                 input_schema_json: "{}".into(),
                 output_schema_json: "{}".into(),
             }))
@@ -1824,7 +1824,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
                 name: "runtime_lookup".into(),
                 display_name: "runtime_lookup".into(),
                 description: "runtime_lookup".into(),
-                kind: lankide_protocol::CapabilityKind::Tool as i32,
+                kind: meerkat_protocol::CapabilityKind::Tool as i32,
                 input_schema_json: "{}".into(),
                 output_schema_json: "{}".into(),
             }))
@@ -1895,8 +1895,8 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     ensure(
         matches!(
             first_connection.next().await,
-            Some(Ok(lankide_protocol::RuntimeFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            Some(Ok(meerkat_protocol::RuntimeFrame {
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::Hello(_)),
             }))
         ),
@@ -1918,8 +1918,8 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     ensure(
         matches!(
             first_connection.next().await,
-            Some(Ok(lankide_protocol::RuntimeFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            Some(Ok(meerkat_protocol::RuntimeFrame {
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(runtime_frame::Frame::Shutdown(_)),
             }))
         ),
@@ -2084,7 +2084,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "scenario Agent socket started",
     )?;
     let client =
-        lankide_client::http::HttpManagementTransport::local(socket, DEFAULT_MAX_MESSAGE_BYTES);
+        meerkat_client::http::HttpManagementTransport::local(socket, DEFAULT_MAX_MESSAGE_BYTES);
     let listed = client
         .list_workspaces(ListWorkspacesRequest {
             request_id: "list-1".into(),
@@ -2098,7 +2098,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "secret isolation",
     )?;
     let reactions = client
-        .get_reaction_catalog(lankide_protocol::CatalogRequest {
+        .get_reaction_catalog(meerkat_protocol::CatalogRequest {
             request_id: "reaction-catalog".into(),
             workspace: Some(WorkspaceRef {
                 workspace_id: workspace_id.to_string(),
@@ -2112,7 +2112,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "management reaction catalog must come from workspace Provider",
     )?;
     let interface_catalog = client
-        .list_provider_interfaces(lankide_protocol::ListProviderInterfacesRequest {
+        .list_provider_interfaces(meerkat_protocol::ListProviderInterfacesRequest {
             request_id: "interface-list-1".into(),
             workspace: Some(WorkspaceRef {
                 workspace_id: workspace_id.to_string(),
@@ -2135,7 +2135,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "provider interface catalog ordering and schema",
     )?;
     let interface = client
-        .invoke_provider_interface(lankide_protocol::InvokeProviderInterfaceRequest {
+        .invoke_provider_interface(meerkat_protocol::InvokeProviderInterfaceRequest {
             request_id: "interface-1".into(),
             workspace: Some(WorkspaceRef {
                 workspace_id: workspace_id.to_string(),
@@ -2151,7 +2151,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "provider interface output",
     )?;
     let unknown_interface = client
-        .invoke_provider_interface(lankide_protocol::InvokeProviderInterfaceRequest {
+        .invoke_provider_interface(meerkat_protocol::InvokeProviderInterfaceRequest {
             request_id: "interface-unknown".into(),
             workspace: Some(WorkspaceRef {
                 workspace_id: workspace_id.to_string(),
@@ -2162,11 +2162,11 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .await
         .expect_err("unknown provider interface must fail");
     ensure(
-        unknown_interface.code() == lankide_protocol::Code::NotFound,
+        unknown_interface.code() == meerkat_protocol::Code::NotFound,
         "unknown provider interface status",
     )?;
     let invalid_interface = client
-        .invoke_provider_interface(lankide_protocol::InvokeProviderInterfaceRequest {
+        .invoke_provider_interface(meerkat_protocol::InvokeProviderInterfaceRequest {
             request_id: "interface-invalid".into(),
             workspace: Some(WorkspaceRef {
                 workspace_id: workspace_id.to_string(),
@@ -2177,7 +2177,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .await
         .expect_err("invalid provider interface input must fail");
     ensure(
-        invalid_interface.code() == lankide_protocol::Code::InvalidArgument,
+        invalid_interface.code() == meerkat_protocol::Code::InvalidArgument,
         "invalid provider interface status",
     )?;
     let mut subscription = client
@@ -2341,7 +2341,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         })
         .await;
     ensure(
-        failed.is_err_and(|status| status.code() == lankide_protocol::Code::FailedPrecondition),
+        failed.is_err_and(|status| status.code() == meerkat_protocol::Code::FailedPrecondition),
         "provider lifecycle failure was not reported as a recoverable Provider problem",
     )?;
     state.fail_lifecycle.store(false, Ordering::SeqCst);
@@ -2362,7 +2362,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "failed Provider operation left a Workspace",
     )?;
     let onboarding = client
-        .get_agent_onboarding(lankide_protocol::GetAgentOnboardingRequest {
+        .get_agent_onboarding(meerkat_protocol::GetAgentOnboardingRequest {
             request_id: "agent-onboarding-1".into(),
             agent: Some(AgentRef {
                 workspace_id: "application_b".into(),
@@ -2373,7 +2373,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .map_err(err)?
         .into_inner();
     ensure(
-        onboarding.status == lankide_protocol::OnboardingStatus::Ready
+        onboarding.status == meerkat_protocol::OnboardingStatus::Ready
             && onboarding.verification_uri.is_empty()
             && onboarding.poll_interval_seconds == 0,
         "agent onboarding",
@@ -2383,7 +2383,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "verification_uri": "https://example.invalid/verify"
     });
     let advanced_onboarding = client
-        .advance_agent_onboarding(lankide_protocol::AdvanceAgentOnboardingRequest {
+        .advance_agent_onboarding(meerkat_protocol::AdvanceAgentOnboardingRequest {
             request_id: "agent-onboarding-2".into(),
             agent: Some(AgentRef {
                 workspace_id: "application_b".into(),
@@ -2411,7 +2411,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         execution_token: token.into(),
     };
     let mut agent_client =
-        lankide_protocol::connect_uds(socket.join("agent.sock"), DEFAULT_MAX_MESSAGE_BYTES)
+        meerkat_protocol::connect_uds(socket.join("agent.sock"), DEFAULT_MAX_MESSAGE_BYTES)
             .await
             .map_err(err)?;
     let denied = agent_client
@@ -2426,7 +2426,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .await
         .expect_err("invalid execution token must be rejected");
     ensure(
-        denied.code() == lankide_protocol::Code::PermissionDenied
+        denied.code() == meerkat_protocol::Code::PermissionDenied
             && !denied.message().contains("token_hash")
             && !denied.message().contains("must-not-leak"),
         "capability authorization is redacted",
@@ -2631,7 +2631,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     let (machine_frames, machine_input) = tokio::sync::mpsc::channel(8);
     machine_frames
         .send(MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::Hello(MachineHello {
                 device_credential: "fixture-machine-a".into(),
                 protocol_version: PROTOCOL_VERSION,
@@ -2640,10 +2640,10 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
                 machine_version: "test".into(),
                 os: "test".into(),
                 arch: "test".into(),
-                harnesses: vec![lankide_protocol::HarnessInfo {
+                harnesses: vec![meerkat_protocol::HarnessInfo {
                     harness_id: "pi".into(),
                     display_name: "Pi".into(),
-                    availability: lankide_protocol::HarnessAvailability::Available as i32,
+                    availability: meerkat_protocol::HarnessAvailability::Available as i32,
                     ..Default::default()
                 }],
             })),
@@ -2662,15 +2662,15 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     *state.tool_gate.lock().unwrap() = Some(gate.clone());
     machine_frames
         .send(MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::CapabilityRequest(
-                lankide_protocol::CapabilityRequest {
+                meerkat_protocol::CapabilityRequest {
                     request_id: "slow-echo".into(),
                     method: "invoke_capability".into(),
                     context: Some(context.clone()),
                     offset: 0,
                     eof: true,
-                    payload: lankide_protocol::agent::encode(&CapabilityInvokeRequest {
+                    payload: meerkat_protocol::agent::encode(&CapabilityInvokeRequest {
                         context: Some(context.clone()),
                         invocation_id: "slow-echo".into(),
                         capability_name: "echo".into(),
@@ -2695,7 +2695,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .as_millis() as i64;
     machine_frames
         .send(MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::Heartbeat(MachineHeartbeat {
                 machine_id: "machine-a".into(),
                 instance_id: "instance-2".into(),
@@ -2740,7 +2740,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .map_err(err)?
         .ok_or("tool stream closed")?;
     ensure(
-        matches!(tool_result.frame, Some(runtime_frame::Frame::CapabilityResponse(result)) if result.error_code == 0 && lankide_protocol::agent::decode::<lankide_protocol::CapabilityInvokeResult>(&result.payload).unwrap().success),
+        matches!(tool_result.frame, Some(runtime_frame::Frame::CapabilityResponse(result)) if result.error_code == 0 && meerkat_protocol::agent::decode::<meerkat_protocol::CapabilityInvokeResult>(&result.payload).unwrap().success),
         "delayed tool result delivered after heartbeat",
     )?;
     let provider_lookup = agent_client
@@ -2802,7 +2802,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     ensure(downloaded_bytes == resource_bytes, "resource roundtrip")?;
     let image_bytes = include_bytes!("assets/profile.png").to_vec();
     let image = client
-        .upload_workspace_image(lankide_protocol::UploadWorkspaceImageRequest {
+        .upload_workspace_image(meerkat_protocol::UploadWorkspaceImageRequest {
             request_id: "upload-profile-image".into(),
             workspace: Some(WorkspaceRef {
                 workspace_id: workspace_id.to_string(),
@@ -2818,7 +2818,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .ok_or("uploaded profile image metadata missing")?;
     for invalid_cover in [i64::MAX, uploaded.resource_id] {
         client
-            .update_workspace(lankide_protocol::UpdateWorkspaceRequest {
+            .update_workspace(meerkat_protocol::UpdateWorkspaceRequest {
                 request_id: "invalid-cover".into(),
                 workspace: Some(WorkspaceRef {
                     workspace_id: workspace_id.to_string(),
@@ -2829,7 +2829,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             .await
             .expect_err("missing or non-image cover must not commit");
         let unchanged = client
-            .get_workspace(lankide_protocol::GetWorkspaceRequest {
+            .get_workspace(meerkat_protocol::GetWorkspaceRequest {
                 request_id: "unchanged-after-invalid-cover".into(),
                 workspace: Some(WorkspaceRef {
                     workspace_id: workspace_id.to_string(),
@@ -2844,7 +2844,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         )?;
     }
     client
-        .update_workspace(lankide_protocol::UpdateWorkspaceRequest {
+        .update_workspace(meerkat_protocol::UpdateWorkspaceRequest {
             request_id: "set-profile-image".into(),
             workspace: Some(WorkspaceRef {
                 workspace_id: workspace_id.to_string(),
@@ -2855,7 +2855,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .await
         .map_err(err)?;
     let response = client
-        .get_workspace_image(lankide_protocol::WorkspaceImageRequest {
+        .get_workspace_image(meerkat_protocol::WorkspaceImageRequest {
             request_id: "profile-image".into(),
             workspace: Some(WorkspaceRef {
                 workspace_id: workspace_id.to_string(),
@@ -2870,7 +2870,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         "real profile image resource bytes",
     )?;
     let denied_image = client
-        .get_workspace_image(lankide_protocol::WorkspaceImageRequest {
+        .get_workspace_image(meerkat_protocol::WorkspaceImageRequest {
             request_id: "not-a-profile".into(),
             workspace: Some(WorkspaceRef {
                 workspace_id: workspace_id.to_string(),
@@ -2880,11 +2880,11 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .await
         .expect_err("attachment must not be exposed as a profile image");
     ensure(
-        denied_image.code() == lankide_protocol::Code::PermissionDenied,
+        denied_image.code() == meerkat_protocol::Code::PermissionDenied,
         "profile resource allowlist",
     )?;
     let denied_workspace = client
-        .get_workspace_image(lankide_protocol::WorkspaceImageRequest {
+        .get_workspace_image(meerkat_protocol::WorkspaceImageRequest {
             request_id: "wrong-image-workspace".into(),
             workspace: Some(WorkspaceRef {
                 workspace_id: "application_b".into(),
@@ -2894,7 +2894,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         .await
         .expect_err("image must remain workspace-scoped");
     ensure(
-        denied_workspace.code() == lankide_protocol::Code::PermissionDenied,
+        denied_workspace.code() == meerkat_protocol::Code::PermissionDenied,
         "profile image workspace isolation",
     )?;
 
@@ -2955,15 +2955,15 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     ] {
         machine_frames
             .send(MachineFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(machine_frame::Frame::CapabilityRequest(
-                    lankide_protocol::CapabilityRequest {
+                    meerkat_protocol::CapabilityRequest {
                         request_id: id.into(),
                         method: "invoke_capability".into(),
                         context: Some(context.clone()),
                         offset: 0,
                         eof: true,
-                        payload: lankide_protocol::agent::encode(&CapabilityInvokeRequest {
+                        payload: meerkat_protocol::agent::encode(&CapabilityInvokeRequest {
                             context: Some(context.clone()),
                             invocation_id: id.into(),
                             capability_name: "message_edit".into(),
@@ -2983,8 +2983,8 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         let Some(runtime_frame::Frame::CapabilityResponse(response)) = response.frame else {
             return Err("tool failure was not returned to Machine".into());
         };
-        let result: lankide_protocol::CapabilityInvokeResult =
-            lankide_protocol::agent::decode(&response.payload).map_err(err)?;
+        let result: meerkat_protocol::CapabilityInvokeResult =
+            meerkat_protocol::agent::decode(&response.payload).map_err(err)?;
         ensure(
             !result.success
                 && result.invocation_id == id
@@ -3303,7 +3303,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     let (delete_machine_frames, delete_machine_input) = tokio::sync::mpsc::channel(4);
     delete_machine_frames
         .send(MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::Hello(MachineHello {
                 device_credential: "fixture-machine-delete".into(),
                 protocol_version: PROTOCOL_VERSION,
@@ -3312,10 +3312,10 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
                 machine_version: "test".into(),
                 os: "test".into(),
                 arch: "test".into(),
-                harnesses: vec![lankide_protocol::HarnessInfo {
+                harnesses: vec![meerkat_protocol::HarnessInfo {
                     harness_id: "fixture".into(),
                     display_name: "Fixture".into(),
-                    availability: lankide_protocol::HarnessAvailability::Available as i32,
+                    availability: meerkat_protocol::HarnessAvailability::Available as i32,
                     ..Default::default()
                 }],
             })),
@@ -3349,9 +3349,9 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
     )?;
     delete_machine_frames
         .send(MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::DeleteAgentFilesResult(
-                lankide_protocol::DeleteAgentFilesResult {
+                meerkat_protocol::DeleteAgentFilesResult {
                     request_id: cleanup.request_id,
                     success: true,
                     error_code: String::new(),
@@ -3498,8 +3498,8 @@ impl ProviderTypeFactory for ApplicationFactory {
         &self,
         workspace: &WorkspaceRecord,
         services: HostServices,
-    ) -> Result<Arc<dyn lankide_provider::ProviderHostInstance>, ProviderError> {
-        Ok(Arc::new(lankide_provider::ProviderHost::new(
+    ) -> Result<Arc<dyn meerkat_provider::ProviderHostInstance>, ProviderError> {
+        Ok(Arc::new(meerkat_provider::ProviderHost::new(
             FakeProvider {
                 id: self.provider_id.clone(),
                 state: self.state.clone(),
@@ -3520,7 +3520,7 @@ async fn register(
     let factory_workspace = workspace.clone();
     runtime
         .register_provider_factory(workspace, move || {
-            lankide_provider::ProviderHost::new(
+            meerkat_provider::ProviderHost::new(
                 FakeProvider {
                     id: provider_id.clone(),
                     state: state.clone(),
@@ -3594,7 +3594,7 @@ async fn pull(
     runtime: &Runtime,
     workspace: &WorkspaceId,
     now: i64,
-) -> Result<lankide_runtime::CoordinatedEvent, String> {
+) -> Result<meerkat_runtime::CoordinatedEvent, String> {
     let event = runtime
         .next_provider_event(workspace)
         .await
@@ -3734,8 +3734,8 @@ struct FakeProvider {
     state: Arc<FakeState>,
 }
 impl Provider for FakeProvider {
-    fn reaction_catalog(&self) -> Vec<lankide_provider::ReactionDefinition> {
-        vec![lankide_provider::ReactionDefinition {
+    fn reaction_catalog(&self) -> Vec<meerkat_provider::ReactionDefinition> {
+        vec![meerkat_provider::ReactionDefinition {
             id: "fixture_reaction".into(),
             name: "Reaction".into(),
             emoji: "👍".into(),
@@ -4065,11 +4065,12 @@ impl Provider for FakeProvider {
     fn cli_commands<'a>(
         &'a self,
         _: AgentRuntimeContext,
-    ) -> ProviderFuture<'a, Vec<lankide_provider::CliCommandDefinition>> {
+    ) -> ProviderFuture<'a, Vec<meerkat_provider::CliCommandDefinition>> {
         Box::pin(async {
-            Ok(vec![lankide_provider::CliCommandDefinition {
+            Ok(vec![meerkat_provider::CliCommandDefinition {
                 id: "fixture".into(),
                 description: "Fixture command".into(),
+                wraps: String::new(),
                 handler: Arc::new(Echo),
             }])
         })
@@ -4215,9 +4216,9 @@ impl ProviderLogger for Services {
     fn log(&self, _: LogLevel, _: &str) {}
 }
 impl ResourceSaver for Services {
-    fn save<'a>(&'a self, value: ResourceUpload) -> ProviderFuture<'a, lankide_core::ResourceRef> {
+    fn save<'a>(&'a self, value: ResourceUpload) -> ProviderFuture<'a, meerkat_core::ResourceRef> {
         Box::pin(async move {
-            Ok(lankide_core::ResourceRef {
+            Ok(meerkat_core::ResourceRef {
                 resource_id: 1,
                 file_name: value.file_name,
                 media_type: value.media_type,
@@ -4236,7 +4237,7 @@ fn services() -> HostServices {
     let services = Arc::new(Services::default());
     HostServices {
         secret_reader: services.clone(),
-        secret_writer: Arc::new(lankide_provider::DeniedSecretWriter),
+        secret_writer: Arc::new(meerkat_provider::DeniedSecretWriter),
         storage: services.clone(),
         logger: services.clone(),
         resource_saver: services.clone(),
@@ -4277,7 +4278,7 @@ async fn profile_application() -> (tempfile::TempDir, RuntimeApplication, Arc<Fa
     let mut record = storage.agent_record(&w, &a).unwrap();
     storage
         .pair_machine(
-            &lankide_storage::MachineRecord {
+            &meerkat_storage::MachineRecord {
                 is_local: false,
                 machine_id: "profile-machine".into(),
                 display_name: "Profile Machine".into(),
@@ -4288,7 +4289,7 @@ async fn profile_application() -> (tempfile::TempDir, RuntimeApplication, Arc<Fa
                 os: "test".into(),
                 version: "1".into(),
                 inventory_json: serde_json::to_string(&["fixture", "pi", "codex"].map(|id| {
-                    lankide_protocol::link::HarnessInfo {
+                    meerkat_protocol::link::HarnessInfo {
                         harness_id: id.into(),
                         ..Default::default()
                     }
@@ -4340,7 +4341,7 @@ async fn clearing_environment_scenario() {
         .update_agent(UpdateAgentRequest {
             request_id: "clear-environment".into(),
             agent: profile_agent_ref(),
-            environment_variables: Some(lankide_protocol::EnvironmentVariableSet {
+            environment_variables: Some(meerkat_protocol::EnvironmentVariableSet {
                 entries: vec![],
             }),
             ..Default::default()
@@ -4369,8 +4370,8 @@ async fn local_agent_settings_scenario() {
             thinking_level: Some("high".into()),
             auto_reaction: Some("thumbsup".into()),
             soul: Some("Prefer concise decisions.".into()),
-            environment_variables: Some(lankide_protocol::EnvironmentVariableSet {
-                entries: vec![lankide_protocol::EnvironmentVariable {
+            environment_variables: Some(meerkat_protocol::EnvironmentVariableSet {
+                entries: vec![meerkat_protocol::EnvironmentVariable {
                     name: "MODE".into(),
                     value: "local".into(),
                 }],
@@ -4397,7 +4398,7 @@ async fn local_agent_settings_scenario() {
 async fn agent_avatar_scenario() {
     let (temp, app, state) = profile_application().await;
     let empty = app
-        .get_agent_avatar(lankide_protocol::GetAgentAvatarRequest {
+        .get_agent_avatar(meerkat_protocol::GetAgentAvatarRequest {
             request_id: "get-unset-agent-avatar".into(),
             agent: profile_agent_ref(),
         })
@@ -4432,7 +4433,7 @@ async fn agent_avatar_scenario() {
     assert!(avatar_path.is_file(), "named Agent avatar was not stored");
     assert_eq!(fs::read(&avatar_path).unwrap(), bytes);
     let fetched = app
-        .get_agent_avatar(lankide_protocol::GetAgentAvatarRequest {
+        .get_agent_avatar(meerkat_protocol::GetAgentAvatarRequest {
             request_id: "get-agent-avatar".into(),
             agent: profile_agent_ref(),
         })
@@ -4479,7 +4480,7 @@ async fn failed_agent_update_scenario() {
         "failure injection must reach real update path"
     );
     let read = app
-        .get_agent(lankide_protocol::GetAgentRequest {
+        .get_agent(meerkat_protocol::GetAgentRequest {
             request_id: "read-agent-after-failure".into(),
             agent: profile_agent_ref(),
         })
@@ -4558,7 +4559,7 @@ async fn prompt_failure_recovery_scenario() {
     let fw = w.clone();
     runtime
         .register_provider_factory(w.clone(), move || {
-            lankide_provider::ProviderHost::new(
+            meerkat_provider::ProviderHost::new(
                 PromptFailureProvider(FakeProvider {
                     id: p.clone(),
                     state: state.clone(),
@@ -4627,7 +4628,7 @@ async fn prompt_failure_recovery_scenario() {
     .await
     .unwrap();
     let details = RuntimePeerAdapter::new(application.clone())
-        .get_execution_details(lankide_protocol::GetExecutionDetailsRequest {
+        .get_execution_details(meerkat_protocol::GetExecutionDetailsRequest {
             request_id: "preparation-reason".into(),
             execution_id: 1,
         })
@@ -4683,7 +4684,7 @@ async fn durable_ingress_retry_scenario() {
     let fw = w.clone();
     runtime
         .register_provider_factory(w.clone(), move || {
-            lankide_provider::ProviderHost::new(
+            meerkat_provider::ProviderHost::new(
                 FakeProvider {
                     id: p.clone(),
                     state: source.clone(),
@@ -4770,8 +4771,8 @@ async fn configured_assignment_scenario() {
             thinking_level: Some(thinking.into()),
             cli_path: Some(cli.into()),
             harness_id: Some(harness.into()),
-            environment_variables: Some(lankide_protocol::EnvironmentVariableSet {
-                entries: vec![lankide_protocol::EnvironmentVariable {
+            environment_variables: Some(meerkat_protocol::EnvironmentVariableSet {
+                entries: vec![meerkat_protocol::EnvironmentVariable {
                     name: "USER_SETTING".into(),
                     value: env_value.into(),
                 }],
@@ -4797,7 +4798,7 @@ async fn configured_assignment_scenario() {
                 "profile-machine",
                 "config-audit",
                 MachineFrame {
-                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                    protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                     frame: Some(machine_frame::Frame::Heartbeat(MachineHeartbeat {
                         machine_id: "profile-machine".into(),
                         instance_id: "config-audit".into(),
@@ -4836,7 +4837,7 @@ async fn configured_assignment_scenario() {
         assert_eq!(configured.harness_id, harness);
         assert_eq!(
             configured.environment_variables,
-            vec![lankide_protocol::EnvironmentVariable {
+            vec![meerkat_protocol::EnvironmentVariable {
                 name: "USER_SETTING".into(),
                 value: env_value.into()
             }]
@@ -4865,7 +4866,7 @@ async fn configured_assignment_scenario() {
     }
 }
 
-fn scenario_runtime(config: RuntimeConfig) -> Result<Runtime, lankide_runtime::RuntimeError> {
+fn scenario_runtime(config: RuntimeConfig) -> Result<Runtime, meerkat_runtime::RuntimeError> {
     let runtime = Runtime::new(config)?;
     registered_machine::register(runtime.storage(), &["fixture-machine", "machine-attempt"])?;
     Ok(runtime)
@@ -4889,7 +4890,7 @@ async fn dm_task_can_read_and_post_to_received_group() {
         provider_event_id: Some("owner-request".into()),
         provider_message_id: "owner-request".into(),
         message: MessageInput {
-            sender_kind: lankide_core::MessageAuthorType::Human,
+            sender_kind: meerkat_core::MessageAuthorType::Human,
             sender_id: "owner".into(),
             sender_name: "Owner".into(),
             content: "Go to the group and @Diana".into(),
@@ -4944,7 +4945,7 @@ async fn dm_task_can_read_and_post_to_received_group() {
                     name: name.into(),
                     display_name: name.into(),
                     description: name.into(),
-                    kind: lankide_protocol::CapabilityKind::Tool as i32,
+                    kind: meerkat_protocol::CapabilityKind::Tool as i32,
                     input_schema_json: "{}".into(),
                     output_schema_json: "{}".into(),
                 })

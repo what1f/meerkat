@@ -1,4 +1,4 @@
-use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use meerkat_system_e2e::{Result, RigConfig, Script, SystemRig};
 use std::time::Duration;
 
 fn config() -> RigConfig {
@@ -10,8 +10,8 @@ fn config() -> RigConfig {
 
 async fn failed_details(
     rig: &SystemRig,
-    agent: &lankide_system_e2e::Agent<'_>,
-) -> Result<lankide_client::ExecutionDetails> {
+    agent: &meerkat_system_e2e::Agent<'_>,
+) -> Result<meerkat_client::ExecutionDetails> {
     tokio::time::timeout(Duration::from_secs(15), async {
         loop {
             for execution in agent.executions().await? {
@@ -72,7 +72,7 @@ async fn s4_1_spawn_failure_keeps_original_detail_and_identifies_the_attempt_in_
     assert!(
         team.outbound(&bruce, "team-chat")
             .iter()
-            .all(|send| send.content == lankide_core::agent_failure_notice("hello"))
+            .all(|send| send.content == meerkat_core::agent_failure_notice("hello"))
     );
     rig.close().await
 }
@@ -100,7 +100,7 @@ async fn s4_2_mid_turn_rate_limit_is_stored_with_the_failed_attempt() -> Result<
     assert!(
         team.outbound(&bruce, "team-chat")
             .iter()
-            .all(|send| send.content == lankide_core::agent_failure_notice("hello"))
+            .all(|send| send.content == meerkat_core::agent_failure_notice("hello"))
     );
     rig.close().await
 }
@@ -132,7 +132,7 @@ async fn s4_3_spawn_and_mid_turn_diagnostics_never_reach_any_chat() -> Result<()
     assert!(
         rig.outbound()
             .iter()
-            .all(|send| send.content == lankide_core::agent_failure_notice("hello")),
+            .all(|send| send.content == meerkat_core::agent_failure_notice("hello")),
         "only the localized notice can reach a chat"
     );
     rig.close().await

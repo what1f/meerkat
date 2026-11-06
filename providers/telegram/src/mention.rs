@@ -1,7 +1,7 @@
 //! Telegram mention and Markdown-to-HTML rendering.
 
 use crate::dto::{MessageEntity, User};
-use lankide_core::markdown_mentions;
+use meerkat_core::markdown_mentions;
 use std::collections::HashMap;
 use std::fmt::Write;
 
@@ -39,7 +39,7 @@ pub fn extract_agent_ids(content: &str) -> Vec<String> {
     result
 }
 
-/// Render Lankide Markdown to Telegram HTML while replacing agent markers
+/// Render Meerkat Markdown to Telegram HTML while replacing agent markers
 /// with native `tg://user?id=` links when the target has a numeric user ID.
 pub fn render_html_with_mentions(markdown: &str, targets: &[MentionTarget]) -> String {
     let by_id = targets

@@ -1,6 +1,6 @@
 //! Attachment ingress and local inspection through the system business rig.
 use super::*;
-use lankide_provider::ResourceUpload;
+use meerkat_provider::ResourceUpload;
 
 impl SystemRig {
     pub async fn route_machine_through(&mut self, url: &str) -> Result<()> {
@@ -10,7 +10,7 @@ impl SystemRig {
 }
 
 impl Workspace<'_> {
-    pub async fn save_image(&self, bytes: Vec<u8>) -> Result<lankide_core::ResourceRef> {
+    pub async fn save_image(&self, bytes: Vec<u8>) -> Result<meerkat_core::ResourceRef> {
         self.save_attachment(ResourceUpload {
             file_name: "photo.png".into(),
             media_type: "image/png".into(),
@@ -22,7 +22,7 @@ impl Workspace<'_> {
     pub async fn save_attachment(
         &self,
         upload: ResourceUpload,
-    ) -> Result<lankide_core::ResourceRef> {
+    ) -> Result<meerkat_core::ResourceRef> {
         let context = self
             .rig
             .im
@@ -40,7 +40,7 @@ impl Workspace<'_> {
         agent: &Agent<'_>,
         chat: &str,
         bytes: Vec<u8>,
-    ) -> Result<lankide_core::ResourceRef> {
+    ) -> Result<meerkat_core::ResourceRef> {
         self.captioned_image_message(agent, chat, "", bytes).await
     }
 
@@ -50,7 +50,7 @@ impl Workspace<'_> {
         chat: &str,
         caption: &str,
         bytes: Vec<u8>,
-    ) -> Result<lankide_core::ResourceRef> {
+    ) -> Result<meerkat_core::ResourceRef> {
         let context = self
             .rig
             .im
@@ -89,7 +89,7 @@ impl Workspace<'_> {
 
 impl Agent<'_> {
     pub fn resource_directory(&self) -> Result<PathBuf> {
-        Ok(lankide_machine_core::agent_directory(
+        Ok(meerkat_machine_core::agent_directory(
             &self.rig.machine_home.path().join("workspaces"),
             &self.workspace,
             &self.id,

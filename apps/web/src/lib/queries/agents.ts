@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type * as DTO from '../api/generated';
-import { call } from '../api/client';
+import { ApiError, call } from '../api/client';
 import { keys } from './keys';
 export function useAgents(input: DTO.ListAgentsRequest, enabled = true) {
   return useQuery({
@@ -76,7 +76,12 @@ export function useResumeAgent() {
 export function useDeleteAgent() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: DTO.DeleteAgentRequest) => call('delete_agent', input),
+    // A member that is already gone counts as deleted.
+    mutationFn: (input: DTO.DeleteAgentRequest) =>
+      call('delete_agent', input).catch((error: unknown) => {
+        if (error instanceof ApiError && error.code === 'not_found') return null;
+        throw error;
+      }),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: keys.agents });
     },
@@ -87,7 +92,10 @@ export function agentStatus(
   agent: DTO.Agent,
   machine: DTO.MachineCatalogItem | undefined,
   workspace: DTO.Workspace | undefined,
-): { status: 'ok' | 'busy' | 'idle' | 'err'; screen: 'dark' | 'asleep' | 'alert' | 'busy' | 'ok' } {
+): {
+  status: 'ok' | 'busy' | 'idle' | 'err';
+  screen: 'dark' | 'asleep' | 'boot' | 'alert' | 'busy' | 'ok';
+} {
   // Off duty nobody replies, so no member needs attention and every screen is off.
   if (workspace?.desired_state === 'paused') return { status: 'idle', screen: 'dark' };
   // On an offline computer everyone sleeps, even a member who needs attention.
@@ -107,7 +115,7 @@ export function agentStatus(
   if (workspace?.observed_state === 'paused' || machine.observed_state === 'paused')
     return { status: 'idle', screen: 'asleep' };
   if (workspace?.observed_state === 'starting' || machine.observed_state === 'starting')
-    return { status: 'busy', screen: 'busy' };
+    return { status: 'busy', screen: 'boot' };
   if (workspace?.observed_state !== 'running' || machine.observed_state !== 'running')
     return { status: 'idle', screen: 'dark' };
   if (agent.activity === 'busy') return { status: 'busy', screen: 'busy' };

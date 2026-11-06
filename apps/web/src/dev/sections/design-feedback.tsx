@@ -63,7 +63,7 @@ export function DesignFeedback() {
         <D.Command text="curl -fsSL lankide.dev/i | sh" copyLabel="Copy" copiedLabel="Copied" />
         <div style={{ width: 320 }}>
           <D.Command
-            text="lankide computer pair --server wss://lankide.dev/ws --code 7KQ2-M9XD --name office-mini"
+            text="meerkat computer pair --server wss://lankide.dev/ws --code 7KQ2-M9XD --name office-mini"
             copyLabel="Copy"
             copiedLabel="Copied"
           />

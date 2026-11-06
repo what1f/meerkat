@@ -1,6 +1,6 @@
 //! Resolve local Markdown attachments at the Machine boundary for both CLI and tools.
 use super::proxy::LocalTransport;
-use lankide_protocol::{agent, *};
+use meerkat_protocol::{agent, *};
 use pulldown_cmark::{Event, Parser, Tag};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, path::Path};

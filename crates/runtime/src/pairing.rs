@@ -1,6 +1,6 @@
 use super::*;
-use lankide_protocol::link::{CloseReason, PairMachineRequest, PairMachineResponse};
-use lankide_storage::MachineRecord;
+use meerkat_protocol::link::{CloseReason, PairMachineRequest, PairMachineResponse};
+use meerkat_storage::MachineRecord;
 use std::time::Duration;
 use subtle::ConstantTimeEq;
 
@@ -16,7 +16,7 @@ impl RuntimeApplication {
         Ok(())
     }
 
-    pub async fn create_pairing_code(&self) -> Result<lankide_protocol::PairingCode, RuntimeError> {
+    pub async fn create_pairing_code(&self) -> Result<meerkat_protocol::PairingCode, RuntimeError> {
         use base64::Engine as _;
         let mut bytes = [0u8; 32];
         std::fs::File::open("/dev/urandom")
@@ -28,7 +28,7 @@ impl RuntimeApplication {
             .database()
             .issue_pairing_code(&credential_hash(&code), issued_at)
             .await?;
-        Ok(lankide_protocol::PairingCode {
+        Ok(meerkat_protocol::PairingCode {
             code,
             issued_at,
             expires_at: issued_at
@@ -148,17 +148,17 @@ fn random_secret() -> Result<String, RuntimeError> {
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-fn machine_management_error(error: lankide_storage::StorageError) -> RuntimeError {
+fn machine_management_error(error: meerkat_storage::StorageError) -> RuntimeError {
     match error {
-        lankide_storage::StorageError::Invalid(code) if code == "machine_has_assigned_agents" => {
+        meerkat_storage::StorageError::Invalid(code) if code == "machine_has_assigned_agents" => {
             RuntimeError::MachineHasAssignedAgents
         }
-        lankide_storage::StorageError::Invalid(code)
+        meerkat_storage::StorageError::Invalid(code)
             if code == "local_machine_cannot_be_removed" =>
         {
             RuntimeError::LocalMachineCannotBeRemoved
         }
-        lankide_storage::StorageError::Invalid(code) if code == "machine_name_invalid" => {
+        meerkat_storage::StorageError::Invalid(code) if code == "machine_name_invalid" => {
             RuntimeError::MachineNameInvalid
         }
         error => error.into(),

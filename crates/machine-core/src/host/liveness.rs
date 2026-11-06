@@ -1,5 +1,5 @@
 use super::{Cancellation, ExecutionLiveness};
-use lankide_harness::{AgentEventKind, FailureCategory, HarnessFailure, HarnessSession};
+use meerkat_harness::{AgentEventKind, FailureCategory, HarnessFailure, HarnessSession};
 use std::sync::Arc;
 use tokio::{
     sync::watch,

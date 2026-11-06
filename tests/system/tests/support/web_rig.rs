@@ -6,10 +6,10 @@ mod im_http;
 mod telegram_web;
 mod web_im;
 mod web_machines;
-use lankide_client::ManagementClient;
+use meerkat_client::ManagementClient;
 // Non-shipping browser rig. One JSON request/reply per loopback TCP connection.
-use lankide_protocol::management::URL_FILE;
-use lankide_system_e2e::{Result, RigConfig, SystemRig};
+use meerkat_protocol::management::URL_FILE;
+use meerkat_system_e2e::{Result, RigConfig, SystemRig};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{io::Write, time::Duration};
@@ -160,15 +160,15 @@ async fn control(
                 .set_workspace_state(
                     &workspace,
                     if on {
-                        lankide_client::WorkspaceStatus::Active
+                        meerkat_client::WorkspaceStatus::Active
                     } else {
-                        lankide_client::WorkspaceStatus::Paused
+                        meerkat_client::WorkspaceStatus::Paused
                     },
                 )
                 .await?;
         }
         Command::CreateAgent { workspace, agent } => {
-            let machine = lankide_machine::read_credentials(rig.machine_home())?
+            let machine = meerkat_machine::read_credentials(rig.machine_home())?
                 .ok_or("local Machine credentials")?;
             let provider = rig
                 .management()

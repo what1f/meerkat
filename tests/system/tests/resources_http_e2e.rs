@@ -1,7 +1,7 @@
 #[path = "support/cutter.rs"]
 mod cutter;
 use cutter::{Cutter, Download};
-use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use meerkat_system_e2e::{Result, RigConfig, Script, SystemRig};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 
@@ -139,8 +139,8 @@ fn request(
             url.replacen("ws://", "http://", 1)
         ))
         .bearer_auth(&auth.token)
-        .header("x-lankide-execution", &auth.execution)
-        .header("x-lankide-attempt", &auth.attempt)
+        .header("x-meerkat-execution", &auth.execution)
+        .header("x-meerkat-attempt", &auth.attempt)
 }
 
 #[tokio::test]
@@ -273,7 +273,7 @@ async fn corrupted_download_is_discarded_before_the_harness_starts() -> Result<(
 
 #[tokio::test]
 async fn pinned_tls_machine_receives_attachment_over_its_machine_link() -> Result<()> {
-    use lankide_client::ManagementClient;
+    use meerkat_client::ManagementClient;
     let mut rig = SystemRig::start(RigConfig {
         auto_start_machine: false,
         local_discovery: true,
@@ -288,8 +288,8 @@ async fn pinned_tls_machine_receives_attachment_over_its_machine_link() -> Resul
         .set_remote_access(Some(address.clone()))
         .await?;
     let code = rig.management().create_pairing_code().await?;
-    lankide_machine::pair_with_pin(
-        &lankide_machine::MachineDaemonPaths::for_home(rig.machine_home())?,
+    meerkat_machine::pair_with_pin(
+        &meerkat_machine::MachineDaemonPaths::for_home(rig.machine_home())?,
         &format!("wss://{address}"),
         &code.code,
         access.cert_sha256.as_deref(),
@@ -338,7 +338,7 @@ async fn pinned_tls_machine_receives_attachment_over_its_machine_link() -> Resul
 #[tokio::test]
 async fn pinned_tls_busy_machine_receives_attachment_steer_without_blocking_responses() -> Result<()>
 {
-    use lankide_client::ManagementClient;
+    use meerkat_client::ManagementClient;
     let mut settings = config();
     settings.harness_capabilities.push("steer".into());
     let mut rig = SystemRig::start(RigConfig {
@@ -355,8 +355,8 @@ async fn pinned_tls_busy_machine_receives_attachment_steer_without_blocking_resp
         .set_remote_access(Some(address.clone()))
         .await?;
     let code = rig.management().create_pairing_code().await?;
-    lankide_machine::pair_with_pin(
-        &lankide_machine::MachineDaemonPaths::for_home(rig.machine_home())?,
+    meerkat_machine::pair_with_pin(
+        &meerkat_machine::MachineDaemonPaths::for_home(rig.machine_home())?,
         &format!("wss://{address}"),
         &code.code,
         access.cert_sha256.as_deref(),

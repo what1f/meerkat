@@ -1,5 +1,5 @@
 mod agent_proxy;
-use lankide_system_e2e::Script;
+use meerkat_system_e2e::Script;
 use serde_json::{Value, json};
 use std::{
     io::{self, BufRead, Write},
@@ -28,11 +28,11 @@ fn main() {
     .expect("initial JSON");
     if first["op"] == "probe" {
         emit(
-            json!({"type":"probe_result","availability":"available","version":"system-rig","capabilities":serde_json::from_str::<Value>(&std::env::var("LANKIDE_SYSTEM_CAPABILITIES").expect("capabilities")).expect("capability JSON"),"reason":null}),
+            json!({"type":"probe_result","availability":"available","version":"system-rig","capabilities":serde_json::from_str::<Value>(&std::env::var("MEERKAT_SYSTEM_CAPABILITIES").expect("capabilities")).expect("capability JSON"),"reason":null}),
         );
         return;
     }
-    let controls_path = std::env::var("LANKIDE_SYSTEM_CONTROLS").expect("control journal");
+    let controls_path = std::env::var("MEERKAT_SYSTEM_CONTROLS").expect("control journal");
     let mut controls = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -40,7 +40,7 @@ fn main() {
         .expect("control journal");
     controls.write_all(format!("{}\n", json!({"op": first["op"], "native_session_id": first["request"]["native_session_id"], "pid": std::process::id(), "argv": std::env::args().skip(1).collect::<Vec<_>>(), "config": first["request"]["config"], "system_prompt": first["request"]["system_prompt"], "directory": std::env::current_dir().expect("cwd"), "tools": first["request"]["tools"]})).as_bytes()).expect("record session start");
     let script: Script =
-        serde_json::from_str(&std::env::var("LANKIDE_SYSTEM_SCRIPT").expect("Agent script"))
+        serde_json::from_str(&std::env::var("MEERKAT_SYSTEM_SCRIPT").expect("Agent script"))
             .expect("script JSON");
     if matches!(script, Script::HangOnStart) {
         let child = std::process::Command::new("sleep")
@@ -69,7 +69,7 @@ fn main() {
                 .write_all(format!("{}\n", json!({"op": command["op"]})).as_bytes())
                 .expect("record native control");
             if command["op"] == "steer" {
-                let path = std::env::var("LANKIDE_SYSTEM_STEERS").expect("steer journal");
+                let path = std::env::var("MEERKAT_SYSTEM_STEERS").expect("steer journal");
                 let mut journal = std::fs::OpenOptions::new()
                     .create(true)
                     .append(true)
@@ -92,7 +92,7 @@ fn main() {
                 let mut journal = std::fs::OpenOptions::new()
                     .create(true)
                     .append(true)
-                    .open(std::env::var("LANKIDE_SYSTEM_INPUTS").expect("input journal"))
+                    .open(std::env::var("MEERKAT_SYSTEM_INPUTS").expect("input journal"))
                     .expect("open journal");
                 writeln!(
                     journal,
@@ -102,7 +102,7 @@ fn main() {
                 .expect("record input");
                 sequence = 0;
                 event(&mut sequence, json!({"kind":"started"}));
-                if let Ok(hold) = std::env::var("LANKIDE_SYSTEM_HOLD") {
+                if let Ok(hold) = std::env::var("MEERKAT_SYSTEM_HOLD") {
                     while std::path::Path::new(&hold).exists() {
                         std::thread::sleep(Duration::from_millis(5));
                     }
@@ -122,7 +122,7 @@ fn main() {
                         }
                         if *held {
                             let release =
-                                std::env::var("LANKIDE_SYSTEM_RELEASE").expect("release gate");
+                                std::env::var("MEERKAT_SYSTEM_RELEASE").expect("release gate");
                             while !std::path::Path::new(&release).exists() {
                                 std::thread::sleep(Duration::from_millis(5));
                             }
@@ -131,7 +131,7 @@ fn main() {
                     }
                     Script::OfflineEvents { count, bytes, text } => {
                         let release =
-                            std::env::var("LANKIDE_SYSTEM_RELEASE").expect("release gate");
+                            std::env::var("MEERKAT_SYSTEM_RELEASE").expect("release gate");
                         while !std::path::Path::new(&release).exists() {
                             std::thread::sleep(Duration::from_millis(5));
                         }
@@ -146,7 +146,7 @@ fn main() {
                     Script::LinkReply { text } | Script::ReplyBeforeTerminal { text } => (text, 0),
                     Script::BufferedReply { text } => {
                         let release =
-                            std::env::var("LANKIDE_SYSTEM_RELEASE").expect("release gate");
+                            std::env::var("MEERKAT_SYSTEM_RELEASE").expect("release gate");
                         while !std::path::Path::new(&release).exists() {
                             std::thread::sleep(Duration::from_millis(5));
                         }
@@ -155,7 +155,7 @@ fn main() {
                     Script::FailSequence { texts, reply } => {
                         let counter = format!(
                             "{}.count",
-                            std::env::var("LANKIDE_SYSTEM_INPUTS").expect("counter")
+                            std::env::var("MEERKAT_SYSTEM_INPUTS").expect("counter")
                         );
                         let n = std::fs::read_to_string(&counter)
                             .ok()
@@ -165,7 +165,7 @@ fn main() {
                         if let Some(text) = texts.get(n) {
                             event(
                                 &mut sequence,
-                                json!({"kind":"failed","code":"scripted_failure","message":text,"failure":lankide_system_e2e::scripted_failure(text)}),
+                                json!({"kind":"failed","code":"scripted_failure","message":text,"failure":meerkat_system_e2e::scripted_failure(text)}),
                             );
                             continue;
                         }
@@ -174,7 +174,7 @@ fn main() {
                     Script::FailMidTurn { text } | Script::FailSpawn { text } => {
                         event(
                             &mut sequence,
-                            json!({"kind":"failed","code":"scripted_failure","message":text,"failure":lankide_system_e2e::scripted_failure(text)}),
+                            json!({"kind":"failed","code":"scripted_failure","message":text,"failure":meerkat_system_e2e::scripted_failure(text)}),
                         );
                         continue;
                     }
@@ -186,7 +186,7 @@ fn main() {
                         let reply = json!({
                             "greeting": "Hello!",
                             "child_pid": child.id(),
-                            "runtime_environment": std::env::vars().any(|(key, _)| key.starts_with("LANKIDE_RUNTIME_")),
+                            "runtime_environment": std::env::vars().any(|(key, _)| key.starts_with("MEERKAT_RUNTIME_")),
                             "environment": std::env::var("GREETING_VALUE").expect("greeting env"),
                             "argv": std::env::args().skip(1).collect::<Vec<_>>(),
                             "model": first["request"]["config"]["model"]["model_id"],
@@ -251,7 +251,7 @@ fn main() {
                     } => {
                         if *via_cli {
                             let result = runtime
-                                .block_on(lankide_cli::execute_from_environment(vec![
+                                .block_on(meerkat_cli::execute_from_environment(vec![
                                     "invoke".into(),
                                     "failing_reaction".into(),
                                     "--arguments-json".into(),
@@ -295,7 +295,7 @@ fn main() {
                     }
                     Script::DeferredPrivateReply { text } => {
                         let path =
-                            format!("{}.read", std::env::var("LANKIDE_SYSTEM_INPUTS").unwrap());
+                            format!("{}.read", std::env::var("MEERKAT_SYSTEM_INPUTS").unwrap());
                         if !std::path::Path::new(&path).exists() {
                             assert!(input.contains("chat_id=300"));
                             std::fs::write(&path, input).unwrap();
@@ -306,7 +306,7 @@ fn main() {
                             continue;
                         }
                         let history = runtime
-                            .block_on(lankide_cli::execute_from_environment(vec![
+                            .block_on(meerkat_cli::execute_from_environment(vec![
                                 "invoke".into(),
                                 "chat_messages".into(),
                                 "--arguments-json".into(),
@@ -315,7 +315,7 @@ fn main() {
                             .expect("read the earlier private conversation");
                         assert!(history.to_string().contains("hello"));
                         let sent = runtime
-                            .block_on(lankide_cli::execute_from_environment(vec![
+                            .block_on(meerkat_cli::execute_from_environment(vec![
                                 "send".into(),
                                 "--channel".into(),
                                 "private_chat".into(),
@@ -337,7 +337,7 @@ fn main() {
                     }
                     Script::Capability { arguments, text } => {
                         runtime
-                            .block_on(lankide_cli::execute_from_environment(arguments.clone()))
+                            .block_on(meerkat_cli::execute_from_environment(arguments.clone()))
                             .expect("Agent capability");
                         (text, 0)
                     }
@@ -449,12 +449,12 @@ fn main() {
                 if matches!(script, Script::ReplyBeforeTerminal { .. }) {
                     let mut journal = std::fs::OpenOptions::new()
                         .append(true)
-                        .open(std::env::var("LANKIDE_SYSTEM_CONTROLS").expect("control journal"))
+                        .open(std::env::var("MEERKAT_SYSTEM_CONTROLS").expect("control journal"))
                         .expect("open control journal");
                     journal
                         .write_all(b"{\"op\":\"reply_sent\"}\n")
                         .expect("record capability reply");
-                    let release = std::env::var("LANKIDE_SYSTEM_RELEASE").expect("terminal gate");
+                    let release = std::env::var("MEERKAT_SYSTEM_RELEASE").expect("terminal gate");
                     let deadline = std::time::Instant::now() + Duration::from_secs(20);
                     while !std::path::Path::new(&release).exists() {
                         assert!(
@@ -489,16 +489,16 @@ fn main() {
 async fn retry_capability(
     arguments: Vec<String>,
     budget: Duration,
-) -> Result<Value, lankide_cli::CliError> {
+) -> Result<Value, meerkat_cli::CliError> {
     let deadline = tokio::time::Instant::now() + budget;
     loop {
-        let result = lankide_cli::execute_from_environment(arguments.clone()).await;
+        let result = meerkat_cli::execute_from_environment(arguments.clone()).await;
         let retryable = match &result {
-            Err(lankide_cli::CliError::Runtime(status)) => matches!(
+            Err(meerkat_cli::CliError::Runtime(status)) => matches!(
                 status.code(),
-                lankide_protocol::Code::Unavailable | lankide_protocol::Code::DeadlineExceeded
+                meerkat_protocol::Code::Unavailable | meerkat_protocol::Code::DeadlineExceeded
             ),
-            Err(lankide_cli::CliError::Transport(_)) => true,
+            Err(meerkat_cli::CliError::Transport(_)) => true,
             _ => false,
         };
         if !retryable || tokio::time::Instant::now() >= deadline {

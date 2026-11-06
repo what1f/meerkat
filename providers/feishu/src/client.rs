@@ -46,6 +46,63 @@ impl Domain {
             Self::Custom(value) => value.trim_end_matches('/'),
         }
     }
+
+    /// User OAuth lives on the accounts host; a private deployment serves it
+    /// from its own base URL.
+    pub fn accounts_url(&self) -> &str {
+        match self {
+            Self::Feishu => "https://accounts.feishu.cn",
+            Self::Lark => "https://accounts.larksuite.com",
+            Self::Custom(value) => value.trim_end_matches('/'),
+        }
+    }
+
+    /// Brand name understood by lark-cli.
+    pub fn brand(&self) -> &'static str {
+        match self {
+            Self::Lark => "lark",
+            Self::Feishu | Self::Custom(_) => "feishu",
+        }
+    }
+}
+
+/// A started user authorization: the person opens `verification_url`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DeviceAuthorization {
+    pub device_code: String,
+    pub verification_url: String,
+    pub expires_in: u64,
+    pub interval: u64,
+}
+
+/// User tokens returned by the OAuth token endpoint.
+#[derive(Clone, Eq, PartialEq)]
+pub(crate) struct UserTokenGrant {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_in: i64,
+    pub refresh_expires_in: i64,
+    pub scope: String,
+}
+
+impl fmt::Debug for UserTokenGrant {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UserTokenGrant")
+            .field("access_token", &"<redacted>")
+            .field("refresh_token", &"<redacted>")
+            .field("expires_in", &self.expires_in)
+            .field("scope", &self.scope)
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum DeviceTokenPoll {
+    Granted(UserTokenGrant),
+    Pending,
+    SlowDown,
+    Finished,
 }
 
 #[derive(Clone)]
@@ -296,6 +353,113 @@ impl<T: Transport> Client<T> {
 
     pub fn domain(&self) -> &Domain {
         &self.domain
+    }
+
+    pub(crate) async fn device_authorization(
+        &self,
+        scope: &str,
+    ) -> Result<DeviceAuthorization, ClientError> {
+        use base64::Engine as _;
+        let operation = "oauth device authorization";
+        let basic = base64::engine::general_purpose::STANDARD.encode(format!(
+            "{}:{}",
+            self.credentials.app_id.trim(),
+            self.credentials.app_secret()
+        ));
+        let request = Request::new(
+            Method::Post,
+            format!(
+                "{}/oauth/v1/device_authorization",
+                self.domain.accounts_url()
+            ),
+        )
+        .header("Authorization", format!("Basic {basic}"))
+        .body(
+            form(&[
+                ("client_id", self.credentials.app_id.trim()),
+                ("scope", scope),
+            ]),
+            "application/x-www-form-urlencoded",
+        );
+        let data = oauth_response(&self.transport.execute(request).await?, operation)?;
+        let text = |key: &str| data.get(key).and_then(Value::as_str).unwrap_or_default();
+        let verification_url = [text("verification_uri_complete"), text("verification_uri")]
+            .into_iter()
+            .find(|value| !value.is_empty())
+            .unwrap_or_default()
+            .to_owned();
+        if text("device_code").is_empty() || verification_url.is_empty() {
+            return Err(ClientError::MissingField {
+                operation: operation.into(),
+                field: "device_code".into(),
+            });
+        }
+        Ok(DeviceAuthorization {
+            device_code: text("device_code").to_owned(),
+            verification_url,
+            expires_in: data
+                .get("expires_in")
+                .and_then(Value::as_u64)
+                .unwrap_or(240),
+            interval: data
+                .get("interval")
+                .and_then(Value::as_u64)
+                .unwrap_or(5)
+                .max(1),
+        })
+    }
+
+    pub(crate) async fn device_token(
+        &self,
+        device_code: &str,
+    ) -> Result<DeviceTokenPoll, ClientError> {
+        let request = Request::new(
+            Method::Post,
+            format!("{}/oauth/v3/token", self.domain.accounts_url()),
+        )
+        .body(
+            form(&[
+                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+                ("device_code", device_code),
+                ("client_id", self.credentials.app_id.trim()),
+                ("client_secret", self.credentials.app_secret()),
+            ]),
+            "application/x-www-form-urlencoded",
+        );
+        let response = self.transport.execute(request).await?;
+        let data: Value = response.json().unwrap_or(Value::Null);
+        match data
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+        {
+            "authorization_pending" => return Ok(DeviceTokenPoll::Pending),
+            "slow_down" => return Ok(DeviceTokenPoll::SlowDown),
+            "" => {}
+            _ => return Ok(DeviceTokenPoll::Finished),
+        }
+        Ok(DeviceTokenPoll::Granted(user_token_grant(oauth_response(
+            &response,
+            "oauth device token",
+        )?)?))
+    }
+
+    pub(crate) async fn refresh_user_token(
+        &self,
+        refresh_token: &str,
+    ) -> Result<UserTokenGrant, ClientError> {
+        let request = Request::new(
+            Method::Post,
+            format!("{}/oauth/v3/token", self.domain.accounts_url()),
+        )
+        .json(&json!({
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": self.credentials.app_id.trim(),
+            "client_secret": self.credentials.app_secret(),
+        }))?;
+        let response = self.transport.execute(request).await?;
+        user_token_grant(oauth_response(&response, "oauth token refresh")?)
     }
 
     pub fn credentials(&self) -> &Credentials {
@@ -1792,7 +1956,7 @@ impl<T: Transport> Client<T> {
         )
         .await?;
         self.publish_application(
-            "Lankide permission update",
+            "Meerkat permission update",
             "Update Agent permissions or events",
             auth,
         )
@@ -2216,7 +2380,7 @@ fn multipart(
             "Feishu multipart field and file name are required".to_owned(),
         ));
     }
-    let boundary = "lankide-feishu-boundary-7f8e";
+    let boundary = "meerkat-feishu-boundary-7f8e";
     let mut body = Vec::new();
     for (name, value, content_type) in fields {
         body.extend_from_slice(
@@ -2252,4 +2416,72 @@ pub fn sanitize_file_name(value: &str) -> String {
     } else {
         value
     }
+}
+
+fn form(fields: &[(&str, &str)]) -> Vec<u8> {
+    url::form_urlencoded::Serializer::new(String::new())
+        .extend_pairs(fields)
+        .finish()
+        .into_bytes()
+}
+
+/// OAuth endpoints answer either bare fields or a `data` envelope, and report
+/// failures with `error` / `error_description` or a non-zero `code`.
+fn oauth_response(response: &Response, operation: &str) -> Result<Value, ClientError> {
+    let body: Value = response.json().map_err(|_| ClientError::HttpStatus {
+        status: response.status,
+        operation: operation.into(),
+    })?;
+    let code = body.get("code").and_then(Value::as_i64).unwrap_or_default();
+    let error = body
+        .get("error")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !(200..300).contains(&response.status) || code != 0 || !error.is_empty() {
+        let message = ["error_description", "msg", "error"]
+            .into_iter()
+            .filter_map(|key| body.get(key).and_then(Value::as_str))
+            .find(|value| !value.is_empty())
+            .unwrap_or_default()
+            .to_owned();
+        return Err(ClientError::Api {
+            code,
+            message,
+            operation: operation.into(),
+        });
+    }
+    Ok(body
+        .get("data")
+        .filter(|data| data.is_object())
+        .cloned()
+        .unwrap_or(body))
+}
+
+fn user_token_grant(data: Value) -> Result<UserTokenGrant, ClientError> {
+    let text = |key: &str| {
+        data.get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let grant = UserTokenGrant {
+        access_token: text("access_token"),
+        refresh_token: text("refresh_token"),
+        expires_in: data
+            .get("expires_in")
+            .and_then(Value::as_i64)
+            .unwrap_or(7200),
+        refresh_expires_in: data
+            .get("refresh_token_expires_in")
+            .and_then(Value::as_i64)
+            .unwrap_or(604_800),
+        scope: text("scope"),
+    };
+    if grant.access_token.is_empty() {
+        return Err(ClientError::MissingField {
+            operation: "oauth token".into(),
+            field: "access_token".into(),
+        });
+    }
+    Ok(grant)
 }

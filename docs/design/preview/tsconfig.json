@@ -16,5 +16,5 @@
     },
     "types": ["../../../apps/web/node_modules/vite/client"]
   },
-  "include": ["*.ts"]
+  "include": ["*.ts", "*.tsx"]
 }

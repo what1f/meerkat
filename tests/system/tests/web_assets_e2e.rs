@@ -1,6 +1,6 @@
 //! Browser entrypoints on the same listener as a working Machine.
-use lankide_protocol::management;
-use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use meerkat_protocol::management;
+use meerkat_system_e2e::{Result, RigConfig, Script, SystemRig};
 use std::{path::Path, time::Duration};
 
 #[tokio::test]

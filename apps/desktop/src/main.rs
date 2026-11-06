@@ -36,10 +36,10 @@ fn sync_window_fullscreen(window: &tauri::WebviewWindow) {
             if let Err(error) = window.eval(format!(
                 "document.documentElement.dataset.windowFullscreen = '{fullscreen}';"
             )) {
-                eprintln!("lankide-desktop: could not sync window layout: {error}");
+                eprintln!("meerkat-desktop: could not sync window layout: {error}");
             }
         }
-        Err(error) => eprintln!("lankide-desktop: could not read window state: {error}"),
+        Err(error) => eprintln!("meerkat-desktop: could not read window state: {error}"),
     }
 }
 
@@ -54,7 +54,7 @@ fn is_boot(url: &Url) -> bool {
 
 fn open_external(app: &tauri::AppHandle, url: &Url) {
     if let Err(error) = app.opener().open_url(url.as_str(), None::<&str>) {
-        eprintln!("lankide-desktop: could not open URL: {error}");
+        eprintln!("meerkat-desktop: could not open URL: {error}");
     }
 }
 
@@ -73,7 +73,7 @@ fn start_services(app: &tauri::AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
         let result = receiver.blocking_recv().unwrap_or_else(|_| {
-            Err(lankide_client::ClientError::Unavailable(
+            Err(meerkat_client::ClientError::Unavailable(
                 "bootstrap stopped".into(),
             ))
         });
@@ -122,7 +122,7 @@ fn start_services(app: &tauri::AppHandle) {
                 for id in ["open-browser", "settings"] {
                     if let Some(item) = app
                         .menu()
-                        .and_then(|menu| menu.get("lankide"))
+                        .and_then(|menu| menu.get("meerkat"))
                         .and_then(|item| item.as_submenu().and_then(|menu| menu.get(id)))
                         .and_then(|item| item.as_menuitem().cloned())
                     {
@@ -132,7 +132,7 @@ fn start_services(app: &tauri::AppHandle) {
                 url
             }
             Err(error) => {
-                eprintln!("lankide-desktop: {error}");
+                eprintln!("meerkat-desktop: {error}");
                 let mut url = boot_url();
                 url.set_fragment(Some(backend::startup_error_code(&error)));
                 url
@@ -141,7 +141,7 @@ fn start_services(app: &tauri::AppHandle) {
         state.starting.store(false, Ordering::SeqCst);
         if let Some(window) = app.get_webview_window("main") {
             if let Err(error) = window.navigate(target) {
-                eprintln!("lankide-desktop: could not navigate: {error}");
+                eprintln!("meerkat-desktop: could not navigate: {error}");
             }
         }
     });
@@ -151,7 +151,7 @@ fn allow_navigation(app: &tauri::AppHandle, url: &Url) -> bool {
     if is_boot(url) {
         return true;
     }
-    if url.scheme() == "lankide-boot" {
+    if url.scheme() == "meerkat-boot" {
         match url.host_str() {
             Some("retry") => {
                 if let Some(window) = app.get_webview_window("main") {
@@ -222,9 +222,9 @@ fn main() {
                 app,
                 "quit",
                 if chinese {
-                    "退出 Lankide"
+                    "退出 Meerkat"
                 } else {
-                    "Quit Lankide"
+                    "Quit Meerkat"
                 },
                 true,
                 Some("CmdOrCtrl+Q"),
@@ -234,8 +234,8 @@ fn main() {
                 &[
                     &Submenu::with_id_and_items(
                         app,
-                        "lankide",
-                        "Lankide",
+                        "meerkat",
+                        "Meerkat",
                         true,
                         &[&settings, &open, &quit],
                     )?,
@@ -287,7 +287,7 @@ fn main() {
             let new_window_app = handle.clone();
             let builder =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("boot.html".into()))
-                    .title("Lankide")
+                    .title("Meerkat")
                     .inner_size(1240.0, 820.0)
                     .min_inner_size(960.0, 660.0)
                     .transparent(true)
@@ -329,7 +329,7 @@ fn main() {
                         .map(|value| value.to_string())
                         .unwrap_or_default();
                     configuration.setApplicationNameForUserAgent(Some(&NSString::from_str(
-                        &format!("{previous} LankideDesktop/{}", env!("CARGO_PKG_VERSION")),
+                        &format!("{previous} MeerkatDesktop/{}", env!("CARGO_PKG_VERSION")),
                     )));
                 }
                 builder
@@ -371,7 +371,7 @@ fn main() {
                     && let Some(window) = app.get_webview_window("main")
                     && let Err(error) = window.eval("window.location.hash = '#/settings';")
                 {
-                    eprintln!("lankide-desktop: could not open settings: {error}");
+                    eprintln!("meerkat-desktop: could not open settings: {error}");
                 }
             }
             "open-browser" => {
@@ -388,7 +388,7 @@ fn main() {
             _ => {}
         })
         .build(tauri::generate_context!())
-        .expect("failed to build Lankide")
+        .expect("failed to build Meerkat")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Some(backend) = app.state::<ShellState>().backend.lock().unwrap().as_ref() {

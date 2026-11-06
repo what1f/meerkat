@@ -1,11 +1,11 @@
-pub fn register(storage: &lankide_storage::Storage, ids: &[&str]) -> lankide_storage::Result<()> {
+pub fn register(storage: &meerkat_storage::Storage, ids: &[&str]) -> meerkat_storage::Result<()> {
     let existing = storage.registered_machines()?;
     for id in ids {
         if existing.iter().any(|machine| machine.machine_id == *id) {
             continue;
         }
         storage.pair_machine(
-            &lankide_storage::MachineRecord {
+            &meerkat_storage::MachineRecord {
                 is_local: false,
                 machine_id: (*id).into(),
                 display_name: (*id).into(),

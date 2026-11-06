@@ -6,9 +6,9 @@ mod http;
 mod server;
 
 use host::{Services, agent_spec};
-use lankide_core::{AgentId, ChannelId, MessageId};
-use lankide_provider::*;
-use lankide_provider_telegram::TelegramProvider;
+use meerkat_core::{AgentId, ChannelId, MessageId};
+use meerkat_provider::*;
+use meerkat_provider_telegram::TelegramProvider;
 use serde_json::json;
 use server::{FILE, TelegramServer};
 use std::time::Duration;
@@ -24,7 +24,7 @@ async fn a_group_message_mentioning_a_bot_reaches_its_agent() {
         .put_secret(
             &services.workspace,
             "manager_bot_token",
-            lankide_storage::SecretValue::new("100:manager"),
+            meerkat_storage::SecretValue::new("100:manager"),
             1,
         )
         .unwrap();
@@ -93,7 +93,7 @@ async fn a_reply_with_an_attachment_reaches_the_chat_with_the_file() {
         .put_secret(
             &services.workspace,
             "manager_bot_token",
-            lankide_storage::SecretValue::new("100:manager"),
+            meerkat_storage::SecretValue::new("100:manager"),
             1,
         )
         .unwrap();
@@ -245,7 +245,7 @@ async fn s2_1_direct_messages_and_reactions_identify_the_receiving_agent() {
         .put_secret(
             &services.workspace,
             "manager_bot_token",
-            lankide_storage::SecretValue::new("100:manager"),
+            meerkat_storage::SecretValue::new("100:manager"),
             1,
         )
         .unwrap();

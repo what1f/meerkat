@@ -5,7 +5,7 @@ import { Spec, State } from '../Spec';
 import { ClipboardDemo } from './drag-demos';
 const avatar = new URL('../../assets/avatars/01.jpg', import.meta.url).href;
 export function ScenePaper() {
-  const [text, setText] = useState('Lankide');
+  const [text, setText] = useState('Meerkat');
   const [token, setToken] = useState('');
   const [on, setOn] = useState(true);
   return (

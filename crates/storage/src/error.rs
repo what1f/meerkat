@@ -45,6 +45,6 @@ impl From<serde_json::Error> for StorageError {
 }
 pub type Result<T> = std::result::Result<T, StorageError>;
 
-pub(super) fn conv(e: lankide_core::DomainError) -> rusqlite::Error {
+pub(super) fn conv(e: meerkat_core::DomainError) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
 }

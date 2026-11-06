@@ -1,7 +1,7 @@
 use crate::client::{Auth, Client as FeishuClient};
 use crate::http::Transport;
-use lankide_core::PersonId;
-use lankide_provider::{
+use meerkat_core::PersonId;
+use meerkat_provider::{
     AgentRuntimeContext, InvocationHandler, JsonSchema, ProviderError, ProviderFuture,
     ResourceUpload, TeamRole, ToolDefinition,
 };

@@ -22,7 +22,7 @@ async function pairingCommand(baseURL: string) {
   const port = new URL(`wss://${detected.address}`).port;
   const access = await api(baseURL, 'set_remote_access', { address: `127.0.0.1:${port}` });
   const code = await api(baseURL, 'create_pairing_code');
-  return `lankide-machine pair wss://${access.address} ${code.code} --cert-sha256 ${access.cert_sha256}`;
+  return `meerkat-machine pair wss://${access.address} ${code.code} --cert-sha256 ${access.cert_sha256}`;
 }
 
 async function moveMember(baseURL: string, workspace: string, agent: string, machine_id: string) {
@@ -315,7 +315,7 @@ test('Telegram member creation from the board starts onboarding', async ({ page,
   const workspace = 'tg_members';
   await rig({ op: 'create_workspace', workspace, provider: 'telegram' });
   await page.addInitScript((ws) => {
-    localStorage.setItem('lankide.workspace', JSON.stringify(ws));
+    localStorage.setItem('meerkat.workspace', JSON.stringify(ws));
   }, workspace);
   await page.goto('/#/member/new');
   await page.getByTestId('member-name').fill('Ada');

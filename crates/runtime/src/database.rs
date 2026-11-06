@@ -1,5 +1,5 @@
 use super::*;
-use lankide_storage::*;
+use meerkat_storage::*;
 use serde_json::Value;
 use std::sync::Weak;
 use tokio::sync::Notify;
@@ -128,8 +128,8 @@ impl Database {
         &self,
         write: bool,
         activity: bool,
-        operation: impl FnOnce(&Storage) -> lankide_storage::Result<T> + Send + 'static,
-    ) -> lankide_storage::Result<T> {
+        operation: impl FnOnce(&Storage) -> meerkat_storage::Result<T> + Send + 'static,
+    ) -> meerkat_storage::Result<T> {
         let database = self.clone();
         tokio::task::spawn_blocking(move || {
             // Serialize state transitions through their commit and invalidation event.
@@ -158,7 +158,7 @@ impl Database {
                     let application = crate::RuntimeApplication { inner };
                     for (workspace, agent) in before.symmetric_difference(&after) {
                         application.emit_management(
-                            lankide_protocol::ManagementEventKind::AgentUpdated,
+                            meerkat_protocol::ManagementEventKind::AgentUpdated,
                             workspace,
                             Some(agent),
                             now_millis(),
@@ -218,7 +218,7 @@ impl WeakDatabase {
 macro_rules! database_methods {
     ($($write:literal $name:ident($($arg:ident: $ty:ty),* $(,)?) -> $result:ty [$($prepare:tt)*] ($($input:expr),* $(,)?);)*) => {
         impl Database {
-            $(pub(crate) async fn $name(&self, $($arg: $ty),*) -> lankide_storage::Result<$result> {
+            $(pub(crate) async fn $name(&self, $($arg: $ty),*) -> meerkat_storage::Result<$result> {
                 $($prepare)*
                 let activity = matches!(stringify!($name),
                     "mark_execution_running" | "mark_execution_recovering" | "offer_execution_attempt" |
@@ -802,7 +802,7 @@ database_methods! {
         person_id: &PersonId,
         tenant_id: Option<&str>,
         name: Option<&str>,
-        avatar: Option<&lankide_core::ResourceRef>,
+        avatar: Option<&meerkat_core::ResourceRef>,
         now: i64,
     ) -> PersonRecord [
         let workspace_id = workspace_id.to_owned();
@@ -819,12 +819,12 @@ database_methods! {
     ] (&workspace_id, &person_id, force, now);
     false human_profile(
         workspace_id: &WorkspaceId, person_id: &PersonId,
-    ) -> (Option<String>, Option<lankide_core::ResourceRef>) [
+    ) -> (Option<String>, Option<meerkat_core::ResourceRef>) [
         let workspace_id = workspace_id.to_owned();
         let person_id = person_id.to_owned();
     ] (&workspace_id, &person_id);
     true update_human_profile(
-        workspace_id: &WorkspaceId, person_id: &PersonId, name: Option<&str>, avatar: Option<&lankide_core::ResourceRef>, signature: Option<&str>, now: i64,
+        workspace_id: &WorkspaceId, person_id: &PersonId, name: Option<&str>, avatar: Option<&meerkat_core::ResourceRef>, signature: Option<&str>, now: i64,
     ) -> bool [
         let workspace_id = workspace_id.to_owned();
         let person_id = person_id.to_owned();
@@ -870,7 +870,7 @@ database_methods! {
 }
 
 impl Database {
-    async fn notify_first_reply(&self, result: &FinishSendResult) -> lankide_storage::Result<()> {
+    async fn notify_first_reply(&self, result: &FinishSendResult) -> meerkat_storage::Result<()> {
         if result.changed
             && result.attempt.state == "sent"
             && let Some((workspace, agent)) =
@@ -886,7 +886,7 @@ impl Database {
         request_key: &str,
         outcome: SendOutcome,
         now: i64,
-    ) -> lankide_storage::Result<FinishSendResult> {
+    ) -> meerkat_storage::Result<FinishSendResult> {
         let key = request_key.to_owned();
         let result = self
             .call(true, false, move |s| s.finish_send(&key, outcome, now))
@@ -901,7 +901,7 @@ impl Database {
         provider_message_ids: Vec<String>,
         resources: Vec<ResourceView>,
         now: i64,
-    ) -> lankide_storage::Result<FinishSendResult> {
+    ) -> meerkat_storage::Result<FinishSendResult> {
         let result = self
             .call(true, false, move |s| {
                 s.finish_message_send(message_id, outcome, provider_message_ids, resources, now)

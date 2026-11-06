@@ -1,4 +1,4 @@
-use lankide_testkit::{GateSelection, ProbeConfig, ScenarioArtifact, run_prerequisite_probe};
+use meerkat_testkit::{GateSelection, ProbeConfig, ScenarioArtifact, run_prerequisite_probe};
 use std::{
     future::Future,
     path::PathBuf,
@@ -7,21 +7,21 @@ use std::{
 };
 
 pub fn preflight(gate: GateSelection) {
-    assert_eq!(std::env::var("LANKIDE_E2E_LIVE").as_deref(), Ok("1"));
+    assert_eq!(std::env::var("MEERKAT_E2E_LIVE").as_deref(), Ok("1"));
     let config = ProbeConfig::from_environment(gate, true);
     let report = run_prerequisite_probe(&config);
     assert!(report.is_green(), "{}", report.render_text());
 }
 
 pub fn runtime_binary() -> PathBuf {
-    if let Some(directory) = std::env::var_os("LANKIDE_RELEASE_BIN_DIR") {
-        PathBuf::from(directory).join("lankided")
+    if let Some(directory) = std::env::var_os("MEERKAT_RELEASE_BIN_DIR") {
+        PathBuf::from(directory).join("meerkatd")
     } else {
         assert_ne!(
-            std::env::var("LANKIDE_RELEASE_REQUIRED").as_deref(),
+            std::env::var("MEERKAT_RELEASE_REQUIRED").as_deref(),
             Ok("1")
         );
-        PathBuf::from(env!("CARGO_BIN_EXE_lankided"))
+        PathBuf::from(env!("CARGO_BIN_EXE_meerkatd"))
     }
 }
 

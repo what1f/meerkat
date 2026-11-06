@@ -5,7 +5,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: process.env.LANKIDE_RUNTIME_ORIGIN ?? 'http://127.0.0.1:7440',
+        target: process.env.MEERKAT_RUNTIME_ORIGIN ?? 'http://127.0.0.1:7440',
         changeOrigin: true,
         ws: true,
         configure(proxy, options) {

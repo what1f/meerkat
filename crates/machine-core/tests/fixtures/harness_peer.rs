@@ -18,42 +18,73 @@ fn main() {
         return;
     }
     for name in [
-        "LANKIDE_AGENT_SOCKET",
-        "LANKIDE_EXECUTION_ID",
-        "LANKIDE_EXECUTION_ATTEMPT",
-        "LANKIDE_EXECUTION_TOKEN",
-        "LANKIDE_AGENT_HOME",
+        "MEERKAT_AGENT_SOCKET",
+        "MEERKAT_EXECUTION_ID",
+        "MEERKAT_EXECUTION_ATTEMPT",
+        "MEERKAT_EXECUTION_TOKEN",
+        "MEERKAT_AGENT_HOME",
     ] {
         assert!(
             !std::env::var(name).unwrap_or_default().is_empty(),
             "Machine must inject {name}"
         );
     }
-    assert!(std::path::Path::new(&std::env::var("LANKIDE_AGENT_HOME").unwrap()).is_absolute());
-    let cli = std::process::Command::new("lankide")
+    assert!(std::path::Path::new(&std::env::var("MEERKAT_AGENT_HOME").unwrap()).is_absolute());
+    let cli = std::process::Command::new("meerkat")
         .arg("capabilities")
         .output()
         .expect("Machine must provide capability CLI on PATH");
     assert!(cli.status.success());
     assert_eq!(
         String::from_utf8(cli.stdout).unwrap(),
-        std::env::var("LANKIDE_EXECUTION_ID").unwrap()
+        std::env::var("MEERKAT_EXECUTION_ID").unwrap()
     );
-    assert!(std::path::Path::new(&std::env::var("LANKIDE_CLI").unwrap()).is_file());
+    assert!(std::path::Path::new(&std::env::var("MEERKAT_CLI").unwrap()).is_file());
     assert!(
         first["request"]["system_prompt"]
             .as_str()
             .unwrap()
-            .contains("lankide invoke 'cli: inspect'"),
+            .contains("meerkat invoke 'cli: inspect'"),
         "Provider CLI commands must be described to the native Agent"
     );
     assert!(
         first["request"]["system_prompt"]
             .as_str()
             .unwrap()
-            .contains("lankide profile update --name NAME --role ROLE --bio BIO --avatar PATH"),
+            .contains("meerkat profile update --name NAME --role ROLE --bio BIO --avatar PATH"),
         "Agent profile commands must be described to the native Agent"
     );
+    let prompt = first["request"]["system_prompt"].as_str().unwrap();
+    let path = std::env::var("PATH").unwrap();
+    let user_bin = path.split(':').find(|directory| {
+        std::path::Path::new(directory).join("lark-cli").is_file()
+            && !directory.ends_with(".machine/bin")
+    });
+    if let Some(user_bin) = user_bin {
+        assert!(prompt.contains("- `lark-cli`：Feishu command line"));
+        assert!(
+            !prompt.contains("feishu lark-cli'"),
+            "wrapped commands are not invoked directly"
+        );
+        let output = std::process::Command::new("lark-cli")
+            .args(["docs", "+fetch", "--as", "user"])
+            .output()
+            .expect("the shim is on PATH");
+        assert!(
+            output.status.success(),
+            "the shim runs instead of the user's lark-cli"
+        );
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            format!("exec: feishu lark-cli\n--\n{user_bin}/lark-cli\ndocs\n+fetch\n--as\nuser\n")
+        );
+        record("lark_cli_shim");
+    } else {
+        assert!(
+            !prompt.contains("lark-cli"),
+            "an absent lark-cli is not mentioned"
+        );
+    }
     let native = first["request"]["native_session_id"]
         .as_str()
         .unwrap_or("native-machine-e2e")

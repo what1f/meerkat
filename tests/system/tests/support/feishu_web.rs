@@ -1,4 +1,4 @@
-use lankide_provider_feishu::{
+use meerkat_provider_feishu::{
     Method, Request, Response, STANDARD_BOT_EVENTS, STANDARD_BOT_TENANT_SCOPES, Transport,
     TransportError,
 };
@@ -40,7 +40,7 @@ pub struct Feishu {
     pub task_subscriptions: usize,
     pub acknowledgements: usize,
     pub denied_tasks: Vec<String>,
-    pub events: std::collections::VecDeque<lankide_provider_feishu::events::RawEvent>,
+    pub events: std::collections::VecDeque<meerkat_provider_feishu::events::RawEvent>,
     /// Contact profile has no picture.
     pub no_member_avatar: bool,
     pub apps: Vec<String>,
@@ -81,7 +81,7 @@ fn data(value: Value) -> Result<Response, TransportError> {
 }
 
 impl Transport for FeishuWeb {
-    fn execute(&self, request: Request) -> lankide_provider_feishu::http::TransportFuture<'_> {
+    fn execute(&self, request: Request) -> meerkat_provider_feishu::http::TransportFuture<'_> {
         Box::pin(async move {
             let url = request.path.clone();
             let body: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
@@ -417,14 +417,14 @@ impl Transport for FeishuWeb {
 }
 
 pub struct Source(pub FeishuWeb, pub String);
-impl lankide_provider_feishu::events::EventSource for Source {
+impl meerkat_provider_feishu::events::EventSource for Source {
     fn next(
         &mut self,
-    ) -> lankide_provider_feishu::events::EventFuture<
+    ) -> meerkat_provider_feishu::events::EventFuture<
         '_,
         Result<
-            Option<lankide_provider_feishu::events::RawEvent>,
-            lankide_provider_feishu::events::SourceError,
+            Option<meerkat_provider_feishu::events::RawEvent>,
+            meerkat_provider_feishu::events::SourceError,
         >,
     > {
         Box::pin(async move {
@@ -448,21 +448,21 @@ impl lankide_provider_feishu::events::EventSource for Source {
     }
     fn acknowledge(
         &mut self,
-    ) -> lankide_provider_feishu::events::EventFuture<
+    ) -> meerkat_provider_feishu::events::EventFuture<
         '_,
-        Result<(), lankide_provider_feishu::events::SourceError>,
+        Result<(), meerkat_provider_feishu::events::SourceError>,
     > {
         Box::pin(async {
             self.0.0.lock().unwrap().acknowledgements += 1;
             Ok(())
         })
     }
-    fn close(&mut self) -> lankide_provider_feishu::events::EventFuture<'_, ()> {
+    fn close(&mut self) -> meerkat_provider_feishu::events::EventFuture<'_, ()> {
         Box::pin(async {})
     }
 }
 
-impl lankide_provider::Clock for FeishuWeb {
+impl meerkat_provider::Clock for FeishuWeb {
     fn now_millis(&self) -> i64 {
         1_900_000_000_000 + self.0.lock().unwrap().sync_clock_offset
     }

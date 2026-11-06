@@ -2,9 +2,9 @@
 
 //! Typed management boundary and production Runtime HTTP client.
 
-use lankide_protocol as wire;
+use meerkat_protocol as wire;
 pub mod http;
-pub use lankide_protocol::{
+pub use meerkat_protocol::{
     AttemptFailure, ExecutionAttemptDetails, ExecutionDetails, PROVIDER_CAPABILITY_TASK_SYSTEM,
 };
 use serde::{Deserialize, Serialize};
@@ -251,7 +251,7 @@ pub struct MachineOption {
     pub paired_at: i64,
     pub os: String,
     pub version: String,
-    pub inventory: Vec<lankide_protocol::management::HarnessInfo>,
+    pub inventory: Vec<meerkat_protocol::management::HarnessInfo>,
     pub id: String,
     pub name: String,
     pub available: bool,
@@ -599,7 +599,7 @@ fn aref(w: &str, a: &str) -> wire::AgentRef {
         agent_id: a.into(),
     }
 }
-fn map_status(s: lankide_protocol::Status) -> ClientError {
+fn map_status(s: meerkat_protocol::Status) -> ClientError {
     match s.detail() {
         Some("machine_not_registered") => return ClientError::MachineNotRegistered,
         Some("machine_has_assigned_agents") => return ClientError::MachineHasAssignedAgents,
@@ -615,29 +615,29 @@ fn map_status(s: lankide_protocol::Status) -> ClientError {
     }
 
     match s.code() {
-        lankide_protocol::Code::InvalidArgument => ClientError::Validation(s.message().into()),
-        lankide_protocol::Code::AlreadyExists => ClientError::Validation(s.message().into()),
-        lankide_protocol::Code::NotFound => ClientError::WorkspaceNotFound(s.message().into()),
-        lankide_protocol::Code::PermissionDenied
-        | lankide_protocol::Code::Unauthenticated
-        | lankide_protocol::Code::FailedPrecondition => ClientError::Provider(s.message().into()),
-        lankide_protocol::Code::Unavailable
-        | lankide_protocol::Code::DeadlineExceeded
-        | lankide_protocol::Code::Cancelled => ClientError::Unavailable(s.message().into()),
+        meerkat_protocol::Code::InvalidArgument => ClientError::Validation(s.message().into()),
+        meerkat_protocol::Code::AlreadyExists => ClientError::Validation(s.message().into()),
+        meerkat_protocol::Code::NotFound => ClientError::WorkspaceNotFound(s.message().into()),
+        meerkat_protocol::Code::PermissionDenied
+        | meerkat_protocol::Code::Unauthenticated
+        | meerkat_protocol::Code::FailedPrecondition => ClientError::Provider(s.message().into()),
+        meerkat_protocol::Code::Unavailable
+        | meerkat_protocol::Code::DeadlineExceeded
+        | meerkat_protocol::Code::Cancelled => ClientError::Unavailable(s.message().into()),
         _ => ClientError::Protocol(format!("{}: {}", s.code(), s.message())),
     }
 }
 
-fn map_workspace_status(s: lankide_protocol::Status) -> ClientError {
-    if s.code() == lankide_protocol::Code::AlreadyExists {
+fn map_workspace_status(s: meerkat_protocol::Status) -> ClientError {
+    if s.code() == meerkat_protocol::Code::AlreadyExists {
         ClientError::DuplicateWorkspaceId(s.message().into())
     } else {
         map_status(s)
     }
 }
 
-fn map_agent_status(s: lankide_protocol::Status) -> ClientError {
-    if s.code() == lankide_protocol::Code::AlreadyExists {
+fn map_agent_status(s: meerkat_protocol::Status) -> ClientError {
+    if s.code() == meerkat_protocol::Code::AlreadyExists {
         ClientError::DuplicateAgentId(s.message().into())
     } else {
         map_status(s)

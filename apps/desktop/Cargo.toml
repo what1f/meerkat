@@ -1,9 +1,9 @@
 [package]
 autotests = false
-name = "lankide-desktop"
+name = "meerkat-desktop"
 version = "0.1.0"
 edition = "2024"
-description = "Lankide desktop shell"
+description = "Meerkat desktop shell"
 license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
@@ -16,7 +16,7 @@ custom-protocol = ["tauri/custom-protocol"]
 tauri-build.workspace = true
 
 [dependencies]
-lankide-client = { path = "../../crates/client" }
+meerkat-client = { path = "../../crates/client" }
 serde_json.workspace = true
 tokio.workspace = true
 tauri.workspace = true
@@ -35,10 +35,10 @@ tempfile.workspace = true
 
 [[bin]]
 test = false
-name = "lankide-desktop"
+name = "meerkat-desktop"
 path = "src/main.rs"
 
-[package.metadata.lankide.e2e]
+[package.metadata.meerkat.e2e]
 command = "./apps/desktop/shell-e2e.sh"
 scenario = "Start the shipped headless Tauri Desktop entrypoint with real local services, record the intended navigation to the discovered Runtime origin, reuse healthy owners, replace old helpers through a cold Harness probe on the first launch, report failed helpers, and clean up only owned processes. Window appearance and external-link acceptance belong to C2, including native traffic-light alignment after focus, theme, resize and fullscreen changes."
 prerequisites = "Four product binaries in the selected binary directory (target/debug by default); macOS"
@@ -46,10 +46,10 @@ classification = "hermetic"
 unattended = "yes"
 status = "implemented"
 
-[package.metadata.lankide.e2e-additional.desktop-machines]
-command = "cargo build --locked --bin lankided --bin lankide-machine && cargo test -p lankide-desktop --test e2e machine_pairing_e2e::"
+[package.metadata.meerkat.e2e-additional.desktop-machines]
+command = "cargo build --locked --bin meerkatd --bin meerkat-machine && cargo test -p meerkat-desktop --test e2e machine_pairing_e2e::"
 scenario = "Bootstrap real local helpers in private homes, stop only Desktop-owned helpers while reused owners remain running, and replace outdated helpers when Desktop reopens after an update."
-prerequisites = "Built lankided and lankide-machine binaries; private daemon homes; macOS"
+prerequisites = "Built meerkatd and meerkat-machine binaries; private daemon homes; macOS"
 classification = "hermetic"
 unattended = "yes"
 status = "implemented"

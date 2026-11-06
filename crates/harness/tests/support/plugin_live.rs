@@ -1,5 +1,5 @@
 //! Explicit, isolated acceptance for a shipped JavaScript adapter.
-use lankide_harness::{
+use meerkat_harness::{
     AgentEventKind, ExecuteRequest, HarnessConfig, HarnessFactory, ModelRef, SessionRequest,
     ToolDefinition, ToolResultRequest,
 };
@@ -10,9 +10,9 @@ use tokio_stream::StreamExt;
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 pub async fn run(factory: &dyn HarnessFactory, cli: PathBuf, model: &str, effort: &str) -> Result {
-    assert_eq!(std::env::var("LANKIDE_E2E_LIVE").as_deref(), Ok("1"));
+    assert_eq!(std::env::var("MEERKAT_E2E_LIVE").as_deref(), Ok("1"));
     let directory = tempfile::Builder::new()
-        .prefix("lankide-plugin-live-")
+        .prefix("meerkat-plugin-live-")
         .tempdir()?;
     let nonce = format!(
         "nonce-{}-{}",
@@ -34,7 +34,7 @@ pub async fn run(factory: &dyn HarnessFactory, cli: PathBuf, model: &str, effort
     let probe = factory.probe(&request.config).await?;
     assert_eq!(
         probe.availability,
-        lankide_harness::HarnessAvailability::Available,
+        meerkat_harness::HarnessAvailability::Available,
         "Native CLI probe failed: {:?}",
         probe.reason
     );

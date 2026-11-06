@@ -1,12 +1,12 @@
 use crate::error::conv;
 use crate::workspace::{pid, wid};
 use crate::{Result, Storage, StorageError};
-use lankide_core::{PersonId, ProviderId, WorkspaceId};
+use meerkat_core::{PersonId, ProviderId, WorkspaceId};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub use lankide_core::TeamRole;
+pub use meerkat_core::TeamRole;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct PersonRecord {
@@ -26,7 +26,7 @@ pub struct HumanTeamMemberView {
     pub person_id: PersonId,
     pub name: Option<String>,
     pub team_role: TeamRole,
-    pub avatar: Option<lankide_core::ResourceRef>,
+    pub avatar: Option<meerkat_core::ResourceRef>,
     pub position: String,
     pub signature: String,
 }
@@ -193,7 +193,7 @@ impl Storage {
         person_id: &PersonId,
         tenant_id: Option<&str>,
         name: Option<&str>,
-        avatar: Option<&lankide_core::ResourceRef>,
+        avatar: Option<&meerkat_core::ResourceRef>,
         now: i64,
     ) -> Result<PersonRecord> {
         let mut connection = self.conn()?;
@@ -226,7 +226,7 @@ impl Storage {
         &self,
         workspace_id: &WorkspaceId,
         person_id: &PersonId,
-    ) -> Result<(Option<String>, Option<lankide_core::ResourceRef>)> {
+    ) -> Result<(Option<String>, Option<meerkat_core::ResourceRef>)> {
         let (name, avatar): (Option<String>, Option<String>) = self.read_conn()?.query_row("SELECT name,avatar_json FROM people WHERE workspace_id=?1 AND person_id=?2 AND team_role IN('member','lead')", params![workspace_id.as_str(),person_id.as_str()], |r| Ok((r.get(0)?,r.get(1)?)))?;
         Ok((name, avatar.map(|v| serde_json::from_str(&v)).transpose()?))
     }
@@ -236,7 +236,7 @@ impl Storage {
         workspace_id: &WorkspaceId,
         person_id: &PersonId,
         name: Option<&str>,
-        avatar: Option<&lankide_core::ResourceRef>,
+        avatar: Option<&meerkat_core::ResourceRef>,
         signature: Option<&str>,
         now: i64,
     ) -> Result<bool> {

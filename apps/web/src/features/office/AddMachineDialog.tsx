@@ -88,7 +88,7 @@ export function AddMachineDialog({ pairing, connected }: { pairing: Pairing; con
   const unreachable = !!access && !access.address;
   const command =
     access?.address && access.cert_sha256 && code
-      ? `lankide-machine pair wss://${access.address} ${code.code} --cert-sha256 ${access.cert_sha256}`
+      ? `meerkat-machine pair wss://${access.address} ${code.code} --cert-sha256 ${access.cert_sha256}`
       : null;
   const apply = () => {
     if (edited && !pairing.pending) void pairing.apply(address.trim());

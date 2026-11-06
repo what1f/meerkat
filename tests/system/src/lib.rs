@@ -9,17 +9,17 @@ mod script;
 pub use provider::{Incoming, Outbound, OutboundKind};
 pub use script::{Script, scripted_failure};
 
-use lankide_client::{AgentDraft, ManagementClient, RuntimeManagementClient, WorkspaceDraft};
-use lankide_core::{AgentId, ChannelId};
-use lankide_harness::{HarnessConfig, ModelRef};
-use lankide_machine::DaemonConfig;
-use lankide_machine_core::RegisteredHarness;
-use lankide_provider::{
+use meerkat_client::{AgentDraft, ManagementClient, RuntimeManagementClient, WorkspaceDraft};
+use meerkat_core::{AgentId, ChannelId};
+use meerkat_harness::{HarnessConfig, ModelRef};
+use meerkat_machine::DaemonConfig;
+use meerkat_machine_core::RegisteredHarness;
+use meerkat_provider::{
     EventSender, EventSenderType, MessageEvent, Provider, ProviderEvent, ProviderEventKind,
     ProviderHost,
 };
-use lankide_runtime::ProviderFactoryRegistry;
-use lankided::{RuntimePaths, ShutdownReason, run_daemon};
+use meerkat_runtime::ProviderFactoryRegistry;
+use meerkatd::{RuntimePaths, ShutdownReason, run_daemon};
 use provider::{ImState, ScriptedProvider};
 use rusqlite::{Connection, OpenFlags, params};
 use script::ScriptedHarness;
@@ -54,11 +54,11 @@ pub struct RigConfig {
     pub attempt_lease: Duration,
     pub network_proxy: bool,
     pub machine_process: Option<PathBuf>,
-    pub link: lankide_protocol::link::LinkSettings,
-    pub reconnect: lankide_machine_core::ReconnectPolicy,
-    pub execution_liveness: lankide_machine_core::ExecutionLiveness,
+    pub link: meerkat_protocol::link::LinkSettings,
+    pub reconnect: meerkat_machine_core::ReconnectPolicy,
+    pub execution_liveness: meerkat_machine_core::ExecutionLiveness,
     pub harness_capabilities: Vec<String>,
-    pub retry: lankide_runtime::RetryConfig,
+    pub retry: meerkat_runtime::RetryConfig,
 }
 impl Default for RigConfig {
     fn default() -> Self {
@@ -100,7 +100,7 @@ impl MachineThread {
         executable: PathBuf,
         journal: PathBuf,
         capabilities: Vec<String>,
-        models: Option<Vec<lankide_harness::NativeModel>>,
+        models: Option<Vec<meerkat_harness::NativeModel>>,
     ) -> Self {
         let (stop, stopped) = oneshot::channel();
         let thread = std::thread::spawn(move || {
@@ -120,11 +120,11 @@ impl MachineThread {
                     model: ModelRef::new("scripted", "scripted"),
                     thinking_level: "low".into(),
                     cli_path: executable,
-                    environment: BTreeMap::from([("LANKIDE_SYSTEM_CAPABILITIES".into(), serde_json::to_string(&capabilities)?)]),
+                    environment: BTreeMap::from([("MEERKAT_SYSTEM_CAPABILITIES".into(), serde_json::to_string(&capabilities)?)]),
                     config_fingerprint: "system-rig".into(),
                 });
                 tokio::select! {
-                    result = lankide_machine::run_with_harnesses(config, vec![registration]) => result.map_err(Into::into),
+                    result = meerkat_machine::run_with_harnesses(config, vec![registration]) => result.map_err(Into::into),
                     _ = stopped => Ok(()),
                 }
             });
@@ -159,7 +159,7 @@ fn spawn_runtime(
     factories: ProviderFactoryRegistry,
     stopped: oneshot::Receiver<()>,
 ) -> (
-    JoinHandle<std::result::Result<(), lankided::AppError>>,
+    JoinHandle<std::result::Result<(), meerkatd::AppError>>,
     oneshot::Sender<()>,
 ) {
     let (kill, killed) = oneshot::channel();
@@ -195,7 +195,7 @@ pub struct SystemRig {
     machine: Option<MachineThread>,
     child_machine: Option<std::process::Child>,
     pub proxy: Option<net_proxy::NetProxy>,
-    runtime: Option<JoinHandle<std::result::Result<(), lankided::AppError>>>,
+    runtime: Option<JoinHandle<std::result::Result<(), meerkatd::AppError>>>,
     shutdown: Option<oneshot::Sender<()>>,
     runtime_kill: Option<oneshot::Sender<()>>,
     home: TempDir,
@@ -267,8 +267,8 @@ impl SystemRig {
         if rig.config.network_proxy {
             let (url, _) = rig.local_pairing_endpoint()?;
             let code = rig.client.create_pairing_code().await?;
-            lankide_machine::pair(
-                &lankide_machine::MachineDaemonPaths::for_home(rig.machine_home.path())?,
+            meerkat_machine::pair(
+                &meerkat_machine::MachineDaemonPaths::for_home(rig.machine_home.path())?,
                 &url,
                 &code.code,
             )
@@ -305,7 +305,7 @@ impl SystemRig {
         )?;
         let mut config = DaemonConfig::for_home(self.machine_home.path())?;
         config.paths.prepare()?;
-        let (url, secret) = lankide_protocol::link::discover(&self.paths.run)?;
+        let (url, secret) = meerkat_protocol::link::discover(&self.paths.run)?;
         let secret_path = self.machine_home.path().join("run/machine-link.secret");
         {
             use std::io::Write;
@@ -331,7 +331,7 @@ impl SystemRig {
             self.child_machine = Some(
                 std::process::Command::new(binary)
                     .env(
-                        "LANKIDE_SYSTEM_CONTROL_ROOT",
+                        "MEERKAT_SYSTEM_CONTROL_ROOT",
                         self.runtime_home().join("scripted-members"),
                     )
                     .arg(self.machine_home.path())
@@ -416,13 +416,13 @@ impl SystemRig {
             .any(|c| c.registered && c.available))
     }
     pub fn machine_endpoint(&self) -> Result<(String, String)> {
-        let (url, _) = lankide_protocol::link::discover(&self.paths.run)?;
-        let credentials = lankide_machine::read_credentials(self.machine_home.path())?
+        let (url, _) = meerkat_protocol::link::discover(&self.paths.run)?;
+        let credentials = meerkat_machine::read_credentials(self.machine_home.path())?
             .ok_or("Machine is unpaired")?;
         Ok((url, credentials.device_credential))
     }
     pub fn local_pairing_endpoint(&self) -> Result<(String, String)> {
-        Ok(lankide_protocol::link::discover(&self.paths.run)?)
+        Ok(meerkat_protocol::link::discover(&self.paths.run)?)
     }
     pub fn management(&self) -> &RuntimeManagementClient {
         &self.client
@@ -441,13 +441,13 @@ impl SystemRig {
     }
     pub async fn add_machine_with_models(
         &self,
-        models: Option<Vec<lankide_harness::NativeModel>>,
+        models: Option<Vec<meerkat_harness::NativeModel>>,
     ) -> Result<PairedMachine> {
         let home = tempfile::tempdir()?;
         let code = self.client.create_pairing_code().await?;
         let (url, _) = self.local_pairing_endpoint()?;
-        let credentials = lankide_machine::pair(
-            &lankide_machine::MachineDaemonPaths::for_home(home.path())?,
+        let credentials = meerkat_machine::pair(
+            &meerkat_machine::MachineDaemonPaths::for_home(home.path())?,
             &url,
             &code.code,
         )
@@ -514,7 +514,7 @@ impl SystemRig {
     pub async fn execution_details(
         &self,
         execution_id: i64,
-    ) -> Result<lankide_client::ExecutionDetails> {
+    ) -> Result<meerkat_client::ExecutionDetails> {
         Ok(self.client.get_execution_details(execution_id).await?)
     }
     pub async fn cancel_execution(&self, execution_id: i64) -> Result<()> {
@@ -890,11 +890,11 @@ impl<'a> Workspace<'a> {
             channel_id: ChannelId::new("private_chat")?,
             provider_chat_id: person.into(),
             sender: sender.clone(),
-            kind: ProviderEventKind::Reaction(lankide_provider::ReactionEvent {
+            kind: ProviderEventKind::Reaction(meerkat_provider::ReactionEvent {
                 target_provider_message_id: target.into(),
                 sender,
                 reaction: "thumbs_up".into(),
-                action: lankide_provider::ReactionAction::Add,
+                action: meerkat_provider::ReactionAction::Add,
             }),
             provider_data: json!({"event_id":event_id}),
         })
@@ -936,11 +936,11 @@ impl<'a> Workspace<'a> {
             channel_id: ChannelId::new("group_chat")?,
             provider_chat_id: chat.into(),
             sender: sender.clone(),
-            kind: ProviderEventKind::Reaction(lankide_provider::ReactionEvent {
+            kind: ProviderEventKind::Reaction(meerkat_provider::ReactionEvent {
                 target_provider_message_id: target.into(),
                 sender,
                 reaction: "thumbs_up".into(),
-                action: lankide_provider::ReactionAction::Add,
+                action: meerkat_provider::ReactionAction::Add,
             }),
             provider_data: json!({"event_id":event_id}),
         })
@@ -1000,7 +1000,7 @@ impl<'a> Workspace<'a> {
         // The IM accepts human messages while the team's Provider is offline.
         // Do not queue these events for replay when the team starts work again.
         if self.rig.management().get_workspace(&self.id).await?.status
-            != lankide_client::WorkspaceStatus::Paused
+            != meerkat_client::WorkspaceStatus::Paused
         {
             sink.emit(ProviderEvent { receiving_agent_id, channel_id: ChannelId::new(channel)?, provider_chat_id: chat.into(),
             sender: EventSender { id: person.into(), kind: EventSenderType::Human, name: person.into() },
@@ -1104,7 +1104,7 @@ impl<'a> AgentBuilder<'a> {
                     cli_path: self.rig.config.harness_executable.display().to_string(),
                     environment_variables: vec![
                         (
-                            "LANKIDE_SYSTEM_INPUTS".into(),
+                            "MEERKAT_SYSTEM_INPUTS".into(),
                             self.rig
                                 .machine_home
                                 .path()
@@ -1113,7 +1113,7 @@ impl<'a> AgentBuilder<'a> {
                                 .to_string(),
                         ),
                         (
-                            "LANKIDE_SYSTEM_CONTROLS".into(),
+                            "MEERKAT_SYSTEM_CONTROLS".into(),
                             self.rig
                                 .machine_home
                                 .path()
@@ -1122,7 +1122,7 @@ impl<'a> AgentBuilder<'a> {
                                 .to_string(),
                         ),
                         (
-                            "LANKIDE_SYSTEM_STEERS".into(),
+                            "MEERKAT_SYSTEM_STEERS".into(),
                             self.rig
                                 .machine_home
                                 .path()
@@ -1131,11 +1131,11 @@ impl<'a> AgentBuilder<'a> {
                                 .to_string(),
                         ),
                         (
-                            "LANKIDE_SYSTEM_SCRIPT".into(),
+                            "MEERKAT_SYSTEM_SCRIPT".into(),
                             serde_json::to_string(&self.script)?,
                         ),
                         (
-                            "LANKIDE_SYSTEM_RELEASE".into(),
+                            "MEERKAT_SYSTEM_RELEASE".into(),
                             self.rig
                                 .machine_home
                                 .path()
@@ -1179,7 +1179,7 @@ pub struct Execution {
 }
 impl Agent<'_> {
     pub async fn child_pid(&self) -> Result<u32> {
-        let path = lankide_machine_core::agent_directory(
+        let path = meerkat_machine_core::agent_directory(
             &self.rig.machine_home.path().join("workspaces"),
             &self.workspace,
             &self.id,
@@ -1204,7 +1204,7 @@ impl Agent<'_> {
         Ok(self.rig.database()?.query_row("SELECT coalesce(max(v.last_event_sequence),0) FROM execution_attempts v JOIN executions e USING(execution_id) WHERE e.workspace_id=?1 AND e.agent_id=?2", params![self.workspace, self.id], |row| row.get(0))?)
     }
 
-    pub async fn view(&self) -> Result<lankide_client::Agent> {
+    pub async fn view(&self) -> Result<meerkat_client::Agent> {
         Ok(self.rig.client.get_agent(&self.workspace, &self.id).await?)
     }
     pub async fn resume(&self) -> Result<()> {
@@ -1218,7 +1218,7 @@ impl Agent<'_> {
         let mut agent = self.view().await?;
         agent.model = model.into();
         for (key, value) in &mut agent.environment_variables {
-            if key == "LANKIDE_SYSTEM_SCRIPT" {
+            if key == "MEERKAT_SYSTEM_SCRIPT" {
                 *value = serde_json::to_string(&script)?;
             }
         }
@@ -1227,7 +1227,7 @@ impl Agent<'_> {
     }
     pub async fn wait_for(
         &self,
-        mut condition: impl FnMut(&[Execution], &lankide_client::Agent) -> bool,
+        mut condition: impl FnMut(&[Execution], &meerkat_client::Agent) -> bool,
     ) -> Result<()> {
         timeout(self.rig.config.timeout, async {
             loop {
@@ -1241,20 +1241,20 @@ impl Agent<'_> {
         .await
         .map_err(|_| "Agent state wait timed out")?
     }
-    pub async fn group_attention(&self, mode: lankide_protocol::AttentionMode) -> Result<()> {
-        let client = lankide_client::http::HttpManagementTransport::local(
+    pub async fn group_attention(&self, mode: meerkat_protocol::AttentionMode) -> Result<()> {
+        let client = meerkat_client::http::HttpManagementTransport::local(
             &self.rig.paths.run,
-            lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES,
+            meerkat_protocol::DEFAULT_MAX_MESSAGE_BYTES,
         );
         client
-            .update_agent(lankide_protocol::UpdateAgentRequest {
+            .update_agent(meerkat_protocol::UpdateAgentRequest {
                 request_id: format!("attention-{}-{}", self.workspace, self.id),
-                agent: Some(lankide_protocol::AgentRef {
+                agent: Some(meerkat_protocol::AgentRef {
                     workspace_id: self.workspace.clone(),
                     agent_id: self.id.clone(),
                 }),
-                attention: Some(lankide_protocol::AgentAttention {
-                    channels: vec![lankide_protocol::ChannelAttention {
+                attention: Some(meerkat_protocol::AgentAttention {
+                    channels: vec![meerkat_protocol::ChannelAttention {
                         channel_id: "group_chat".into(),
                         mode,
                         interval_minutes: 0,
@@ -1428,12 +1428,12 @@ pub async fn run_scripted_machine(
             thinking_level: "low".into(),
             cli_path: executable,
             environment: BTreeMap::from([(
-                "LANKIDE_SYSTEM_CAPABILITIES".into(),
+                "MEERKAT_SYSTEM_CAPABILITIES".into(),
                 serde_json::to_string(&capabilities)?,
             )]),
             config_fingerprint: "system-rig".into(),
         },
     );
-    lankide_machine::run_with_harnesses(config, vec![registration]).await?;
+    meerkat_machine::run_with_harnesses(config, vec![registration]).await?;
     Ok(())
 }

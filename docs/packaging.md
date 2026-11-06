@@ -1,17 +1,17 @@
-# Lankide macOS 打包
+# Meerkat macOS 打包
 
 ## 用户交付物
 
-本地版交付一个 `Lankide.app`。DMG 提供 App 和 Applications 快捷方式，用户拖入应用程序目录后打开；ZIP 提供同一份 App。App 包含 Tauri 外壳、两个后台进程和一个 Agent 执行期 CLI。Web 管理界面内嵌在 Runtime 中：
+本地版交付一个 `Meerkat.app`。DMG 提供 App 和 Applications 快捷方式，用户拖入应用程序目录后打开；ZIP 提供同一份 App。App 包含 Tauri 外壳、两个后台进程和一个 Agent 执行期 CLI。Web 管理界面内嵌在 Runtime 中：
 
 ```text
-Lankide.app/Contents/
-├── MacOS/Lankide
-├── Library/LaunchAgents/com.lankide.daemon.plist
-├── Library/LaunchAgents/com.lankide.machine.plist
-├── Library/LaunchServices/lankided
-├── Library/LaunchServices/lankide-machine
-├── Resources/bin/lankide
+Meerkat.app/Contents/
+├── MacOS/Meerkat
+├── Library/LaunchAgents/com.meerkat.daemon.plist
+├── Library/LaunchAgents/com.meerkat.machine.plist
+├── Library/LaunchServices/meerkatd
+├── Library/LaunchServices/meerkat-machine
+├── Resources/bin/meerkat
 ├── Resources/AppIcon.icns
 ├── Resources/LICENSE
 ├── Resources/THIRD_PARTY_LICENSES.md
@@ -19,11 +19,11 @@ Lankide.app/Contents/
 └── Info.plist
 ```
 
-用户只需打开 `Lankide.app`。macOS 通过当前用户的后台项目管理 Runtime 和 Machine；Desktop 确认它们可用后连接管理界面。关闭 Desktop 不会中断消息接收或正在进行的 Agent 工作，Dock 中也不会保留 Lankide 图标。用户可以随时在系统设置的登录项中允许或停用 Lankide 后台运行。
+用户只需打开 `Meerkat.app`。macOS 通过当前用户的后台项目管理 Runtime 和 Machine；Desktop 确认它们可用后连接管理界面。关闭 Desktop 不会中断消息接收或正在进行的 Agent 工作，Dock 中也不会保留 Meerkat 图标。用户可以随时在系统设置的登录项中允许或停用 Meerkat 后台运行。
 
 直接运行未打包的开发二进制时，Desktop 临时启动本次运行所需的两个进程，并在退出时清理；这一开发回退不会注册系统后台项目。
 
-`lankide` 是提供给 Agent 的执行期能力 CLI，不是用户需要单独启动的第四个产品进程。
+`meerkat` 是提供给 Agent 的执行期能力 CLI，不是用户需要单独启动的第四个产品进程。
 
 ## Just 命令
 
@@ -31,7 +31,7 @@ Lankide.app/Contents/
 just dev             # 构建本地服务并启动 Desktop
 just check           # 格式、编译与 E2E 合同同步检查
 just test            # 全部 hermetic 模块业务 E2E
-just app             # 生成 target/release/Lankide.app
+just app             # 生成 target/release/Meerkat.app
 just package         # 生成 App、DMG、ZIP 和 SHA-256 文件
 just verify-package  # 打包并验证交付物、签名、安装布局和隔离启动
 just release-local   # check + test + verify-package，不访问真实账号
@@ -40,7 +40,7 @@ just full-release    # 包含真实 Provider/Harness 的完整 Release Gate
 just release         # Full Release Gate + 最终可分发包
 ```
 
-打包逻辑位于 `scripts/package-macos`，`Justfile` 只提供稳定入口。开发包默认使用 ad-hoc 签名；设置 `LANKIDE_CODESIGN_IDENTITY` 后会使用指定身份依次签名内部可执行文件和整个 App。
+打包逻辑位于 `scripts/package-macos`，`Justfile` 只提供稳定入口。开发包默认使用 ad-hoc 签名；设置 `MEERKAT_CODESIGN_IDENTITY` 后会使用指定身份依次签名内部可执行文件和整个 App。
 
 打包需要 macOS、仓库固定的 Rust 工具链、`just` 和 `pnpm`；生成 DMG 还需要 `uv`。
 DMG 使用固定版本 `dmgbuild==1.6.7`，安装窗口不含说明文案。
@@ -64,10 +64,10 @@ just package
 默认输出到 `target/release/`：
 
 ```text
-Lankide.app
-Lankide-<version>-macos-<architecture>.dmg
-Lankide-<version>-macos-<architecture>.zip
-Lankide-<version>-macos-<architecture>.sha256
+Meerkat.app
+Meerkat-<version>-macos-<architecture>.dmg
+Meerkat-<version>-macos-<architecture>.zip
+Meerkat-<version>-macos-<architecture>.sha256
 build-provenance.json
 package-provenance.json
 ```
@@ -75,11 +75,11 @@ package-provenance.json
 版本来自 `apps/desktop/Cargo.toml`，架构来自当前构建机，四个二进制必须匹配。
 源码凭据包含打包脚本和许可证；签名后不再修改 App。
 校验文件使用相对文件名，可在交付目录执行
-`shasum -a 256 -c Lankide-<version>-macos-<architecture>.sha256`。
+`shasum -a 256 -c Meerkat-<version>-macos-<architecture>.sha256`。
 
 `CARGO_TARGET_DIR` 可指定构建目录；输出必须仍在仓库 `target/` 内。
-完整 Release Gate 使用隔离构建目录，并通过 `LANKIDE_RELEASE_BIN_DIR`、
-`LANKIDE_RELEASE_PROVENANCE`、`LANKIDE_PACKAGE_OUTPUT_DIR` 将已验收二进制交给打包脚本，避免重新构建。
+完整 Release Gate 使用隔离构建目录，并通过 `MEERKAT_RELEASE_BIN_DIR`、
+`MEERKAT_RELEASE_PROVENANCE`、`MEERKAT_PACKAGE_OUTPUT_DIR` 将已验收二进制交给打包脚本，避免重新构建。
 
 `just app` 只生成 App。`just package` 不运行模块测试；交付前使用 `just release-local`。
 `just full-release` 和 `just release` 会运行真实 Provider/Harness 和实际窗口验收，
@@ -88,7 +88,7 @@ package-provenance.json
 
 ## Package E2E
 
-`scripts/verify-package` 不依赖页面操作。它从打包后的 App 主程序启动一个隔离的临时 Lankide Home，验证：
+`scripts/verify-package` 不依赖页面操作。它从打包后的 App 主程序启动一个隔离的临时 Meerkat Home，验证：
 
 1. Bundle 中四个可执行文件位置正确；
 2. App 与内部可执行文件签名有效，`Info.plist` 允许本地网络访问；

@@ -1,4 +1,4 @@
-use lankide_machine_core::{Machine, MachineConfig, OutputRecordPolicy, ReconnectPolicy};
+use meerkat_machine_core::{Machine, MachineConfig, OutputRecordPolicy, ReconnectPolicy};
 use std::fs::{self, File, FileTimes};
 use std::time::{Duration, SystemTime};
 
@@ -21,7 +21,7 @@ async fn machine_start_expires_records_and_preserves_sessions()
         File::open(path)?.set_times(FileTimes::new().set_modified(old))?;
     }
     fs::write(recent.join("rpc.jsonl"), "recent record")?;
-    let session = root.path().join(".lankide/pi/sessions/current.jsonl");
+    let session = root.path().join(".meerkat/pi/sessions/current.jsonl");
     fs::create_dir_all(session.parent().unwrap())?;
     fs::write(&session, "native session")?;
     File::open(&session)?.set_times(FileTimes::new().set_modified(old))?;

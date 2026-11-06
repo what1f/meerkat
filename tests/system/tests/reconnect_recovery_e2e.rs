@@ -1,4 +1,4 @@
-use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use meerkat_system_e2e::{Result, RigConfig, Script, SystemRig};
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -19,12 +19,12 @@ async fn wait(mut condition: impl AsyncFnMut() -> Result<bool>) -> Result<()> {
 async fn held_run_is_readopted_with_messages_during_repeated_disconnects() -> Result<()> {
     let rig = SystemRig::start(RigConfig {
         network_proxy: true,
-        retry: lankide_runtime::RetryConfig {
+        retry: meerkat_runtime::RetryConfig {
             base_ms: 40,
             max_ms: 160,
             ..Default::default()
         },
-        link: lankide_protocol::link::LinkSettings {
+        link: meerkat_protocol::link::LinkSettings {
             heartbeat_interval: Duration::from_millis(100),
             handshake_timeout: Duration::from_secs(1),
         },
@@ -96,12 +96,12 @@ async fn expired_offline_attempt_is_closed_on_return_before_queued_work_runs() -
         // Keep the normal lease for the retry as well as the offline attempt.
         // A short lease can expire healthy assignment preparation under load.
         timeout: Duration::from_secs(45),
-        retry: lankide_runtime::RetryConfig {
+        retry: meerkat_runtime::RetryConfig {
             base_ms: 40,
             max_ms: 160,
             ..Default::default()
         },
-        link: lankide_protocol::link::LinkSettings {
+        link: meerkat_protocol::link::LinkSettings {
             heartbeat_interval: Duration::from_millis(100),
             handshake_timeout: Duration::from_secs(1),
         },

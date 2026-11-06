@@ -2,7 +2,7 @@
 mod process_support;
 use process_support::{ProcessHarnessFactory, ProcessHarnessSpec};
 
-use lankide_harness::{
+use meerkat_harness::{
     AgentEvent, AgentEventKind, ExecuteRequest, HarnessAvailability, HarnessConfig,
     HarnessErrorCode, HarnessFactory, HarnessInfo, ModelRef, SessionHealth, SessionRequest,
     ToolDefinition, ToolResultError, ToolResultRequest, ToolResultResource,
@@ -32,9 +32,9 @@ async fn harness_e2e() {
         .expect("system clock")
         .as_millis();
     let started = std::time::Instant::now();
-    let work_root = std::env::temp_dir().join(format!("lankide-harness-{run_id}"));
+    let work_root = std::env::temp_dir().join(format!("meerkat-harness-{run_id}"));
     let artifact_root = std::env::temp_dir()
-        .join("lankide-e2e-artifacts")
+        .join("meerkat-e2e-artifacts")
         .join("harness")
         .join(&run_id);
     fs::create_dir_all(&work_root).expect("create isolated work root");
@@ -239,7 +239,7 @@ async fn cancel_scenario(mode: &str, work_root: &Path, pid_journal: &Path) -> Re
 }
 
 async fn tool_result_scenario(
-    session: &dyn lankide_harness::HarnessSession,
+    session: &dyn meerkat_harness::HarnessSession,
     work_root: &Path,
 ) -> Result<(), String> {
     let mut events = session
@@ -448,7 +448,7 @@ fn session_request(
     }
 }
 
-async fn collect(mut stream: lankide_harness::AgentEventStream) -> Result<Vec<AgentEvent>, String> {
+async fn collect(mut stream: meerkat_harness::AgentEventStream) -> Result<Vec<AgentEvent>, String> {
     let mut events = Vec::new();
     loop {
         let next = timeout(STEP_TIMEOUT, stream.next())
@@ -540,7 +540,7 @@ fn display(error: impl std::fmt::Display) -> String {
 
 #[tokio::test]
 async fn javascript_plugin_defaults_resume_rotation_and_explicit_test_plan() {
-    use lankide_harness::JsHarnessFactory;
+    use meerkat_harness::JsHarnessFactory;
     let factory = JsHarnessFactory::new("custom", "Custom CLI", r#"
         defineHarness({apiVersion:1,id:'custom',defaults:{environment:{WINDOW:'80'},launch_arguments:['--window','80']},
           start(){return {native_session_id:'original'};},
@@ -551,7 +551,7 @@ async fn javascript_plugin_defaults_resume_rotation_and_explicit_test_plan() {
     "#).unwrap();
     assert_eq!(factory.defaults().environment["WINDOW"], "80");
     let directory =
-        std::env::temp_dir().join(format!("lankide-plugin-contract-{}", std::process::id()));
+        std::env::temp_dir().join(format!("meerkat-plugin-contract-{}", std::process::id()));
     fs::create_dir_all(&directory).unwrap();
     let request = SessionRequest {
         cli_version: None,
@@ -611,9 +611,9 @@ async fn javascript_plugin_defaults_resume_rotation_and_explicit_test_plan() {
 
 #[tokio::test]
 async fn javascript_plugin_deadline_interrupts_a_stuck_hook_and_rejects_global_writes() {
-    use lankide_harness::JsHarnessFactory;
+    use meerkat_harness::JsHarnessFactory;
     let directory =
-        std::env::temp_dir().join(format!("lankide-plugin-guard-{}", std::process::id()));
+        std::env::temp_dir().join(format!("meerkat-plugin-guard-{}", std::process::id()));
     fs::create_dir_all(directory.join("agent")).unwrap();
     fs::create_dir_all(directory.join("user")).unwrap();
     fs::write(directory.join("user/config"), "keep").unwrap();
@@ -661,9 +661,9 @@ async fn javascript_plugin_deadline_interrupts_a_stuck_hook_and_rejects_global_w
 
 #[tokio::test]
 async fn changing_the_native_config_source_refreshes_inherited_resources() {
-    use lankide_harness::JsHarnessFactory;
+    use meerkat_harness::JsHarnessFactory;
     let directory =
-        std::env::temp_dir().join(format!("lankide-plugin-resources-{}", std::process::id()));
+        std::env::temp_dir().join(format!("meerkat-plugin-resources-{}", std::process::id()));
     let agent = directory.join("agent");
     fs::create_dir_all(&agent).unwrap();
     for source in ["first", "second"] {

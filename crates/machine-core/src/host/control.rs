@@ -3,8 +3,8 @@ use super::connection::send_frame;
 use super::proxy::download_resource;
 use crate::resources::replace_resource_links;
 use crate::state::assignment_key;
-use lankide_harness::{ToolResultError, ToolResultRequest, ToolResultResource};
-use lankide_protocol::{
+use meerkat_harness::{ToolResultError, ToolResultRequest, ToolResultResource};
+use meerkat_protocol::{
     ActiveAttempt, DEFAULT_MAX_MESSAGE_BYTES, DeliveryResult, ExecutionRef, MachineFrame,
     machine_frame,
 };
@@ -48,7 +48,7 @@ pub(super) fn prepare_tool_arguments(
 
 pub(super) async fn handle_steer(
     inner: &std::sync::Arc<Inner>,
-    steer: lankide_protocol::DeliverSteer,
+    steer: meerkat_protocol::DeliverSteer,
 ) {
     let Some(execution) = steer.execution else {
         return;
@@ -79,7 +79,7 @@ pub(super) async fn handle_steer(
         send_frame(
             inner,
             MachineFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(machine_frame::Frame::DeliveryResult(receipt)),
             },
         )
@@ -95,7 +95,7 @@ pub(super) async fn handle_steer(
             active.accepting_deliveries
                 && active
                     .capabilities
-                    .contains(&lankide_harness::HarnessCapability::Steer)
+                    .contains(&meerkat_harness::HarnessCapability::Steer)
         })
         .map(|active| {
             (
@@ -119,8 +119,8 @@ pub(super) async fn handle_steer(
                 {
                     Ok(path) => local.push((resource.resource_id, path)),
                     Err(error) => {
-                        failed = Some(lankide_harness::HarnessError::new(
-                            lankide_harness::HarnessErrorCode::InvalidState,
+                        failed = Some(meerkat_harness::HarnessError::new(
+                            meerkat_harness::HarnessErrorCode::InvalidState,
                             error.to_string(),
                         ));
                         break;
@@ -142,8 +142,8 @@ pub(super) async fn handle_steer(
                 }
             }
         }
-        None => Err(lankide_harness::HarnessError::new(
-            lankide_harness::HarnessErrorCode::InvalidState,
+        None => Err(meerkat_harness::HarnessError::new(
+            meerkat_harness::HarnessErrorCode::InvalidState,
             "execution is not active",
         )),
     };
@@ -173,7 +173,7 @@ pub(super) async fn handle_steer(
     send_frame(
         inner,
         MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::DeliveryResult(receipt)),
         },
     )
@@ -211,7 +211,7 @@ pub(super) async fn handle_cancel(
 
 pub(super) async fn route_tool_result(
     inner: &std::sync::Arc<Inner>,
-    result: lankide_protocol::ToolResult,
+    result: meerkat_protocol::ToolResult,
 ) {
     let Some(execution) = result.execution.clone() else {
         return;
@@ -371,9 +371,9 @@ async fn send_tool_result_receipt(
     send_frame(
         inner,
         MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::ResourceTransferResult(
-                lankide_protocol::ResourceTransferResult {
+                meerkat_protocol::ResourceTransferResult {
                     transfer_id: format!(
                         "tool_result:{}:{}:{tool_call_id}",
                         execution.execution_id, execution.attempt
@@ -400,9 +400,9 @@ pub(super) async fn replay_pending(inner: &Inner, sender: &mpsc::Sender<MachineF
     for delivery in receipts {
         let _ = sender
             .send(MachineFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(machine_frame::Frame::AssignmentResult(
-                    lankide_protocol::AssignmentResult {
+                    meerkat_protocol::AssignmentResult {
                         execution: delivery.execution.clone(),
                         accepted: true,
                         ..Default::default()
@@ -412,7 +412,7 @@ pub(super) async fn replay_pending(inner: &Inner, sender: &mpsc::Sender<MachineF
             .await;
         let _ = sender
             .send(MachineFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(machine_frame::Frame::DeliveryResult(delivery)),
             })
             .await;
@@ -430,7 +430,7 @@ pub(super) async fn replay_pending(inner: &Inner, sender: &mpsc::Sender<MachineF
     for receipt in steers {
         let _ = sender
             .send(MachineFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(machine_frame::Frame::DeliveryResult(receipt)),
             })
             .await;
@@ -440,7 +440,7 @@ pub(super) async fn replay_pending(inner: &Inner, sender: &mpsc::Sender<MachineF
         for event in events.values() {
             let _ = sender
                 .send(MachineFrame {
-                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                    protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                     frame: Some(machine_frame::Frame::ExecutionEvent(event.clone())),
                 })
                 .await;
@@ -460,7 +460,7 @@ pub(super) async fn replay_assignment_pending(inner: &Inner, key: &str) {
         send_frame(
             inner,
             MachineFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(machine_frame::Frame::ExecutionEvent(event)),
             },
         )

@@ -16,8 +16,9 @@
   background: var(--wallpaper-alert);
 }
 
-.screen[data-state='asleep'] {
-  filter: brightness(0.38) saturate(0.6);
+.screen[data-state='asleep'],
+.screen[data-state='boot'] {
+  background: var(--screen-off);
 }
 
 .screen[data-state='dark'] {
@@ -28,137 +29,459 @@
   opacity: 0.35;
 }
 
-.card {
+/* Starting up: a progress bar fills. */
+.boot {
   position: absolute;
-  top: 42%;
+  top: 50%;
   left: 50%;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  width: 52%;
-  padding: 5px;
-  background: var(--screen-card);
-  border-radius: var(--r-screen-card);
-  box-shadow: var(--screen-card-shadow);
+  width: 46%;
+  height: 4px;
+  overflow: hidden;
+  background: var(--screen-ink-3);
+  border-radius: var(--r-full);
   translate: -50% -50%;
 }
 
-.card > i {
-  height: 3px;
-  background: var(--screen-line);
-  border-radius: var(--r-hairline);
-}
-
-.card > [data-line='s'] {
-  width: 70%;
-}
-
-.card > [data-line='me'] {
-  align-self: flex-end;
-  width: 62%;
-  background: var(--accent);
-  opacity: 0.85;
-}
-
-.screen[data-side='true'] .card {
-  top: 24%;
-  left: 22%;
-  width: 54%;
-  padding: 0;
-  background: var(--clear);
-  box-shadow: var(--none);
-  translate: none;
-  rotate: -3deg;
-}
-
-.typing {
-  display: flex;
-  gap: 3px;
-  align-self: flex-start;
-  padding: 3px 4px;
-  background: var(--screen-typing);
-  border-radius: var(--r-screen-card);
-}
-
-.typing > i {
-  width: 3.5px;
-  height: 3.5px;
-  background: var(--screen-typing-dot);
+.boot > i {
+  display: block;
+  height: 100%;
+  background: var(--screen-ink);
   border-radius: var(--r-full);
-  animation: dot 1.2s infinite;
+  animation: fill 2.6s var(--ease) infinite;
 }
 
-.typing > i:nth-child(2) {
-  animation-delay: 0.15s;
+/* Paused: the member's face drifts around the screen. */
+.saver {
+  position: absolute;
+  inset: 2px;
 }
 
-.typing > i:nth-child(3) {
-  animation-delay: 0.3s;
+.saver img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-.screen[data-side='true'] .card > i {
-  height: 2px;
-  background: var(--screen-side-line);
-}
-
-.screen[data-side='true'] .card > [data-line='s'] {
-  width: 64%;
+.saver > i {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  overflow: hidden;
   background: var(--accent);
-  opacity: 0.55;
+  border-radius: var(--r-full);
+  opacity: 0.85;
+  animation:
+    drift-x 3.4s linear infinite alternate,
+    drift-y 2.3s linear infinite alternate;
 }
 
-.screen[data-side='true'] .card > [data-line='long'] {
-  width: 80%;
-}
+@keyframes fill {
+  0% {
+    width: 0;
+  }
 
-.screen[data-state='alert'] .card {
-  width: auto;
-  padding: 0;
-  background: var(--clear);
-  box-shadow: var(--none);
-}
-
-.card > b {
-  width: 20px;
-  height: 20px;
-  font-size: var(--t-alert);
-  font-weight: 800;
-  line-height: 20px;
-  color: var(--alert-ink);
-  text-align: center;
-  background: var(--alert-paper);
-  border-radius: var(--r-sm);
-  box-shadow: var(--alert-shadow);
-  animation: alert 1.8s var(--ease-pop) infinite;
-}
-
-@keyframes dot {
-  0%,
-  60%,
+  80%,
   100% {
-    opacity: 0.5;
-    transform: none;
-  }
-
-  30% {
-    opacity: 1;
-    transform: translateY(-2px);
+    width: 100%;
   }
 }
 
-@keyframes alert {
+@keyframes drift-x {
+  from {
+    left: 0;
+  }
+
+  to {
+    left: calc(100% - 11px);
+  }
+}
+
+@keyframes drift-y {
+  from {
+    top: 0;
+  }
+
+  to {
+    top: calc(100% - 11px);
+  }
+}
+
+/* Slacking off: over the cat video, each idle desk takes turns between pong (0–10s), the phone (20–30s)
+   and the fish tank (30–40s). A layer is up before the one above it fades, so the video never flashes through. */
+.pong,
+.tank,
+.lock {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  opacity: 0;
+  animation-duration: 40s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  animation-delay: calc(var(--phase) * -40s);
+}
+
+.pong {
+  background: var(--screen-off);
+  animation-name: pong;
+}
+
+.tank {
+  overflow: hidden;
+  background: var(--tank);
+  animation-name: tank;
+}
+
+/* While the phone is out the monitor dims. */
+.lock {
+  background: var(--screen-off);
+  animation-name: lock;
+}
+
+.tank > i {
+  position: absolute;
+  bottom: -4px;
+  width: 3px;
+  height: 3px;
+  border: var(--tank-bubble-ring);
+  border-radius: var(--r-full);
+  animation: bubble 3s ease-in infinite;
+}
+
+.pong > i {
+  position: absolute;
+  top: 30%;
+  width: 2px;
+  height: 22%;
+  background: var(--screen-ink);
+  border-radius: var(--r-hairline);
+  animation: paddle 1.1s ease-in-out infinite alternate;
+}
+
+.pong > i:first-child {
+  left: 8%;
+}
+
+.pong > i:nth-child(2) {
+  right: 8%;
+  animation-delay: -0.55s;
+}
+
+.pong > b {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background: var(--screen-ink);
+  border-radius: var(--r-full);
+  animation:
+    ball-x 1.6s linear infinite alternate,
+    ball-y 1.1s linear infinite alternate;
+}
+
+.tank > img {
+  position: absolute;
+  top: 34%;
+  width: 17px;
+  max-width: none;
+  animation: swim 9s ease-in-out infinite;
+}
+
+.tank > i:nth-of-type(1) {
+  left: 22%;
+}
+
+.tank > i:nth-of-type(2) {
+  left: 58%;
+  animation-delay: 1s;
+}
+
+.tank > i:nth-of-type(3) {
+  left: 80%;
+  animation-delay: 2s;
+}
+
+/* A screenshot fills the screen; small loops on top make it feel live. */
+.shot {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.shot > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+}
+
+/* Busy: the code pans down and back. */
+.shot[data-kind='code'] > img {
+  height: auto;
+  animation: pan 7s ease-in-out infinite alternate;
+}
+
+/* Thinking: a highlight sweeps the page being read. */
+.shot[data-kind='search'] > img {
+  animation: read 9s ease-in-out infinite alternate;
+}
+
+.shot[data-kind='search'] > i {
+  position: absolute;
+  left: 45%;
+  width: 36%;
+  height: 7%;
+  background: var(--screen-highlight);
+  border-radius: var(--r-hairline);
+  animation: scan 2.4s ease-in-out infinite;
+}
+
+/* Replying: a new message pops in at the foot of the chat. */
+.shot[data-kind='chat'] > i {
+  position: absolute;
+  right: 4%;
+  bottom: 18%;
+  width: 26%;
+  height: 12%;
+  background: var(--accent);
+  border-radius: var(--r-screen-card);
+  transform-origin: 100% 100%;
+  animation: send 2.8s var(--ease-pop) infinite;
+}
+
+.shot[data-kind='error'] > img {
+  animation: glitch 3.2s steps(1) infinite;
+}
+
+.shot[data-kind='done'] > img {
+  animation: done 2.4s var(--ease-pop) infinite;
+}
+
+/* The cat video plays on. */
+.shot[data-kind='video'] > i {
+  position: absolute;
+  bottom: 6.5%;
+  left: 8%;
+  height: 2px;
+  background: var(--video-progress);
+  animation: watch 10s linear infinite;
+  animation-delay: calc(var(--phase) * -10s);
+}
+
+@keyframes pong {
+  0%,
+  23%,
+  96%,
+  100% {
+    opacity: 1;
+  }
+
+  25%,
+  95% {
+    opacity: 0;
+  }
+}
+
+@keyframes lock {
+  0%,
+  50%,
+  75%,
+  100% {
+    opacity: 0;
+  }
+
+  52%,
+  73% {
+    opacity: 1;
+  }
+}
+
+@keyframes tank {
   0%,
   70%,
   100% {
+    opacity: 0;
+  }
+
+  71%,
+  98% {
+    opacity: 1;
+  }
+}
+
+@keyframes paddle {
+  from {
+    top: 8%;
+  }
+
+  to {
+    top: 70%;
+  }
+}
+
+@keyframes ball-x {
+  from {
+    left: 12%;
+  }
+
+  to {
+    left: calc(88% - 3px);
+  }
+}
+
+@keyframes ball-y {
+  from {
+    top: 10%;
+  }
+
+  to {
+    top: calc(88% - 3px);
+  }
+}
+
+@keyframes swim {
+  0% {
+    left: 6%;
     transform: none;
   }
 
-  80% {
-    transform: translateY(-3px) rotate(-8deg);
+  20% {
+    transform: translateY(-3px);
   }
 
-  90% {
-    transform: rotate(6deg);
+  44% {
+    left: calc(94% - 17px);
+    transform: none;
+  }
+
+  50% {
+    left: calc(94% - 17px);
+    transform: scaleX(-1);
+  }
+
+  70% {
+    transform: scaleX(-1) translateY(3px);
+  }
+
+  94% {
+    left: 6%;
+    transform: scaleX(-1);
+  }
+
+  100% {
+    left: 6%;
+    transform: none;
+  }
+}
+
+@keyframes bubble {
+  0% {
+    opacity: 0;
+    transform: none;
+  }
+
+  20% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(2px, -40px);
+  }
+}
+
+@keyframes pan {
+  from {
+    transform: translateY(0);
+  }
+
+  to {
+    transform: translateY(-48%);
+  }
+}
+
+@keyframes read {
+  from {
+    transform: scale(1.04) translateX(1.5%);
+  }
+
+  to {
+    transform: scale(1.12) translateX(-3%);
+  }
+}
+
+@keyframes scan {
+  0% {
+    top: 30%;
+    opacity: 0;
+  }
+
+  15%,
+  80% {
+    opacity: 1;
+  }
+
+  100% {
+    top: 64%;
+    opacity: 0;
+  }
+}
+
+@keyframes send {
+  0%,
+  10% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+
+  25%,
+  70% {
+    opacity: 1;
+    transform: none;
+  }
+
+  85%,
+  100% {
+    opacity: 0;
+    transform: translateY(-30%);
+  }
+}
+
+@keyframes glitch {
+  0%,
+  86%,
+  100% {
+    transform: none;
+    filter: none;
+  }
+
+  88% {
+    transform: translateX(-2%);
+    filter: hue-rotate(-12deg) saturate(1.4);
+  }
+
+  92% {
+    transform: translateX(1.5%);
+  }
+}
+
+@keyframes done {
+  0% {
+    transform: scale(0.92);
+  }
+
+  25%,
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes watch {
+  from {
+    width: 0;
+  }
+
+  to {
+    width: 84%;
   }
 }

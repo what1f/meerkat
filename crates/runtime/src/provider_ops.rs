@@ -13,8 +13,8 @@ impl Runtime {
                 .iter()
                 .map(|attachment| {
                     let resource = &attachment.resource;
-                    Ok::<_, RuntimeError>(lankide_storage::ResourceView {
-                        resource_id: lankide_core::ResourceId::new(resource.resource_id)
+                    Ok::<_, RuntimeError>(meerkat_storage::ResourceView {
+                        resource_id: meerkat_core::ResourceId::new(resource.resource_id)
                             .map_err(|error| RuntimeError::InvalidCore(error.to_string()))?,
                         file_name: resource.file_name.clone(),
                         media_type: resource.media_type.clone(),
@@ -41,7 +41,7 @@ impl Runtime {
                     .await?;
             }
             let now = now_millis();
-            let outcome = if result.status == lankide_provider::SendMessageStatus::Sent {
+            let outcome = if result.status == meerkat_provider::SendMessageStatus::Sent {
                 SendOutcome::Sent {
                     provider_message_id: result.provider_message_id.clone().ok_or_else(|| {
                         RuntimeError::InvalidCore("sent Provider result missing message id".into())
@@ -61,7 +61,7 @@ impl Runtime {
                 .await?;
             if let Some(native_id) = &result.provider_message_id {
                 let mut mentioned_agent_ids = spec.mentions.clone();
-                for mention in lankide_core::markdown_mentions(&spec.content) {
+                for mention in meerkat_core::markdown_mentions(&spec.content) {
                     if let Ok(id) = AgentId::new(mention.id) {
                         if !mentioned_agent_ids.contains(&id) {
                             mentioned_agent_ids.push(id);
@@ -78,12 +78,12 @@ impl Runtime {
                                 .provider_chat_id
                                 .clone()
                                 .unwrap_or_else(|| spec.chat_id.clone()),
-                            sender: lankide_provider::EventSender {
+                            sender: meerkat_provider::EventSender {
                                 id: agent_id.to_string(),
                                 kind: EventSenderType::Agent,
                                 name: String::new(),
                             },
-                            kind: ProviderEventKind::Message(lankide_provider::MessageEvent {
+                            kind: ProviderEventKind::Message(meerkat_provider::MessageEvent {
                                 provider_message_id: native_id.clone(),
                                 content: spec.content.clone(),
                                 reply_to_provider_message_id,
@@ -248,7 +248,7 @@ impl Runtime {
 
     pub async fn validate_run_context(
         &self,
-        context: &lankide_protocol::AgentRunContext,
+        context: &meerkat_protocol::AgentRunContext,
         now: i64,
     ) -> Result<ValidatedRunContext, RuntimeError> {
         let execution = context
@@ -264,9 +264,9 @@ impl Runtime {
             || !constant_time_eq(&auth.token_hash, &token_hash(&context.execution_token))
             || matches!(
                 auth.state,
-                lankide_storage::ExecutionState::Succeeded
-                    | lankide_storage::ExecutionState::Failed
-                    | lankide_storage::ExecutionState::Cancelled
+                meerkat_storage::ExecutionState::Succeeded
+                    | meerkat_storage::ExecutionState::Failed
+                    | meerkat_storage::ExecutionState::Cancelled
             )
         {
             return Err(RuntimeError::InvalidExecutionToken);
@@ -359,8 +359,8 @@ fn frozen_runtime_spec(value: &str) -> Result<AgentRuntimeSpec, RuntimeError> {
                     .and_then(serde_json::Value::as_str)
                     .ok_or_else(|| RuntimeError::Application(format!("frozen chat missing {name}")))
             };
-            Ok::<lankide_provider::AgentRuntimeChat, RuntimeError>(
-                lankide_provider::AgentRuntimeChat {
+            Ok::<meerkat_provider::AgentRuntimeChat, RuntimeError>(
+                meerkat_provider::AgentRuntimeChat {
                     provider_id: ProviderId::new(field("provider_id")?)
                         .map_err(|error| RuntimeError::InvalidCore(error.to_string()))?,
                     channel_id: ChannelId::new(field("channel_id")?)

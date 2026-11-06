@@ -1,13 +1,13 @@
 #[path = "../../../../crates/protocol/tests/support/ws.rs"]
 mod ws;
 use super::daemon_e2e::DaemonChild;
-use lankide_core::{ProviderId, WorkspaceId};
-use lankide_protocol::{
+use meerkat_core::{ProviderId, WorkspaceId};
+use meerkat_protocol::{
     DEFAULT_MAX_MESSAGE_BYTES, ListWorkspacesRequest, MachineFrame, MachineHello, PROTOCOL_VERSION,
     machine_frame, runtime_frame,
 };
-use lankide_storage::{DatabaseConfig, Storage, WorkspaceSpec};
-use lankided::{AppError, RuntimePaths};
+use meerkat_storage::{DatabaseConfig, Storage, WorkspaceSpec};
+use meerkatd::{AppError, RuntimePaths};
 use std::{fs, path::Path, time::Duration};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -63,7 +63,7 @@ fn seed_workspace(paths: &RuntimePaths) -> Result<(), AppError> {
 
 async fn assert_serving(paths: &RuntimePaths) -> Result<(), AppError> {
     let client =
-        lankide_client::http::HttpManagementTransport::local(&paths.run, DEFAULT_MAX_MESSAGE_BYTES);
+        meerkat_client::http::HttpManagementTransport::local(&paths.run, DEFAULT_MAX_MESSAGE_BYTES);
     let response = client
         .list_workspaces(ListWorkspacesRequest {
             request_id: "shutdown-scenario".into(),
@@ -85,7 +85,7 @@ async fn shutdown_with_machine_and_provider(
     daemon.wait_ready()?;
     use sha2::Digest;
     Storage::open(DatabaseConfig::new(&paths.database))?.pair_machine(
-        &lankide_storage::MachineRecord {
+        &meerkat_storage::MachineRecord {
             is_local: false,
             machine_id: "shutdown-machine".into(),
             display_name: "Machine".into(),
@@ -106,7 +106,7 @@ async fn shutdown_with_machine_and_provider(
     let (sender, receiver) = mpsc::channel(16);
     sender
         .send(MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::Hello(MachineHello {
                 device_credential: "fixture-shutdown".into(),
                 protocol_version: PROTOCOL_VERSION,
@@ -214,7 +214,7 @@ async fn sigkill_restart_recovers(paths: &RuntimePaths, artifacts: &Path) -> Res
     if !paths.instance_lock.exists()
         || !paths
             .run
-            .join(lankide_protocol::management::URL_FILE)
+            .join(meerkat_protocol::management::URL_FILE)
             .exists()
     {
         return Err(AppError::Invariant(

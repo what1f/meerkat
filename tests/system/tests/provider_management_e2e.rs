@@ -2,10 +2,10 @@
 mod feishu_web;
 use feishu_web::FeishuWeb;
 use futures_util::StreamExt;
-use lankide_provider::{Provider, ProviderHost};
-use lankide_provider_feishu::FeishuProvider;
-use lankide_runtime::ProviderFactoryRegistry;
-use lankide_system_e2e::{Result, RigConfig, SystemRig};
+use meerkat_provider::{Provider, ProviderHost};
+use meerkat_provider_feishu::FeishuProvider;
+use meerkat_runtime::ProviderFactoryRegistry;
+use meerkat_system_e2e::{Result, RigConfig, SystemRig};
 use serde_json::{Value, json};
 use std::time::Duration;
 
@@ -89,10 +89,10 @@ async fn telegram_first_reply(held: bool, cross: bool) -> Result<()> {
     web.state.lock().unwrap().bio = Some("Telegram signature".into());
     let factories = ProviderFactoryRegistry::default();
     factories.register_host_factory(
-        lankide_provider_telegram::TelegramProvider::new().info(),
+        meerkat_provider_telegram::TelegramProvider::new().info(),
         move |w, s| {
             ProviderHost::new(
-                lankide_provider_telegram::TelegramProvider::new(),
+                meerkat_provider_telegram::TelegramProvider::new(),
                 w.id.clone(),
                 w.provider_config.clone(),
                 s,
@@ -100,7 +100,7 @@ async fn telegram_first_reply(held: bool, cross: bool) -> Result<()> {
         },
     )?;
     let config = RigConfig {
-        retry: lankide_runtime::RetryConfig {
+        retry: meerkat_runtime::RetryConfig {
             base_ms: 20,
             max_ms: 50,
             ..Default::default()
@@ -114,9 +114,9 @@ async fn telegram_first_reply(held: bool, cross: bool) -> Result<()> {
         http.post("create_workspace",json!({"request_id":"team","workspace_id":"team","name":"Team","rules":"","provider_id":"telegram","provider_config_json":json!({"api_endpoint":web.http.endpoint,"poll_timeout_seconds":1}).to_string(),"provider_secrets_json":"{\"manager_bot_token\":\"100:manager\"}"})).await?;
         let machines=http.post("get_machine_catalog",json!({"request_id":"m","workspace":null})).await?;
         let home=rig.machine_home();
-        let mut env=vec![("LANKIDE_SYSTEM_SCRIPT".to_string(),serde_json::to_string(&if cross {lankide_system_e2e::Script::DeferredPrivateReply{text:"Later reply".into()}} else if held {lankide_system_e2e::Script::ReplyBeforeTerminal{text:"Welcome".into()}}else{lankide_system_e2e::Script::reply("Welcome")})?)];
-        for (key,name) in [("LANKIDE_SYSTEM_INPUTS","inputs.jsonl"),("LANKIDE_SYSTEM_CONTROLS","controls.jsonl"),("LANKIDE_SYSTEM_STEERS","steers.jsonl"),("LANKIDE_SYSTEM_RELEASE","release")] {env.push((key.into(),home.join(name).to_string_lossy().into()));}
-        let request=lankide_protocol::CreateAgentRequest{request_id:"alpha".into(),agent:Some(lankide_protocol::AgentRef{workspace_id:"team".into(),agent_id:"alpha".into()}),name:"Alpha".into(),machine_id:machines["machines"][0]["machine_id"].as_str().unwrap().into(),harness_id:"pi".into(),model:"scripted".into(),thinking_level:"low".into(),cli_path:harness.to_string_lossy().into(),environment_variables:env.into_iter().map(|(key,value)|lankide_protocol::EnvironmentVariable{name:key,value}).collect(),provider_agent_config_json:"{\"mode\":\"new\",\"bot_username\":\"alpha_bot\"}".into(),provider_agent_secrets_json:"{}".into(),..Default::default()};
+        let mut env=vec![("MEERKAT_SYSTEM_SCRIPT".to_string(),serde_json::to_string(&if cross {meerkat_system_e2e::Script::DeferredPrivateReply{text:"Later reply".into()}} else if held {meerkat_system_e2e::Script::ReplyBeforeTerminal{text:"Welcome".into()}}else{meerkat_system_e2e::Script::reply("Welcome")})?)];
+        for (key,name) in [("MEERKAT_SYSTEM_INPUTS","inputs.jsonl"),("MEERKAT_SYSTEM_CONTROLS","controls.jsonl"),("MEERKAT_SYSTEM_STEERS","steers.jsonl"),("MEERKAT_SYSTEM_RELEASE","release")] {env.push((key.into(),home.join(name).to_string_lossy().into()));}
+        let request=meerkat_protocol::CreateAgentRequest{request_id:"alpha".into(),agent:Some(meerkat_protocol::AgentRef{workspace_id:"team".into(),agent_id:"alpha".into()}),name:"Alpha".into(),machine_id:machines["machines"][0]["machine_id"].as_str().unwrap().into(),harness_id:"pi".into(),model:"scripted".into(),thinking_level:"low".into(),cli_path:harness.to_string_lossy().into(),environment_variables:env.into_iter().map(|(key,value)|meerkat_protocol::EnvironmentVariable{name:key,value}).collect(),provider_agent_config_json:"{\"mode\":\"new\",\"bot_username\":\"alpha_bot\"}".into(),provider_agent_secrets_json:"{}".into(),..Default::default()};
         http.post("create_agent",serde_json::to_value(request)?).await?;
         assert!(http.post("list_human_members",json!({"request_id":"humans","workspace":{"workspace_id":"team"}})).await?.as_array().unwrap().is_empty());
         for action in ["start","poll"] {http.post("advance_agent_onboarding",json!({"request_id":action,"agent":{"workspace_id":"team","agent_id":"alpha"},"action":action,"field_values_json":"{}"})).await?;}
@@ -204,7 +204,7 @@ async fn feishu_unbound_rig(enabled: bool) -> Result<(SystemRig, FeishuWeb, Http
                             feishu_web::Source(transport.clone(), credentials.app_id.clone());
                         Box::pin(async move {
                             Ok(Box::new(source)
-                                as Box<dyn lankide_provider_feishu::events::EventSource>)
+                                as Box<dyn meerkat_provider_feishu::events::EventSource>)
                         })
                     }
                 }),
@@ -247,9 +247,9 @@ async fn feishu_member_flow(http: &Http, id: &str, actions: &[&str]) -> Result<V
             json!({"request_id":"m","workspace":null}),
         )
         .await?;
-    let request = lankide_protocol::CreateAgentRequest {
+    let request = meerkat_protocol::CreateAgentRequest {
         request_id: "agent".into(),
-        agent: Some(lankide_protocol::AgentRef {
+        agent: Some(meerkat_protocol::AgentRef {
             workspace_id: "team".into(),
             agent_id: id.into(),
         }),
@@ -263,28 +263,28 @@ async fn feishu_member_flow(http: &Http, id: &str, actions: &[&str]) -> Result<V
         thinking_level: "low".into(),
         cli_path: harness.to_string_lossy().into(),
         environment_variables: vec![
-            lankide_protocol::EnvironmentVariable {
-                name: "LANKIDE_SYSTEM_SCRIPT".into(),
-                value: serde_json::to_string(&lankide_system_e2e::Script::reply("Hello"))?,
+            meerkat_protocol::EnvironmentVariable {
+                name: "MEERKAT_SYSTEM_SCRIPT".into(),
+                value: serde_json::to_string(&meerkat_system_e2e::Script::reply("Hello"))?,
             },
-            lankide_protocol::EnvironmentVariable {
-                name: "LANKIDE_SYSTEM_INPUTS".into(),
+            meerkat_protocol::EnvironmentVariable {
+                name: "MEERKAT_SYSTEM_INPUTS".into(),
                 value: http
                     .journals
                     .join(format!("inputs-{id}"))
                     .to_string_lossy()
                     .into(),
             },
-            lankide_protocol::EnvironmentVariable {
-                name: "LANKIDE_SYSTEM_CONTROLS".into(),
+            meerkat_protocol::EnvironmentVariable {
+                name: "MEERKAT_SYSTEM_CONTROLS".into(),
                 value: http
                     .journals
                     .join(format!("controls-{id}"))
                     .to_string_lossy()
                     .into(),
             },
-            lankide_protocol::EnvironmentVariable {
-                name: "LANKIDE_SYSTEM_STEERS".into(),
+            meerkat_protocol::EnvironmentVariable {
+                name: "MEERKAT_SYSTEM_STEERS".into(),
                 value: http
                     .journals
                     .join(format!("steers-{id}"))
@@ -332,7 +332,7 @@ async fn inbound(
             .chat_types
             .insert("owner_dm".into(), "private_chat".into());
         state.message_chats.insert(id.into(), "owner_dm".into());
-        state.events.push_back(lankide_provider_feishu::events::RawEvent::new("im.message.receive_v1",json!({"schema":"2.0","header":{"event_id":id,"event_type":"im.message.receive_v1","app_id":app,"tenant_key":"tenant-a"},"event":{"sender":{"sender_type":"user","sender_id":{"open_id":format!("ou_{user}_{app}"),"union_id":format!("on_{user}")}},"message":{"message_id":id,"chat_id":"owner_dm","chat_type":"p2p","create_time":"1900000000000","message_type":"text","content":json!({"text":"Hello"}).to_string()}}}).to_string().into_bytes()));
+        state.events.push_back(meerkat_provider_feishu::events::RawEvent::new("im.message.receive_v1",json!({"schema":"2.0","header":{"event_id":id,"event_type":"im.message.receive_v1","app_id":app,"tenant_key":"tenant-a"},"event":{"sender":{"sender_type":"user","sender_id":{"open_id":format!("ou_{user}_{app}"),"union_id":format!("on_{user}")}},"message":{"message_id":id,"chat_id":"owner_dm","chat_type":"p2p","create_time":"1900000000000","message_type":"text","content":json!({"text":"Hello"}).to_string()}}}).to_string().into_bytes()));
     }
     let person = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
@@ -366,9 +366,9 @@ async fn stranger_cannot_claim_lead_and_union_identity_survives_multiple_apps() 
                 json!({"request_id":"m","workspace":null}),
             )
             .await?;
-        let request = lankide_protocol::CreateAgentRequest {
+        let request = meerkat_protocol::CreateAgentRequest {
             request_id: "bootstrap".into(),
-            agent: Some(lankide_protocol::AgentRef {
+            agent: Some(meerkat_protocol::AgentRef {
                 workspace_id: "team".into(),
                 agent_id: "bootstrap".into(),
             }),
@@ -455,7 +455,7 @@ async fn task_callback(web: &FeishuWeb, id: &str, sequence: usize, kind: &str) -
     let acknowledgements = {
         let mut state = web.0.lock().unwrap();
         let n = state.acknowledgements;
-        state.events.push_back(lankide_provider_feishu::events::RawEvent::new("task.task.update_user_access_v2",json!({"schema":"2.0","header":{"event_id":format!("review-{sequence}"),"event_type":"task.task.update_user_access_v2","app_id":"cli_registered_1","tenant_key":"tenant-a"},"event":{"task_guid":id,"event_types":[kind]}}).to_string().into_bytes()));
+        state.events.push_back(meerkat_provider_feishu::events::RawEvent::new("task.task.update_user_access_v2",json!({"schema":"2.0","header":{"event_id":format!("review-{sequence}"),"event_type":"task.task.update_user_access_v2","app_id":"cli_registered_1","tenant_key":"tenant-a"},"event":{"task_guid":id,"event_types":[kind]}}).to_string().into_bytes()));
         n
     };
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -491,7 +491,7 @@ async fn a4b_review_task_callbacks_follow_enabled_state() -> Result<()> {
         {let mut state=web.0.lock().unwrap();state.denied_tasks.retain(|id|id!=task["id"].as_str().unwrap());state.tasks.retain(|t|t["guid"]!=task["id"]);}
         task_callback(&web,task["id"].as_str().unwrap(),6,"task_deleted").await?;event(&mut events,"workspace_updated").await?;no_workspace_event(&mut events).await?;
         let acknowledged=web.0.lock().unwrap().acknowledgements;
-        web.0.lock().unwrap().events.push_back(lankide_provider_feishu::events::RawEvent::new("im.message.receive_v1",json!({"schema":"2.0","header":{"event_id":"ordinary-message","event_type":"im.message.receive_v1","app_id":"cli_registered_1","tenant_key":"tenant-a"},"event":{"sender":{"sender_type":"user","sender_id":{"open_id":"ou_lead_cli_registered_1","union_id":"on_lead"}},"message":{"message_id":"ordinary","chat_id":"oc_team","chat_type":"group","create_time":"1000","message_type":"text","content":json!({"text":"Hello team"}).to_string()}}}).to_string().into_bytes()));
+        web.0.lock().unwrap().events.push_back(meerkat_provider_feishu::events::RawEvent::new("im.message.receive_v1",json!({"schema":"2.0","header":{"event_id":"ordinary-message","event_type":"im.message.receive_v1","app_id":"cli_registered_1","tenant_key":"tenant-a"},"event":{"sender":{"sender_type":"user","sender_id":{"open_id":"ou_lead_cli_registered_1","union_id":"on_lead"}},"message":{"message_id":"ordinary","chat_id":"oc_team","chat_type":"group","create_time":"1000","message_type":"text","content":json!({"text":"Hello team"}).to_string()}}}).to_string().into_bytes()));
         tokio::time::timeout(Duration::from_secs(5),async {loop{if web.0.lock().unwrap().acknowledgements>acknowledged{break;}tokio::time::sleep(Duration::from_millis(10)).await;}}).await?;
         no_workspace_event(&mut events).await?;
         http.post("update_workspace",json!({"request_id":"disable","workspace":{"workspace_id":"team"},"provider_config_json":"{\"domain\":\"feishu\",\"task_system_enabled\":false}"})).await?;

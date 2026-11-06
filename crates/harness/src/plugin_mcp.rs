@@ -52,7 +52,7 @@ impl McpServer {
             .port();
         let config_path = artifact_dir.join(format!("mcp-{}.json", unique()));
         let authorization = format!("Bearer {}", uuid::Uuid::new_v4());
-        let config = json!({"mcpServers":{"lankide":{
+        let config = json!({"mcpServers":{"meerkat":{
             "type":"http", "url":format!("http://127.0.0.1:{port}/mcp"),
             "headers":{"Authorization":authorization}
         }}});
@@ -139,7 +139,7 @@ fn handle_connection(
             "protocolVersion": request.pointer("/params/protocolVersion").cloned()
                 .unwrap_or_else(|| json!("2025-06-18")),
             "capabilities":{"tools":{"listChanged":false}},
-            "serverInfo":{"name":"lankide","version":env!("CARGO_PKG_VERSION")}
+            "serverInfo":{"name":"meerkat","version":env!("CARGO_PKG_VERSION")}
         }),
         "tools/list" => json!({"tools":tools.iter().map(|tool| json!({
             "name":tool.definition.name,

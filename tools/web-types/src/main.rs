@@ -1,5 +1,5 @@
 //! Development-only management contract exporter.
-use lankide_protocol::management::*;
+use meerkat_protocol::management::*;
 use ts_rs::TS;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

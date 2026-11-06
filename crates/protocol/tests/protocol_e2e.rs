@@ -1,9 +1,9 @@
 #[path = "support/ws.rs"]
 mod ws;
-use lankide_protocol::machine_frame;
-use lankide_protocol::runtime_frame;
-use lankide_protocol::*;
-use lankide_protocol::{Code, Status};
+use meerkat_protocol::machine_frame;
+use meerkat_protocol::runtime_frame;
+use meerkat_protocol::*;
+use meerkat_protocol::{Code, Status};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
@@ -114,16 +114,16 @@ struct StoredResource {
 }
 
 #[async_trait::async_trait]
-impl lankide_protocol::MachinePeer for TestPeer {
+impl meerkat_protocol::MachinePeer for TestPeer {
     async fn authorize_link(
         &self,
         credential: &str,
         local_secret: &str,
-    ) -> Result<(), lankide_protocol::link::CloseReason> {
+    ) -> Result<(), meerkat_protocol::link::CloseReason> {
         if credential == local_secret {
             Ok(())
         } else {
-            Err(lankide_protocol::link::CloseReason::Unauthorized)
+            Err(meerkat_protocol::link::CloseReason::Unauthorized)
         }
     }
 
@@ -146,7 +146,7 @@ impl lankide_protocol::MachinePeer for TestPeer {
         if connection <= 2 {
             outgoing
                 .send(Ok(RuntimeFrame {
-                    protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                    protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                     frame: Some(runtime_frame::Frame::AssignExecution(assignment())),
                 }))
                 .await
@@ -181,7 +181,7 @@ impl lankide_protocol::MachinePeer for TestPeer {
                             (1, 1) | (2, 2) => {
                                 outgoing
                                     .send(Ok(RuntimeFrame {
-                                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                                        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                                         frame: Some(runtime_frame::Frame::ExecutionEventAck(
                                             ExecutionEventAck {
                                                 execution: event.execution,
@@ -197,7 +197,7 @@ impl lankide_protocol::MachinePeer for TestPeer {
                                 let execution = event.execution;
                                 outgoing
                                     .send(Ok(RuntimeFrame {
-                                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                                        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                                         frame: Some(runtime_frame::Frame::ExecutionEventAck(
                                             ExecutionEventAck {
                                                 execution: execution.clone(),
@@ -209,7 +209,7 @@ impl lankide_protocol::MachinePeer for TestPeer {
                                     .expect("final ack receiver");
                                 outgoing
                                     .send(Ok(RuntimeFrame {
-                                        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                                        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                                         frame: Some(runtime_frame::Frame::ExecutionCommitted(
                                             ExecutionCommitted {
                                                 execution,
@@ -517,7 +517,7 @@ async fn complete_protocol_scenario() {
     let mut invalid_tool = assignment();
     invalid_tool.tools[0].name = "feishu.reaction.catalog".into();
     let status = validate_runtime_frame(&RuntimeFrame {
-        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::AssignExecution(invalid_tool)),
     })
     .expect_err("dotted Tool name must be rejected by the shared protocol");
@@ -594,7 +594,7 @@ async fn exchange_assignment_events_and_reconnect(path: &std::path::Path, peer: 
     assert_complete_assignment(&assign);
     first_tx
         .send(MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::AssignmentResult(AssignmentResult {
                 failure: None,
                 execution: assign.execution.clone(),
@@ -841,7 +841,7 @@ async fn reject_empty_message(path: &std::path::Path) {
 }
 
 async fn exchange_management_and_cli(path: &std::path::Path) {
-    let client = lankide_client::http::HttpManagementTransport::local(path, CLIENT_LIMIT);
+    let client = meerkat_client::http::HttpManagementTransport::local(path, CLIENT_LIMIT);
     let onboarding_request = AdvanceAgentOnboardingRequest {
         request_id: "onboarding_1".into(),
         agent: Some(AgentRef {
@@ -1027,7 +1027,7 @@ async fn reject_version_mismatch(path: &std::path::Path) {
     let error = ws::connect_stream(
         path,
         iter([MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::Hello(hello)),
         }]),
     )
@@ -1043,7 +1043,7 @@ async fn reject_oversized_frame(path: &std::path::Path) {
     let error = ws::connect_stream(
         path,
         iter([MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: Some(machine_frame::Frame::Hello(hello)),
         }]),
     )
@@ -1107,7 +1107,7 @@ async fn reject_unknown_frame(path: &std::path::Path) {
     );
     sender
         .send(MachineFrame {
-            protocol_version: lankide_protocol::PROTOCOL_VERSION,
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
             frame: None,
         })
         .await
@@ -1169,7 +1169,7 @@ async fn wait_for_socket(path: &std::path::Path) {
 
 fn hello_frame() -> MachineFrame {
     MachineFrame {
-        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
         frame: Some(machine_frame::Frame::Hello(machine_hello())),
     }
 }
@@ -1200,7 +1200,7 @@ fn machine_hello() -> MachineHello {
 
 fn runtime_hello_frame() -> RuntimeFrame {
     RuntimeFrame {
-        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
         frame: Some(runtime_frame::Frame::Hello(RuntimeHello {
             protocol_version: PROTOCOL_VERSION,
             runtime_instance_id: "runtime_instance_1".into(),
@@ -1281,9 +1281,10 @@ fn assignment() -> AssignExecution {
             output_schema_json: r#"{"type":"object"}"#.into(),
         }],
         cli_commands: vec![CliCommand {
-            name: "lankide".into(),
+            name: "meerkat".into(),
             description: "Use assigned capabilities".into(),
-            argv: vec!["lankide".into(), "tool".into()],
+            argv: vec!["meerkat".into(), "tool".into()],
+            wraps: String::new(),
         }],
         resources: vec![attachment],
         execution_token: "execution_token_17".into(),
@@ -1293,7 +1294,7 @@ fn assignment() -> AssignExecution {
 
 fn event_frame(sequence: u64, kind: ExecutionEventKind, payload: &[u8]) -> MachineFrame {
     MachineFrame {
-        protocol_version: lankide_protocol::PROTOCOL_VERSION,
+        protocol_version: meerkat_protocol::PROTOCOL_VERSION,
         frame: Some(machine_frame::Frame::ExecutionEvent(ExecutionEvent {
             execution: Some(execution_ref()),
             sequence,
@@ -1363,7 +1364,7 @@ fn assert_complete_assignment(assign: &AssignExecution) {
         7
     );
     assert_eq!(assign.tools.first().unwrap().name, "reply");
-    assert_eq!(assign.cli_commands.first().unwrap().name, "lankide");
+    assert_eq!(assign.cli_commands.first().unwrap().name, "meerkat");
     assert_eq!(assign.execution_token, "execution_token_17");
 }
 

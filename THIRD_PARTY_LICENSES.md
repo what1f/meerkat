@@ -1,6 +1,6 @@
 # Third-Party Licenses
 
-Lankide includes third-party fonts, icon artwork, and libraries. Product names
+Meerkat includes third-party fonts, icon artwork, and libraries. Product names
 and brand marks remain the property of their respective owners and are used
 only to identify compatible tools.
 
@@ -11,7 +11,7 @@ respective integrations. The Feishu reaction artwork under
 `apps/web/src/assets/reactions/` is retained for accurate message rendering.
 
 These names, logos, and reaction assets remain the property of their respective
-owners. They are not covered by Lankide's MIT license. Redistributors are
+owners. They are not covered by Meerkat's MIT license. Redistributors are
 responsible for following the applicable brand and platform terms.
 
 ## JetBrains Mono

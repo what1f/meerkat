@@ -2,9 +2,9 @@
 mod process_support;
 use process_support::{ProcessHarnessFactory, ProcessHarnessSpec};
 
-use lankide_harness::{HarnessConfig, HarnessInfo, ModelRef};
-use lankide_machine::{AppError, DaemonConfig, run_with_harnesses};
-use lankide_machine_core::RegisteredHarness;
+use meerkat_harness::{HarnessConfig, HarnessInfo, ModelRef};
+use meerkat_machine::{AppError, DaemonConfig, run_with_harnesses};
+use meerkat_machine_core::RegisteredHarness;
 use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
 pub async fn run_scripted(config: DaemonConfig, pid_journal: PathBuf) -> Result<(), AppError> {

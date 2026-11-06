@@ -31,12 +31,12 @@ def prepare_bootstrap_home(home):
 
 def main():
     target = Path(os.environ.get("CARGO_TARGET_DIR", str(ROOT / "target")))
-    binaries = Path(os.environ.get("LANKIDE_RELEASE_BIN_DIR", str(target / "release"))).resolve()
-    output = Path(os.environ.get("LANKIDE_PACKAGE_OUTPUT_DIR", str(binaries))).resolve()
-    provenance = Path(os.environ.get("LANKIDE_RELEASE_PROVENANCE", str(binaries / "build-provenance.json")))
+    binaries = Path(os.environ.get("MEERKAT_RELEASE_BIN_DIR", str(target / "release"))).resolve()
+    output = Path(os.environ.get("MEERKAT_PACKAGE_OUTPUT_DIR", str(binaries))).resolve()
+    provenance = Path(os.environ.get("MEERKAT_RELEASE_PROVENANCE", str(binaries / "build-provenance.json")))
     version = tomllib.loads((ROOT / "apps/desktop/Cargo.toml").read_text())["package"]["version"]
-    archive = output / f"Lankide-{version}-macos-{os.uname().machine}.zip"
-    bundle = output / "Lankide.app"
+    archive = output / f"Meerkat-{version}-macos-{os.uname().machine}.zip"
+    bundle = output / "Meerkat.app"
     receipt = output / "package-provenance.json"
     subprocess.run([str(ROOT / "scripts/package-provenance"), "verify", "--binary-dir", str(binaries),
         "--build-provenance", str(provenance), "--bundle", str(bundle), "--archive", str(archive), "--output", str(receipt)], check=True)
@@ -70,12 +70,12 @@ def main():
             home = root / "home"
             prepare_bootstrap_home(home)
             bootstrap_result = artifacts / "bootstrap.json"
-            env = {**os.environ, "LANKIDE_HOME": str(home)}
+            env = {**os.environ, "MEERKAT_HOME": str(home)}
             # An explicit socket tells Desktop to connect to an existing
             # Runtime rather than start the helpers under test.
-            env.pop("LANKIDE_RUNTIME_RUN", None)
+            env.pop("MEERKAT_RUNTIME_RUN", None)
             with (artifacts / "desktop.log").open("w") as log:
-                process = subprocess.Popen([str(extracted / "Contents/MacOS/Lankide"), "--local-bootstrap-smoke", "--result", str(bootstrap_result)],
+                process = subprocess.Popen([str(extracted / "Contents/MacOS/Meerkat"), "--local-bootstrap-smoke", "--result", str(bootstrap_result)],
                     env=env,
                     stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
                 try:

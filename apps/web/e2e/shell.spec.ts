@@ -64,7 +64,7 @@ test('mock group mentions run on the Machine and held runs can be released twice
 test('an empty team shows one centered sleeve and opens member creation', async ({ page }) => {
   await rig({ op: 'create_workspace', workspace: 'empty_sleeve' });
   await page.addInitScript(() =>
-    localStorage.setItem('lankide.workspace', JSON.stringify('empty_sleeve')),
+    localStorage.setItem('meerkat.workspace', JSON.stringify('empty_sleeve')),
   );
   await page.goto('/#/members');
   const board = page.locator('main [data-layout="rails"]');
@@ -89,8 +89,8 @@ test('the team menu opens settings and the dock uses localized icon navigation',
   await rig({ op: 'create_workspace', workspace: 'dock_menu' });
   for (let i = 0; i < 30; i++) await rig({ op: 'create_workspace', workspace: `menu_team_${i}` });
   await page.addInitScript(() => {
-    if (!localStorage.getItem('lankide.language'))
-      localStorage.setItem('lankide.language', JSON.stringify('en'));
+    if (!localStorage.getItem('meerkat.language'))
+      localStorage.setItem('meerkat.language', JSON.stringify('en'));
   });
   await page.goto('/#/members');
   for (const [id, label] of [

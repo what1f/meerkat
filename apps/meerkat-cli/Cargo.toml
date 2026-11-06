@@ -1,0 +1,35 @@
+[package]
+name = "meerkat-cli"
+version.workspace = true
+edition.workspace = true
+description = "Meerkat Agent-run-scoped capability CLI"
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+meerkat-protocol = { path = "../../crates/protocol" }
+serde_json.workspace = true
+serde.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[[bin]]
+test = false
+name = "meerkat"
+path = "src/main.rs"
+
+[package.metadata.meerkat.e2e]
+command = "cargo test -p meerkat-system-e2e --test e2e agent_proxy_e2e::"
+scenario = "Use the real meerkat binary through a private attempt proxy and authenticated WS with separate Runtime and Machine homes: list and invoke capabilities, update and read a profile, send content-file text with reply and force plus an attachment, read content, upload and download a multi-frame resource, reject wrong and finished tokens, and remove the socket at completion. Use the per-attempt length-prefixed JSON socket with bounded JSON capability and attachment payloads (S17). Support first direct messages to known human team members with send --to PERSON_ID."
+prerequisites = "None"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"
+
+[lib]
+test = false

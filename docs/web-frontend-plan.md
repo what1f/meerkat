@@ -10,14 +10,14 @@ HTTP JSON + WS，不经过 Tauri IPC。同一套前端也可以直接在本机�
 
 以下描述迁移开始前的实现和限制，仅用于说明方案的起因；这些问题已由后续任务处理。
 
-- 旧 Desktop 通过 `lankide-client` 用 HTTP 与 WS 访问 Runtime：业务操作是
+- 旧 Desktop 通过 `meerkat-client` 用 HTTP 与 WS 访问 Runtime：业务操作是
   `POST /api/v1/<op>`，事件走 `GET /api/v1/events`。
 - 管理 DTO 已使用 serde JSON，二进制数据用 base64，不依赖本地路径。
 - 管理、Machine link 和资源下载共用手写的 hyper router，并且只允许绑定 loopback。
 
 浏览器接入前存在以下限制：
 
-- 事件 WS 用 `Authorization` 和 `x-lankide-subscription` 请求头传参，浏览器的 `WebSocket` 无法设置请求头。
+- 事件 WS 用 `Authorization` 和 `x-meerkat-subscription` 请求头传参，浏览器的 `WebSocket` 无法设置请求头。
 - 管理 listener 默认绑定 `127.0.0.1:0`，端口每次都变，浏览器没有固定地址可用。
 - 没有静态文件服务，没有 Host 和 Origin 校验。
 - 枚举在 JSON 中是 i32，前端只能硬编码数字。
@@ -25,8 +25,8 @@ HTTP JSON + WS，不经过 Tauri IPC。同一套前端也可以直接在本机�
 - Harness 列表和思考强度在 UI 中硬编码，没有使用 catalog。
 - 工作区和 Agent 靠轮询刷新，只有 Machine 订阅了事件。
 
-只有 Desktop 外壳需要本机能力，包括：用 SMAppService 或 launchctl 托管 `lankided`
-和 `lankide-machine`、替换旧版本、窗口材质和标题栏。其余能力都有 Web 原生实现：
+只有 Desktop 外壳需要本机能力，包括：用 SMAppService 或 launchctl 托管 `meerkatd`
+和 `meerkat-machine`、替换旧版本、窗口材质和标题栏。其余能力都有 Web 原生实现：
 
 - 文件选择：`<input type=file>`
 - 复制：`navigator.clipboard`
@@ -38,13 +38,13 @@ HTTP JSON + WS，不经过 Tauri IPC。同一套前端也可以直接在本机�
 ```text
    Tauri 外壳（Desktop）                    本机浏览器
  ┌───────────────────────────────┐             │
- │ 托管 lankided / lankide-machine│             │
+ │ 托管 meerkatd / meerkat-machine│             │
  │ 启动页 → 导航到 Runtime URL   │             │
  │ WKWebView，仅开放窗口操作          │             │
  └──────────────┬────────────────┘             │
                 │      HTTP JSON + WS（同源）    │
                 ▼                               ▼
-   lankided 127.0.0.1:7440
+   meerkatd 127.0.0.1:7440
      /                 Web 前端静态资源（内嵌）
      /api/v1/*         管理 RPC
      /api/v1/events    事件 WS
@@ -112,7 +112,7 @@ TLS，否则同一 Wi‑Fi 下的任何人都能在这台电脑上执行命令�
 1. 管理 DTO 的枚举改为 serde snake_case 字符串；`ManagementEvent.kind` 等 i32 字段改为
    枚举类型。Machine link 帧不变。
 2. `MachineCatalogItem` 增加 `is_local` 字段。
-3. 用 `ts-rs` 从 `lankide-protocol` 的管理 DTO 生成 TypeScript 类型，放在 dev feature 下，
+3. 用 `ts-rs` 从 `meerkat-protocol` 的管理 DTO 生成 TypeScript 类型，放在 dev feature 下，
    生成结果提交到 `apps/web/src/lib/api/generated/`。`just check` 检查生成结果是否与源码一致。
 4. Harness、思考强度、模型选项都从 catalog 读取。
 
@@ -164,7 +164,7 @@ IM 式对话界面。选用 React，原因如下：
 
 ### 在 Tauri 外壳中
 
-前端只通过 User-Agent 后缀 `LankideDesktop/<version>` 判断自己是否运行在外壳里，
+前端只通过 User-Agent 后缀 `MeerkatDesktop/<version>` 判断自己是否运行在外壳里，
 不读 `window.__TAURI__`（`withGlobalTauri: false`）。在外壳中：
 
 - 透明顶栏在桌面非全屏时从 x=92 开始，避开红绿灯，并标记为 `data-tauri-drag-region`。导航在底部 dock。
@@ -174,7 +174,7 @@ IM 式对话界面。选用 React，原因如下：
 
 - 新建 `crates/web-assets`。release 构建用 `rust-embed` 内嵌 `apps/web/dist`，
   debug 构建从磁盘读取。release 构建时如果缺少 dist，直接报错；`cargo check` 不受影响。
-- `apps/daemon` 把它作为 fallback handler 注入 router，`lankide-protocol` 不依赖前端产物。
+- `apps/daemon` 把它作为 fallback handler 注入 router，`meerkat-protocol` 不依赖前端产物。
   - 所有非 API 路径回落到 `index.html`。
   - 带 hash 的资源设置长期缓存，`index.html` 设置 `no-cache`。
 - 开发时，`just web-dev` 启动 Vite，把 `/api` 和 WS 代理到本地 Runtime。
@@ -204,14 +204,14 @@ IM 式对话界面。选用 React，原因如下：
   origin 时停止自有服务并重启外壳，避免动态授权累加。启动页仍通过 URL hash 接收状态。
 - 外链：拦截导航，非 Runtime origin 的链接交给系统浏览器打开（`tauri-plugin-opener`）。
 - `Info.plist` 增加 `NSAllowsLocalNetworking`，允许 WKWebView 加载 loopback 的 http 地址。
-- 菜单：保留“退出 Lankide”和“在浏览器中打开”；“设置…”用 `CmdOrCtrl+,` 打开同一设置页。团队切换菜单底部也提供设置入口。
+- 菜单：保留“退出 Meerkat”和“在浏览器中打开”；“设置…”用 `CmdOrCtrl+,` 打开同一设置页。团队切换菜单底部也提供设置入口。
 
 ## 测试与验收
 
 只写业务 E2E，不写单元测试。
 
 - **Web 业务 E2E**：Playwright（headless Chromium）连接 `tests/system` 拉起的真实
-  `lankided` 和 `lankide-machine`，Harness 和 IM 使用现有 test-support。
+  `meerkatd` 和 `meerkat-machine`，Harness 和 IM 使用现有 test-support。
   它替代旧桌面交互 E2E，以及 `machine_pairing_e2e` 中涉及 UI 的部分。
   场景沿用现有合同：
   - 创建工作区，完成 onboarding
@@ -244,7 +244,7 @@ IM 式对话界面。选用 React，原因如下：
 
 ## 任务
 
-所有任务都在 `refactor/web-frontend` 分支上推进。每个任务使用独立的 git worktree（`../lankide-wt/<任务>`），
+所有任务都在 `refactor/web-frontend` 分支上推进。每个任务使用独立的 git worktree（`../meerkat-wt/<任务>`），
 分支名为 `web/<任务>`。所有 agent 都在 Herdr pane 中运行，我负责跑 gate、做最终验收和合并。
 
 | 工作 | 执行者 |
@@ -328,11 +328,11 @@ IM 式对话界面。选用 React，原因如下：
 
 验收（system rig）：
 
-- A2.1 不带凭据的 `lankide` CLI 和 `lankide-client` 能正常完成创建工作区、创建 Agent 和订阅事件。
+- A2.1 不带凭据的 `meerkat` CLI 和 `meerkat-client` 能正常完成创建工作区、创建 Agent 和订阅事件。
 - A2.2 以下请求都被拒绝，并且不产生任何副作用：Host 为 `evil.test:<port>`；`Origin: https://evil.test` 的 POST；
   `text/plain` 的 POST；跨站 Origin 的 WS 握手。
 - A2.3 同源 Origin 的 POST 和 WS 握手可以通过；通过 `?workspace=…&after=…` 订阅后，能收到该工作区的事件。
-- A2.4 7440 被占用时，`lankided` 以非零状态退出，错误信息中包含端口号。
+- A2.4 7440 被占用时，`meerkatd` 以非零状态退出，错误信息中包含端口号。
 
 #### A3：内嵌前端
 
@@ -349,7 +349,7 @@ IM 式对话界面。选用 React，原因如下：
 
 #### A4：新设计需要的接口
 
-依赖 A1、A2 合并。契约依据 Codex 的调研（报告见 `/tmp/lankide-web/a4-research-report.md`，内容未入库），
+依赖 A1、A2 合并。契约依据 Codex 的调研（报告见 `/tmp/meerkat-web/a4-research-report.md`，内容未入库），
 并按「最小可用」做了收窄。成员顺序和团队墙的摆放存在 localStorage，不进 API。
 三个子任务都会改 `crates/protocol` 和 `crates/runtime`。A4a 和 A4b 可以并行；A4c 依赖 A4a 引入的启动参数，排在 A4a 之后。
 
@@ -448,7 +448,7 @@ IM 式对话界面。选用 React，原因如下：
 依赖 A2、A3。范围：`tests/system`（新增一个可执行 rig）、`apps/web/e2e/`、`apps/web/playwright.config.ts`、
 `justfile`、`scripts/verify-all`、`tests/e2e-modules.tsv`。
 
-- rig 拉起真实的 `lankided` 和 `lankide-machine`，使用 scripted Harness 和 mock IM，向 Playwright 输出 base URL，
+- rig 拉起真实的 `meerkatd` 和 `meerkat-machine`，使用 scripted Harness 和 mock IM，向 Playwright 输出 base URL，
   并提供驱动 mock IM 的控制接口，例如“某人在群里 @ 了某个成员”。
 - `just web-e2e` 跑全部 spec，并接入 `just test`。
 

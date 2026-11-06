@@ -1,5 +1,5 @@
-use lankide_core::AgentId;
-use lankide_provider::{ProviderError, ProviderStorage};
+use meerkat_core::AgentId;
+use meerkat_provider::{ProviderError, ProviderStorage};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;

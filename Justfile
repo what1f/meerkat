@@ -7,14 +7,14 @@ default:
 
 dev:
     ./scripts/verify-production-boundary
-    ./scripts/with-dev-cache cargo build --locked --bin lankided --bin lankide-machine --bin lankide
-    ./scripts/with-dev-cache cargo run --locked -p lankide-desktop
+    ./scripts/with-dev-cache cargo build --locked --bin meerkatd --bin meerkat-machine --bin meerkat
+    ./scripts/with-dev-cache cargo run --locked -p meerkat-desktop
 
 web-dev:
     pnpm -C apps/web dev
 
 web-types:
-    ./scripts/with-dev-cache cargo run --locked -p lankide-web-types -- apps/web/src/lib/api/generated
+    ./scripts/with-dev-cache cargo run --locked -p meerkat-web-types -- apps/web/src/lib/api/generated
 
 check:
     just web-check
@@ -45,10 +45,10 @@ release-local: check test verify-package
     @echo "Local checks and macOS distribution verification passed."
 
 run: app
-    open "{{root}}/target/release/Lankide.app"
+    open "{{root}}/target/release/Meerkat.app"
 
 full-release:
-    LANKIDE_E2E_LIVE=1 ./scripts/verify-all --gate full-release
+    MEERKAT_E2E_LIVE=1 ./scripts/verify-all --gate full-release
 
 release: full-release
     @echo "Release verification and distributable package are ready."
@@ -64,5 +64,5 @@ web-check:
 
 web-e2e:
     pnpm -C apps/web build
-    ./scripts/with-dev-cache cargo build --locked -p lankide-system-e2e --bins
+    ./scripts/with-dev-cache cargo build --locked -p meerkat-system-e2e --bins
     pnpm -C apps/web e2e

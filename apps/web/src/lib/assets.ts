@@ -33,3 +33,6 @@ const brandPaths: Record<string, string> = {
   pi: 'lobehub/pi',
 };
 export const brandUrl = (id: string) => assetUrl(`brand/${brandPaths[id] ?? id}.svg`);
+// An avatar file from the Runtime, ready for an image source.
+export const dataUrl = (file: { media_type: string; bytes: string }) =>
+  `data:${file.media_type};base64,${file.bytes}`;

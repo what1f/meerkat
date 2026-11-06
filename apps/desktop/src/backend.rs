@@ -1,5 +1,5 @@
 use crate::background_services::BackgroundServices;
-use lankide_client::{ClientError, ManagementClient, RuntimeManagementClient};
+use meerkat_client::{ClientError, ManagementClient, RuntimeManagementClient};
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -7,8 +7,8 @@ use std::{
     time::Duration,
 };
 
-const HOME_ENV: &str = "LANKIDE_HOME";
-const RUN_ENV: &str = "LANKIDE_RUNTIME_RUN";
+const HOME_ENV: &str = "MEERKAT_HOME";
+const RUN_ENV: &str = "MEERKAT_RUNTIME_RUN";
 
 pub struct DesktopBackend {
     pub client: Arc<dyn ManagementClient>,
@@ -22,7 +22,7 @@ pub struct DesktopBackend {
 impl DesktopBackend {
     pub fn launch() -> Self {
         let tokio = tokio::runtime::Runtime::new().expect("failed to create desktop Tokio runtime");
-        let home = lankide_home();
+        let home = meerkat_home();
         let configured_run = env::var_os(RUN_ENV);
         let run = configured_run
             .clone()
@@ -43,7 +43,7 @@ impl DesktopBackend {
         let runtime = tokio.handle().clone();
         let manage_services = configured_run.is_none();
         std::thread::Builder::new()
-            .name("lankide-service-bootstrap".into())
+            .name("meerkat-service-bootstrap".into())
             .spawn(move || {
                 let result = start_services(
                     &runtime,
@@ -53,7 +53,7 @@ impl DesktopBackend {
                     manage_services,
                 );
                 if let Err(error) = &result {
-                    eprintln!("lankide-desktop: {error}");
+                    eprintln!("meerkat-desktop: {error}");
                 }
                 let _ = startup_tx.send(result);
             })
@@ -71,7 +71,7 @@ impl DesktopBackend {
 
     pub fn bootstrap() -> Self {
         let tokio = tokio::runtime::Runtime::new().expect("failed to create desktop Tokio runtime");
-        let home = lankide_home();
+        let home = meerkat_home();
         let configured_run = env::var_os(RUN_ENV);
         let run = configured_run
             .clone()
@@ -194,7 +194,7 @@ pub fn run_local_bootstrap_smoke() -> i32 {
         .find(|pair| pair[0] == "--result")
         .map(|pair| PathBuf::from(&pair[1]));
     let Some(result_path) = result_path else {
-        eprintln!("lankide-desktop: --result is required for local bootstrap smoke");
+        eprintln!("meerkat-desktop: --result is required for local bootstrap smoke");
         return 2;
     };
     let backend = DesktopBackend::bootstrap();
@@ -246,7 +246,7 @@ pub fn run_local_bootstrap_smoke() -> i32 {
         .transpose()
         .and_then(|_| fs::write(&result_path, format!("{}\n", payload)));
     if let Err(error) = write_result {
-        eprintln!("lankide-desktop: smoke result could not be written: {error}");
+        eprintln!("meerkat-desktop: smoke result could not be written: {error}");
         return 3;
     }
     backend.stop_local_services();
@@ -254,18 +254,18 @@ pub fn run_local_bootstrap_smoke() -> i32 {
     if status == "passed" { 0 } else { 1 }
 }
 
-fn lankide_home() -> PathBuf {
+fn meerkat_home() -> PathBuf {
     env::var_os(HOME_ENV).map(PathBuf::from).unwrap_or_else(|| {
         env::var_os("HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(".lankide")
+            .join(".meerkat")
     })
 }
 
 async fn connect_with_retry(run: &Path) -> Result<RuntimeManagementClient, ClientError> {
     let client = RuntimeManagementClient::connect_local_lazy(run);
-    let mut last_error = ClientError::Unavailable("Lankide 尚未就绪".into());
+    let mut last_error = ClientError::Unavailable("Meerkat 尚未就绪".into());
     for _ in 0..50 {
         match client.list_workspaces().await {
             Ok(_) => return Ok(client),
@@ -315,7 +315,7 @@ async fn ensure_machine_ready(
     ))
 }
 
-fn local_machine_online(machine: &lankide_client::MachineOption) -> bool {
+fn local_machine_online(machine: &meerkat_client::MachineOption) -> bool {
     machine.registered && machine.revoked_at.is_none() && machine.available && machine.is_local
 }
 

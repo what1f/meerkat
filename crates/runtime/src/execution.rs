@@ -293,7 +293,7 @@ impl Runtime {
                 name: tool.name.clone(),
                 display_name: tool.name.clone(),
                 description: tool.description.clone(),
-                kind: lankide_protocol::CapabilityKind::Tool as i32,
+                kind: meerkat_protocol::CapabilityKind::Tool as i32,
                 input_schema_json: tool.input_schema_json.clone(),
                 output_schema_json: tool.output_schema_json.clone(),
             })
@@ -303,10 +303,10 @@ impl Runtime {
                 .cli_commands
                 .iter()
                 .map(|command| AttemptCapability {
-                    name: format!("cli: {}", command.name),
+                    name: cli_capability_name(command),
                     display_name: command.name.clone(),
                     description: command.description.clone(),
-                    kind: lankide_protocol::CapabilityKind::CliCommand as i32,
+                    kind: meerkat_protocol::CapabilityKind::CliCommand as i32,
                     input_schema_json: r#"{"type":"array","items":{"type":"string"}}"#.into(),
                     output_schema_json: "{}".into(),
                 }),
@@ -440,8 +440,8 @@ impl Runtime {
                         execution_id: created.execution_id,
                         committed: matches!(
                             committed,
-                            lankide_storage::CommitResult::Committed
-                                | lankide_storage::CommitResult::AlreadyCommitted
+                            meerkat_storage::CommitResult::Committed
+                                | meerkat_storage::CommitResult::AlreadyCommitted
                         ),
                     });
                 };
@@ -475,8 +475,8 @@ impl Runtime {
                             execution_id: created.execution_id,
                             committed: matches!(
                                 committed,
-                                lankide_storage::CommitResult::Committed
-                                    | lankide_storage::CommitResult::AlreadyCommitted
+                                meerkat_storage::CommitResult::Committed
+                                    | meerkat_storage::CommitResult::AlreadyCommitted
                             ),
                         });
                     }
@@ -505,7 +505,7 @@ impl Runtime {
                     )
                     .await;
                 match provider_result {
-                    Ok(result) if result.status == lankide_provider::SendMessageStatus::Sent => {
+                    Ok(result) if result.status == meerkat_provider::SendMessageStatus::Sent => {
                         let provider_message_id = result.provider_message_id.ok_or_else(|| {
                             RuntimeError::InvalidCore(
                                 "sent Provider result missing message id".into(),
@@ -533,8 +533,8 @@ impl Runtime {
                             execution_id: created.execution_id,
                             committed: matches!(
                                 committed,
-                                lankide_storage::CommitResult::Committed
-                                    | lankide_storage::CommitResult::AlreadyCommitted
+                                meerkat_storage::CommitResult::Committed
+                                    | meerkat_storage::CommitResult::AlreadyCommitted
                             ),
                         })
                     }
@@ -577,14 +577,14 @@ impl Runtime {
     pub async fn recoverable_executions(
         &self,
         workspace_id: Option<&WorkspaceId>,
-    ) -> Result<Vec<lankide_storage::RecoverableExecutionView>, RuntimeError> {
+    ) -> Result<Vec<meerkat_storage::RecoverableExecutionView>, RuntimeError> {
         Ok(self.storage.recoverable_executions(workspace_id).await?)
     }
 
     pub async fn recoverable_sends(
         &self,
         workspace_id: Option<&WorkspaceId>,
-    ) -> Result<Vec<lankide_storage::RecoverableSendView>, RuntimeError> {
+    ) -> Result<Vec<meerkat_storage::RecoverableSendView>, RuntimeError> {
         Ok(self.storage.recoverable_sends(workspace_id).await?)
     }
 
@@ -623,8 +623,8 @@ impl Runtime {
             execution_id,
             committed: matches!(
                 committed,
-                lankide_storage::CommitResult::Committed
-                    | lankide_storage::CommitResult::AlreadyCommitted
+                meerkat_storage::CommitResult::Committed
+                    | meerkat_storage::CommitResult::AlreadyCommitted
             ),
         })
     }
@@ -772,11 +772,22 @@ fn protocol_tool(value: ToolDefinition) -> Result<ProtocolToolDefinition, Runtim
     })
 }
 
+/// Wrapped commands return credentials for `meerkat exec`, so they use their
+/// own prefix and the generic `meerkat invoke` path refuses them.
+pub(crate) fn cli_capability_name(command: &CliCommand) -> String {
+    if command.wraps.is_empty() {
+        format!("cli: {}", command.name)
+    } else {
+        format!("exec: {}", command.name)
+    }
+}
+
 fn protocol_cli(value: CliCommandDefinition) -> CliCommand {
     CliCommand {
         name: value.id,
         description: value.description,
         argv: Vec::new(),
+        wraps: value.wraps,
     }
 }
 
@@ -828,7 +839,7 @@ fn snapshot_json(snapshot: &SnapshotView) -> serde_json::Value {
     })
 }
 
-fn message_preview_json(message: &lankide_storage::MessageView) -> serde_json::Value {
+fn message_preview_json(message: &meerkat_storage::MessageView) -> serde_json::Value {
     let mut value = message_json(message);
     value["content"] = serde_json::Value::String(truncate_message(&message.content));
     if let Some(reply) = &message.reply_to {
@@ -837,7 +848,7 @@ fn message_preview_json(message: &lankide_storage::MessageView) -> serde_json::V
     value
 }
 
-pub(super) fn message_json(message: &lankide_storage::MessageView) -> serde_json::Value {
+pub(super) fn message_json(message: &meerkat_storage::MessageView) -> serde_json::Value {
     let sender_kind = match message.sender_kind {
         MessageAuthorType::Human => "human",
         MessageAuthorType::Agent => "agent",
@@ -951,7 +962,7 @@ fn render_snapshot(snapshot: &SnapshotView) -> String {
     markdown
 }
 
-fn render_reply(markdown: &mut String, message: &lankide_storage::MessageView) {
+fn render_reply(markdown: &mut String, message: &meerkat_storage::MessageView) {
     if let Some(reply) = &message.reply_to {
         markdown.push_str(&format!(
             "\n  > 引用消息 [message_id={}] {}: {}",
@@ -969,17 +980,17 @@ fn render_reply(markdown: &mut String, message: &lankide_storage::MessageView) {
     }
 }
 
-fn render_attachment_links(markdown: &mut String, message: &lankide_storage::MessageView) {
+fn render_attachment_links(markdown: &mut String, message: &meerkat_storage::MessageView) {
     for resource in &message.resources {
         markdown.push_str(&format!(" resource://{}", resource.resource_id));
     }
 }
 
-fn runtime_chats(snapshot: &SnapshotView) -> Vec<lankide_provider::AgentRuntimeChat> {
+fn runtime_chats(snapshot: &SnapshotView) -> Vec<meerkat_provider::AgentRuntimeChat> {
     snapshot
         .chats
         .iter()
-        .map(|chat| lankide_provider::AgentRuntimeChat {
+        .map(|chat| meerkat_provider::AgentRuntimeChat {
             provider_id: chat.chat.provider_id.clone(),
             channel_id: chat.chat.channel_id.clone(),
             channel_name: chat.chat.channel_name.clone(),

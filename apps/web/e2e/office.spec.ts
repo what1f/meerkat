@@ -31,8 +31,8 @@ async function openOffice(browser: Browser, baseURL?: string, clock = false) {
     permissions: ['clipboard-read', 'clipboard-write'],
   });
   await context.addInitScript((workspace) => {
-    localStorage.setItem('lankide.workspace', JSON.stringify(workspace));
-    localStorage.setItem('lankide.language', JSON.stringify('en'));
+    localStorage.setItem('meerkat.workspace', JSON.stringify(workspace));
+    localStorage.setItem('meerkat.language', JSON.stringify('en'));
   }, member.workspace);
   const opened = await context.newPage();
   if (clock) await opened.clock.install();
@@ -59,7 +59,7 @@ test.describe.serial('office', () => {
     await expect(page.getByTestId('nav-office')).toHaveAttribute('aria-current', 'page');
     await page.getByTestId('add-machine').click();
     const command = page.getByTestId('pair-command');
-    await expect(command).toContainText('lankide-machine pair wss://');
+    await expect(command).toContainText('meerkat-machine pair wss://');
     await expect(page.getByTestId('pair-state')).toHaveAttribute('data-connected', 'false');
     // Point the command at the rig's loopback listener, the way a user fixes a wrong address.
     await page.getByRole('button', { name: 'Network' }).click();
@@ -73,7 +73,7 @@ test.describe.serial('office', () => {
     // The screen shortens long arguments; the copy carries all of them.
     expect(copied).toMatch(
       new RegExp(
-        `^lankide-machine pair wss://127\\.0\\.0\\.1:${port} \\S+ --cert-sha256 [0-9a-f]{64}$`,
+        `^meerkat-machine pair wss://127\\.0\\.0\\.1:${port} \\S+ --cert-sha256 [0-9a-f]{64}$`,
       ),
     );
     await expect(command).toContainText('…');
@@ -158,14 +158,14 @@ test.describe.serial('office', () => {
     const later = await openOffice(browser, baseURL, true);
     await later.getByTestId('add-machine').click();
     const command = later.getByTestId('pair-command');
-    await expect(command).toContainText('lankide-machine pair wss://127.0.0.1:');
+    await expect(command).toContainText('meerkat-machine pair wss://127.0.0.1:');
     const first = (await command.textContent())!;
     await later.clock.fastForward('10:00');
     await expect(command).not.toHaveText(first);
     // The screen shortens long arguments, so take the command from the copy button.
     await command.getByRole('button', { name: /^Cop(y|ied)$/ }).click();
     const renewed = await later.evaluate(() => navigator.clipboard.readText());
-    expect(renewed).toMatch(/^lankide-machine pair wss:\/\/127\.0\.0\.1:\d+ \S+ --cert-sha256 /);
+    expect(renewed).toMatch(/^meerkat-machine pair wss:\/\/127\.0\.0\.1:\d+ \S+ --cert-sha256 /);
     const machine = (await rig({ op: 'pair_machine', command: renewed })).machine_id!;
     await expect(later.getByTestId('pair-state')).toHaveAttribute('data-connected', 'true');
     await expect(later.getByTestId(`machine-row-${machine}`)).toBeVisible();

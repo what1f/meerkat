@@ -1,6 +1,6 @@
 use super::*;
-use lankide_provider::ResourceUpload;
-use lankide_storage::ResourceMetadata;
+use meerkat_provider::ResourceUpload;
+use meerkat_storage::ResourceMetadata;
 use std::{future::Future, path::PathBuf, pin::Pin};
 
 pub type ResourceFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, RuntimeError>> + Send + 'a>>;

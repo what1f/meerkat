@@ -88,38 +88,38 @@ run_smoke() {
   # Unix-domain socket paths are short on macOS; keep the private temp root
   # under /tmp rather than the much longer per-user TMPDIR.
   TEMP_ROOT="$(mktemp -d "/tmp/lkfr.XXXXXX")" || return 1
-  LANKIDE_HOME="$TEMP_ROOT/home"; export LANKIDE_HOME
-  RUNTIME_URL_FILE="$LANKIDE_HOME/run/management.url"; RUNTIME_LOG="$ARTIFACT_DIR/runtime.log"
-  "$RUNTIME_BIN" --home "$LANKIDE_HOME" > "$RUNTIME_LOG" 2>&1 &
+  MEERKAT_HOME="$TEMP_ROOT/home"; export MEERKAT_HOME
+  RUNTIME_URL_FILE="$MEERKAT_HOME/run/management.url"; RUNTIME_LOG="$ARTIFACT_DIR/runtime.log"
+  "$RUNTIME_BIN" --home "$MEERKAT_HOME" > "$RUNTIME_LOG" 2>&1 &
   RUNTIME_PID=$!; printf 'spawned\truntime\t%s\n' "$RUNTIME_PID" >> "$PID_JOURNAL"
   wait_runtime || return $?; RUNTIME_READY=1
-  "$MACHINE_BIN" --home "$LANKIDE_HOME" --instance-id "release-$RUN_ID" > "$ARTIFACT_DIR/machine.log" 2>&1 &
+  "$MACHINE_BIN" --home "$MEERKAT_HOME" --instance-id "release-$RUN_ID" > "$ARTIFACT_DIR/machine.log" 2>&1 &
   MACHINE_PID=$!; printf 'spawned\tmachine\t%s\n' "$MACHINE_PID" >> "$PID_JOURNAL"
   sleep 1; kill -0 "$MACHINE_PID" 2>/dev/null || { FAIL_REASON='Machine exited before connecting'; return 1; }; MACHINE_STARTED=1
-  env -u LANKIDE_AGENT_SOCKET LANKIDE_EXECUTION_ID=1 LANKIDE_EXECUTION_ATTEMPT=1 LANKIDE_EXECUTION_TOKEN=invalid-e2e-token "$CLI_BIN" capabilities > "$ARTIFACT_DIR/cli-boundary.log" 2>&1
+  env -u MEERKAT_AGENT_SOCKET MEERKAT_EXECUTION_ID=1 MEERKAT_EXECUTION_ATTEMPT=1 MEERKAT_EXECUTION_TOKEN=invalid-e2e-token "$CLI_BIN" capabilities > "$ARTIFACT_DIR/cli-boundary.log" 2>&1
   cli_status=$?
-  if (( cli_status == 0 )) || ! grep -Fxq 'LANKIDE_AGENT_SOCKET' "$ARTIFACT_DIR/cli-boundary.log"; then FAIL_REASON='execution-scoped CLI accepted a call without an Agent socket'; return 1; fi
+  if (( cli_status == 0 )) || ! grep -Fxq 'MEERKAT_AGENT_SOCKET' "$ARTIFACT_DIR/cli-boundary.log"; then FAIL_REASON='execution-scoped CLI accepted a call without an Agent socket'; return 1; fi
   CLI_BOUNDARY=1
   desktop_contract
 }
 
 self_test() {
   local root bin artifacts missing_artifacts status missing_status
-  root="$(mktemp -d "${TMPDIR:-/tmp}/lankide-release-smoke-self-test.XXXXXX")" || return 1; bin="$root/release"; artifacts="$root/artifacts"; missing_artifacts="$root/missing-desktop-artifacts"; mkdir -p "$bin"
+  root="$(mktemp -d "${TMPDIR:-/tmp}/meerkat-release-smoke-self-test.XXXXXX")" || return 1; bin="$root/release"; artifacts="$root/artifacts"; missing_artifacts="$root/missing-desktop-artifacts"; mkdir -p "$bin"
   python3 - "$bin" <<'PY'
 from pathlib import Path
 import sys
 r=Path(sys.argv[1]); files={
-"lankided":'''#!/usr/bin/env python3
+"meerkatd":'''#!/usr/bin/env python3
 import json,os,signal,sys,time
 h=sys.argv[sys.argv.index("--home")+1]; p=os.path.join(h,"run","management.url"); os.makedirs(os.path.dirname(p),exist_ok=True)
 open(p,"w").write("http://127.0.0.1:12345"); print(json.dumps({"event":"ready","management_ready":True,"management_url":"http://127.0.0.1:12345"}),flush=True)
 signal.signal(signal.SIGTERM,lambda *_:sys.exit(0))
 while True: time.sleep(1)
 ''',
-"lankide-machine":"#!/bin/sh\ntrap 'exit 0' TERM INT\nwhile :; do sleep 1; done\n",
-"lankide":"#!/bin/sh\necho 'LANKIDE_AGENT_SOCKET' >&2\nexit 2\n",
-"lankide-desktop":'''#!/usr/bin/env python3
+"meerkat-machine":"#!/bin/sh\ntrap 'exit 0' TERM INT\nwhile :; do sleep 1; done\n",
+"meerkat":"#!/bin/sh\necho 'MEERKAT_AGENT_SOCKET' >&2\nexit 2\n",
+"meerkat-desktop":'''#!/usr/bin/env python3
 # --local-bootstrap-smoke
 import json,sys
 p=sys.argv[sys.argv.index("--result")+1]; json.dump({"status":"passed","runtime_ready":True,"machine_connected":True,"management":True,"execution_scoped_cli":True},open(p,"w"))
@@ -133,7 +133,7 @@ i=json.load(open(sys.argv[1])); assert i["status"]=="passed" and all(i["checks"]
 PY
   then status=1
   fi
-  python3 - "$bin/lankide-desktop" <<'PY'
+  python3 - "$bin/meerkat-desktop" <<'PY'
 from pathlib import Path
 import sys
 p=Path(sys.argv[1]); p.write_text("#!/bin/sh\nexit 2\n"); p.chmod(0o755)
@@ -159,7 +159,7 @@ while (( $# )); do case "$1" in --release-bin-dir) RELEASE_BIN_DIR="${2:-}"; shi
 [[ -n "$RELEASE_BIN_DIR" && -n "$ARTIFACT_DIR" && -n "$RUN_ID" ]] && safe_run_id "$RUN_ID" || { usage; exit 2; }
 [[ ! -e "$ARTIFACT_DIR" ]] || { printf 'artifact reservation already exists: %s\n' "$ARTIFACT_DIR" >&2; exit 5; }
 mkdir -p "$ARTIFACT_DIR" || exit 1
-RUNTIME_BIN="$RELEASE_BIN_DIR/lankided"; MACHINE_BIN="$RELEASE_BIN_DIR/lankide-machine"; CLI_BIN="$RELEASE_BIN_DIR/lankide"; DESKTOP_BIN="$RELEASE_BIN_DIR/lankide-desktop"
+RUNTIME_BIN="$RELEASE_BIN_DIR/meerkatd"; MACHINE_BIN="$RELEASE_BIN_DIR/meerkat-machine"; CLI_BIN="$RELEASE_BIN_DIR/meerkat"; DESKTOP_BIN="$RELEASE_BIN_DIR/meerkat-desktop"
 PID_JOURNAL="$ARTIFACT_DIR/pids.tsv"; TEMP_ROOT=""; RUNTIME_URL_FILE=""; RUNTIME_LOG=""; RUNTIME_PID=""; MACHINE_PID=""; DESKTOP_PID=""
 RUNTIME_READY=0; MACHINE_STARTED=0; CLI_BOUNDARY=0; DESKTOP_CONTRACT=0; FAIL_REASON=""
 trap cleanup EXIT INT TERM

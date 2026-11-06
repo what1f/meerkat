@@ -1,6 +1,6 @@
 use crate::error::conv;
 use crate::{Result, Storage, StorageError};
-use lankide_core::{AgentId, ProviderId, ResourceId, WorkspaceId};
+use meerkat_core::{AgentId, ProviderId, ResourceId, WorkspaceId};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

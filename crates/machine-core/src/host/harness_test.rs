@@ -1,11 +1,11 @@
 use super::*;
-use lankide_harness::{AgentEventKind, ExecuteRequest, PermissionPolicy, SessionRequest};
-use lankide_protocol::{HarnessTestState, TestHarnessResponse, machine_frame};
+use meerkat_harness::{AgentEventKind, ExecuteRequest, PermissionPolicy, SessionRequest};
+use meerkat_protocol::{HarnessTestState, TestHarnessResponse, machine_frame};
 use tokio_stream::StreamExt;
 
 pub(super) async fn run(
     inner: Arc<Inner>,
-    request: lankide_protocol::link::TestHarness,
+    request: meerkat_protocol::link::TestHarness,
     received_at: tokio::time::Instant,
 ) {
     let budget = Duration::from_millis(request.budget_millis).min(Duration::from_secs(29));
@@ -19,9 +19,9 @@ pub(super) async fn run(
     if let Some(sender) = sender {
         let _ = sender
             .send(MachineFrame {
-                protocol_version: lankide_protocol::PROTOCOL_VERSION,
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
                 frame: Some(machine_frame::Frame::TestHarnessResult(
-                    lankide_protocol::link::TestHarnessResult {
+                    meerkat_protocol::link::TestHarnessResult {
                         request_id: request.request_id,
                         result,
                     },
@@ -45,7 +45,7 @@ fn outcome(
 
 async fn test(
     inner: &Inner,
-    request: &lankide_protocol::link::TestHarness,
+    request: &meerkat_protocol::link::TestHarness,
     deadline: tokio::time::Instant,
 ) -> TestHarnessResponse {
     use HarnessTestState::*;
@@ -64,10 +64,10 @@ async fn test(
         let mut config = super::assignment::native_config(wire, "harness-test", defaults)?;
         config
             .environment
-            .retain(|key, _| !key.starts_with("LANKIDE_RUNTIME_"));
+            .retain(|key, _| !key.starts_with("MEERKAT_RUNTIME_"));
         directory = Some(
             tempfile::Builder::new()
-                .prefix("lankide-harness-test-")
+                .prefix("meerkat-harness-test-")
                 .tempdir()?,
         );
         let plan = factory
@@ -120,7 +120,7 @@ async fn test(
     let result = match tokio::time::timeout_at(deadline, operation).await {
         Ok(Ok(result)) => result,
         Ok(Err(MachineError::Harness(error))) => {
-            if error.code == lankide_harness::HarnessErrorCode::Timeout {
+            if error.code == meerkat_harness::HarnessErrorCode::Timeout {
                 outcome(TimedOut, None, None)
             } else {
                 let code = serde_json::to_value(error.code).expect("error code");
@@ -138,7 +138,7 @@ async fn test(
         // Kill the entire group even when its leader already exited. Native close
         // then reaps the leader and releases adapter resources.
         if let Some(group) = session.process_group_id() {
-            lankide_harness::kill_process_group(group);
+            meerkat_harness::kill_process_group(group);
         }
         let _ = tokio::time::timeout(Duration::from_millis(500), session.close()).await;
     }

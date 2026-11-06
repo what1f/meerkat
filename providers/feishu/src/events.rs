@@ -93,15 +93,15 @@ impl From<crate::http::ClientError> for SinkError {
         }
     }
 }
-impl From<lankide_provider::ProviderError> for SinkError {
-    fn from(error: lankide_provider::ProviderError) -> Self {
+impl From<meerkat_provider::ProviderError> for SinkError {
+    fn from(error: meerkat_provider::ProviderError) -> Self {
         let retryable = matches!(
             error,
-            lankide_provider::ProviderError::External {
+            meerkat_provider::ProviderError::External {
                 retryable: true,
                 ..
-            } | lankide_provider::ProviderError::Timeout { .. }
-                | lankide_provider::ProviderError::EventSinkClosed
+            } | meerkat_provider::ProviderError::Timeout { .. }
+                | meerkat_provider::ProviderError::EventSinkClosed
         );
         Self {
             retryable,

@@ -1,16 +1,16 @@
 [package]
 autotests = false
-name = "lankide-core"
+name = "meerkat-core"
 version.workspace = true
 edition.workspace = true
-description = "Pure domain identifiers and state types for Lankide"
+description = "Pure domain identifiers and state types for Meerkat"
 license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
 [lib]
 test = false
-name = "lankide_core"
+name = "meerkat_core"
 path = "src/lib.rs"
 
 [dependencies]
@@ -19,8 +19,8 @@ serde.workspace = true
 [dev-dependencies]
 serde_json.workspace = true
 
-[package.metadata.lankide.e2e]
-command = "cargo test -p lankide-core --test e2e core_e2e::"
+[package.metadata.meerkat.e2e]
+command = "cargo test -p meerkat-core --test e2e core_e2e::"
 scenario = "Validate canonical Tool names, Markdown mentions, attention levels, schedule boundaries, and identifier validation through public constructors and deserialization. Select short English or Simplified Chinese failure notices from the triggering message."
 prerequisites = "None"
 classification = "hermetic"

@@ -1,11 +1,11 @@
 use super::*;
-use lankide_protocol::{
+use meerkat_protocol::{
     AgentProfile, AgentRef, AgentRunContext, Capability, CapabilityInvokeRequest,
     CapabilityInvokeResult, CapabilityList, ContentKind, ContentRequest, ContentResult,
     SendMessageRequest, SendMessageResult as ProtocolSendMessageResult, ToolDefinition, ToolError,
     UpdateAgentRequest, UpdateSelfProfileRequest,
 };
-use lankide_provider::{MessageAttachment, ResourceUpload, SendMessageStatus};
+use meerkat_provider::{MessageAttachment, ResourceUpload, SendMessageStatus};
 
 pub(crate) fn standard_tool_definitions() -> Vec<ToolDefinition> {
     [
@@ -209,7 +209,7 @@ impl RuntimeApplication {
             }
             Err(error) => return Err(error),
         }
-        let result = if authorized.kind == lankide_protocol::CapabilityKind::Tool as i32 {
+        let result = if authorized.kind == meerkat_protocol::CapabilityKind::Tool as i32 {
             let name = request.capability_name.as_str();
             match runtime
                 .invoke_provider_tool(
@@ -246,7 +246,11 @@ impl RuntimeApplication {
                     });
                 }
             }
-        } else if let Some(name) = request.capability_name.strip_prefix("cli: ") {
+        } else if let Some(name) = request
+            .capability_name
+            .strip_prefix("cli: ")
+            .or_else(|| request.capability_name.strip_prefix("exec: "))
+        {
             let values = arguments
                 .as_array()
                 .ok_or_else(|| RuntimeError::Application("CLI arguments must be an array".into()))?
@@ -310,7 +314,7 @@ impl RuntimeApplication {
         let direct_person = request
             .chat_id
             .strip_prefix("person:")
-            .map(lankide_core::PersonId::new)
+            .map(meerkat_core::PersonId::new)
             .transpose()
             .map_err(|error| RuntimeError::InvalidCore(error.to_string()))?;
         if direct_person.is_some() && request.channel_id.is_empty() {
@@ -320,7 +324,7 @@ impl RuntimeApplication {
                 .into_iter()
                 .find(|channel| {
                     channel.default_attention
-                        == lankide_provider::ChannelDefaultAttention::DirectMessage
+                        == meerkat_provider::ChannelDefaultAttention::DirectMessage
                 })
                 .ok_or_else(|| RuntimeError::Application("当前平台不支持私信。".into()))?
                 .id
@@ -333,7 +337,7 @@ impl RuntimeApplication {
                 .database()
                 .person(&validated.workspace_id, person)
                 .await?
-                .is_none_or(|person| person.team_role == lankide_storage::TeamRole::External)
+                .is_none_or(|person| person.team_role == meerkat_storage::TeamRole::External)
             {
                 return Ok(invalid_send_result(
                     "recipient_id 请选择人类团队成员的 ID。",
@@ -346,7 +350,7 @@ impl RuntimeApplication {
                 .find(|channel| {
                     channel.id == channel_id
                         && channel.default_attention
-                            == lankide_provider::ChannelDefaultAttention::DirectMessage
+                            == meerkat_provider::ChannelDefaultAttention::DirectMessage
                 })
                 .ok_or_else(|| RuntimeError::Application("请选择私信会话。".into()))?;
             if request.reply_to_message_id.is_some() {
@@ -415,7 +419,7 @@ impl RuntimeApplication {
                 ));
             }
             attachments.push(MessageAttachment {
-                resource: lankide_core::ResourceRef {
+                resource: meerkat_core::ResourceRef {
                     resource_id: stored.resource_id.get(),
                     file_name: stored.file_name,
                     media_type: stored.media_type,
@@ -542,8 +546,8 @@ impl RuntimeApplication {
                 let unknown = provider_error.is_some_and(|source| {
                     matches!(
                         source,
-                        lankide_provider::ProviderError::Timeout { .. }
-                            | lankide_provider::ProviderError::External {
+                        meerkat_provider::ProviderError::Timeout { .. }
+                            | meerkat_provider::ProviderError::External {
                                 retryable: true,
                                 ..
                             }
@@ -568,8 +572,8 @@ impl RuntimeApplication {
                     message_id: begun.message_id,
                     provider_message_id: String::new(),
                     error: Some(ToolError {
-                        code: if provider_error.is_some_and(|error| matches!(error,lankide_provider::ProviderError::InvalidInput{..})) { "invalid_input" } else if unknown { "send_unknown" } else { "send_failed" }.into(),
-                        message: if let Some(lankide_provider::ProviderError::InvalidInput{field}) = provider_error { field } else if unknown {
+                        code: if provider_error.is_some_and(|error| matches!(error,meerkat_provider::ProviderError::InvalidInput{..})) { "invalid_input" } else if unknown { "send_unknown" } else { "send_failed" }.into(),
+                        message: if let Some(meerkat_provider::ProviderError::InvalidInput{field}) = provider_error { field } else if unknown {
                             "The send result is unknown. Check the conversation before sending again."
                         } else {
                             "The message could not be sent."
@@ -653,7 +657,7 @@ impl RuntimeApplication {
     }
 }
 
-fn send_attempt_result(attempt: lankide_storage::SendAttemptView) -> ProtocolSendMessageResult {
+fn send_attempt_result(attempt: meerkat_storage::SendAttemptView) -> ProtocolSendMessageResult {
     ProtocolSendMessageResult {
         accepted: attempt.state == "sent",
         message_id: attempt.message_id,
@@ -704,13 +708,13 @@ async fn invoke_standard_tool(
                 .and_then(serde_json::Value::as_u64)
                 .unwrap_or_default() as u32;
             let attention = match level {
-                "follow" if interval_minutes == 0 => lankide_storage::AttentionRecord::Always,
-                "mention" if interval_minutes == 0 => lankide_storage::AttentionRecord::Mention,
-                "mute" if interval_minutes == 0 => lankide_storage::AttentionRecord::Mute,
+                "follow" if interval_minutes == 0 => meerkat_storage::AttentionRecord::Always,
+                "mention" if interval_minutes == 0 => meerkat_storage::AttentionRecord::Mention,
+                "mute" if interval_minutes == 0 => meerkat_storage::AttentionRecord::Mute,
                 "schedule"
                     if matches!(interval_minutes, 5 | 15 | 30 | 60 | 120 | 240 | 480 | 1440) =>
                 {
-                    lankide_storage::AttentionRecord::Schedule { interval_minutes }
+                    meerkat_storage::AttentionRecord::Schedule { interval_minutes }
                 }
                 _ => {
                     return Ok(Some(capability_error(
@@ -959,7 +963,7 @@ async fn invoke_message_recall(
                     .recall_message(
                         &validated.workspace_id,
                         validated.agent_id.clone(),
-                        lankide_provider::RecallMessageSpec {
+                        meerkat_provider::RecallMessageSpec {
                             channel_id: target.channel_id,
                             chat_id: target.provider_chat_id,
                             message_id,
@@ -974,7 +978,7 @@ async fn invoke_message_recall(
                 {
                     Ok(()) => serde_json::json!({"success":true,"message_id":target.message_id}),
                     Err(RuntimeError::ProviderCall(
-                        lankide_provider::ProviderError::Unsupported { .. },
+                        meerkat_provider::ProviderError::Unsupported { .. },
                     )) => {
                         serde_json::json!({"success":false,"error":"recall_unsupported"})
                     }
@@ -1037,7 +1041,7 @@ async fn invoke_message_edit(
                     .edit_message(
                         &validated.workspace_id,
                         validated.agent_id.clone(),
-                        lankide_provider::EditMessageSpec {
+                        meerkat_provider::EditMessageSpec {
                             channel_id: target.channel_id,
                             chat_id: target.provider_chat_id,
                             message_id: internal_message_id,
@@ -1069,7 +1073,7 @@ async fn invoke_message_edit(
                         }
                     }
                     Err(RuntimeError::ProviderCall(
-                        lankide_provider::ProviderError::Unsupported { .. },
+                        meerkat_provider::ProviderError::Unsupported { .. },
                     )) => serde_json::json!({"success":false,"error":"edit_unsupported"}),
                     Err(_) => serde_json::json!({"success":false,"error":"edit_failed"}),
                 }

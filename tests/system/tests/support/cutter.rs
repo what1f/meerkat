@@ -1,5 +1,5 @@
 //! Test-only network boundary. Cuts after a byte count, never after a timer.
-use lankide_system_e2e::Result;
+use meerkat_system_e2e::Result;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -52,14 +52,14 @@ impl Cutter {
                                         Err(error) => return Err(error),
                                     };
                                     let text = String::from_utf8(header.clone())?;
-                                    server.write_all(&lankide_system_e2e::net_proxy::upstream_host(&header, &address)?).await?;
+                                    server.write_all(&meerkat_system_e2e::net_proxy::upstream_host(&header, &address)?).await?;
                                     if !text.starts_with("GET /resources/") {
                                         tokio::io::copy_bidirectional(&mut client, &mut server).await?;
                                         break;
                                     }
                                     let fields: Vec<_> = text.lines().filter_map(|line| line.split_once(':')).map(|(key,value)| (key.to_ascii_lowercase(), value.trim().to_owned())).collect();
                                     let get = |name: &str| fields.iter().find(|(key,_)| key == name).map(|(_,value)| value.clone());
-                                    records.lock().unwrap().push(Download { execution: get("x-lankide-execution").unwrap_or_default(), attempt: get("x-lankide-attempt").unwrap_or_default(), token: get("authorization").unwrap_or_default().trim_start_matches("Bearer ").to_owned(), range: get("range") });
+                                    records.lock().unwrap().push(Download { execution: get("x-meerkat-execution").unwrap_or_default(), attempt: get("x-meerkat-attempt").unwrap_or_default(), token: get("authorization").unwrap_or_default().trim_start_matches("Bearer ").to_owned(), range: get("range") });
                                     let header = headers(&mut server).await?;
                                     let response = String::from_utf8(header.clone())?;
                                     let mut remaining: u64 = response.lines().filter_map(|line| line.split_once(':')).find(|(name, _)| name.eq_ignore_ascii_case("content-length")).ok_or("missing resource length")?.1.trim().parse()?;

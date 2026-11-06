@@ -1,6 +1,6 @@
 use super::Inner;
-use lankide_harness::HarnessFailure;
-use lankide_protocol::{AttemptFailure, ExecutionRef};
+use meerkat_harness::HarnessFailure;
+use meerkat_protocol::{AttemptFailure, ExecutionRef};
 use sha2::{Digest, Sha256};
 use std::io::Write;
 

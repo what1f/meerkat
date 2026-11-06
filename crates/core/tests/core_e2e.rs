@@ -1,4 +1,4 @@
-use lankide_core::{
+use meerkat_core::{
     AttentionLevel, MessageId, ScheduleInterval, UnixMillis, WorkspaceId, is_canonical_tool_name,
     markdown_mention, markdown_mentions,
 };
@@ -95,13 +95,13 @@ fn core_public_domain_scenario() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Chat notices retain one short sentence in the triggering language.
-    let english = lankide_core::agent_failure_notice("Please help");
-    let chinese = lankide_core::agent_failure_notice("请帮忙");
+    let english = meerkat_core::agent_failure_notice("Please help");
+    let chinese = meerkat_core::agent_failure_notice("请帮忙");
     assert_eq!(
         english,
-        "I couldn’t handle this message; please ask my owner to check Lankide."
+        "I couldn’t handle this message; please ask my owner to check Meerkat."
     );
-    assert_eq!(chinese, "我未能处理这条消息，请负责人在 Lankide 中检查。");
+    assert_eq!(chinese, "我未能处理这条消息，请负责人在 Meerkat 中检查。");
     write_result(
         &artifact,
         &run_id,

@@ -5,7 +5,7 @@ mod native_failures;
 async fn native_agent_failures_keep_their_cause_and_classification()
 -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     native_failures::run(
-        &lankide_harness_claude_code::ClaudeCodeHarness::new(),
+        &meerkat_harness_claude_code::ClaudeCodeHarness::new(),
         "claude_code",
     )
     .await

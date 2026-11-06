@@ -1,5 +1,5 @@
 [package]
-name = "lankide-web-assets"
+name = "meerkat-web-assets"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -17,8 +17,8 @@ rust-embed = "8"
 [lib]
 test = false
 
-[package.metadata.lankide.e2e]
-command = "pnpm -C apps/web build && cargo test -p lankide-system-e2e --test e2e web_assets_e2e:: && tests/system/verify-web-release"
+[package.metadata.meerkat.e2e]
+command = "pnpm -C apps/web build && cargo test -p meerkat-system-e2e --test e2e web_assets_e2e:: && tests/system/verify-web-release"
 scenario = "Verify A3.1 through real Runtime and Machine daemons: serve the built frontend and SPA paths with no-cache, assets with immutable caching and correct MIME types, API JSON errors, local Host and Origin checks, unchanged Machine links, and A3.2 missing-dist release rejection with build instructions."
 prerequisites = "pnpm dependencies installed in apps/web"
 classification = "hermetic"

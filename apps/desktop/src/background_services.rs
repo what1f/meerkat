@@ -1,4 +1,4 @@
-use lankide_client::ClientError;
+use meerkat_client::ClientError;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -14,15 +14,15 @@ use objc2_service_management::{SMAppService, SMAppServiceStatus};
 use std::io::Write as _;
 
 #[cfg(target_os = "macos")]
-const RUNTIME_AGENT_PLIST: &str = "com.lankide.daemon.plist";
+const RUNTIME_AGENT_PLIST: &str = "com.meerkat.daemon.plist";
 #[cfg(target_os = "macos")]
-const MACHINE_AGENT_PLIST: &str = "com.lankide.machine.plist";
+const MACHINE_AGENT_PLIST: &str = "com.meerkat.machine.plist";
 #[cfg(target_os = "macos")]
 const AD_HOC_BACKGROUND_SERVICES_MARKER: &str = "AdHocBackgroundServices";
 #[cfg(target_os = "macos")]
-const RUNTIME_AGENT_LABEL: &str = "com.lankide.daemon";
+const RUNTIME_AGENT_LABEL: &str = "com.meerkat.daemon";
 #[cfg(target_os = "macos")]
-const MACHINE_AGENT_LABEL: &str = "com.lankide.machine";
+const MACHINE_AGENT_LABEL: &str = "com.meerkat.machine";
 
 pub(crate) struct BackgroundServices {
     adapter: Adapter,
@@ -67,8 +67,8 @@ impl BackgroundServices {
         #[cfg(target_os = "macos")]
         match self.adapter {
             Adapter::ModernLaunchAgents => {
-                prepare_launch_agent(home, "runtime.lock", "lankided", RUNTIME_AGENT_PLIST)?;
-                prepare_launch_agent(home, "machine.lock", "lankide-machine", MACHINE_AGENT_PLIST)?;
+                prepare_launch_agent(home, "runtime.lock", "meerkatd", RUNTIME_AGENT_PLIST)?;
+                prepare_launch_agent(home, "machine.lock", "meerkat-machine", MACHINE_AGENT_PLIST)?;
                 return Ok(());
             }
             Adapter::AdHocLaunchAgents => {
@@ -78,11 +78,11 @@ impl BackgroundServices {
                     unregister_modern_launch_agent(RUNTIME_AGENT_PLIST);
                     unregister_modern_launch_agent(MACHINE_AGENT_PLIST);
                 }
-                install_ad_hoc_launch_agent(home, RUNTIME_AGENT_LABEL, "lankided", "runtime.lock")?;
+                install_ad_hoc_launch_agent(home, RUNTIME_AGENT_LABEL, "meerkatd", "runtime.lock")?;
                 install_ad_hoc_launch_agent(
                     home,
                     MACHINE_AGENT_LABEL,
-                    "lankide-machine",
+                    "meerkat-machine",
                     "machine.lock",
                 )?;
                 return Ok(());
@@ -100,8 +100,8 @@ impl BackgroundServices {
         {
             let mut stopped = false;
             for (lock, executable) in [
-                ("run/machine.lock", "lankide-machine"),
-                ("run/runtime.lock", "lankided"),
+                ("run/machine.lock", "meerkat-machine"),
+                ("run/runtime.lock", "meerkatd"),
             ] {
                 if let Some(instance) =
                     local_service(&home.join(lock), &helper_executable(executable)?, true)?
@@ -126,7 +126,7 @@ impl BackgroundServices {
         match &mut self.adapter {
             Adapter::Transient { runtime, .. } => {
                 if runtime.is_none() {
-                    let executable = helper_executable("lankided")?;
+                    let executable = helper_executable("meerkatd")?;
                     *runtime = Some(spawn_helper(&executable, home)?);
                 }
                 Ok(())
@@ -145,7 +145,7 @@ impl BackgroundServices {
         match &mut self.adapter {
             Adapter::Transient { machine, .. } => {
                 if machine.is_none() {
-                    let executable = helper_executable("lankide-machine")?;
+                    let executable = helper_executable("meerkat-machine")?;
                     *machine = Some(spawn_helper(&executable, home)?);
                 }
                 Ok(())
@@ -246,7 +246,7 @@ fn ensure_launch_agent(plist_name: &str) -> Result<(), ClientError> {
     }
 
     if let Err(error) = unsafe { service.registerAndReturnError() } {
-        eprintln!("lankide-desktop: could not register {plist_name}: {error}");
+        eprintln!("meerkat-desktop: could not register {plist_name}: {error}");
         return match unsafe { service.status() } {
             SMAppServiceStatus::Enabled => Ok(()),
             SMAppServiceStatus::RequiresApproval => Err(background_permission_error()),
@@ -268,7 +268,7 @@ fn unregister_modern_launch_agent(plist_name: &str) {
         return;
     }
     if let Err(error) = unsafe { service.unregisterAndReturnError() } {
-        eprintln!("lankide-desktop: could not unregister {plist_name}: {error}");
+        eprintln!("meerkat-desktop: could not unregister {plist_name}: {error}");
     }
 }
 
@@ -335,7 +335,7 @@ fn install_ad_hoc_launch_agent(
         last_error = String::from_utf8_lossy(&output.stderr).trim().to_owned();
         std::thread::sleep(Duration::from_millis(100));
     }
-    eprintln!("lankide-desktop: could not bootstrap {label}: {last_error}");
+    eprintln!("meerkat-desktop: could not bootstrap {label}: {last_error}");
     Err(background_installation_error())
 }
 
@@ -351,7 +351,7 @@ fn start_launch_agent(label: &str) -> Result<(), ClientError> {
         Ok(())
     } else {
         eprintln!(
-            "lankide-desktop: could not start {label}: {}",
+            "meerkat-desktop: could not start {label}: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         );
         Err(background_installation_error())
@@ -369,7 +369,7 @@ fn restart_launch_agent(label: &str) -> Result<(), ClientError> {
         Ok(())
     } else {
         eprintln!(
-            "lankide-desktop: could not restart {label}: {}",
+            "meerkat-desktop: could not restart {label}: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         );
         Err(background_installation_error())
@@ -480,12 +480,12 @@ fn xml_escape(value: &str) -> String {
 
 #[cfg(target_os = "macos")]
 fn background_permission_error() -> ClientError {
-    ClientError::Unavailable("请在系统设置的登录项中允许 Lankide 在后台运行。".into())
+    ClientError::Unavailable("请在系统设置的登录项中允许 Meerkat 在后台运行。".into())
 }
 
 #[cfg(target_os = "macos")]
 fn background_installation_error() -> ClientError {
-    ClientError::Unavailable("Lankide 无法在后台运行，请重新安装后重试。".into())
+    ClientError::Unavailable("Meerkat 无法在后台运行，请重新安装后重试。".into())
 }
 
 #[cfg(target_os = "macos")]
@@ -530,12 +530,12 @@ fn stop_helper(mut child: Child) {
 fn replace_outdated_local_services(home: &Path) -> Result<(), ClientError> {
     let runtime = local_service(
         &home.join("run/runtime.lock"),
-        &helper_executable("lankided")?,
+        &helper_executable("meerkatd")?,
         true,
     )?;
     let machine = local_service(
         &home.join("run/machine.lock"),
-        &helper_executable("lankide-machine")?,
+        &helper_executable("meerkat-machine")?,
         true,
     )?;
 
@@ -653,7 +653,7 @@ fn stop_local_service(instance: LocalService) -> Result<(), ClientError> {
 
 #[cfg(unix)]
 fn background_update_error() -> ClientError {
-    ClientError::Unavailable("Lankide 尚未完成更新，请退出并重新打开。".into())
+    ClientError::Unavailable("Meerkat 尚未完成更新，请退出并重新打开。".into())
 }
 
 #[cfg(unix)]

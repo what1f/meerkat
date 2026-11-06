@@ -14,7 +14,7 @@ import css from './Spec.module.css';
 export default function DesignPreview() {
   return (
     <main className={css.page} data-testid="design-preview">
-      <h1>Lankide design</h1>
+      <h1>Meerkat design</h1>
       <Group name="Design">
         <DesignActions />
         <DesignFields />

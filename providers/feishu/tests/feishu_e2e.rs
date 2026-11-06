@@ -9,9 +9,9 @@
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use flate2::read::GzDecoder;
-use lankide_core::ResourceRef;
-use lankide_core::{AgentId, ChannelId, MessageId, PersonId, WorkspaceId};
-use lankide_provider::{
+use meerkat_core::ResourceRef;
+use meerkat_core::{AgentId, ChannelId, MessageId, PersonId, WorkspaceId};
+use meerkat_provider::{
     AgentRuntimeSpec, AgentSpec, AutoReactionSpec, ChannelDefaultAttention, HostServices, LogLevel,
     MessageAttachment, OperationProgress, OperationUpdate, Provider, ProviderAgentFile,
     ProviderEvent, ProviderEventKind, ProviderFuture, ProviderHost, ProviderLogger,
@@ -19,13 +19,13 @@ use lankide_provider::{
     ProviderStorage, ProviderTeamMember, RecallMessageSpec, ResourceSaver, ResourceUpload,
     SecretReader, SecretValue, SendMessageSpec, SendMessageStatus, TeamRole,
 };
-use lankide_provider_feishu::{
+use meerkat_provider_feishu::{
     Auth, Credentials, Domain, EventSource, FeishuClient, FeishuProvider, Method,
     NormalizationConfig, NormalizedEvent, RawEvent, Request, ReqwestTransport, Response,
     STANDARD_BOT_EVENTS, STANDARD_BOT_TENANT_SCOPES, SourceError, Transport, TransportError,
     authorization_url, extract_agent_ids, normalize_event, render_card_markdown,
 };
-use lankide_testkit::{
+use meerkat_testkit::{
     GateSelection, ProbeConfig, ScenarioArtifact as Artifact, run_prerequisite_probe,
 };
 use serde::Deserialize;
@@ -89,7 +89,7 @@ fn exercise_feishu_contract() -> Result<(), String> {
     }
     let (rendered, mentions) = render_card_markdown(
         content,
-        &[lankide_provider_feishu::MentionTarget::new(
+        &[meerkat_provider_feishu::MentionTarget::new(
             "agent_alpha",
             "ou_e2e",
             "E2E Agent",
@@ -150,7 +150,7 @@ fn exercise_feishu_contract() -> Result<(), String> {
         || !message.mentioned_agent_ids.is_empty()
         || message.content != "hello @E2E Agent[ou_agent]"
         || message.mentions.first().is_none_or(|mention| {
-            mention.kind != lankide_provider_feishu::SenderKind::Human || mention.agent_id.is_some()
+            mention.kind != meerkat_provider_feishu::SenderKind::Human || mention.agent_id.is_some()
         })
     {
         return Err("Feishu message identity, reply, or mention mapping changed".to_owned());
@@ -335,7 +335,7 @@ async fn feishu_provider_exposes_im_reaction_and_optional_task_capabilities() {
     assert!(prompt.contains(include_str!("fixtures/go-expression.md").trim()));
     // Runtime owns the shared IM rules; Feishu adds only its own sections.
     assert!(!prompt.contains("message_send 是你唯一在 IM 里发送消息的方式"));
-    assert!(!prompt.contains("lankide upload"));
+    assert!(!prompt.contains("meerkat upload"));
     assert!(prompt.contains("飞书任务"));
     assert!(prompt.contains("负责人"));
     assert!(!prompt.contains("Runtime"));
@@ -513,9 +513,9 @@ async fn feishu_task_flow_projects_the_typed_team_roster() {
     .expect("third Feishu Agent connection");
 
     let mut runtime = standalone_runtime_spec("cli_alpha");
-    runtime.chats.push(lankide_provider::AgentRuntimeChat {
-        provider_id: lankide_core::ProviderId::new("feishu").unwrap(),
-        channel_id: lankide_core::ChannelId::new("group_chat").unwrap(),
+    runtime.chats.push(meerkat_provider::AgentRuntimeChat {
+        provider_id: meerkat_core::ProviderId::new("feishu").unwrap(),
+        channel_id: meerkat_core::ChannelId::new("group_chat").unwrap(),
         channel_name: "Group".into(),
         chat_id: "origin-chat".into(),
         chat_name: "Origin".into(),
@@ -1359,14 +1359,14 @@ async fn feishu_provider_does_not_block_later_events_when_an_attachment_is_unava
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "requires explicit LANKIDE_E2E_LIVE=1 and the secure Feishu fixture"]
+#[ignore = "requires explicit MEERKAT_E2E_LIVE=1 and the secure Feishu fixture"]
 async fn feishu_live_gate() {
-    assert_eq!(env::var("LANKIDE_E2E_LIVE").as_deref(), Ok("1"));
-    let run_id = env::var("LANKIDE_E2E_RUN_ID").expect("LANKIDE_E2E_RUN_ID is required");
+    assert_eq!(env::var("MEERKAT_E2E_LIVE").as_deref(), Ok("1"));
+    let run_id = env::var("MEERKAT_E2E_RUN_ID").expect("MEERKAT_E2E_RUN_ID is required");
     if let Err(error) = validate_run_id(&run_id) {
         panic!("invalid live run id: {error}");
     }
-    let marker = format!("[lankide-e2e:{run_id}]");
+    let marker = format!("[meerkat-e2e:{run_id}]");
     let artifact = Artifact::new(
         std::path::Path::new("target/e2e-artifacts"),
         "provider-feishu",
@@ -1437,9 +1437,9 @@ struct FeishuFixture {
 }
 
 fn load_fixture() -> Result<FeishuFixture, String> {
-    let root = env::var_os("LANKIDE_E2E_TEAM_ROOT")
+    let root = env::var_os("MEERKAT_E2E_TEAM_ROOT")
         .map(PathBuf::from)
-        .ok_or_else(|| "LANKIDE_E2E_TEAM_ROOT is required".to_owned())?;
+        .ok_or_else(|| "MEERKAT_E2E_TEAM_ROOT is required".to_owned())?;
     let root =
         fs::canonicalize(&root).map_err(|_| "Feishu fixture root is unavailable".to_owned())?;
     let main_path = root.join("feishu-app.json");
@@ -1585,7 +1585,7 @@ fn resolve_fixture_path(root: &Path, path: &str) -> PathBuf {
 }
 
 fn validate_run_id(run_id: &str) -> Result<(), &'static str> {
-    // The longest request key is `lankide-{run_id}-inbound-file`, while
+    // The longest request key is `meerkat-{run_id}-inbound-file`, while
     // Feishu accepts at most 50 characters for an idempotency key.
     if run_id.is_empty() || run_id.len() > 30 {
         return Err("run id must contain 1..30 characters");
@@ -1611,7 +1611,7 @@ impl SecretReader for LiveSecretReader {
                 .get(name)
                 .cloned()
                 .map(SecretValue::new)
-                .ok_or(lankide_provider::ProviderError::SecretAccessDenied)
+                .ok_or(meerkat_provider::ProviderError::SecretAccessDenied)
         })
     }
 }
@@ -1653,7 +1653,7 @@ impl TaskFlowState {
 }
 
 impl Transport for TaskFlowTransport {
-    fn execute(&self, request: Request) -> lankide_provider_feishu::http::TransportFuture<'_> {
+    fn execute(&self, request: Request) -> meerkat_provider_feishu::http::TransportFuture<'_> {
         Box::pin(async move {
             if request
                 .path
@@ -1899,7 +1899,7 @@ struct PermissionInspectionTransport {
 }
 
 impl Transport for PermissionInspectionTransport {
-    fn execute(&self, request: Request) -> lankide_provider_feishu::http::TransportFuture<'_> {
+    fn execute(&self, request: Request) -> meerkat_provider_feishu::http::TransportFuture<'_> {
         Box::pin(async move {
             if request
                 .path
@@ -1934,7 +1934,7 @@ struct AuthorizationUpgradeTransport {
 }
 
 impl Transport for AuthorizationUpgradeTransport {
-    fn execute(&self, request: Request) -> lankide_provider_feishu::http::TransportFuture<'_> {
+    fn execute(&self, request: Request) -> meerkat_provider_feishu::http::TransportFuture<'_> {
         Box::pin(async move {
             if request
                 .path
@@ -2023,7 +2023,7 @@ impl Transport for AuthorizationUpgradeTransport {
 }
 
 impl Transport for RefreshingTokenTransport {
-    fn execute(&self, request: Request) -> lankide_provider_feishu::http::TransportFuture<'_> {
+    fn execute(&self, request: Request) -> meerkat_provider_feishu::http::TransportFuture<'_> {
         Box::pin(async move {
             if request
                 .path
@@ -2067,7 +2067,7 @@ fn json_response(status: u16, body: Value) -> Result<Response, TransportError> {
 }
 
 impl Transport for FeishuFixtureTransport {
-    fn execute(&self, request: Request) -> lankide_provider_feishu::http::TransportFuture<'_> {
+    fn execute(&self, request: Request) -> meerkat_provider_feishu::http::TransportFuture<'_> {
         Box::pin(async move {
             let body = if request
                 .path
@@ -2146,7 +2146,7 @@ struct SharedQueueSource {
 impl EventSource for SharedQueueSource {
     fn next(
         &mut self,
-    ) -> lankide_provider_feishu::events::EventFuture<'_, Result<Option<RawEvent>, SourceError>>
+    ) -> meerkat_provider_feishu::events::EventFuture<'_, Result<Option<RawEvent>, SourceError>>
     {
         Box::pin(async move {
             loop {
@@ -2160,11 +2160,11 @@ impl EventSource for SharedQueueSource {
 
     fn acknowledge(
         &mut self,
-    ) -> lankide_provider_feishu::events::EventFuture<'_, Result<(), SourceError>> {
+    ) -> meerkat_provider_feishu::events::EventFuture<'_, Result<(), SourceError>> {
         Box::pin(async move { Ok(()) })
     }
 
-    fn close(&mut self) -> lankide_provider_feishu::events::EventFuture<'_, ()> {
+    fn close(&mut self) -> meerkat_provider_feishu::events::EventFuture<'_, ()> {
         Box::pin(async move {})
     }
 }
@@ -2173,7 +2173,7 @@ impl EventSource for SharedQueueSource {
 struct FeishuIdentityTransport;
 
 impl Transport for FeishuIdentityTransport {
-    fn execute(&self, request: Request) -> lankide_provider_feishu::http::TransportFuture<'_> {
+    fn execute(&self, request: Request) -> meerkat_provider_feishu::http::TransportFuture<'_> {
         Box::pin(async move {
             if request
                 .path
@@ -2387,7 +2387,7 @@ impl ProviderStorage for MemoryStorage {
                 .lock()
                 .ok()
                 .and_then(|messages| messages.get(&message_id.get()).cloned())
-                .ok_or(lankide_provider::ProviderError::NotFound { entity: "message" })
+                .ok_or(meerkat_provider::ProviderError::NotFound { entity: "message" })
         })
     }
 
@@ -2398,7 +2398,7 @@ impl ProviderStorage for MemoryStorage {
                 .ok()
                 .and_then(|resources| resources.get(&resource.resource_id).cloned())
                 .filter(|stored| stored.resource == *resource)
-                .ok_or(lankide_provider::ProviderError::NotFound { entity: "resource" })
+                .ok_or(meerkat_provider::ProviderError::NotFound { entity: "resource" })
         })
     }
 
@@ -2431,7 +2431,7 @@ impl ProviderStorage for MemoryStorage {
                 .values()
                 .find(|person| &person.person_id == person_id)
                 .cloned()
-                .ok_or(lankide_provider::ProviderError::NotFound { entity: "person" })
+                .ok_or(meerkat_provider::ProviderError::NotFound { entity: "person" })
         })
     }
 
@@ -2469,9 +2469,9 @@ impl ProviderStorage for MemoryStorage {
             let person = people
                 .values_mut()
                 .find(|person| &person.person_id == person_id)
-                .ok_or(lankide_provider::ProviderError::NotFound { entity: "person" })?;
+                .ok_or(meerkat_provider::ProviderError::NotFound { entity: "person" })?;
             if person.state_revision != expected_revision {
-                return Err(lankide_provider::ProviderError::External {
+                return Err(meerkat_provider::ProviderError::External {
                     operation: "person_state_conflict",
                     retryable: true,
                 });
@@ -2563,7 +2563,7 @@ fn live_services_with_storage(
         secret_reader: Arc::new(LiveSecretReader {
             values: Arc::new(values),
         }),
-        secret_writer: Arc::new(lankide_provider::DeniedSecretWriter),
+        secret_writer: Arc::new(meerkat_provider::DeniedSecretWriter),
         storage,
         logger,
         resource_saver: Arc::new(LiveResourceSaver::default()),
@@ -2953,7 +2953,7 @@ async fn run_feishu_scenario(
             }))
             .map_err(|_| "Feishu mention payload could not be encoded".to_owned())?,
             "--idempotency-key".to_owned(),
-            format!("lankide-{run_id}-inbound"),
+            format!("meerkat-{run_id}-inbound"),
             "--json".to_owned(),
         ];
         let sent = cli_call(fixture.clone(), fixture.cli_dir.clone(), send_args).await?;
@@ -2991,7 +2991,7 @@ async fn run_feishu_scenario(
             "--file".to_owned(),
             inbound_file_name.clone(),
             "--idempotency-key".to_owned(),
-            format!("lankide-{run_id}-inbound-file"),
+            format!("meerkat-{run_id}-inbound-file"),
             "--json".to_owned(),
         ];
         let sent_file = cli_call(fixture.clone(), inbound_file_dir, file_args).await?;
@@ -3414,7 +3414,7 @@ async fn run_feishu_scenario(
 
 #[tokio::test]
 async fn feishu_ingress_failure_retries_before_acknowledging_source() {
-    use lankide_provider_feishu::{EventSink as FeishuSink, FeishuEventDispatcher, SinkError};
+    use meerkat_provider_feishu::{EventSink as FeishuSink, FeishuEventDispatcher, SinkError};
     struct ReceiptSource {
         event: Option<RawEvent>,
         acks: Arc<AtomicI64>,
@@ -3422,19 +3422,19 @@ async fn feishu_ingress_failure_retries_before_acknowledging_source() {
     impl EventSource for ReceiptSource {
         fn next(
             &mut self,
-        ) -> lankide_provider_feishu::events::EventFuture<'_, Result<Option<RawEvent>, SourceError>>
+        ) -> meerkat_provider_feishu::events::EventFuture<'_, Result<Option<RawEvent>, SourceError>>
         {
             Box::pin(async move { Ok(self.event.take()) })
         }
         fn acknowledge(
             &mut self,
-        ) -> lankide_provider_feishu::events::EventFuture<'_, Result<(), SourceError>> {
+        ) -> meerkat_provider_feishu::events::EventFuture<'_, Result<(), SourceError>> {
             Box::pin(async move {
                 self.acks.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             })
         }
-        fn close(&mut self) -> lankide_provider_feishu::events::EventFuture<'_, ()> {
+        fn close(&mut self) -> meerkat_provider_feishu::events::EventFuture<'_, ()> {
             Box::pin(async move {})
         }
     }
@@ -3446,7 +3446,7 @@ async fn feishu_ingress_failure_retries_before_acknowledging_source() {
         fn emit(
             &mut self,
             _: NormalizedEvent,
-        ) -> lankide_provider_feishu::events::EventFuture<'_, Result<(), SinkError>> {
+        ) -> meerkat_provider_feishu::events::EventFuture<'_, Result<(), SinkError>> {
             Box::pin(async move {
                 if !self.failed {
                     self.failed = true;

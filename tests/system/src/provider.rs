@@ -1,5 +1,5 @@
-use lankide_core::{AgentId, AttentionLevel, ChannelAbility, ChannelId, ProviderId};
-use lankide_provider::*;
+use meerkat_core::{AgentId, AttentionLevel, ChannelAbility, ChannelId, ProviderId};
+use meerkat_provider::*;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{
@@ -29,7 +29,7 @@ pub struct Outbound {
     pub message_id: String,
     pub reply_to: Option<String>,
     pub idempotency_key: Option<String>,
-    pub resources: Vec<lankide_provider::MessageAttachment>,
+    pub resources: Vec<meerkat_provider::MessageAttachment>,
 }
 
 #[derive(Clone, Debug)]

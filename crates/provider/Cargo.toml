@@ -1,21 +1,21 @@
 [package]
 autotests = false
-name = "lankide-provider"
+name = "meerkat-provider"
 version.workspace = true
 edition.workspace = true
-description = "Provider contracts and normalized IM events for Lankide"
+description = "Provider contracts and normalized IM events for Meerkat"
 license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-lankide-core = { path = "../core" }
+meerkat-core = { path = "../core" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 
-[package.metadata.lankide.e2e]
-command = "cargo test -p lankide-provider --test e2e provider_e2e::"
+[package.metadata.meerkat.e2e]
+command = "cargo test -p meerkat-provider --test e2e provider_e2e::"
 scenario = "Carry the receiving Agent on normalized direct-message and reaction events; run an external conformance Provider through lifecycle, dynamic interfaces/capabilities, send/recall/reaction, backpressure, timeout, and shutdown. Carry every native message part and explicit custom-event mentions through the public Provider contract. Additional human team enrollment, task invalidation and first-reply behavior is covered by system-provider-management. Human contact profiles and tenant-only creator identity are covered by system-provider-management."
 prerequisites = "None"
 classification = "hermetic"

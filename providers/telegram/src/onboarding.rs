@@ -1,6 +1,6 @@
 use crate::Transport;
 use crate::{Credentials, PollRequest, ReqwestTransport, TelegramClient};
-use lankide_provider::{
+use meerkat_provider::{
     AgentOnboardingContext, ProviderError, ProviderOnboarding, ProviderOnboardingStatus,
     SecretValue,
 };
@@ -307,7 +307,7 @@ pub(crate) async fn agent_onboarding_with_transport(
         let mut avatar = None;
         if let Ok(Some(photo)) = manager.user_profile_photo(credential.creator.id).await {
             avatar = context
-                .save_resource(lankide_provider::ResourceUpload {
+                .save_resource(meerkat_provider::ResourceUpload {
                     file_name: "member.jpg".into(),
                     media_type: photo.content_type,
                     bytes: photo.data,

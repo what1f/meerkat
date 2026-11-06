@@ -1,7 +1,7 @@
 //! A1: browser-facing DTOs through the real Runtime HTTP boundary.
 use futures_util::StreamExt;
-use lankide_protocol::management;
-use lankide_system_e2e::{Result, RigConfig, Script, SystemRig};
+use meerkat_protocol::management;
+use meerkat_system_e2e::{Result, RigConfig, Script, SystemRig};
 use serde_json::{Value, json};
 use std::time::Duration;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -40,7 +40,7 @@ async fn a1_1_string_states_round_trip_and_agent_still_replies() -> Result<()> {
     let scenario = async {
         let team = rig.workspace("team").await?;
         let agent = team.agent("bruce").harness(Script::reply("done")).create().await?;
-        agent.group_attention(lankide_protocol::AttentionMode::Mention).await?;
+        agent.group_attention(meerkat_protocol::AttentionMode::Mention).await?;
         let http = Http::for_rig(&rig)?;
         let workspace = json!({"workspace_id": "team"});
         let agent_ref = json!({"workspace_id": "team", "agent_id": "bruce"});
@@ -101,7 +101,7 @@ async fn a1_2_local_and_remote_identity_survives_runtime_restart() -> Result<()>
     .await?;
     let scenario = async {
         let remote = rig.add_machine().await?;
-        let original = lankide_machine::read_credentials(rig.machine_home())?
+        let original = meerkat_machine::read_credentials(rig.machine_home())?
             .ok_or("missing local credentials")?;
         let local_id = original.machine_id.clone();
         {
@@ -112,7 +112,7 @@ async fn a1_2_local_and_remote_identity_survives_runtime_restart() -> Result<()>
                 .create()
                 .await?;
         }
-        use lankide_client::ManagementClient;
+        use meerkat_client::ManagementClient;
         rig.management().rename_machine(&local_id, "My Mac").await?;
         // Lost local credentials must recover the same identity, including Agent placement.
         std::fs::remove_file(rig.machine_home().join("machine-credentials.json"))?;
@@ -121,7 +121,7 @@ async fn a1_2_local_and_remote_identity_survives_runtime_restart() -> Result<()>
         // the daemon to publish its renewed credentials before observing recovery.
         let renewed = tokio::time::timeout(Duration::from_secs(5), async {
             loop {
-                if let Some(credentials) = lankide_machine::read_credentials(rig.machine_home())? {
+                if let Some(credentials) = meerkat_machine::read_credentials(rig.machine_home())? {
                     break Ok::<_, Box<dyn std::error::Error + Send + Sync>>(credentials);
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
@@ -132,10 +132,10 @@ async fn a1_2_local_and_remote_identity_survives_runtime_restart() -> Result<()>
         assert_ne!(renewed.device_credential, original.device_credential);
         let (url, _) = rig.local_pairing_endpoint()?;
         assert!(
-            lankide_protocol::link::connect(
+            meerkat_protocol::link::connect(
                 &url,
                 &original.device_credential,
-                lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES
+                meerkat_protocol::DEFAULT_MAX_MESSAGE_BYTES
             )
             .await
             .is_err()

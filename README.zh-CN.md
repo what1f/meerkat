@@ -1,8 +1,8 @@
-# Lankide
+# Meerkat
 
 [English](README.md)
 
-Lankide 是一款面向 macOS 的本地多 Agent 协作应用。它把 Agent Harness、消息平台、
+Meerkat 是一款面向 macOS 的本地多 Agent 协作应用。它把 Agent Harness、消息平台、
 持久化工作区和Tauri 桌面端整合在同一个产品中。
 
 当前支持：
@@ -10,7 +10,7 @@ Lankide 是一款面向 macOS 的本地多 Agent 协作应用。它把 Agent Har
 - 飞书和 Telegram 消息平台；
 - Pi、Codex 和兼容 Claude Code 的 Agent Harness；
 - macOS 桌面端及当前用户范围内的 Runtime、Machine 服务；
-- 供 Agent 在执行期间使用的 `lankide` 能力 CLI。
+- 供 Agent 在执行期间使用的 `meerkat` 能力 CLI。
 
 项目仍在持续开发，首个稳定版本之前配置和兼容性可能发生变化。
 
@@ -61,5 +61,5 @@ just app
 
 ## 许可证
 
-Lankide 使用 [MIT License](LICENSE)。字体、图标及其他第三方组件的许可见
+Meerkat 使用 [MIT License](LICENSE)。字体、图标及其他第三方组件的许可见
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。

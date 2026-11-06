@@ -58,7 +58,7 @@ type Reply = {
 
 export async function rig(
   command: Command,
-  port = Number(process.env.LANKIDE_WEB_CONTROL_PORT),
+  port = Number(process.env.MEERKAT_WEB_CONTROL_PORT),
 ): Promise<Reply> {
   if (!port) throw new Error('Playwright globalSetup did not start the web rig');
   const socket = connect({ host: '127.0.0.1', port });
@@ -87,7 +87,7 @@ export async function rig(
 
 export const test = base.extend({
   baseURL: async ({}, use) => {
-    const url = process.env.LANKIDE_WEB_BASE_URL;
+    const url = process.env.MEERKAT_WEB_BASE_URL;
     if (!url) throw new Error('Web rig URL is missing');
     await use(url);
   },

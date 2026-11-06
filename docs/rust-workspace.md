@@ -1,6 +1,6 @@
 # Workspace architecture
 
-This document describes Lankide's public module boundaries, dependency graph,
+This document describes Meerkat's public module boundaries, dependency graph,
 and verification contract.
 
 ## Workspace layout
@@ -30,7 +30,7 @@ harnesses/claude-code       Claude Code composition adapter
 apps/daemon         Runtime composition root
 apps/machine        Machine composition root
 apps/desktop                Tauri window and local-service composition root
-apps/lankide-cli            Agent-run-scoped capability CLI
+apps/meerkat-cli            Agent-run-scoped capability CLI
 ```
 
 Dependency direction is expressed as “A depends on B”:
@@ -52,7 +52,7 @@ apps/daemon  -> runtime + daemon-runtime + concrete providers + web-assets
 web-assets   -> HTTP response types (no protocol or runtime dependency)
 apps/machine -> machine + daemon-runtime + concrete harnesses
 apps/desktop -> client + Tauri + native background services
-apps/lankide-cli     -> protocol
+apps/meerkat-cli     -> protocol
 ```
 
 `core` never depends on a concrete Provider, Harness, database, transport, or
@@ -99,10 +99,10 @@ Run the engineering gate:
 The other explicit gates are:
 
 ```bash
-LANKIDE_E2E_LIVE=1 ./scripts/verify-all --gate live-provider
-LANKIDE_E2E_LIVE=1 ./scripts/verify-all --gate live-harness
+MEERKAT_E2E_LIVE=1 ./scripts/verify-all --gate live-provider
+MEERKAT_E2E_LIVE=1 ./scripts/verify-all --gate live-harness
 ./scripts/verify-all --gate desktop-visual
-LANKIDE_E2E_LIVE=1 ./scripts/verify-all --gate full-release
+MEERKAT_E2E_LIVE=1 ./scripts/verify-all --gate full-release
 ```
 
 `just check` verifies open-source and production boundaries, formatting, the
@@ -162,7 +162,7 @@ include:
 
 The Tauri shell is the one exception to the CLI-only rule: its visual and
 interaction acceptance may use a live macOS window. Its data contract still
-comes from `lankide-client`, so the test support and Runtime client can be
+comes from `meerkat-client`, so the test support and Runtime client can be
 verified independently.
 
 Hermetic system rigs configure `runtime.json` with `remote_access_port: 0`.

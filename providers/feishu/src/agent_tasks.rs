@@ -7,7 +7,7 @@ use crate::mention::{
 use crate::tasks::{
     Comment, CreateTask, ListRequest, MemberIdentity, TaskMemberInput, TaskPatch, TasklistMember,
 };
-use lankide_provider::{
+use meerkat_provider::{
     AgentRuntimeContext, InvocationHandler, JsonSchema, ProviderError, ProviderFuture,
     ProviderTeamMember, TeamRole, ToolDefinition,
 };
@@ -113,12 +113,12 @@ pub(crate) async fn tools(
 }
 
 pub(crate) async fn task_event(
-    context: &lankide_provider::InitContext,
+    context: &meerkat_provider::InitContext,
     client: Arc<SharedClient>,
     auth: Auth,
     event: &crate::normalize::NormalizedTaskEvent,
-) -> Result<Option<(lankide_provider::EventSender, lankide_provider::CustomEvent)>, ProviderError> {
-    use lankide_provider::{CustomEvent, EventSender, EventSenderType};
+) -> Result<Option<(meerkat_provider::EventSender, meerkat_provider::CustomEvent)>, ProviderError> {
+    use meerkat_provider::{CustomEvent, EventSender, EventSenderType};
     let (_, identity) = crate::identity::load(context.storage()).await?;
     let raw: Value =
         serde_json::from_slice(&event.raw).map_err(|_| task_error("read_task_event", false))?;
@@ -147,7 +147,7 @@ pub(crate) async fn task_event(
         .agents
         .iter()
         .filter(|(_, app)| task_member_ids(&task).contains(&("app".to_owned(), (*app).clone())))
-        .filter_map(|(id, _)| lankide_core::AgentId::new(id).ok())
+        .filter_map(|(id, _)| meerkat_core::AgentId::new(id).ok())
         .collect::<Vec<_>>();
     let action = event
         .event_types
@@ -286,7 +286,7 @@ pub(crate) async fn task_event(
     let mentioned_agent_ids = extract_agent_ids(&content)
         .into_iter()
         .filter(|id| identity.agents.contains_key(id))
-        .filter_map(|id| lankide_core::AgentId::new(id).ok())
+        .filter_map(|id| meerkat_core::AgentId::new(id).ok())
         .filter(|id| id.as_str() != sender.id)
         .collect::<Vec<_>>();
     for id in &mentioned_agent_ids {
@@ -970,7 +970,7 @@ fn team_lead_id(team_members: &[ProviderTeamMember]) -> Result<String, ProviderE
 }
 
 pub(crate) async fn initialize_tasklist(
-    context: &lankide_provider::AgentOnboardingContext,
+    context: &meerkat_provider::AgentOnboardingContext,
     transport: Arc<dyn crate::http::Transport>,
     app: &str,
     secret: &str,
@@ -1029,7 +1029,7 @@ pub(crate) async fn initialize_tasklist(
         .into_iter()
         .find_map(|member| match member {
             ProviderTeamMember::Human(person)
-                if person.team_role == lankide_provider::TeamRole::Lead =>
+                if person.team_role == meerkat_provider::TeamRole::Lead =>
             {
                 Some(person)
             }
@@ -1066,7 +1066,7 @@ pub(crate) async fn initialize_tasklist(
 }
 
 pub(crate) async fn initialize_existing_tasklist(
-    context: &lankide_provider::InitContext,
+    context: &meerkat_provider::InitContext,
     client: Arc<SharedClient>,
     app_id: &str,
 ) -> Result<(), ProviderError> {
@@ -1102,7 +1102,7 @@ pub(crate) async fn initialize_existing_tasklist(
 }
 
 async fn ensure_team_tasklist(
-    storage: &dyn lankide_provider::ProviderStorage,
+    storage: &dyn meerkat_provider::ProviderStorage,
     workspace_config: &Value,
     directory: &MemberDirectory,
     lead_id: &str,
@@ -1151,7 +1151,7 @@ impl MemberDirectory {
         identity: &crate::identity::IdentityDirectory,
         team_members: &[ProviderTeamMember],
         current_app_id: &str,
-        storage: &dyn lankide_provider::ProviderStorage,
+        storage: &dyn meerkat_provider::ProviderStorage,
         client: Arc<SharedClient>,
         auth: Auth,
     ) -> Result<Self, ProviderError> {
@@ -1533,7 +1533,7 @@ fn normalize_comment_mentions(content: &str, app_id: &str, directory: &MemberDir
             } else {
                 &target.display_name
             };
-            lankide_core::markdown_mention(name, &target.agent_id)
+            meerkat_core::markdown_mention(name, &target.agent_id)
         });
         result.push_str(marker.as_deref().unwrap_or("@未识别成员"));
         let tail = &tag[end + 1..];

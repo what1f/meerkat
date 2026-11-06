@@ -1,8 +1,8 @@
 //! Shared test-only wiring for the real WS, HTTP, and local JSON endpoints.
 #![allow(dead_code)]
-use lankide_protocol::link::{self, CloseReason, LinkError, MachineLink};
-use lankide_protocol::{MachinePeer, RuntimeFrame, RuntimePeer, TransportConfig, TransportError};
-use lankide_protocol::{Response, Status};
+use meerkat_protocol::link::{self, CloseReason, LinkError, MachineLink};
+use meerkat_protocol::{MachinePeer, RuntimeFrame, RuntimePeer, TransportConfig, TransportError};
+use meerkat_protocol::{Response, Status};
 use std::{
     future::Future,
     path::Path,
@@ -28,10 +28,10 @@ where
     let secret = link::publish(&socket, &url)?;
     let (stop, stopped) = tokio::sync::oneshot::channel();
     std::fs::write(
-        socket.join(lankide_protocol::management::URL_FILE),
+        socket.join(meerkat_protocol::management::URL_FILE),
         url.replacen("ws://", "http://", 1),
     )?;
-    let ws = tokio::spawn(lankide_protocol::resources::serve_with_management(
+    let ws = tokio::spawn(meerkat_protocol::resources::serve_with_management(
         listener,
         secret,
         peer.clone(),
@@ -42,7 +42,7 @@ where
         },
     ));
     let result =
-        lankide_protocol::serve_uds(socket.join("agent.sock"), peer, config, shutdown).await;
+        meerkat_protocol::serve_uds(socket.join("agent.sock"), peer, config, shutdown).await;
     let _ = stop.send(());
     let _ = ws.await;
     result
@@ -78,7 +78,7 @@ impl Stream for Messages {
 }
 pub async fn connect_stream(
     socket: &Path,
-    mut frames: impl Stream<Item = lankide_protocol::MachineFrame> + Unpin + Send + 'static,
+    mut frames: impl Stream<Item = meerkat_protocol::MachineFrame> + Unpin + Send + 'static,
 ) -> Result<Response<Messages>, Status> {
     let (url, secret) = link::discover(socket).map_err(|e| Status::unavailable(e.to_string()))?;
     let hello = frames
@@ -86,7 +86,7 @@ pub async fn connect_stream(
         .await
         .ok_or_else(|| Status::invalid_argument("missing_hello"))?;
     let credential = match &hello.frame {
-        Some(lankide_protocol::machine_frame::Frame::Hello(hello))
+        Some(meerkat_protocol::machine_frame::Frame::Hello(hello))
             if !hello.device_credential.is_empty() =>
         {
             hello.device_credential.as_str()
@@ -96,7 +96,7 @@ pub async fn connect_stream(
     let mut link = link::connect(
         &url,
         credential,
-        lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES,
+        meerkat_protocol::DEFAULT_MAX_MESSAGE_BYTES,
     )
     .await
     .map_err(status)?;

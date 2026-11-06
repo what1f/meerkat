@@ -1,8 +1,9 @@
 import type * as DTO from '../../lib/api/generated';
 import { Seat, type CarryHandle } from '../../scene';
-import { agentStatus } from '../../lib/queries/agents';
+import { agentStatus, useAgentAvatar } from '../../lib/queries/agents';
 import { useFigurePacks } from '../../lib/queries/catalogs';
 import { figureId, packFrames } from '../../lib/assets';
+import { dataUrl } from '../../lib/assets';
 
 // A stable pick per member, so the same desk and figure come back on every visit.
 const pick = (id: string, n: number) =>
@@ -31,6 +32,8 @@ export function MemberSeat({
   // The default look stands in as a built-in figure chosen from the member id.
   // Off shift, nobody is at their desk.
   const away = workspace?.desired_state === 'paused';
+  const avatar = useAgentAvatar({ request_id: 'seat', agent: agent.agent }, !!agent.avatar_path);
+  const file = avatar.data?.avatar;
   return (
     <Seat
       setup={pick(id, 2) ? 'mini' : 'laptop'}
@@ -46,6 +49,7 @@ export function MemberSeat({
       }
       arriving={arriving}
       label={agent.name}
+      badge={{ name: agent.name, avatar: file ? dataUrl(file) : undefined }}
       onClick={onOpen}
       carry={carry}
     />

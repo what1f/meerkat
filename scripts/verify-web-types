@@ -6,8 +6,8 @@ import tempfile
 import sys
 
 root = Path(__file__).resolve().parent.parent
-with tempfile.TemporaryDirectory(prefix="lankide-web-types-") as temporary:
-    subprocess.run(["cargo", "run", "--quiet", "--locked", "-p", "lankide-web-types", "--", temporary], cwd=root, check=True)
+with tempfile.TemporaryDirectory(prefix="meerkat-web-types-") as temporary:
+    subprocess.run(["cargo", "run", "--quiet", "--locked", "-p", "meerkat-web-types", "--", temporary], cwd=root, check=True)
     generated = Path(temporary)
     committed = root / "apps/web/src/lib/api/generated"
     expected = {p.name: p.read_bytes() for p in generated.glob("*.ts")}

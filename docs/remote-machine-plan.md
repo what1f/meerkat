@@ -42,13 +42,13 @@ The refactor keeps the existing crates and makes these seams explicit.
 
 | Seam | Owner | Consumers | Contract |
 |---|---|---|---|
-| IM boundary | `lankide-provider` | runtime, providers | `ProviderEvent` carries the receiving Agent for direct messages |
-| Harness boundary | `lankide-harness` | machine, harnesses | `HarnessFactory` and `HarnessSession`, plus declared capabilities and a structured `HarnessFailure` |
-| Machine link | `lankide-protocol` | runtime, machine | JSON frames over a `MachineLink` (send frame, receive frame, close with reason); WS is one implementation |
-| Attempt outcome | `lankide-protocol` | runtime, machine | `AttemptFailure { code, category, retryable, fingerprint, detail }` |
-| Execution policy | `lankide-runtime` | runtime only | Retry, pause, and notice decisions keyed by failure category and fingerprint |
-| Agent capability | `lankide-machine-core` | cli, MCP bridge, Pi extension | Local proxy socket per attempt; the Agent never sees the Runtime address |
-| Management | `lankide-client` | desktop | `ManagementClient` trait; transport is an adapter detail |
+| IM boundary | `meerkat-provider` | runtime, providers | `ProviderEvent` carries the receiving Agent for direct messages |
+| Harness boundary | `meerkat-harness` | machine, harnesses | `HarnessFactory` and `HarnessSession`, plus declared capabilities and a structured `HarnessFailure` |
+| Machine link | `meerkat-protocol` | runtime, machine | JSON frames over a `MachineLink` (send frame, receive frame, close with reason); WS is one implementation |
+| Attempt outcome | `meerkat-protocol` | runtime, machine | `AttemptFailure { code, category, retryable, fingerprint, detail }` |
+| Execution policy | `meerkat-runtime` | runtime only | Retry, pause, and notice decisions keyed by failure category and fingerprint |
+| Agent capability | `meerkat-machine-core` | cli, MCP bridge, Pi extension | Local proxy socket per attempt; the Agent never sees the Runtime address |
+| Management | `meerkat-client` | desktop | `ManagementClient` trait; transport is an adapter detail |
 
 Rules across seams:
 
@@ -62,16 +62,16 @@ Rules across seams:
 ## Shared test rig
 
 Task 0 builds the rig every later task uses. It is a test-only crate at
-`tests/system` with package name `lankide-system-e2e`.
+`tests/system` with package name `meerkat-system-e2e`.
 
 It composes, in one test process:
 
-- the real Runtime daemon through `lankided::run_daemon`, with a
+- the real Runtime daemon through `meerkatd::run_daemon`, with a
   scripted IM Provider registered in `ProviderFactoryRegistry`;
 - the real Machine daemon through
-  `lankide_machine::run_with_harnesses`, with the scripted Harness
+  `meerkat_machine::run_with_harnesses`, with the scripted Harness
   process from `crates/harness/tests/support/process.rs`;
-- `lankide-client` as the management caller, like the Desktop.
+- `meerkat-client` as the management caller, like the Desktop.
 
 Scripted IM Provider:
 
@@ -85,7 +85,7 @@ Scripted IM Provider:
 Scripted Harness behaviours, chosen per Agent by the scenario:
 
 - reply with text, optionally after streaming events;
-- call a Lankide capability through the Agent capability path;
+- call a Meerkat capability through the Agent capability path;
 - fail at spawn or mid-turn with a given error text;
 - stay silent without progress (hang);
 - keep making progress for a given duration;
@@ -117,7 +117,7 @@ Crates: new `tests/system`, `Cargo.toml` workspace members,
 
 Build the rig described above.
 
-Acceptance scenarios (all must pass, `cargo test -p lankide-system-e2e`):
+Acceptance scenarios (all must pass, `cargo test -p meerkat-system-e2e`):
 
 - S0.1 A person mentions an Agent in a group chat; that Agent replies once in
   the same chat; no other Agent runs.
@@ -130,7 +130,7 @@ Known defects are written as scenarios in the tasks that fix them, not here.
 
 ### Task 1: direct messages reach only the receiving Agent
 
-Crates: `lankide-provider`, `lankide-runtime`, `lankide-storage`,
+Crates: `meerkat-provider`, `meerkat-runtime`, `meerkat-storage`,
 `providers/feishu`, `providers/telegram`.
 
 Contract:
@@ -177,7 +177,7 @@ Acceptance scenarios (hermetic, per Provider):
 ### Task 3: one Runtime owner and clean shutdown
 
 Crates: `apps/daemon`, `apps/desktop` (service start only),
-`lankide-runtime`.
+`meerkat-runtime`.
 
 Observed: logs repeat `runtime_daemon_already_running` and
 `runtime_storage_still_shared`, launchd reports exit code 1, and the Desktop
@@ -204,8 +204,8 @@ Acceptance scenarios (runtime-daemon E2E):
 
 ### Task 4: structured attempt failures
 
-Crates: `lankide-harness`, `lankide-machine-core`, `lankide-protocol`,
-`lankide-runtime`, `lankide-storage`, `lankide-client`, the three Harness
+Crates: `meerkat-harness`, `meerkat-machine-core`, `meerkat-protocol`,
+`meerkat-runtime`, `meerkat-storage`, `meerkat-client`, the three Harness
 adapters.
 
 Contract:
@@ -230,8 +230,8 @@ Acceptance scenarios (system rig):
 
 ### Task 5: retry policy and chat notice
 
-Crates: `lankide-runtime`, `lankide-storage`, `lankide-core` (localized notice
-text), `lankide-client`.
+Crates: `meerkat-runtime`, `meerkat-storage`, `meerkat-core` (localized notice
+text), `meerkat-client`.
 
 Contract:
 
@@ -260,7 +260,7 @@ Acceptance scenarios (system rig, short backoff):
 
 ### Task 6: execution liveness
 
-Crates: `lankide-machine-core`, `lankide-runtime`, `lankide-protocol`,
+Crates: `meerkat-machine-core`, `meerkat-runtime`, `meerkat-protocol`,
 `apps/machine`.
 
 Contract:
@@ -285,8 +285,8 @@ Acceptance scenarios (system rig, short timeouts):
 
 ### Task 7: Harness native defaults and capability declarations
 
-Crates: `lankide-harness`, the three Harness adapters, `lankide-machine-core`,
-`lankide-runtime`.
+Crates: `meerkat-harness`, the three Harness adapters, `meerkat-machine-core`,
+`meerkat-runtime`.
 
 Contract:
 
@@ -315,7 +315,7 @@ Acceptance scenarios:
 
 ### Task 8: Harness output record retention
 
-Crates: `harnesses/pi`, `lankide-machine-core`.
+Crates: `harnesses/pi`, `meerkat-machine-core`.
 
 Contract:
 
@@ -335,7 +335,7 @@ Acceptance scenarios:
 
 ### Task 9: JSON frames and the `MachineLink` seam
 
-Crates: `lankide-protocol`, `lankide-runtime`, `lankide-machine-core`.
+Crates: `meerkat-protocol`, `meerkat-runtime`, `meerkat-machine-core`.
 
 Contract:
 
@@ -358,7 +358,7 @@ Acceptance scenarios: every existing `machine`, `machine-daemon`, and
 
 ### Task 10: delivery guarantees over an unreliable network
 
-Crates: `lankide-machine-core`, `lankide-runtime`, `tests/system`.
+Crates: `meerkat-machine-core`, `meerkat-runtime`, `tests/system`.
 
 Contract:
 
@@ -386,8 +386,8 @@ Acceptance scenarios:
 
 ### Task 11: resources over HTTP
 
-Crates: `lankide-runtime`, `apps/daemon`, `lankide-machine-core`,
-`lankide-protocol`.
+Crates: `meerkat-runtime`, `apps/daemon`, `meerkat-machine-core`,
+`meerkat-protocol`.
 
 Contract: upload and download over HTTP with the execution token, `Range` for
 resume, size and SHA-256 checks before atomic rename.
@@ -404,14 +404,14 @@ Acceptance scenarios:
 
 ### Task 12: pairing and device credentials
 
-Crates: `lankide-storage`, `lankide-runtime`, `apps/daemon`,
-`apps/machine`, `lankide-client`.
+Crates: `meerkat-storage`, `meerkat-runtime`, `apps/daemon`,
+`apps/machine`, `meerkat-client`.
 
 Contract:
 
 - `machines` table as in `docs/remote-machine.md`.
 - Management issues single-use pairing codes valid for ten minutes.
-- `lankide-machine pair <runtime-url> <code>` stores a random
+- `meerkat-machine pair <runtime-url> <code>` stores a random
   `machine_id` and device credential in the Machine home, owner-readable
   only. The Runtime stores only the credential hash.
 - `hello` authenticates. Unknown or revoked credentials close the link with a
@@ -430,7 +430,7 @@ Acceptance scenarios:
 
 ### Task 13: placement
 
-Crates: `lankide-runtime`, `lankide-storage`, `lankide-machine-core`.
+Crates: `meerkat-runtime`, `meerkat-storage`, `meerkat-machine-core`.
 
 Contract:
 
@@ -452,7 +452,7 @@ Acceptance scenarios:
 
 ### Task 14: local Machine auto-pairing in the Desktop
 
-Crates: `apps/web`, `apps/desktop`, `lankide-client`.
+Crates: `apps/web`, `apps/desktop`, `meerkat-client`.
 
 Contract: on first launch the Desktop pairs its own Machine without showing a
 code. The Agent form lists registered Machines with online state. Remote
@@ -467,8 +467,8 @@ lifecycle remain covered by the Desktop bootstrap scenarios.
 
 ### Task 15: Machine local proxy
 
-Crates: `lankide-machine-core`, `apps/lankide-cli`, `harnesses/claude-code` (MCP
-bridge), `harnesses/pi` (extension), `lankide-protocol`.
+Crates: `meerkat-machine-core`, `apps/meerkat-cli`, `harnesses/claude-code` (MCP
+bridge), `harnesses/pi` (extension), `meerkat-protocol`.
 
 Contract:
 
@@ -480,7 +480,7 @@ Contract:
 
 Acceptance scenarios:
 
-- S15.1 (system rig) A scripted Harness uses `lankide` to send a message with
+- S15.1 (system rig) A scripted Harness uses `meerkat` to send a message with
   an attachment and read chat content; both work with the Runtime reachable
   only over WS.
 - S15.2 The Harness environment contains no Runtime address.
@@ -491,14 +491,14 @@ Acceptance scenarios:
 
 ### Task 16: management HTTP API and event WS
 
-Crates: `lankide-runtime`, `apps/daemon`, `lankide-client`,
+Crates: `meerkat-runtime`, `apps/daemon`, `meerkat-client`,
 `apps/desktop`.
 
 Contract:
 
 - Management operations as JSON over loopback HTTP; one WS for events.
   Validate Host, Origin and JSON content type without an owner credential.
-- `lankide-client` keeps its trait; the gRPC adapter is replaced by an HTTP
+- `meerkat-client` keeps its trait; the gRPC adapter is replaced by an HTTP
   adapter. The Desktop changes only its connection setup.
 
 Acceptance: every `client` and `runtime-daemon` management scenario passes over

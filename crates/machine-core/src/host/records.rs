@@ -1,6 +1,6 @@
 use super::{MachineError, OutputRecordPolicy};
-use lankide_harness::HarnessConfig;
-use lankide_protocol::ExecutionRef;
+use meerkat_harness::HarnessConfig;
+use meerkat_protocol::ExecutionRef;
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -21,15 +21,15 @@ pub(super) fn prepare(
     let record = directory.join("rpc.jsonl");
     config.environment.extend([
         (
-            "LANKIDE_PI_ARTIFACT_DIR".into(),
+            "MEERKAT_PI_ARTIFACT_DIR".into(),
             directory.display().to_string(),
         ),
         (
-            "LANKIDE_PI_RECORD_PATH".into(),
+            "MEERKAT_PI_RECORD_PATH".into(),
             record.display().to_string(),
         ),
         (
-            "LANKIDE_PI_RECORD_MAX_BYTES".into(),
+            "MEERKAT_PI_RECORD_MAX_BYTES".into(),
             policy.max_bytes.to_string(),
         ),
     ]);

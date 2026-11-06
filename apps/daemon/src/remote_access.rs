@@ -1,8 +1,8 @@
-use lankide_protocol::{
+use meerkat_protocol::{
     Status,
     management::{RemoteAccess, RemoteAccessControl},
 };
-use lankide_runtime::RuntimePeerAdapter;
+use meerkat_runtime::RuntimePeerAdapter;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -20,7 +20,7 @@ struct Identity {
 }
 struct Listener {
     stop: oneshot::Sender<()>,
-    task: tokio::task::JoinHandle<Result<(), lankide_protocol::link::LinkError>>,
+    task: tokio::task::JoinHandle<Result<(), meerkat_protocol::link::LinkError>>,
 }
 struct State {
     access: RemoteAccess,
@@ -30,7 +30,7 @@ pub(super) struct RemoteMachines {
     home: PathBuf,
     peer: RuntimePeerAdapter,
     secret: String,
-    settings: lankide_protocol::link::LinkSettings,
+    settings: meerkat_protocol::link::LinkSettings,
     default_port: u16,
     state: Mutex<State>,
 }
@@ -39,7 +39,7 @@ impl RemoteMachines {
         home: PathBuf,
         peer: RuntimePeerAdapter,
         secret: String,
-        settings: lankide_protocol::link::LinkSettings,
+        settings: meerkat_protocol::link::LinkSettings,
         default_port: u16,
     ) -> Result<Arc<Self>, Status> {
         let address: Option<String> = match fs::read(home.join("remote-access.json")) {
@@ -76,7 +76,7 @@ impl RemoteMachines {
             Ok(bytes) => serde_json::from_slice(&bytes).map_err(internal),
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 let rcgen::CertifiedKey { cert, signing_key } =
-                    rcgen::generate_simple_self_signed(vec!["lankide.local".into()])
+                    rcgen::generate_simple_self_signed(vec!["meerkat.local".into()])
                         .map_err(internal)?;
                 let identity = Identity {
                     certificate: cert.der().to_vec(),
@@ -139,7 +139,7 @@ impl RemoteMachines {
         };
         let prepared = if let Some(port) = port {
             let identity = self.identity()?;
-            next.cert_sha256 = Some(lankide_protocol::tls::fingerprint(&identity.certificate));
+            next.cert_sha256 = Some(meerkat_protocol::tls::fingerprint(&identity.certificate));
             let config = rustls::ServerConfig::builder_with_provider(Arc::new(
                 rustls::crypto::ring::default_provider(),
             ))
@@ -198,7 +198,7 @@ impl RemoteMachines {
             let peer = self.peer.clone();
             let secret = self.secret.clone();
             let settings = self.settings.clone();
-            let task = tokio::spawn(lankide_protocol::resources::serve_configured(
+            let task = tokio::spawn(meerkat_protocol::resources::serve_configured(
                 socket,
                 secret,
                 peer,

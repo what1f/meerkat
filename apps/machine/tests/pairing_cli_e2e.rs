@@ -1,13 +1,13 @@
 //! Pair and reconnect a real second Machine through the shipped command.
-use lankide_client::{ManagementClient, RuntimeManagementClient};
-use lankided::{RuntimePaths, ShutdownReason, run_daemon};
+use meerkat_client::{ManagementClient, RuntimeManagementClient};
+use meerkatd::{RuntimePaths, ShutdownReason, run_daemon};
 use std::{os::unix::fs::PermissionsExt, path::Path, process::Stdio, time::Duration};
 use tokio::{sync::oneshot, time::timeout};
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
 struct Server {
     stop: Option<oneshot::Sender<()>>,
-    task: tokio::task::JoinHandle<Result<(), lankided::AppError>>,
+    task: tokio::task::JoinHandle<Result<(), meerkatd::AppError>>,
 }
 impl Server {
     async fn start(paths: &RuntimePaths) -> Result<Self, Error> {
@@ -20,7 +20,7 @@ impl Server {
         let (stop, stopped) = oneshot::channel();
         let task = tokio::spawn(run_daemon(
             paths.clone(),
-            lankide_runtime::ProviderFactoryRegistry::default(),
+            meerkat_runtime::ProviderFactoryRegistry::default(),
             async move {
                 let _ = stopped.await;
                 Ok(ShutdownReason::Internal)
@@ -66,7 +66,7 @@ fn command(
     code: Option<&str>,
     pin: Option<&str>,
 ) -> tokio::process::Command {
-    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_lankide-machine"));
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_meerkat-machine"));
     if let (Some(url), Some(code)) = (url, code) {
         command.args(["pair", url, code]);
     }
@@ -95,7 +95,7 @@ async fn rejected(url: &str, code: &str, pin: Option<&str>, expected: &str) -> R
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains(expected), "{stderr}");
     assert!(!home.path().join("machine-credentials.json").exists());
-    let path = home.path().join("logs/lankide-machine.log");
+    let path = home.path().join("logs/meerkat-machine.log");
     let log = std::fs::read_to_string(&path)?;
     assert!(log.contains(expected), "{log}");
     assert!(log.lines().all(|line| {
@@ -170,12 +170,12 @@ async fn pinned_pair_command_reconnects_and_remote_address_changes_live() -> Res
 
     // Local discovery is still plaintext and works independently of remote access.
     let mut local = command(runtime_home.path(), None, None, None);
-    local.env("LANKIDE_RUNTIME_RUN", &paths.run);
+    local.env("MEERKAT_RUNTIME_RUN", &paths.run);
     let mut local = local.spawn()?;
     let local_id = timeout(Duration::from_secs(10), async {
         loop {
             if let Some(credentials) =
-                lankide_machine::read_credentials(runtime_home.path()).unwrap()
+                meerkat_machine::read_credentials(runtime_home.path()).unwrap()
             {
                 break credentials.machine_id;
             }
@@ -195,7 +195,7 @@ async fn pinned_pair_command_reconnects_and_remote_address_changes_live() -> Res
     let credentials = timeout(Duration::from_secs(10), async {
         loop {
             if let Some(credentials) =
-                lankide_machine::read_credentials(second_home.path()).unwrap()
+                meerkat_machine::read_credentials(second_home.path()).unwrap()
             {
                 break credentials;
             }
@@ -220,7 +220,7 @@ async fn pinned_pair_command_reconnects_and_remote_address_changes_live() -> Res
     timeout(Duration::from_secs(5), output.read_line(&mut line)).await??;
     assert_eq!(
         line.trim(),
-        format!("Connected as {}", lankide_machine::machine_name())
+        format!("Connected as {}", meerkat_machine::machine_name())
     );
     let catalog = client.get_machine_catalog(None).await?;
     assert_eq!(catalog.len(), 2);
@@ -230,7 +230,7 @@ async fn pinned_pair_command_reconnects_and_remote_address_changes_live() -> Res
             .find(|c| c.id == credentials.machine_id)
             .unwrap()
             .name,
-        lankide_machine::machine_name()
+        meerkat_machine::machine_name()
     );
     rejected(&url, &code.code, Some(&pin), "rejected or expired").await?;
     let expired = client.create_pairing_code().await?;
@@ -239,7 +239,7 @@ async fn pinned_pair_command_reconnects_and_remote_address_changes_live() -> Res
     // The TLS entry point exposes neither management nor resource routes.
     let http = reqwest::Client::builder()
         .no_proxy()
-        .use_preconfigured_tls(lankide_protocol::tls::client_config(&pin)?)
+        .use_preconfigured_tls(meerkat_protocol::tls::client_config(&pin)?)
         .build()?;
     for route in ["/api/v1/list_workspaces", "/resources/1"] {
         assert_eq!(
@@ -315,8 +315,8 @@ async fn pinned_pair_command_reconnects_and_remote_address_changes_live() -> Res
     let next_url = format!("wss://[::1]:{next_port}");
     let new_code = client.create_pairing_code().await?;
     let third_home = tempfile::tempdir()?;
-    let _ = lankide_machine::pair_with_pin(
-        &lankide_machine::MachineDaemonPaths::for_home(third_home.path())?,
+    let _ = meerkat_machine::pair_with_pin(
+        &meerkat_machine::MachineDaemonPaths::for_home(third_home.path())?,
         &next_url,
         &new_code.code,
         Some(&pin),

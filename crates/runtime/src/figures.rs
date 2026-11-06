@@ -1,10 +1,10 @@
 use super::*;
-use lankide_protocol::{FigureFrames, FigurePack, ImportFigurePackRequest, ListFigurePacksRequest};
-use lankide_provider::ResourceUpload;
+use meerkat_protocol::{FigureFrames, FigurePack, ImportFigurePackRequest, ListFigurePacksRequest};
+use meerkat_provider::ResourceUpload;
 use std::io::{Cursor, Read};
 
 // Bound both the uploaded archive and all expanded entries, including unused files.
-const MAX_PACK_BYTES: usize = lankide_protocol::DEFAULT_MAX_MESSAGE_BYTES;
+const MAX_PACK_BYTES: usize = meerkat_protocol::DEFAULT_MAX_MESSAGE_BYTES;
 const MAX_EXPANDED_BYTES: u64 = 12 * 1024 * 1024;
 
 #[derive(Deserialize)]
@@ -50,7 +50,7 @@ fn unpack(bytes: Vec<u8>) -> Result<(Manifest, Vec<Vec<u8>>), RuntimeError> {
     let mut frames = Vec::new();
     for name in ["work.png", "sleep.png", "carry.png", "stand.png"] {
         let bytes = files.remove(name).ok_or_else(invalid_pack)?;
-        if bytes.len() > lankide_protocol::MAX_WORKSPACE_IMAGE_BYTES {
+        if bytes.len() > meerkat_protocol::MAX_WORKSPACE_IMAGE_BYTES {
             return Err(invalid_pack());
         }
         let reader = image::ImageReader::with_format(Cursor::new(&bytes), image::ImageFormat::Png);
@@ -169,7 +169,7 @@ impl RuntimeApplication {
             }
         } else {
             self.emit_management(
-                lankide_protocol::ManagementEventKind::CatalogChanged,
+                meerkat_protocol::ManagementEventKind::CatalogChanged,
                 &workspace,
                 None,
                 now_millis(),

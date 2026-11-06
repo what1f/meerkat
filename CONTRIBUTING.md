@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for helping improve Lankide.
+Thank you for helping improve Meerkat.
 
 ## Development setup
 
@@ -29,5 +29,5 @@ Describe the user-visible outcome, the affected modules, and the verification
 commands you ran. Keep unrelated refactors out of the same pull request.
 
 Live tests are optional for ordinary contributions. When a change requires one,
-use an isolated account, opt in explicitly with `LANKIDE_E2E_LIVE=1`, and never
+use an isolated account, opt in explicitly with `MEERKAT_E2E_LIVE=1`, and never
 attach credentials or private account identifiers to the pull request.

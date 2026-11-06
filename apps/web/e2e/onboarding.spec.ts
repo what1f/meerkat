@@ -78,7 +78,7 @@ async function firstReply(page: Page, baseURL: string, workspace: string) {
   await next(page).click();
   await expect(page).toHaveURL(/#\/members$/);
   // The members board opens on the team onboarding just made.
-  expect(await page.evaluate(() => localStorage.getItem('lankide.workspace'))).toBe(
+  expect(await page.evaluate(() => localStorage.getItem('meerkat.workspace'))).toBe(
     JSON.stringify(workspace),
   );
   // The team switcher shows the new team, and its board holds the new member.

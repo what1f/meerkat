@@ -9,9 +9,9 @@ use crate::http::{ReqwestTransport, Transport};
 use crate::mention::{MentionTarget, extract_agent_ids, render_html_with_mentions};
 use crate::normalize::{NormalizationConfig, NormalizedEvent, SenderKind};
 use crate::polling::Poller;
-use lankide_core::markdown_mention;
-use lankide_core::{AgentId, AttentionLevel, ChannelAbility, ChannelId, ProviderId};
-use lankide_provider::{
+use meerkat_core::markdown_mention;
+use meerkat_core::{AgentId, AttentionLevel, ChannelAbility, ChannelId, ProviderId};
+use meerkat_provider::{
     AgentContext, AgentRuntimeContext, AutoReactionContext, ChannelDefaultAttention,
     ChannelDefinition, EditMessageContext, EventSender, EventSenderType, InitContext,
     InterfaceDefinition, InvocationHandler, JsonSchema, MessageAttachment, MessageEvent, Provider,
@@ -66,7 +66,7 @@ impl InvocationHandler for WorkspaceStatusHandler {
 
 /// Telegram Provider with a production reqwest transport by default.
 pub struct TelegramProvider {
-    clock: Arc<dyn lankide_provider::Clock>,
+    clock: Arc<dyn meerkat_provider::Clock>,
     transport: SharedTransport,
     workspaces: Arc<Mutex<BTreeMap<String, WorkspaceState>>>,
     contexts: Arc<Mutex<BTreeMap<String, InitContext>>>,
@@ -104,7 +104,7 @@ impl Default for TelegramProvider {
 impl TelegramProvider {
     pub fn new() -> Self {
         Self {
-            clock: Arc::new(lankide_provider::SystemClock),
+            clock: Arc::new(meerkat_provider::SystemClock),
             transport: Arc::new(ReqwestTransport::new()),
             workspaces: Arc::new(Mutex::new(BTreeMap::new())),
             contexts: Arc::new(Mutex::new(BTreeMap::new())),
@@ -112,7 +112,7 @@ impl TelegramProvider {
         }
     }
 
-    pub fn with_clock(mut self, clock: Arc<dyn lankide_provider::Clock>) -> Self {
+    pub fn with_clock(mut self, clock: Arc<dyn meerkat_provider::Clock>) -> Self {
         self.clock = clock;
         self
     }
@@ -137,7 +137,7 @@ impl TelegramProvider {
     fn state(
         &self,
         workspace_id: &str,
-        agent_id: &lankide_core::AgentId,
+        agent_id: &meerkat_core::AgentId,
     ) -> Result<Arc<SharedClient>, ProviderError> {
         let states = self
             .workspaces
@@ -250,7 +250,7 @@ async fn persist_manager_bot(
 }
 
 impl Provider for TelegramProvider {
-    fn reaction_catalog(&self) -> Vec<lankide_provider::ReactionDefinition> {
+    fn reaction_catalog(&self) -> Vec<meerkat_provider::ReactionDefinition> {
         // Standard emoji reactions from https://core.telegram.org/bots/api#reactiontypeemoji.
         // Keep existing IDs and ordering so saved selections remain valid.
         [
@@ -329,7 +329,7 @@ impl Provider for TelegramProvider {
             "😡",
         ]
         .into_iter()
-        .map(|emoji| lankide_provider::ReactionDefinition {
+        .map(|emoji| meerkat_provider::ReactionDefinition {
             id: emoji.into(),
             name: emoji.into(),
             emoji: emoji.into(),
@@ -817,10 +817,10 @@ impl Provider for TelegramProvider {
 
     fn agent_onboarding<'a>(
         &'a self,
-        context: lankide_provider::AgentOnboardingContext,
+        context: meerkat_provider::AgentOnboardingContext,
         action: String,
         opaque_payload: Value,
-    ) -> ProviderFuture<'a, lankide_provider::ProviderOnboarding> {
+    ) -> ProviderFuture<'a, meerkat_provider::ProviderOnboarding> {
         Box::pin(crate::onboarding::agent_onboarding_with_transport(
             context,
             action,
@@ -1008,7 +1008,7 @@ fn spawn_poller(
     request: PollRequest,
     normalization: NormalizationConfig,
     offset_key: String,
-    clock: Arc<dyn lankide_provider::Clock>,
+    clock: Arc<dyn meerkat_provider::Clock>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let retry = EventRetry::configured(&context);
@@ -1022,16 +1022,16 @@ fn spawn_poller(
                     Ok(None) => break,
                     Err(error) => {
                         let crate::polling::PollError::Client(client_error) = &error else {
-                            context.logger().log(lankide_provider::LogLevel::Warn, &format!("Telegram polling stopped: {error}"));
+                            context.logger().log(meerkat_provider::LogLevel::Warn, &format!("Telegram polling stopped: {error}"));
                             break;
                         };
                         if !client_error.is_retryable() {
-                            context.logger().log(lankide_provider::LogLevel::Warn, &format!("Telegram polling stopped: {error}"));
+                            context.logger().log(meerkat_provider::LogLevel::Warn, &format!("Telegram polling stopped: {error}"));
                             break;
                         }
                         poll_failures += 1;
                         let delay = retry.delay(poll_failures).max(client_error.retry_after().unwrap_or_default());
-                        context.logger().log(lankide_provider::LogLevel::Warn, &format!("Telegram polling failed; retry in {}ms: {error}", delay.as_millis()));
+                        context.logger().log(meerkat_provider::LogLevel::Warn, &format!("Telegram polling failed; retry in {}ms: {error}", delay.as_millis()));
                         tokio::select! { _ = context.shutdown_signal().cancelled() => break, _ = tokio::time::sleep(delay) => {} }
                         continue;
                     }
@@ -1040,7 +1040,7 @@ fn spawn_poller(
             poll_failures = 0;
             for reason in &batch.skipped {
                 context.logger().log(
-                    lankide_provider::LogLevel::Warn,
+                    meerkat_provider::LogLevel::Warn,
                     &format!("Telegram event skipped: {reason}"),
                 );
             }
@@ -1067,7 +1067,7 @@ fn spawn_poller(
                             && matches!(accepted.kind, ProviderEventKind::Message(_))
                         {
                             if let Ok(person_id) =
-                                lankide_core::PersonId::new(accepted.sender.id.clone())
+                                meerkat_core::PersonId::new(accepted.sender.id.clone())
                             {
                                 let context = context.clone();
                                 let client = poller.client().clone();
@@ -1091,7 +1091,7 @@ fn spawn_poller(
                                     .await;
                                     if let Err(error) = result {
                                         context.logger().log(
-                                            lankide_provider::LogLevel::Warn,
+                                            meerkat_provider::LogLevel::Warn,
                                             &format!(
                                                 "Telegram profile sync failed: {}",
                                                 error.code()
@@ -1115,7 +1115,7 @@ fn spawn_poller(
                             // One event must not hold back the ones after it.
                             if !error.retryable || retry.exhausted(failures) {
                                 context.logger().log(
-                                    lankide_provider::LogLevel::Warn,
+                                    meerkat_provider::LogLevel::Warn,
                                     &format!("Telegram event skipped: {}", error.reason),
                                 );
                                 break;
@@ -1124,7 +1124,7 @@ fn spawn_poller(
                                 .delay(failures)
                                 .max(error.retry_after.unwrap_or_default());
                             context.logger().log(
-                                lankide_provider::LogLevel::Warn,
+                                meerkat_provider::LogLevel::Warn,
                                 &format!(
                                     "Telegram event acceptance failed; retry in {}ms: {}",
                                     delay.as_millis(),
@@ -1151,7 +1151,7 @@ fn spawn_poller(
                         failures += 1;
                         let delay = retry.delay(failures);
                         context.logger().log(
-                            lankide_provider::LogLevel::Warn,
+                            meerkat_provider::LogLevel::Warn,
                             &format!(
                                 "Telegram poll offset persistence failed; retry in {}ms: {error}",
                                 delay.as_millis()
@@ -1163,7 +1163,7 @@ fn spawn_poller(
             }
             if let Err(error) = poller.acknowledge(&batch) {
                 context.logger().log(
-                    lankide_provider::LogLevel::Warn,
+                    meerkat_provider::LogLevel::Warn,
                     &format!("Telegram poll offset was not acknowledged: {error}"),
                 );
                 break;
@@ -1358,7 +1358,7 @@ async fn telegram_mention_targets(
             ));
             continue;
         }
-        let Ok(person_id) = lankide_core::PersonId::new(id.clone()) else {
+        let Ok(person_id) = meerkat_core::PersonId::new(id.clone()) else {
             continue;
         };
         let person = storage.person(&person_id).await?;
@@ -1411,7 +1411,7 @@ async fn resolve_reply_id(
     storage: &dyn ProviderStorage,
     channel_id: &ChannelId,
     chat_id: &str,
-    reply_to: Option<lankide_core::MessageId>,
+    reply_to: Option<meerkat_core::MessageId>,
 ) -> Result<Option<i64>, ProviderError> {
     let Some(reply_to) = reply_to else {
         return Ok(None);
@@ -1469,7 +1469,7 @@ impl InvocationHandler for HumanSyncHandler {
     fn invoke<'a>(&'a self, input: Value) -> ProviderFuture<'a, Value> {
         Box::pin(async move {
             let person_id =
-                lankide_core::PersonId::new(input["person_id"].as_str().unwrap_or_default())
+                meerkat_core::PersonId::new(input["person_id"].as_str().unwrap_or_default())
                     .map_err(|_| ProviderError::InvalidInput { field: "person_id" })?;
             let prefix = format!("{}/agent/", self.context.workspace_id());
             let clients: Vec<_> = self
@@ -1510,10 +1510,10 @@ impl InvocationHandler for HumanSyncHandler {
 async fn sync_human_profile(
     context: &InitContext,
     client: &SharedClient,
-    person_id: &lankide_core::PersonId,
+    person_id: &meerkat_core::PersonId,
 ) -> Result<(), ProviderError> {
     let person = context.storage().person(person_id).await?;
-    if person.team_role == lankide_provider::TeamRole::External {
+    if person.team_role == meerkat_provider::TeamRole::External {
         return Err(ProviderError::InvalidInput { field: "person_id" });
     }
     let user_id = person

@@ -8,7 +8,7 @@ export function useManagementEvents(_workspace?: string) {
     const refresh = () => {
       void client.invalidateQueries();
     };
-    addEventListener("lankide-design-data", refresh);
-    return () => removeEventListener("lankide-design-data", refresh);
+    addEventListener("meerkat-design-data", refresh);
+    return () => removeEventListener("meerkat-design-data", refresh);
   }, [client]);
 }
