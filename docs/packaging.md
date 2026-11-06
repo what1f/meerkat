@@ -84,7 +84,27 @@ package-provenance.json
 `just app` 只生成 App。`just package` 不运行模块测试；交付前使用 `just release-local`。
 `just full-release` 和 `just release` 会运行真实 Provider/Harness 和实际窗口验收，
 只在用户明确授权、隔离账号及验收条件齐备时执行。
-当前 GitHub CI 运行 `just check` 和 `just test`；尚未配置 tag 自动打包或 GitHub Release 发布。
+当前 GitHub CI 运行 `just check` 和 `just test`。
+
+## 发布与自动更新
+
+推送与 `apps/desktop/Cargo.toml` 版本一致的 tag（如 `v0.2.0`）后，
+`.github/workflows/release.yml` 运行 `just package`，并把 ZIP、DMG 和 SHA-256
+文件发布到 `what1f/meerkat` 的 GitHub Release。
+
+已安装的 App 启动 20 秒后检查一次 `releases/latest`，之后每 6 小时检查一次；
+菜单栏「检查更新…」可手动检查。发现更高版本时：
+
+1. 下载 `Meerkat-<version>-macos-<architecture>.zip`，按同一 Release 的
+   `.sha256` 校验，解压到 App 所在目录的 `.Meerkat-update/`；
+2. 校验签名完整、Bundle ID 和版本号；当前 App 带 Team ID 时，新包必须由同一 Team 签名；
+3. 提示用户立即重启或稍后。稍后则在退出 Desktop 时安装；
+4. 安装时整体替换 App，随后用 `launchctl kickstart -k` 重启从这个 App 启动的
+   Runtime 和 Machine，确保两个后台进程和 Desktop 同时换到新版本。
+
+App 所在目录不可写或 App 处于 App Translocation 中时，只提示前往 Release 页面下载。
+用户手动覆盖安装时，Desktop 下次启动会按可执行文件的落盘时间（ctime）识别并重启旧的后台进程。
+`MEERKAT_UPDATE_FEED` 可把检查地址指向另一个兼容 GitHub Release JSON 的源。
 
 ## Package E2E
 

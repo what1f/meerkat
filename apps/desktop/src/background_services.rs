@@ -358,6 +358,33 @@ fn start_launch_agent(label: &str) -> Result<(), ClientError> {
     }
 }
 
+/// Restarts the helpers launchd runs from `bundle` so they pick up the
+/// binaries now on disk; helpers owned by another install are left alone.
+#[cfg(target_os = "macos")]
+pub(crate) fn restart_bundled_helpers(bundle: &Path) {
+    let Ok(domain) = launch_agent_domain() else {
+        return;
+    };
+    let services = bundle.join("Contents/Library/LaunchServices");
+    for label in [RUNTIME_AGENT_LABEL, MACHINE_AGENT_LABEL] {
+        let Ok(output) = Command::new("/bin/launchctl")
+            .args(["print", &format!("{domain}/{label}")])
+            .stderr(Stdio::null())
+            .output()
+        else {
+            continue;
+        };
+        let owned = String::from_utf8_lossy(&output.stdout).lines().any(|line| {
+            line.trim()
+                .strip_prefix("program = ")
+                .is_some_and(|program| Path::new(program).starts_with(&services))
+        });
+        if output.status.success() && owned {
+            let _ = restart_launch_agent(label);
+        }
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn restart_launch_agent(label: &str) -> Result<(), ClientError> {
     let domain = launch_agent_domain()?;
@@ -587,13 +614,13 @@ fn local_service(
     }
 
     if only_if_outdated {
-        let executable_modified = fs::metadata(executable)
-            .and_then(|metadata| metadata.modified())
+        // Installs copy files with their build mtime, so compare the change
+        // time that records when this executable landed on disk.
+        let executable_installed = fs::metadata(executable)
+            .map(|metadata| (metadata.ctime(), metadata.ctime_nsec()))
             .map_err(|error| ClientError::Unavailable(error.to_string()))?;
-        let lock_modified = lock_metadata
-            .modified()
-            .map_err(|error| ClientError::Unavailable(error.to_string()))?;
-        if executable_modified <= lock_modified {
+        let lock_written = (lock_metadata.mtime(), lock_metadata.mtime_nsec());
+        if executable_installed <= lock_written {
             return Ok(None);
         }
     }

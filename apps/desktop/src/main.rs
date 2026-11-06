@@ -2,6 +2,8 @@ mod backend;
 mod background_services;
 #[cfg(target_os = "macos")]
 mod traffic_lights;
+#[cfg(target_os = "macos")]
+mod updater;
 
 use backend::DesktopBackend;
 use std::sync::{
@@ -10,7 +12,7 @@ use std::sync::{
 };
 use tauri::{
     Manager, Url, WebviewUrl, WebviewWindowBuilder,
-    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
+    menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu},
 };
 use tauri_plugin_opener::OpenerExt;
 
@@ -52,7 +54,7 @@ fn is_boot(url: &Url) -> bool {
         && url.query().is_none()
 }
 
-fn open_external(app: &tauri::AppHandle, url: &Url) {
+pub(crate) fn open_external(app: &tauri::AppHandle, url: &Url) {
     if let Err(error) = app.opener().open_url(url.as_str(), None::<&str>) {
         eprintln!("meerkat-desktop: could not open URL: {error}");
     }
@@ -218,6 +220,30 @@ fn main() {
                 false,
                 Some("CmdOrCtrl+,"),
             )?;
+            let about = PredefinedMenuItem::about(
+                app,
+                Some(if chinese {
+                    "关于 Meerkat"
+                } else {
+                    "About Meerkat"
+                }),
+                Some(AboutMetadata {
+                    version: Some(env!("CARGO_PKG_VERSION").into()),
+                    // An empty build number keeps the panel to a single version.
+                    short_version: Some(String::new()),
+                    ..Default::default()
+                }),
+            )?;
+            #[cfg(target_os = "macos")]
+            let check_update = MenuItem::with_id(
+                app,
+                updater::MENU_ID,
+                updater::Updater::menu_text(chinese),
+                true,
+                None::<&str>,
+            )?;
+            #[cfg(target_os = "macos")]
+            app.manage(updater::Updater::new(chinese, check_update.clone()));
             let quit = MenuItem::with_id(
                 app,
                 "quit",
@@ -237,7 +263,16 @@ fn main() {
                         "meerkat",
                         "Meerkat",
                         true,
-                        &[&settings, &open, &quit],
+                        &[
+                            &about,
+                            #[cfg(target_os = "macos")]
+                            &check_update,
+                            &PredefinedMenuItem::separator(app)?,
+                            &settings,
+                            &open,
+                            &PredefinedMenuItem::separator(app)?,
+                            &quit,
+                        ],
                     )?,
                     &Submenu::with_items(
                         app,
@@ -348,9 +383,15 @@ fn main() {
             #[cfg(target_os = "macos")]
             traffic_lights::install(&window)?;
             start_services(&handle);
+            #[cfg(target_os = "macos")]
+            updater::start(&handle);
             Ok(())
         })
         .on_window_event(|window, event| {
+            #[cfg(target_os = "macos")]
+            if matches!(event, tauri::WindowEvent::Focused(true)) {
+                updater::window_focused(window.app_handle());
+            }
             if matches!(
                 event,
                 tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Focused(_)
@@ -361,6 +402,8 @@ fn main() {
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
             "quit" => app.exit(0),
+            #[cfg(target_os = "macos")]
+            updater::MENU_ID => updater::menu_clicked(app),
             "settings" => {
                 if app
                     .state::<ShellState>()
@@ -391,6 +434,8 @@ fn main() {
         .expect("failed to build Meerkat")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
+                #[cfg(target_os = "macos")]
+                updater::install_on_exit(app);
                 if let Some(backend) = app.state::<ShellState>().backend.lock().unwrap().as_ref() {
                     backend.stop_local_services();
                 }
