@@ -745,6 +745,8 @@ database_methods! {
     ] (&workspace_id, status, error_code.as_deref(), now);
     true record_chat_observation(workspace: &WorkspaceId, agent: &AgentId, message_id: i64, now: i64) -> bool [let workspace=workspace.clone();let agent=agent.clone();] (&workspace,&agent,message_id,now);
     false observed_chats(workspace: &WorkspaceId, agent: &AgentId) -> Vec<(ChatRefView, MessageView)> [let workspace=workspace.clone();let agent=agent.clone();] (&workspace,&agent);
+    false recent_conversations(workspace: &WorkspaceId, agent: &AgentId, since: i64, chat_limit: usize, message_limit: usize) -> Vec<RecentConversationView> [let workspace=workspace.clone();let agent=agent.clone();] (&workspace,&agent,since,chat_limit,message_limit);
+    false session_activity(workspace: &WorkspaceId, agent: &AgentId) -> Option<SessionActivityView> [let workspace=workspace.clone();let agent=agent.clone();] (&workspace,&agent);
     false snapshot(snapshot_id: i64) -> SnapshotView [] (snapshot_id);
     true record_chat_receiver(workspace: &WorkspaceId, agent: &AgentId, channel: &ChannelId, chat: &str) -> () [
         let workspace=workspace.clone(); let agent=agent.clone(); let channel=channel.clone(); let chat=chat.to_owned();

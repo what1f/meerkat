@@ -1289,6 +1289,7 @@ fn assignment() -> AssignExecution {
         resources: vec![attachment],
         execution_token: "execution_token_17".into(),
         created_at: 1_725_000_000_000,
+        recovery_markdown: "<recent-conversations>seed</recent-conversations>".into(),
     }
 }
 

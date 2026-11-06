@@ -112,6 +112,68 @@ impl Runtime {
         }
     }
 
+    /// Resume the native session unless it has gone cold and large; then the
+    /// Machine starts a new one seeded with the recovery context.
+    async fn session_directive(
+        &self,
+        workspace_id: &WorkspaceId,
+        agent_id: &AgentId,
+        agent: &crate::AgentRuntimeConfig,
+        now: i64,
+    ) -> Result<meerkat_protocol::SessionDirective, RuntimeError> {
+        // The configured Agent is cached at startup; the native session it
+        // last bound is in storage.
+        let workspace = self.storage.workspace_record(workspace_id).await?;
+        let record = self.storage.agent_record(workspace_id, agent_id).await?;
+        let mut session = crate::application::agent_runtime_config(&workspace, record)?.session;
+        if session.action != meerkat_protocol::SessionAction::ResumeOrStart as i32 {
+            return Ok(session);
+        }
+        if let Some(activity) = self
+            .storage
+            .session_activity(workspace_id, agent_id)
+            .await?
+            && crate::session_recovery::should_start_fresh(
+                &agent.harness,
+                activity.last_completed_at,
+                activity.last_context_tokens,
+                now,
+            )
+        {
+            log::info!(
+                "workspace={workspace_id} agent={agent_id} fresh_session idle_ms={} context_tokens={}",
+                now.saturating_sub(activity.last_completed_at),
+                activity.last_context_tokens.unwrap_or_default()
+            );
+            session.action = meerkat_protocol::SessionAction::StartNew as i32;
+            session.native_session_id = None;
+        }
+        Ok(session)
+    }
+
+    /// Recent conversations for a fresh native session; Machine drops it when
+    /// the session resumes.
+    async fn recovery_context(
+        &self,
+        workspace_id: &WorkspaceId,
+        agent_id: &AgentId,
+        snapshot: &SnapshotView,
+        now: i64,
+    ) -> Result<String, RuntimeError> {
+        use crate::session_recovery::*;
+        let conversations = self
+            .storage
+            .recent_conversations(
+                workspace_id,
+                agent_id,
+                now.saturating_sub(RECENT_WINDOW_MS),
+                RECENT_CHAT_LIMIT,
+                RECENT_MESSAGE_LIMIT,
+            )
+            .await?;
+        Ok(render_recovery(&conversations, snapshot, now))
+    }
+
     /// Builds Provider-owned prompt and capabilities from the same runtime
     /// context that will be sent to Machine.
     pub async fn dynamic_execution_input(
@@ -335,6 +397,12 @@ impl Runtime {
             execution_id: created.execution_id,
             attempt: 1,
         };
+        let session = self
+            .session_directive(workspace_id, agent_id, &agent, now)
+            .await?;
+        let recovery_markdown = self
+            .recovery_context(workspace_id, agent_id, &created.snapshot, now)
+            .await?;
         let assignment = AssignExecution {
             execution: Some(execution_ref),
             workspace: Some(WorkspaceRef {
@@ -342,7 +410,7 @@ impl Runtime {
             }),
             agent: Some(agent.agent_profile.clone()),
             harness: Some(agent.harness.clone()),
-            session: Some(agent.session.clone()),
+            session: Some(session),
             initial_delivery: Some(Delivery {
                 delivery_id: created.delivery_id,
                 kind: DeliveryKind::Initial as i32,
@@ -363,6 +431,7 @@ impl Runtime {
             resources: snapshot_resources(&created.snapshot),
             execution_token,
             created_at: now,
+            recovery_markdown,
         };
         self.storage
             .mark_execution_running(created.execution_id, now)

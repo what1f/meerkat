@@ -26,13 +26,14 @@ pub use attempt::{
 pub use error::{Result, StorageError};
 pub use execution::{
     CommitResult, CreatedExecution, ExecutionAuthContext, ExecutionAuthSpec, ExecutionState,
-    ExecutionView, RecoverableExecutionView, SteerDelivery,
+    ExecutionView, RecoverableExecutionView, SessionActivityView, SteerDelivery,
 };
 pub use message::{
     ChatRefView, DispatchReason, FrozenSnapshotChatView, InboxDispatch, InboxItemView, InboxState,
     IncomingMessage, IncomingMessageResult, IncomingReaction, IngestEvent, IngestResult,
     MessageInput, MessageView, ProviderMessageView, ReactionAction, ReactionOrigin, ReactionResult,
-    RecallTarget, ResourceMetadata, ResourceView, SnapshotChatView, SnapshotView,
+    RecallTarget, RecentConversationView, RecentMessageView, ResourceMetadata, ResourceView,
+    SnapshotChatView, SnapshotView,
 };
 pub use person::{HumanTeamMemberView, PersonRecord, TeamRole};
 pub use schema::{RecoveryState, SqliteSettings};

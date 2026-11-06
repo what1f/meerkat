@@ -1055,3 +1055,109 @@ impl Storage {
         load_snapshot(&connection, snapshot_id)
     }
 }
+
+/// One conversation the Agent recently took part in, newest message last.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecentConversationView {
+    pub chat: ChatRefView,
+    pub attention: Option<AttentionRecord>,
+    /// Latest time the Agent spoke, was mentioned, or handled the task.
+    pub last_participation_at: i64,
+    pub messages: Vec<RecentMessageView>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecentMessageView {
+    pub message: MessageView,
+    /// Sent by this Agent.
+    pub own: bool,
+    /// False for this Agent's sends that never reached the platform.
+    pub delivered: bool,
+}
+
+impl Storage {
+    /// Conversations where the Agent spoke, was mentioned, or handled a task
+    /// since `since`, most recent participation first, each with its latest
+    /// messages.
+    pub fn recent_conversations(
+        &self,
+        workspace: &WorkspaceId,
+        agent: &AgentId,
+        since: i64,
+        chat_limit: usize,
+        message_limit: usize,
+    ) -> Result<Vec<RecentConversationView>> {
+        let connection = self.read_conn()?;
+        let mut statement = connection.prepare(
+            "SELECT chat_id,max(at) FROM (
+               SELECT m.chat_id,m.occurred_at AS at FROM messages m JOIN chats c USING(chat_id)
+                 WHERE c.workspace_id=?1 AND m.occurred_at>=?3
+                   AND ((m.direction='outbound' AND m.sender_kind='agent' AND m.sender_id=?2)
+                     OR EXISTS(SELECT 1 FROM json_each(m.mentions_json) j WHERE j.value=?2))
+               UNION ALL
+               SELECT dc.chat_id,d.created_at FROM execution_delivery_chats dc
+                 JOIN execution_deliveries d USING(delivery_id)
+                 JOIN executions e ON e.execution_id=d.execution_id
+                 JOIN chats c ON c.chat_id=dc.chat_id
+                 WHERE e.workspace_id=?1 AND e.agent_id=?2 AND c.channel_id='task' AND d.created_at>=?3
+             ) GROUP BY chat_id ORDER BY max(at) DESC LIMIT ?4",
+        )?;
+        let chats = statement
+            .query_map(
+                params![workspace.as_str(), agent.as_str(), since, chat_limit as i64],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut messages = connection.prepare(
+            "SELECT message_id,direction='outbound' AND sender_kind='agent' AND sender_id=?2,send_status IN ('received','sent') FROM messages
+               WHERE chat_id=?1 AND (send_status IN ('received','sent')
+                 OR (direction='outbound' AND sender_kind='agent' AND sender_id=?2 AND send_status<>'sending'))
+               ORDER BY message_id DESC LIMIT ?3",
+        )?;
+        let mut attention = connection.prepare(
+            "SELECT attention_json FROM agent_chat_attention WHERE workspace_id=?1 AND agent_id=?2 AND chat_id=?3",
+        )?;
+        chats
+            .into_iter()
+            .map(|(chat_id, last_participation_at)| {
+                let rows = messages
+                    .query_map(
+                        params![chat_id, agent.as_str(), message_limit as i64],
+                        |row| {
+                            Ok((
+                                row.get::<_, i64>(0)?,
+                                row.get::<_, bool>(1)?,
+                                row.get::<_, bool>(2)?,
+                            ))
+                        },
+                    )?
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                let mut recent = rows
+                    .into_iter()
+                    .map(|(message_id, own, delivered)| {
+                        Ok(RecentMessageView {
+                            message: load_message(&connection, message_id)?,
+                            own,
+                            delivered,
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                recent.reverse();
+                let attention = attention
+                    .query_row(
+                        params![workspace.as_str(), agent.as_str(), chat_id],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()?
+                    .map(|value| serde_json::from_str(&value))
+                    .transpose()?;
+                Ok(RecentConversationView {
+                    chat: load_chat_ref(&connection, chat_id)?,
+                    attention,
+                    last_participation_at,
+                    messages: recent,
+                })
+            })
+            .collect()
+    }
+}

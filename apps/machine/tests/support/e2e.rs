@@ -748,6 +748,7 @@ fn assign(
             resources,
             execution_token: format!("token-{id}"),
             created_at: 1,
+            recovery_markdown: String::new(),
         })),
     }
 }

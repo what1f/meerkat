@@ -94,6 +94,7 @@ async fn runtime_e2e() {
         prompt_failure_recovery_scenario().await;
         durable_ingress_retry_scenario().await;
         configured_assignment_scenario().await;
+        fresh_session_recovery_scenario().await;
         Ok(())
     })
     .await;
@@ -1346,6 +1347,7 @@ async fn attempt_lifecycle_scenario(db: &Path, failure_mode: u8) -> Result<(), S
         resources: Vec::new(),
         execution_token: "token".into(),
         created_at: 4,
+        recovery_markdown: String::new(),
     };
     let executor = broker.executor("machine-attempt");
     let execution_task = tokio::spawn(async move { executor.execute(assignment).await });
@@ -4864,6 +4866,192 @@ async fn configured_assignment_scenario() {
             "changing a native setting must invalidate the old session configuration"
         );
     }
+}
+
+/// A large native session that sat idle is replaced on the next run, and the
+/// new session starts from the conversations stored by Runtime.
+async fn fresh_session_recovery_scenario() {
+    let (_temp, app, state) = profile_application().await;
+    app.update_agent(UpdateAgentRequest {
+        request_id: "fresh-idle".into(),
+        agent: profile_agent_ref(),
+        environment_variables: Some(meerkat_protocol::EnvironmentVariableSet {
+            entries: vec![meerkat_protocol::EnvironmentVariable {
+                name: "MEERKAT_SESSION_IDLE_SECONDS".into(),
+                value: "0".into(),
+            }],
+        }),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    let broker = app.machine_broker();
+    let mut connection = broker
+        .connect(MachineHello {
+            device_credential: String::new(),
+            protocol_version: PROTOCOL_VERSION,
+            machine_id: "profile-machine".into(),
+            instance_id: "fresh-session".into(),
+            harnesses: vec![meerkat_protocol::link::HarnessInfo {
+                harness_id: "fixture".into(),
+                capabilities: vec!["resume".into()],
+                ..Default::default()
+            }],
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    let _ = connection.next().await.unwrap().unwrap();
+    let send = |frame: machine_frame::Frame| {
+        let broker = broker.clone();
+        async move {
+            broker
+                .handle_frame(
+                    "profile-machine",
+                    "fresh-session",
+                    MachineFrame {
+                        protocol_version: PROTOCOL_VERSION,
+                        frame: Some(frame),
+                    },
+                )
+                .await
+                .unwrap();
+        }
+    };
+    send(machine_frame::Frame::Heartbeat(MachineHeartbeat {
+        machine_id: "profile-machine".into(),
+        instance_id: "fresh-session".into(),
+        sent_at: 0,
+        active_attempts: Vec::new(),
+    }))
+    .await;
+    let agent = AgentId::new("profile_agent").unwrap();
+    let channel = ChannelId::new("chat").unwrap();
+    state
+        .emit(message(
+            &channel,
+            "plan-chat",
+            "plan-message",
+            "Remember the blue plan",
+            &agent,
+            "human",
+        ))
+        .await
+        .unwrap();
+    let first = next_assignment(&mut connection).await;
+    assert!(
+        first.recovery_markdown.is_empty(),
+        "unread messages are not repeated as recovery context"
+    );
+    let execution = first.execution.clone().unwrap();
+    send(machine_frame::Frame::AssignmentResult(AssignmentResult {
+        failure: None,
+        execution: Some(execution.clone()),
+        accepted: true,
+        error_code: String::new(),
+        error_message: String::new(),
+    }))
+    .await;
+    send(machine_frame::Frame::DeliveryResult(DeliveryResult {
+        execution: Some(execution.clone()),
+        delivery_id: first.initial_delivery.as_ref().unwrap().delivery_id,
+        accepted: true,
+        error_code: String::new(),
+        error_message: String::new(),
+    }))
+    .await;
+    let fingerprint = first.session.as_ref().unwrap().config_fingerprint.clone();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    let events = [
+        (ExecutionEventKind::Started, json!({"kind": "started"})),
+        (
+            ExecutionEventKind::NativeSessionBound,
+            json!({"kind": "native_session_bound", "native_session_id": "native-large", "config_fingerprint": fingerprint}),
+        ),
+        (
+            ExecutionEventKind::Usage,
+            json!({"kind": "usage", "input_tokens": 200_000, "output_tokens": 10}),
+        ),
+        (
+            ExecutionEventKind::Completed,
+            json!({"kind": "completed", "final_output": "noted"}),
+        ),
+    ];
+    for (sequence, (kind, payload)) in events.into_iter().enumerate() {
+        send(machine_frame::Frame::ExecutionEvent(ExecutionEvent {
+            execution: Some(execution.clone()),
+            sequence: sequence as u64 + 1,
+            occurred_at: now,
+            kind: kind as i32,
+            payload: payload.to_string().into_bytes(),
+        }))
+        .await;
+    }
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let frame = connection.next().await.expect("Machine stream").unwrap();
+            if let Some(runtime_frame::Frame::ExecutionCommitted(_)) = frame.frame {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("first run commits");
+    state
+        .emit(message(
+            &channel,
+            "other-chat",
+            "next-message",
+            "What is next?",
+            &agent,
+            "human",
+        ))
+        .await
+        .unwrap();
+    let second = next_assignment(&mut connection).await;
+    let session = second.session.unwrap();
+    assert_eq!(
+        session.action,
+        meerkat_protocol::SessionAction::StartNew as i32,
+        "an idle session over the context threshold starts fresh"
+    );
+    assert_eq!(session.native_session_id, None);
+    assert!(
+        second.recovery_markdown.contains("Remember the blue plan")
+            && second.recovery_markdown.contains("plan-chat"),
+        "fresh session carries the earlier conversation: {}",
+        second.recovery_markdown
+    );
+    assert!(
+        !second.recovery_markdown.contains("What is next?"),
+        "the unread trigger stays only in the delivery"
+    );
+    drop(connection);
+    drop(broker);
+    state.runtime_contexts.lock().unwrap().clear();
+    app.shutdown().await.unwrap();
+}
+
+async fn next_assignment(
+    connection: &mut (
+             impl tokio_stream::Stream<
+        Item = Result<meerkat_protocol::RuntimeFrame, impl std::fmt::Debug>,
+    > + Unpin
+         ),
+) -> AssignExecution {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let frame = connection.next().await.expect("Machine stream").unwrap();
+            if let Some(runtime_frame::Frame::AssignExecution(assignment)) = frame.frame {
+                break assignment;
+            }
+        }
+    })
+    .await
+    .expect("message reaches a Runtime assignment")
 }
 
 fn scenario_runtime(config: RuntimeConfig) -> Result<Runtime, meerkat_runtime::RuntimeError> {

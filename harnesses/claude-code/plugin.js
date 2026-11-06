@@ -15,6 +15,7 @@ let request,
   mcpPath,
   active = false,
   output = "",
+  contextTokens = 0,
   terminal = false;
 function sessionExists() {
   const dirs = [paths.directory + "/projects"];
@@ -127,6 +128,7 @@ defineHarness({
     active = true;
     terminal = false;
     output = "";
+    contextTokens = 0;
     started(nativeId);
     if (processId) {
       input(value.input);
@@ -216,6 +218,13 @@ defineHarness({
       v.session_id !== nativeId
     )
       failure("bind_failed", "Claude bound a different session");
+    // Context size is the last model call's whole prompt, cached part included.
+    const callUsage = v.type === "assistant" ? v.message?.usage : null;
+    if (callUsage)
+      contextTokens =
+        (callUsage.input_tokens || 0) +
+        (callUsage.cache_read_input_tokens || 0) +
+        (callUsage.cache_creation_input_tokens || 0);
     if (v.type === "stream_event") {
       const delta = v.event?.delta;
       if (delta?.type === "text_delta") {
@@ -239,7 +248,7 @@ defineHarness({
             "Claude execution failed",
         );
       else {
-        usage(v.usage?.input_tokens, v.usage?.output_tokens);
+        usage(contextTokens, v.usage?.output_tokens);
         completed(v.result || output);
       }
     }

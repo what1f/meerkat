@@ -23,6 +23,7 @@ mod provider_ops;
 mod provider_registry;
 mod resource_store;
 mod retry;
+mod session_recovery;
 pub use application::*;
 pub use coordination::{AttentionPolicy, CoordinatedEvent};
 pub use error::RuntimeError;

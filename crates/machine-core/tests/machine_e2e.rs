@@ -621,7 +621,7 @@ async fn machine_e2e() {
             memory.join("MEMORY.md"),
             format!(
                 "Use the green release channel.\n{}DO_NOT_PRELOAD",
-                "中".repeat(1600)
+                "中".repeat(4200)
             ),
         )
         .unwrap();
@@ -653,8 +653,14 @@ async fn machine_e2e() {
         assert!(
             first_events
                 .iter()
+                .any(|event| String::from_utf8_lossy(&event.payload).contains("RECOVERY_SEED")),
+            "a fresh session starts with the Runtime recovery context"
+        );
+        assert!(
+            first_events
+                .iter()
                 .any(|event| String::from_utf8_lossy(&event.payload)
-                    .contains("索引超过本轮预载上限"))
+                    .contains("索引超过预载上限"))
         );
         assert!(
             !first_events
@@ -817,7 +823,14 @@ async fn machine_e2e() {
             "",
         ))
         .await;
-        collect_terminal(&peer, &mut incoming_rx, 6, true).await;
+        let resumed = collect_terminal(&peer, &mut incoming_rx, 6, true).await;
+        assert!(
+            !resumed.iter().any(|event| {
+                let payload = String::from_utf8_lossy(&event.payload);
+                payload.contains("RECOVERY_SEED") || payload.contains("Use the green release channel.")
+            }),
+            "a resumed session already carries its context"
+        );
         peer.send(runtime_assign(
             7,
             "agent_a",
@@ -828,7 +841,13 @@ async fn machine_e2e() {
             "",
         ))
         .await;
-        collect_terminal(&peer, &mut incoming_rx, 7, true).await;
+        let renewed = collect_terminal(&peer, &mut incoming_rx, 7, true).await;
+        assert!(
+            renewed
+                .iter()
+                .any(|event| String::from_utf8_lossy(&event.payload).contains("RECOVERY_SEED")),
+            "a new native session gets the recovery context again"
+        );
         let harness_ops = fs::read_to_string(&harness_log).expect("harness log");
         assert!(harness_ops.lines().any(|line| line.starts_with("resume\t")));
         assert!(
@@ -1694,6 +1713,7 @@ fn runtime_assign(
             ],
             resources,
             execution_token: format!("token-{id}"),
+            recovery_markdown: "<recent-conversations>RECOVERY_SEED</recent-conversations>".into(),
             created_at: 1,
         })),
     }

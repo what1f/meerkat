@@ -981,3 +981,39 @@ impl Storage {
         Ok(views)
     }
 }
+
+/// What Runtime needs to decide whether the next run resumes the native session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SessionActivityView {
+    /// When the Agent's latest finished execution ended.
+    pub last_completed_at: i64,
+    /// Whole prompt size of the latest reported model call, cache included.
+    pub last_context_tokens: Option<u64>,
+}
+
+impl Storage {
+    pub fn session_activity(
+        &self,
+        workspace: &WorkspaceId,
+        agent: &AgentId,
+    ) -> Result<Option<SessionActivityView>> {
+        let connection = self.read_conn()?;
+        let row: Option<(i64, Option<i64>)> = connection
+            .query_row(
+                "SELECT max(e.completed_at),
+                   (SELECT json_extract(CAST(ev.payload AS TEXT),'$.input_tokens') FROM execution_events ev
+                      JOIN executions x ON x.execution_id=ev.execution_id
+                      WHERE x.workspace_id=?1 AND x.agent_id=?2 AND ev.kind='usage'
+                      ORDER BY ev.occurred_at DESC,ev.execution_id DESC,ev.sequence DESC LIMIT 1)
+                 FROM executions e WHERE e.workspace_id=?1 AND e.agent_id=?2 AND e.completed_at IS NOT NULL",
+                params![workspace.as_str(), agent.as_str()],
+                |row| Ok((row.get::<_, Option<i64>>(0)?, row.get::<_, Option<i64>>(1)?)),
+            )
+            .optional()?
+            .and_then(|(completed, tokens)| completed.map(|completed| (completed, tokens)));
+        Ok(row.map(|(last_completed_at, tokens)| SessionActivityView {
+            last_completed_at,
+            last_context_tokens: tokens.and_then(|tokens| u64::try_from(tokens).ok()),
+        }))
+    }
+}

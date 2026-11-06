@@ -39,6 +39,10 @@ pub struct AssignExecution {
     pub resources: Vec<ResourceRef>,
     pub execution_token: String,
     pub created_at: i64,
+    /// Context rebuilt from Runtime records. Machine places it before the
+    /// delivery only when the Harness starts a fresh native session.
+    #[serde(default)]
+    pub recovery_markdown: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]

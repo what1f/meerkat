@@ -298,7 +298,12 @@ defineHarness({
         const text = assistant(v.message);
         if (text !== null) output = text;
         if (v.message?.usage)
-          usage(v.message.usage.input, v.message.usage.output);
+          usage(
+            (v.message.usage.input || 0) +
+              (v.message.usage.cacheRead || 0) +
+              (v.message.usage.cacheWrite || 0),
+            v.message.usage.output,
+          );
         break;
       }
       case "tool_execution_start":
