@@ -1,7 +1,7 @@
 import { BrandMark, Button, LinkButton, StepHeading } from '../../design';
 import { Seat } from '../../scene';
 import { useT } from '../../lib/i18n';
-import { memberFigure, type Flow } from './useOnboarding';
+import type { Flow } from './useOnboarding';
 import { ChatPreview } from './ChatPreview';
 import css from './steps.module.css';
 
@@ -17,7 +17,8 @@ function chatLink(provider: Flow['provider'], configJson = '{}') {
 export function ReadyStep({ flow }: { flow: Flow }) {
   const t = useT();
   const { provider, replied } = flow;
-  const name = flow.member?.name || flow.draft.name.trim();
+  const name = flow.member?.name ?? '';
+  const figure = flow.member?.figure.replace('builtin:', '') || '01';
   const feishu = provider === 'feishu';
   return (
     <div className={css.step}>
@@ -27,7 +28,7 @@ export function ReadyStep({ flow }: { flow: Flow }) {
           setup="laptop"
           size="hero"
           screen={replied ? 'ok' : 'busy'}
-          occupant={{ figure: memberFigure }}
+          occupant={{ figure }}
           label={name}
         />
         <ChatPreview

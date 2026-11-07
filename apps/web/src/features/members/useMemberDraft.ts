@@ -5,7 +5,7 @@ import { useHarnessCatalog, useModelCatalog } from '../../lib/queries/catalogs';
 import { useMachines } from '../../lib/queries/machines';
 import { useAgentOnboardingProgress, useStartAgentOnboarding } from '../../lib/queries/onboarding';
 import { avatarUrl } from '../../lib/assets';
-import { builtinUpload, defaultAvatar } from './avatars';
+import { builtinUpload, defaultAvatar } from '../../lib/avatars';
 import { creationConfig, creationOf, onboards, type Creation } from './creation';
 import { formatArgs } from './args';
 import { harnessDefaults, harnessDraft } from './harnessDraft';
@@ -37,6 +37,7 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
   const create = useCreateAgent();
   const update = useUpdateAgent();
   const busy = useRef(false);
+  const avatarSent = useRef(false);
   const [newAgentId] = useState(newId);
   // Set as soon as the Runtime has the new member, so a retry never creates it twice.
   const [created, setCreated] = useState(false);
@@ -49,7 +50,6 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
     },
     !!pending,
   );
-
   const base: Draft = agent.data ? { ...blank, ...pick(agent.data) } : blank;
   const { draft, list, machine, harness } = harnessDraft(
     base,
@@ -62,6 +62,7 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
   const models = useModelCatalog(
     { request_id: 'member', workspace: ref, machine_id: draft.machine_id, harness_id: harness },
     !!draft.machine_id && !!harness,
+    machine?.harnesses.find((h) => h.harness_id === harness)?.model_catalog,
   );
   if (!id && !draft.model) {
     const first = models.data?.models.find((m) => m.available) ?? models.data?.models[0];
@@ -127,15 +128,16 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
       setArgsText((current) => (current === sentArgs ? null : current));
       setUpload((current) => (current === sentUpload ? null : current));
     });
-  // The picked avatar, or the built-in one chosen from the member id.
-  async function putAvatar() {
+  // The picked avatar, or the built-in one chosen from the member id. It goes up once.
+  async function sendAvatar() {
+    if (avatarSent.current) return;
     const picture = upload ?? (await builtinUpload(defaultAvatar(newAgentId)));
-    if (picture)
-      await update.mutateAsync({
-        ...emptyUpdate(),
-        agent: { workspace_id: workspace, agent_id: newAgentId },
-        avatar: picture,
-      });
+    const agent = { workspace_id: workspace, agent_id: newAgentId };
+    if (picture) await update.mutateAsync({ ...emptyUpdate(), agent, avatar: picture });
+    avatarSent.current = true;
+  }
+  async function putAvatar() {
+    await sendAvatar();
     reset();
     return true;
   }
@@ -155,12 +157,10 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
         });
         setCreated(true);
       }
-      if (!setup) {
-        await putAvatar();
-        return newAgentId;
-      }
-      // The new app is set up by agent onboarding; the creation state follows it. Its
-      // profile cannot take an avatar before that, so the avatar goes up when it is opened.
+      if (!setup) return (await putAvatar()) && newAgentId;
+      // The new app is set up by agent onboarding; the creation state follows it. The
+      // avatar is kept first so it reaches the app with the rest of the profile.
+      await sendAvatar();
       setPending(newAgentId);
       start.mutate({ request_id: 'member', agent: createdRef });
       return null;

@@ -49,25 +49,21 @@ async function begin(page: Page, baseURL: string) {
   await step(page, 1);
   return before;
 }
-// Choose an available AI, then name the first member.
-async function chooseAiAndCreate(page: Page) {
+// The first member is made on the members bench, with the AI it picks by itself.
+async function createMember(page: Page) {
   const probes: string[] = [];
   page.on('request', (request) => {
     if (request.url().endsWith('/api/v1/test_harness')) probes.push(request.url());
   });
   await step(page, 2);
-  await expect(page.getByTestId('harness-pi')).toBeVisible();
-  await page.getByTestId('harness-pi').click();
-  await next(page).click();
-  await step(page, 3);
+  await expect(page.getByTestId('member-create')).toBeVisible();
   expect(probes).toEqual([]);
-  await expect(next(page)).toBeDisabled();
-  await page.getByTestId('onboarding-member-name').fill('Alpha');
-  await next(page).click();
+  await page.getByTestId('member-name').fill('Alpha');
+  await page.getByTestId('member-create').click();
 }
 // The team lead says hello in the chat app; onboarding ends on the member's first reply.
 async function firstReply(page: Page, baseURL: string, workspace: string) {
-  await step(page, 4);
+  await step(page, 3);
   const chat = page.getByTestId('onboarding-chat');
   await expect(chat).not.toContainText('Alpha');
   await expect(next(page)).not.toHaveAttribute('data-variant', 'primary');
@@ -92,37 +88,36 @@ test('Feishu: official registration and permissions, then the first member answe
 }) => {
   test.setTimeout(90_000);
   const before = await begin(page, baseURL!);
-  const workspace = await created(baseURL!, before, 'feishu');
-  // There is no sign-in before the first member is created.
-  await expect(page.getByTestId('onboarding-qr')).toHaveCount(0);
   await next(page).click();
-  await chooseAiAndCreate(page);
-  const qr = page.getByTestId('onboarding-confirm');
-  await expect(qr).toBeVisible();
+  const workspace = await created(baseURL!, before, 'feishu');
+  // Back on the team, the chat app is fixed; forward again, the bench is as it was left.
+  await step(page, 2);
+  await page.getByTestId('member-name').fill('Alpha');
+  await page.getByTestId('onboarding-back').click();
+  await step(page, 1);
+  await expect(page.getByTestId('onboarding-provider-telegram')).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+  await next(page).click();
+  await step(page, 2);
+  await expect(page.getByTestId('member-name')).toHaveValue('Alpha');
+  await page.getByTestId('member-create').click();
+  const qr = page.getByTestId('member-create-qr');
+  await expect(qr).toHaveAttribute('data-phase', 'confirm');
+  await expect(page.getByText(/^(Scan with Feishu|用飞书扫一扫)$/)).toBeVisible();
   const first = await qr.locator('svg').innerHTML();
   await rig({ op: 'feishu_scan', workspace, state: 'expired' });
-  await expect(page.getByText(/Couldn’t connect|没能连接/)).toBeVisible();
-  await next(page).click();
+  await expect(page.getByTestId('member-create')).toBeEnabled();
+  await page.getByTestId('member-create').click();
   await expect(qr).toBeVisible();
   await expect.poll(() => qr.locator('svg').innerHTML()).not.toBe(first);
   const registrationQr = await qr.locator('svg').innerHTML();
   await rig({ op: 'feishu_scan', workspace, state: 'complete' });
-  await expect(qr).toBeVisible();
+  await expect(qr).toHaveAttribute('data-phase', 'permissions');
   await expect.poll(() => qr.locator('svg').innerHTML()).not.toBe(registrationQr);
-  await expect(page.getByTestId('onboarding-permissions')).toBeVisible();
-  await page
-    .context()
-    .route('https://open.feishu.cn/page/launcher?**', (route) => route.fulfill({ body: 'Feishu' }));
-  const opened = page.waitForEvent('popup');
-  await page.getByTestId('onboarding-permissions').click();
-  const confirmation = await opened;
-  await expect(confirmation).toHaveURL(
-    /open\.feishu\.cn\/page\/launcher\?clientID=cli_registered_1&addons=/,
-  );
-  await confirmation.close();
+  await expect(page.getByText(/Scan once more|再扫一次/)).toBeVisible();
   await page.screenshot({ path: test.info().outputPath('permissions.png') });
-  await expect(qr).toBeVisible();
-  await expect(page.getByText(/Waiting for approval|等待审批/)).toBeVisible();
   await rig({ op: 'feishu_scan', workspace, state: 'approved' });
   await firstReply(page, baseURL!, workspace);
 });
@@ -134,7 +129,7 @@ test('Telegram: a bad token is refused, the manager token connects and the membe
   test.setTimeout(90_000);
   const before = await begin(page, baseURL!);
   await page.getByTestId('onboarding-provider').getByRole('radio').nth(1).click();
-  const token = page.getByTestId('onboarding-token').getByRole('textbox');
+  const token = page.getByTestId('onboarding-token');
   await expect(next(page)).toBeDisabled();
   await token.fill('100:wrong');
   await next(page).click();
@@ -144,72 +139,22 @@ test('Telegram: a bad token is refused, the manager token connects and the membe
   await expect(token).not.toHaveAttribute('aria-invalid', 'true');
   await next(page).click();
   const workspace = await created(baseURL!, before, 'telegram');
-  await chooseAiAndCreate(page);
+  await createMember(page);
   await firstReply(page, baseURL!, workspace);
 });
 
-test('Skipping the connection also skips the first member', async ({ page, baseURL }) => {
+test('Setting up later on the team step opens the members board', async ({ page, baseURL }) => {
   test.setTimeout(60_000);
-  // The AI on this Mac cannot be read at first; a retry brings it back.
-  let offline = true;
-  await page.route('**/api/v1/get_machine_catalog', (route) =>
-    offline ? route.abort() : route.continue(),
-  );
-  await begin(page, baseURL!);
+  const before = await begin(page, baseURL!);
   await page.getByTestId('onboarding-later').click();
-  await step(page, 2);
-  const retry = page.getByTestId('onboarding-retry');
-  await expect(retry).toBeVisible({ timeout: 20_000 });
-  await expect(next(page)).toBeDisabled();
-  offline = false;
-  await retry.click();
-  await expect(retry).toHaveCount(0);
-  await expect(page.getByTestId('harness-pi')).toBeVisible();
-  await next(page).click();
   await expect(page).toHaveURL(/#\/members$/);
+  await created(baseURL!, before, 'feishu');
 });
 
 async function telegramToken(page: Page) {
   await page.getByTestId('onboarding-provider').getByRole('radio').nth(1).click();
-  await page.getByTestId('onboarding-token').getByRole('textbox').fill('100:manager');
+  await page.getByTestId('onboarding-token').fill('100:manager');
 }
-
-test('A late Telegram answer does not move the Feishu flow on', async ({ page, baseURL }) => {
-  test.setTimeout(90_000);
-  const cancelledPolls: string[] = [];
-  page.on('requestfailed', (request) => {
-    if (
-      request.url().endsWith('/api/v1/advance_agent_onboarding') &&
-      request.postDataJSON().action === 'poll'
-    )
-      cancelledPolls.push(request.failure()?.errorText ?? 'cancelled');
-  });
-  let release!: () => void;
-  const held = new Promise<void>((resolve) => (release = resolve));
-  let arrived!: () => void;
-  const answered = new Promise<void>((resolve) => (arrived = resolve));
-  await page.route('**/api/v1/create_workspace', async (route) => {
-    if (route.request().postDataJSON().provider_id !== 'telegram') return route.continue();
-    const response = await route.fetch();
-    arrived();
-    await held;
-    await route.fulfill({ response });
-  });
-  const before = await begin(page, baseURL!);
-  await telegramToken(page);
-  await next(page).click();
-  await answered;
-  await page.getByTestId('onboarding-provider').getByRole('radio').nth(0).click();
-  release();
-  const workspace = await created(baseURL!, before, 'telegram');
-  await step(page, 1);
-  // Back on Telegram, the team that was just made is used, and the member joins it.
-  await page.getByTestId('onboarding-provider').getByRole('radio').nth(1).click();
-  await next(page).click();
-  await chooseAiAndCreate(page);
-  await firstReply(page, baseURL!, workspace);
-  expect(cancelledPolls).toEqual([]);
-});
 
 test('Skipping an AI that could not be read ends onboarding', async ({ page, baseURL }) => {
   test.setTimeout(60_000);
@@ -218,7 +163,6 @@ test('Skipping an AI that could not be read ends onboarding', async ({ page, bas
   await telegramToken(page);
   await next(page).click();
   await step(page, 2);
-  await expect(page.getByTestId('onboarding-retry')).toBeVisible({ timeout: 25_000 });
   await page.getByTestId('onboarding-later').click();
   await expect(page).toHaveURL(/#\/members$/);
 });
@@ -234,8 +178,8 @@ test('A first reply that could not be read can be retried', async ({ page, baseU
   await telegramToken(page);
   await next(page).click();
   const workspace = await created(baseURL!, before, 'telegram');
-  await chooseAiAndCreate(page);
-  await step(page, 4);
+  await createMember(page);
+  await step(page, 3);
   await waiting;
   offline = true;
   const agent = await onlyAgent(baseURL!, workspace);

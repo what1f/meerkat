@@ -34,3 +34,18 @@
   grid-template-columns: 2fr 3fr;
   column-gap: 6px;
 }
+
+/* The chat app's code hangs beside the badge; the note and the app link sit under it. */
+.code {
+  display: grid;
+  grid-auto-rows: max-content;
+  row-gap: var(--sp-xs);
+}
+
+.code > * {
+  margin-inline: auto;
+}
+
+.code > button {
+  margin-top: var(--sp-sm);
+}

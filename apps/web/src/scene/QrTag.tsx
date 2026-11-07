@@ -3,7 +3,8 @@ import { Avatar, BrandMark, Button, Icon, IconButton, QrCode, Skeleton } from '.
 import peg from './peg.module.css';
 import css from './QrTag.module.css';
 export type QrTagProps = Omit<UIProps, 'className' | 'style'> & {
-  state: 'loading' | 'wait' | 'scanned' | 'expired' | 'error';
+  /** idle: a ghost code holding the spot before a real one exists. */
+  state: 'idle' | 'loading' | 'wait' | 'scanned' | 'expired' | 'error';
   errorLabel?: string;
   value: string;
   brand: 'feishu' | 'telegram';

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Button, Callout, Icon, Spinner, type Status } from '../../design';
+import { Button, Callout, Icon, type Status } from '../../design';
 import { Console, ConsoleKey, SoulSlot, Sticker } from '../../scene';
 import { useT } from '../../lib/i18n';
 import type { useMemberDraft } from './useMemberDraft';
@@ -14,12 +14,12 @@ export type MemberDraftState = ReturnType<typeof useMemberDraft>;
 export function MemberConsole({
   m,
   workspace,
-  channel,
   isNew,
   status,
   reading,
   onReading,
   canCreate,
+  autoOpen,
   onCommit,
   onResume,
   onDelete,
@@ -27,12 +27,12 @@ export function MemberConsole({
 }: {
   m: MemberDraftState;
   workspace: string;
-  channel: 'feishu' | 'telegram';
   isNew: boolean;
   status: Status | undefined;
   reading: boolean;
   onReading: (reading: boolean) => void;
   canCreate: boolean;
+  autoOpen?: boolean;
   onCommit: () => void;
   onResume: () => void;
   onDelete: () => void;
@@ -43,32 +43,13 @@ export function MemberConsole({
   const reaction = m.draft.auto_reaction || null;
   const pickReaction = (auto_reaction: string) => m.set({ auto_reaction });
   const { creation } = m;
+  // Scanning is guided beside the badge; the console only speaks up when it fails or is done.
   const creating: ReactNode =
-    creation.step === 'permissions' ? (
-      <Callout
-        tone="quiet"
-        leading={<Spinner />}
-        action={
-          <Button
-            size="sm"
-            data-testid="member-create-permissions"
-            onClick={() => window.open(creation.url, '_blank', 'noopener')}
-          >
-            {t('members.confirmPermissions')}
-          </Button>
-        }
-      >
-        {t('members.waiting')}
-      </Callout>
-    ) : creation.step === 'confirm' ? (
-      <Callout tone="quiet" leading={<Spinner />}>
-        {t(channel === 'telegram' ? 'members.scanToCreateTelegram' : 'members.scanToCreate')}
-      </Callout>
-    ) : creation.step === 'failed' ? (
+    creation.step === 'failed' ? (
       <Callout tone="attention">
         {t(creation.enterprise ? 'members.enterpriseMismatch' : 'members.failed')}
       </Callout>
-    ) : creation.step === 'ready' ? (
+    ) : creation.step === 'ready' && !autoOpen ? (
       <Callout
         tone="quiet"
         action={

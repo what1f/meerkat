@@ -237,6 +237,8 @@ const tasks = [
   "周活跃数据看板",
   "2.3 回归测试",
 ].map((text, i) => ({ id: String(i), text, completed: i === 2 || i === 4 }));
+const progress = new Map<string, number>();
+const phaseTicks = Number(new URLSearchParams(location.search).get("scan") ?? 8);
 const uploaded = new Map<string, { bytes: string; media_type: string }>();
 const originalFetch = globalThis.fetch.bind(globalThis);
 const json = (data: unknown, status = 200) =>
@@ -418,18 +420,40 @@ globalThis.fetch = async (input, init) => {
         expires_at: Date.now() + 600_000,
       });
     case "advance_agent_onboarding":
-    case "get_agent_onboarding":
+    case "get_agent_onboarding": {
+      // New members walk through the official registration, then (Feishu)
+      // permissions, a few seconds each, so the connect step can be reviewed.
+      const key = data.agent?.agent_id ?? "";
+      if (data.action === "start" && !progress.has(key)) progress.set(key, 0);
+      const ticks = progress.get(key);
+      if (ticks !== undefined && data.action === "poll") progress.set(key, ticks + 1);
+      const at = progress.get(key);
+      const feishu = team?.provider_id !== "telegram";
+      const phase =
+        at === undefined
+          ? "ready"
+          : at < phaseTicks
+            ? "create_app"
+            : feishu && at < phaseTicks * 2
+              ? "permissions"
+              : "ready";
       return json({
         agent: data.agent,
-        provider_id: team.provider_id,
-        step: "ready",
-        status: "ready",
+        provider_id: team?.provider_id,
+        step: phase,
+        status: phase === "ready" ? "ready" : "action_required",
         payload_json: "{}",
-        verification_uri: "",
+        verification_uri:
+          phase === "create_app"
+            ? "https://open.feishu.cn/page/launcher?user_code=PREVIEW"
+            : phase === "permissions"
+              ? "https://open.feishu.cn/app/cli_preview/auth?q=im:message"
+              : "",
         poll_interval_seconds: 1,
         error_code: "",
         error_message: "",
       });
+    }
     case "get_provider_catalog":
       return json({
         providers: [

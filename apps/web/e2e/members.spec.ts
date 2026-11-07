@@ -312,19 +312,22 @@ test('B3a.7: a member created in a Feishu team waits for its app to be set up', 
   await rig({ op: 'feishu_scan', workspace, state: 'complete' });
   await expect(qr).toBeVisible();
   await expect.poll(() => qr.locator('svg').innerHTML()).not.toBe(registrationQr);
-  await expect(page.getByTestId('member-create-permissions')).toBeVisible();
+  await expect(qr).toHaveAttribute('data-phase', 'permissions');
+  await expect(page.getByText(/Scan once more|再扫一次/)).toBeVisible();
+  // The same code also opens inside Feishu.
   await page
     .context()
-    .route('https://open.feishu.cn/page/launcher?**', (route) => route.fulfill({ body: 'Feishu' }));
+    .route('https://applink.feishu.cn/**', (route) => route.fulfill({ body: 'Feishu' }));
   const opened = page.waitForEvent('popup');
-  await page.getByTestId('member-create-permissions').click();
+  await page.getByTestId('member-open-app').click();
   const confirmation = await opened;
-  await expect(confirmation).toHaveURL(
-    /open\.feishu\.cn\/page\/launcher\?clientID=cli_registered_1&addons=/,
+  const inside = new URL(confirmation.url());
+  expect(inside.host).toBe('applink.feishu.cn');
+  expect(inside.searchParams.get('url')).toMatch(
+    /^https:\/\/open\.feishu\.cn\/page\/launcher\?clientID=cli_registered_1&addons=/,
   );
   await confirmation.close();
   await page.screenshot({ path: test.info().outputPath('permissions.png') });
-  await expect(page.getByText(/Waiting for approval|等待审批/)).toBeVisible();
   await expect(page.getByRole('button', { name: /^(打开|Open)$/ })).toHaveCount(0);
   await rig({ op: 'feishu_scan', workspace, state: 'approved' });
   await expect(qr).toBeHidden();
@@ -332,7 +335,7 @@ test('B3a.7: a member created in a Feishu team waits for its app to be set up', 
   await page.getByRole('button', { name: /^(打开|Open)$/ }).click();
   await expect(page).toHaveURL(/#\/member\/m[0-9a-f]{12}$/);
   const id = page.url().split('/').pop()!;
-  // The built-in avatar chosen for the member went up when it was opened.
+  // The built-in avatar chosen for the member went up with its profile.
   await page.reload();
   await expect(stage(page).locator('img[src^="data:image/jpeg;base64,"]')).toBeVisible();
   await page.goto('/#/members');
@@ -341,7 +344,7 @@ test('B3a.7: a member created in a Feishu team waits for its app to be set up', 
   await expect(card.locator('img[src^="data:image/jpeg;base64,"]')).toBeVisible();
 });
 
-test('B3a.9: an avatar that fails to upload stays picked and opening can be tried again', async ({
+test('B3a.9: an avatar that fails to upload stays picked and creating can be tried again', async ({
   page,
 }) => {
   const workspace = 'members_feishu_retry';
@@ -351,7 +354,6 @@ test('B3a.9: an avatar that fails to upload stays picked and opening can be trie
     created += 1;
     return route.continue();
   });
-  const go = await createdInFeishu(page, workspace, true);
   await page.route('**/api/v1/update_agent', (route) => {
     if (!failNext) return route.continue();
     failNext = false;
@@ -361,12 +363,20 @@ test('B3a.9: an avatar that fails to upload stays picked and opening can be trie
       body: JSON.stringify({ code: 'failed_precondition', message: 'unavailable', detail: null }),
     });
   });
-  await go.click();
+  await rig({ op: 'create_workspace', workspace, provider: 'feishu' });
+  await rig({ op: 'feishu_scan', workspace, state: 'waiting' });
+  await open(page, workspace, 'member/new');
+  await page.getByTestId('member-name').fill('Ada');
+  await pickPng(page);
+  await page.getByTestId('member-create').click();
   // The failure leaves the new member page as it was, still holding the picked avatar.
   await expect(page.getByText(/Something went wrong|没有成功/).first()).toBeVisible();
-  await expect(page).toHaveURL(/#\/member\/new$/);
+  await expect(page.getByTestId('member-create-qr')).toBeHidden();
   await expect(stage(page).locator(`img[src="${pngSrc}"]`)).toBeVisible();
-  await go.click();
+  await page.getByTestId('member-create').click();
+  await expect(page.getByTestId('member-create-qr')).toHaveAttribute('data-state', 'wait');
+  await rig({ op: 'feishu_scan', workspace, state: 'approved' });
+  await page.getByRole('button', { name: /^(打开|Open)$/ }).click();
   await expect(page).toHaveURL(/#\/member\/m[0-9a-f]{12}$/);
   const id = page.url().split('/').pop()!;
   await page.goto('/#/members');
@@ -374,26 +384,22 @@ test('B3a.9: an avatar that fails to upload stays picked and opening can be trie
   expect(created).toBe(1);
 });
 
-test('B3a.10: opening a new member waits for its avatar and cannot be repeated', async ({
+test('B3a.10: the picked avatar is kept before the app exists and goes up only once', async ({
   page,
 }) => {
   const workspace = 'members_feishu_once';
-  const go = await createdInFeishu(page, workspace, true);
   let uploads = 0;
-  let release = () => {};
-  const held = new Promise<void>((resolve) => (release = resolve));
-  await page.route('**/api/v1/update_agent', async (route) => {
+  await page.route('**/api/v1/update_agent', (route) => {
     uploads += 1;
-    await held;
-    await route.continue();
+    return route.continue();
   });
+  const go = await createdInFeishu(page, workspace, true);
+  expect(uploads).toBe(1);
   await go.click();
-  await expect(go).toBeDisabled();
-  // A second press while the avatar is on its way does nothing and does not leave the page.
-  await go.click({ force: true });
-  await expect(page).toHaveURL(/#\/member\/new$/);
-  release();
   await expect(page).toHaveURL(/#\/member\/m[0-9a-f]{12}$/);
+  const id = page.url().split('/').pop()!;
+  await page.goto('/#/members');
+  await expect(page.getByTestId(`member-card-${id}`).locator(`img[src="${pngSrc}"]`)).toBeVisible();
   expect(uploads).toBe(1);
 });
 

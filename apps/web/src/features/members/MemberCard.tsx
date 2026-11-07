@@ -3,7 +3,7 @@ import { BrandMark, modelBrand } from '../../design';
 import { Badge, Hang, type SortableHandle } from '../../scene';
 import { useT } from '../../lib/i18n';
 import type * as DTO from '../../lib/api/generated';
-import { useModelCatalog } from '../../lib/queries/catalogs';
+import { useMachines } from '../../lib/queries/machines';
 import { agentStatus, useAgentAvatar } from '../../lib/queries/agents';
 import { dataUrl } from './draft';
 
@@ -12,8 +12,8 @@ type Brand = (typeof brands)[number];
 export const isBrand = (id: string): id is Brand => (brands as readonly string[]).includes(id);
 export const modelLabel = (model: string) => model.split('/').pop() ?? model;
 
-// How a member's model reads everywhere: the catalog's display name and the vendor logo,
-// falling back to the raw id and the harness logo while the catalog has nothing to say.
+// How a member's model reads everywhere: the last listed display name and the vendor logo,
+// falling back to the raw id and the harness logo while nothing was listed yet.
 export function useModelFace(
   workspace: string,
   machine_id: string,
@@ -21,11 +21,14 @@ export function useModelFace(
   model: string,
 ): { label: string; mark: ReactNode } {
   const t = useT();
-  const catalog = useModelCatalog(
-    { request_id: 'model-face', workspace: { workspace_id: workspace }, machine_id, harness_id },
-    !!workspace && !!machine_id && !!harness_id,
-  );
-  const entry = catalog.data?.models.find((x) => x.model_id === model);
+  const machines = useMachines({
+    request_id: 'model-face',
+    workspace: { workspace_id: workspace },
+  });
+  const entry = machines.data?.machines
+    .find((m) => m.machine_id === machine_id)
+    ?.harnesses.find((h) => h.harness_id === harness_id)
+    ?.model_catalog?.models.find((x) => x.model_id === model);
   const vendor = model ? modelBrand(model, entry?.display_name ?? '') : undefined;
   const brand = vendor ?? (isBrand(harness_id) ? harness_id : undefined);
   return {

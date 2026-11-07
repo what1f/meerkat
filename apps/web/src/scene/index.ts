@@ -34,3 +34,6 @@ export { figures, type FigurePack, type Pose } from './figures';
 export * from './FlipCard';
 export * from './BadgeVerso';
 export * from './Sheet';
+export * from './AvatarPicker';
+export * from './Scribble';
+export * from './AppTag';

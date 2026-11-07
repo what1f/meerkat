@@ -58,3 +58,11 @@
   width: 15px;
   height: 15px;
 }
+
+.root[aria-disabled] {
+  opacity: 0.5;
+}
+
+.root[aria-disabled] > button {
+  cursor: default;
+}

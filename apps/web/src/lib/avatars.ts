@@ -1,5 +1,5 @@
-import { avatarUrl } from '../../lib/assets';
-import type * as DTO from '../../lib/api/generated';
+import { avatarUrl } from './assets';
+import type * as DTO from './api/generated';
 
 export const builtinAvatars = Array.from({ length: 17 }, (_, i) => String(i).padStart(2, '0'));
 
@@ -25,3 +25,9 @@ export async function builtinUpload(id: string) {
   const url = avatarUrl(id);
   return url ? toUpload(await (await fetch(url)).blob()) : null;
 }
+
+export const avatarChoices = builtinAvatars.map((id) => ({ id, src: avatarUrl(id) }));
+
+// What the avatar picker returned, ready to send.
+export const choiceUpload = (choice: { builtin: string } | { file: File }) =>
+  'builtin' in choice ? builtinUpload(choice.builtin) : toUpload(choice.file);

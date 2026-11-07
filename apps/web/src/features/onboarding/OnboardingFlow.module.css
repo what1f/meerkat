@@ -17,17 +17,34 @@
   margin-inline: auto;
 }
 
+.body[hidden] {
+  display: none;
+}
+
 .body {
   grid-row: 2;
+  grid-column: 1;
   padding: 53px 0 var(--sp-lg);
 }
 
 .foot {
   display: grid;
+  grid-template-rows: minmax(var(--h-lg), auto);
   grid-template-columns: auto 1fr auto;
   grid-row: 3;
 }
 
+.foot > button {
+  margin-block: auto;
+}
+
 .go {
+  display: grid;
+  grid-auto-flow: column;
   grid-column: 3;
+  column-gap: var(--sp-lg);
+}
+
+.go > * {
+  margin-block: auto;
 }

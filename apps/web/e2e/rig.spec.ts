@@ -338,7 +338,7 @@ test('Telegram member creation from the board starts onboarding', async ({ page,
     `https://t.me/newbot/manager_bot/${workspace}_${agent_id}_bot`,
   );
   await expect(page.getByTestId('member-create-qr')).toHaveAttribute('data-state', 'wait');
-  await expect(page.getByText('Scan with Telegram to confirm')).toBeVisible();
+  await expect(page.getByText('Scan with Telegram', { exact: true })).toBeVisible();
   const persisted = await api(baseURL!, 'get_agent', {
     agent: { workspace_id: workspace, agent_id },
   });

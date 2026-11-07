@@ -24,8 +24,6 @@ test('A first launch with no team opens onboarding and stays on it', async ({ pa
   await expect(page.getByTestId('onboarding-next')).toBeEnabled();
   await expect(page.getByTestId('onboarding-qr')).toHaveCount(0);
   await page.getByTestId('onboarding-later').click();
-  await expect(onboarding).toHaveAttribute('data-step', '2');
-  await page.getByTestId('onboarding-later').click();
   await expect(page).toHaveURL(/#\/members$/);
   await expect(onboarding).toHaveCount(0);
 });

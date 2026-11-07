@@ -16,11 +16,22 @@ export function useHarnessCatalog(input: DTO.CatalogRequest, enabled = true) {
     enabled,
   });
 }
-export function useModelCatalog(input: DTO.ModelCatalogRequest, enabled = true) {
+// Asking for models starts the CLI on that machine, so it happens only where
+// an AI is being picked, once per visit. It sits outside the event keys: the
+// list it brings back changes the machine catalog and must not ask again.
+export function useModelCatalog(
+  input: DTO.ModelCatalogRequest,
+  enabled = true,
+  cached?: DTO.ModelCatalog | null,
+) {
   return useQuery({
-    queryKey: [...keys.catalogs, 'get_model_catalog', { ...input, request_id: undefined }],
+    queryKey: ['models', { ...input, request_id: undefined }],
     queryFn: ({ signal }) => call('get_model_catalog', input, signal),
     enabled,
+    placeholderData: cached ?? undefined,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
   });
 }
 export function useReactionCatalog(input: DTO.CatalogRequest, enabled = true) {

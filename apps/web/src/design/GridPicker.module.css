@@ -3,7 +3,7 @@
   --cell-ring: var(--cell-selected);
   --cell: 36px;
   --gap: 6px;
-  --pad: 0px;
+  --pad: 10px;
 
   display: grid;
   gap: var(--gap);

@@ -7,12 +7,14 @@ export type SegmentedProps<T> = Omit<UIProps, 'className' | 'style'> & {
   value: T;
   onChange: (value: T) => void;
   size?: 'sm' | 'md';
+  disabled?: boolean;
 };
 export function Segmented<T>({
   options,
   value,
   onChange,
   size = 'md',
+  disabled,
   ...rest
 }: SegmentedProps<T>) {
   const selected = Math.max(
@@ -25,6 +27,7 @@ export function Segmented<T>({
       className={css.root}
       role="radiogroup"
       data-size={size}
+      aria-disabled={disabled || undefined}
       style={{ '--n': Math.max(1, options.length), '--i': selected } as CSSProperties}
     >
       {options.map((option, index) => (
@@ -33,6 +36,7 @@ export function Segmented<T>({
           type="button"
           role="radio"
           aria-checked={Object.is(option.value, value)}
+          disabled={disabled}
           tabIndex={index === selected ? 0 : -1}
           onClick={() => onChange(option.value)}
           onKeyDown={(e) => {

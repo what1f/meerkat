@@ -9,7 +9,7 @@ import {
   useSyncHumanProfile,
   useUpdateHumanPosition,
 } from '../../lib/queries/workspaces';
-import { defaultAvatar } from './avatars';
+import { defaultAvatar } from '../../lib/avatars';
 import type { MembersPageProps } from './MembersPage';
 
 export function HumanCard({

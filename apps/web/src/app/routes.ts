@@ -1,10 +1,10 @@
-import { useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
+import { createElement, useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
 import type { TopBarProps } from '../shell';
 import type { SheetClose } from '../scene';
 import { TeamPage } from '../features/team';
 import { SettingsPage } from '../features/settings';
 import { OfficePage } from '../features/office';
-import { MembersPage } from '../features/members';
+import { MembersPage, NewMemberBench } from '../features/members';
 import { OnboardingFlow } from '../features/onboarding';
 export type Page =
   | { kind: 'members' }
@@ -26,13 +26,16 @@ export type PageViewProps = {
 };
 // A page over another one has no bar of its own; it says how it is put away.
 export type FrameBar = TopBarProps & { close?: SheetClose };
+// Onboarding makes its first member on the members page's bench.
+const Onboarding = (props: PageViewProps) =>
+  createElement(OnboardingFlow, { ...props, memberBench: NewMemberBench });
 export const pageViews: Partial<Record<Page['kind'], ComponentType<PageViewProps>>> = {
   members: MembersPage,
   member: MembersPage,
   team: TeamPage,
   settings: SettingsPage,
   office: OfficePage,
-  onboarding: OnboardingFlow,
+  onboarding: Onboarding,
 };
 export function parseHash(hash: string): Page {
   const parts = hash.replace(/^#\/?/, '').split('/');

@@ -30,6 +30,17 @@ html[data-desktop='true'] body {
   background: var(--clear);
 }
 
+/* Drag strip under the traffic lights; it stays out of the page flow. */
+[data-desktop-safe-area] {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  width: 100%;
+  height: var(--safe-area);
+  -webkit-app-region: drag;
+}
+
 button,
 input,
 textarea,
