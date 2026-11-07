@@ -68,46 +68,17 @@ defineHarness({
   displayName: "Claude Code",
   defaults: { environment: { ENABLE_TOOL_SEARCH: "true" }, launch_arguments: [] },
   probe: probeVersion,
-  models(config) {
-    const isolated = prepare({ working_directory: ctx.directory(), config });
-    processId = launch(
-      config,
-      [
-        "--print",
-        "--input-format",
-        "stream-json",
-        "--output-format",
-        "stream-json",
-        "--verbose",
-        "--no-session-persistence",
-        "--mcp-config",
-        '{"mcpServers":{}}',
-      ],
-      { cwd: ctx.directory(), env: isolated.env },
-    );
-    try {
-      ctx.send(processId, {
-        type: "control_request",
-        request_id: "catalog",
-        request: { subtype: "initialize" },
-      });
-      const response = receiveUntil(
-        processId,
-        (m) =>
-          m.type === "control_response" && m.response?.request_id === "catalog",
-      );
-      const models = response.response?.response?.models;
-      if (!Array.isArray(models))
-        failure("invalid_event", "Claude did not return a model directory");
-      return models.map((m) => ({
-        id: m.value,
-        name: m.displayName || m.value,
-        description: m.description || "",
-        thinking_levels: m.supportedEffortLevels || [],
-      }));
-    } finally {
-      ctx.terminate(processId);
-    }
+  // Claude Code takes these aliases and maps them to its current models.
+  // Asking the CLI itself would start a session, so the list stays fixed.
+  models() {
+    const efforts = ["low", "medium", "high", "xhigh", "max"];
+    return [
+      ["default", "Default"],
+      ["opus", "Opus"],
+      ["fable", "Fable"],
+      ["sonnet", "Sonnet"],
+      ["haiku", "Haiku"],
+    ].map(([id, name]) => ({ id, name, description: "", thinking_levels: efforts }));
   },
   test(request) {
     return {

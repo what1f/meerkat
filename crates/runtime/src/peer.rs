@@ -723,7 +723,7 @@ impl RuntimePeer for RuntimePeerAdapter {
             .map_err(status)?;
         let machine = catalog
             .machines
-            .into_iter()
+            .iter()
             .find(|machine| machine.machine_id == request.machine_id)
             .ok_or_else(|| Status::not_found("Machine not found"))?;
         if machine.observed_state != meerkat_protocol::ObservedState::Running
@@ -731,17 +731,7 @@ impl RuntimePeer for RuntimePeerAdapter {
         {
             return Err(Status::unavailable("Machine is offline"));
         }
-        let harness = machine
-            .harnesses
-            .into_iter()
-            .find(|harness| harness.harness_id == request.harness_id)
-            .ok_or_else(|| Status::not_found("Harness not found"))?;
-        if !harness.model_catalog_error.is_empty() {
-            return Err(Status::unavailable("Models could not be loaded"));
-        }
-        harness
-            .model_catalog
-            .ok_or_else(|| Status::unavailable("Models are not ready"))
+        self.application.machine_broker().list_models(request).await
     }
     async fn get_harness_catalog(&self, request: CatalogRequest) -> Result<HarnessCatalog, Status> {
         self.application.harness_catalog(request).map_err(status)

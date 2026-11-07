@@ -272,11 +272,6 @@ async fn prepare_assignment(
         .get(&wire_config.harness_id)
         .cloned()
         .ok_or_else(|| MachineError::InvalidAssignment("harness_unavailable".into()))?;
-    let capabilities = inner
-        .probes
-        .get(&wire_config.harness_id)
-        .map(|probe| probe.capabilities.clone())
-        .unwrap_or_default();
     let directive = assign
         .session
         .as_ref()
@@ -400,14 +395,17 @@ async fn prepare_assignment(
             })
             .map(|entry| entry.native_session_id.clone())
     });
+    // Probe the executable with its plain defaults, not this Agent's setup.
+    let plain = NativeHarnessConfig {
+        cli_path: native_config.cli_path.clone(),
+        ..default_config.clone()
+    };
+    let capabilities = factory.capabilities(&plain);
+    let cli_version = inner.cli_versions.version(factory.as_ref(), &plain).await;
     let resume = SessionAction::try_from(directive.action).ok()
         == Some(SessionAction::ResumeOrStart)
         && requested_native.is_some()
         && capabilities.contains(&meerkat_harness::HarnessCapability::Resume);
-    let cli_version = inner
-        .cli_versions
-        .version(factory.as_ref(), &native_config)
-        .await;
     let request = SessionRequest {
         cli_version,
         permission_policy: Default::default(),

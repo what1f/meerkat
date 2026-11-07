@@ -433,7 +433,16 @@ async fn a4a_4_model_catalog_is_machine_scoped_and_plain_model_runs_without_thin
             assert_eq!(catalog["models"][0]["supported_thinking_levels"],json!(["low","high"]));
             assert_eq!(catalog["models"][1]["supported_thinking_levels"],json!(["medium"]));
             assert_eq!(catalog["models"][2]["supported_thinking_levels"],json!([]));
-            assert_eq!(machine["harnesses"][0]["model_catalog"],catalog);
+            // Nothing is listed until asked; the answer then reaches the inventory.
+            assert_eq!(machine["harnesses"][0]["model_catalog"],Value::Null);
+            let mut listed = Value::Null;
+            for _ in 0..50 {
+                let machines = http.post("get_machine_catalog",json!({"request_id":"listed","workspace":null})).await?;
+                listed = machines["machines"].as_array().unwrap().iter().find(|m| m["machine_id"] == machine["machine_id"]).unwrap()["harnesses"][0]["model_catalog"].clone();
+                if listed == catalog { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            assert_eq!(listed,catalog);
             }
             let unavailable = http.response("get_model_catalog",json!({"request_id":"other-harness","workspace":workspace(),"machine_id":machine["machine_id"],"harness_id":"codex"})).await?;
             assert_eq!(unavailable.status(),503);

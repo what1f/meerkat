@@ -641,6 +641,8 @@ impl RuntimeApplication {
             )
             .await?;
         if state.status == crate::ProviderOnboardingStatus::Ready {
+            // A new app leaves onboarding only once; later reads see an existing one.
+            let first_ready = awaiting_onboarding(&agent);
             agent.provider_state = runtime
                 .database()
                 .agent_provider_state(&workspace_id, &agent_id)
@@ -661,11 +663,50 @@ impl RuntimeApplication {
             let host = runtime.host(&workspace_id).await?;
             host.create_agent(agent_id.clone(), provider_agent_spec(&agent))
                 .await?;
+            if first_ready {
+                self.push_first_profile(&host, &agent).await;
+            }
             runtime
                 .configure_agent(&workspace_id, agent_runtime_config(&workspace, agent)?)
                 .await?;
         }
         Ok(agent_onboarding_dto(&workspace, &agent_id, state))
+    }
+
+    // The chat app is created without a profile, so the one filled in here goes
+    // up as soon as the app exists. A failure leaves it for the next edit.
+    async fn push_first_profile(
+        &self,
+        host: &Arc<dyn crate::ProviderHostInstance>,
+        agent: &AgentRecord,
+    ) {
+        let mut spec = provider_agent_spec(agent);
+        let avatar = self
+            .agent_profiles()
+            .read_avatar(
+                &agent.workspace_id,
+                &agent.agent_id,
+                agent.avatar.as_deref(),
+            )
+            .ok()
+            .flatten();
+        if let (Some(avatar), Some(config)) = (avatar, spec.provider_agent_config.as_object_mut()) {
+            config.insert(
+                "avatar_file_name".into(),
+                serde_json::json!(avatar.file_name),
+            );
+            config.insert("avatar_bytes".into(), serde_json::json!(avatar.bytes));
+        }
+        if let Err(error) = host
+            .update_agent(
+                agent.agent_id.clone(),
+                agent.provider_agent_config.clone(),
+                spec,
+            )
+            .await
+        {
+            log::warn!("first profile sync failed for {}: {error}", agent.agent_id);
+        }
     }
 
     pub fn provider_catalog(&self, _: CatalogRequest) -> Result<ProviderCatalog, RuntimeError> {
@@ -1096,6 +1137,15 @@ fn provider_workspace_spec(record: &WorkspaceRecord) -> ProviderWorkspaceSpec {
         rules: record.rules.clone(),
         provider_config: record.provider_config.clone(),
     }
+}
+
+/// A member whose chat app is still being created; it has no profile to update yet.
+pub(crate) fn awaiting_onboarding(record: &AgentRecord) -> bool {
+    record
+        .provider_agent_config
+        .get("mode")
+        .and_then(serde_json::Value::as_str)
+        == Some("new")
 }
 
 pub(crate) fn provider_agent_spec(record: &AgentRecord) -> ProviderAgentSpec {

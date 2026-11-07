@@ -45,17 +45,32 @@ impl DesktopBackend {
         std::thread::Builder::new()
             .name("meerkat-service-bootstrap".into())
             .spawn(move || {
-                let result = start_services(
+                // The window opens once the Runtime answers. The Machine keeps starting
+                // here and shows up in the app when it connects.
+                let client = start_runtime(
                     &runtime,
                     &worker_services,
                     &worker_home,
                     &worker_run,
                     manage_services,
                 );
-                if let Err(error) = &result {
+                let client = match client {
+                    Ok(client) => {
+                        let _ = startup_tx.send(Ok(()));
+                        client
+                    }
+                    Err(error) => {
+                        eprintln!("meerkat-desktop: {error}");
+                        let _ = startup_tx.send(Err(error));
+                        return;
+                    }
+                };
+                if manage_services
+                    && let Err(error) =
+                        start_machine(&runtime, &client, &worker_services, &worker_home)
+                {
                     eprintln!("meerkat-desktop: {error}");
                 }
-                let _ = startup_tx.send(result);
             })
             .expect("failed to start service bootstrap thread");
 
@@ -152,6 +167,29 @@ fn start_services(
     run: &Path,
     manage_services: bool,
 ) -> Result<(), ClientError> {
+    let client = start_runtime(runtime, services, home, run, manage_services)?;
+    if manage_services {
+        start_machine(runtime, &client, services, home)?;
+    }
+    Ok(())
+}
+
+fn start_machine(
+    runtime: &tokio::runtime::Handle,
+    client: &RuntimeManagementClient,
+    services: &Arc<Mutex<BackgroundServices>>,
+    home: &Path,
+) -> Result<(), ClientError> {
+    runtime.block_on(ensure_machine_ready(client, services, home))
+}
+
+fn start_runtime(
+    runtime: &tokio::runtime::Handle,
+    services: &Arc<Mutex<BackgroundServices>>,
+    home: &Path,
+    run: &Path,
+    manage_services: bool,
+) -> Result<RuntimeManagementClient, ClientError> {
     // Reuse a healthy owner before preparing or launching any local service,
     // unless it runs an older build than this app.
     let mut reused = runtime.block_on(RuntimeManagementClient::connect_local(&run));
@@ -178,13 +216,7 @@ fn start_services(
         }
         Err(error) => return Err(error),
     };
-    if manage_services {
-        let mut services = services
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        runtime.block_on(ensure_machine_ready(&client, &mut services, home))?;
-    }
-    Ok(())
+    Ok(client)
 }
 
 pub fn run_local_bootstrap_smoke() -> i32 {
@@ -278,9 +310,15 @@ async fn connect_with_retry(run: &Path) -> Result<RuntimeManagementClient, Clien
 
 async fn ensure_machine_ready(
     client: &RuntimeManagementClient,
-    services: &mut BackgroundServices,
+    services: &Arc<Mutex<BackgroundServices>>,
     home: &Path,
 ) -> Result<(), ClientError> {
+    // Each step takes the lock briefly, so quitting is never held up by the wait.
+    let services = || {
+        services
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    };
     if client
         .get_machine_catalog(None)
         .await?
@@ -289,7 +327,7 @@ async fn ensure_machine_ready(
     {
         return Ok(());
     }
-    services.ensure_machine(home)?;
+    services().ensure_machine(home)?;
     // A replaced Machine discovers its Harnesses before connecting. Model
     // discovery alone allows five seconds per Harness, plus shell/version
     // probes, so the old six-second window rejected healthy cold starts.
@@ -303,7 +341,8 @@ async fn ensure_machine_ready(
         {
             return Ok(());
         }
-        if let Some(status) = services.machine_exited()? {
+        let exited = services().machine_exited()?;
+        if let Some(status) = exited {
             return Err(ClientError::Unavailable(format!(
                 "本地执行服务已退出（{status}），请查看服务日志后重试。"
             )));

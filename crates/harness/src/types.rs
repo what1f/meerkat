@@ -430,6 +430,10 @@ pub trait HarnessFactory: Send + Sync {
         })
     }
     fn probe<'a>(&'a self, config: &'a HarnessConfig) -> HarnessFuture<'a, ProbeResult>;
+    /// What the adapter supports, known without starting the native CLI.
+    fn capabilities(&self, _config: &HarnessConfig) -> BTreeSet<HarnessCapability> {
+        BTreeSet::new()
+    }
     fn models<'a>(&'a self, _config: &'a HarnessConfig) -> HarnessFuture<'a, Vec<NativeModel>> {
         Box::pin(async {
             Err(HarnessError::new(

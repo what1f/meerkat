@@ -1,6 +1,6 @@
 use meerkat_harness::*;
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, time::Duration};
+use std::{collections::BTreeSet, path::PathBuf, time::Duration};
 
 #[path = "../../../crates/harness/tests/support/process.rs"]
 mod process_support;
@@ -182,6 +182,14 @@ impl HarnessFactory for ScriptedHarness {
     }
     fn probe<'a>(&'a self, config: &'a HarnessConfig) -> HarnessFuture<'a, ProbeResult> {
         self.process.probe(config)
+    }
+    // The rig sets what this scripted CLI supports in its environment.
+    fn capabilities(&self, config: &HarnessConfig) -> BTreeSet<HarnessCapability> {
+        config
+            .environment
+            .get("MEERKAT_SYSTEM_CAPABILITIES")
+            .and_then(|value| serde_json::from_str(value).ok())
+            .unwrap_or_default()
     }
     fn models<'a>(&'a self, _config: &'a HarnessConfig) -> HarnessFuture<'a, Vec<NativeModel>> {
         Box::pin(async move {

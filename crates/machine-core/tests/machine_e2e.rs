@@ -479,8 +479,9 @@ async fn machine_e2e() {
                 .collect::<Vec<_>>(),
             ["pi", "codex", "claude_code"]
         );
+        // Models are read only when someone asks for them.
         assert!(hello.harnesses.iter().all(|harness| {
-            harness.model_catalog.is_none() && !harness.model_catalog_error.is_empty()
+            harness.model_catalog.is_none() && harness.model_catalog_error.is_empty()
         }));
 
         peer.send(runtime_assign_with_harness(

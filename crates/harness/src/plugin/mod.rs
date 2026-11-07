@@ -25,6 +25,7 @@ pub struct JsHarnessFactory {
     source: Arc<str>,
     journal: Option<PathBuf>,
     defaults: HarnessDefaults,
+    capabilities: std::collections::BTreeSet<HarnessCapability>,
 }
 impl JsHarnessFactory {
     pub fn new(id: &str, name: &str, source: impl Into<Arc<str>>) -> Result<Self, HarnessError> {
@@ -33,12 +34,15 @@ impl JsHarnessFactory {
             source: source.into(),
             journal: None,
             defaults: HarnessDefaults::default(),
+            capabilities: Default::default(),
         };
         // Validate declarations without probing or starting a native CLI.
         let worker = factory.worker(None)?;
+        let metadata = worker.shared.metadata.lock().unwrap().clone();
         factory.defaults =
-            serde_json::from_value(worker.shared.metadata.lock().unwrap()["defaults"].clone())
-                .map_err(json_error)?;
+            serde_json::from_value(metadata["defaults"].clone()).map_err(json_error)?;
+        factory.capabilities =
+            serde_json::from_value(metadata["capabilities"].clone()).map_err(json_error)?;
         worker.stop();
         Ok(factory)
     }
@@ -152,6 +156,12 @@ impl HarnessFactory for JsHarnessFactory {
             worker.stop();
             serde_json::from_value(result?).map_err(json_error)
         })
+    }
+    fn capabilities(
+        &self,
+        _config: &HarnessConfig,
+    ) -> std::collections::BTreeSet<HarnessCapability> {
+        self.capabilities.clone()
     }
     fn models<'a>(&'a self, config: &'a HarnessConfig) -> HarnessFuture<'a, Vec<NativeModel>> {
         Box::pin(async move {
@@ -344,7 +354,7 @@ impl Worker {
                     let bridge=host.clone();ctx.globals().set("__host",Function::new(ctx.clone(),move|op:String,input:String|->String{let result=serde_json::from_str(&input).map_err(json_error).and_then(|v|bridge.operation(&op,v));match result {Ok(value)=>json!({"ok":value}).to_string(),Err(e)=>json!({"error":e}).to_string()}}).map_err(js_error)?).map_err(js_error)?;
                     ctx.eval::<(),_>(include_str!("sdk.js")).map_err(js_error)?;
                     ctx.eval::<(),_>(source.as_ref()).map_err(|error|context_error(&ctx,error))?;
-                    let metadata: String=ctx.eval("JSON.stringify({id:harness.id,apiVersion:harness.apiVersion,defaults:harness.defaults||{},reuseSession:harness.reuseSession===true})").map_err(js_error)?;
+                    let metadata: String=ctx.eval("JSON.stringify({id:harness.id,apiVersion:harness.apiVersion,defaults:harness.defaults||{},capabilities:harness.capabilities||capabilities,reuseSession:harness.reuseSession===true})").map_err(js_error)?;
                     let metadata:Value=serde_json::from_str(&metadata).map_err(json_error)?;
                     *state.metadata.lock().unwrap()=metadata.clone();
                     if metadata["id"]!=info.harness_id||metadata["apiVersion"]!=1{return Err(HarnessError::invalid_config("Plugin API version or identity mismatch"));}
@@ -1165,6 +1175,12 @@ macro_rules! harness_plugin {
                 config: &'a $crate::HarnessConfig,
             ) -> $crate::HarnessFuture<'a, Vec<$crate::NativeModel>> {
                 self.0.models(config)
+            }
+            fn capabilities(
+                &self,
+                config: &$crate::HarnessConfig,
+            ) -> std::collections::BTreeSet<$crate::HarnessCapability> {
+                self.0.capabilities(config)
             }
             fn start<'a>(
                 &'a self,

@@ -391,10 +391,12 @@ impl<'a> AgentLifecycle<'a> {
         let agent_id = record.agent_id.clone();
         let _ = agent_runtime_config(&workspace, record.clone())?;
         let avatar_changed = avatar.is_some() || old_record.avatar != record.avatar;
-        let provider_profile_changed = old_record.name != record.name
-            || old_record.bio != record.bio
-            || avatar_changed
-            || old_record.provider_agent_config != record.provider_agent_config;
+        // Before its chat app exists the profile stays local; it goes up when onboarding finishes.
+        let provider_profile_changed = !awaiting_onboarding(&record)
+            && (old_record.name != record.name
+                || old_record.bio != record.bio
+                || avatar_changed
+                || old_record.provider_agent_config != record.provider_agent_config);
         if provider_profile_changed {
             let (provider, temporary) = runtime.lifecycle_host(&workspace_id).await?;
             if temporary {

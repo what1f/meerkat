@@ -110,9 +110,42 @@ async fn a4c_1_2_4_targeted_greeting_configuration_failure_and_no_business_chang
         let _team = rig.workspace("team").await?;
         let remote = rig.add_machine().await?;
         let http = Http::new(&rig)?;
+        // Choices are checked against the models a person listed for that Machine.
+        let listed = http
+            .client
+            .post(format!("{}/api/v1/get_model_catalog", http.url))
+            .json(&json!({"request_id":"models","workspace":null,"machine_id":remote.id,"harness_id":"pi"}))
+            .send()
+            .await?
+            .json::<Value>()
+            .await?;
+        for _ in 0..50 {
+            let machines = http
+                .client
+                .post(format!("{}/api/v1/get_machine_catalog", http.url))
+                .json(&json!({"request_id":"machines","workspace":null}))
+                .send()
+                .await?
+                .json::<Value>()
+                .await?;
+            let inventory = machines["machines"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|m| m["machine_id"] == remote.id.as_str())
+                .and_then(|m| m["harnesses"].as_array())
+                .and_then(|h| h.iter().find(|h| h["harness_id"] == "pi"))
+                .map(|h| h["model_catalog"].clone());
+            if inventory.as_ref() == Some(&listed) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
         let mut events = no_event(&http).await?;
         let before = snapshot(&rig)?;
-        let local_journal = std::fs::read(rig.machine_home().join("harness-pids.tsv"))?;
+        // The local Machine starts no CLI on its own, so it may have no journal yet.
+        let local_journal =
+            std::fs::read(rig.machine_home().join("harness-pids.tsv")).unwrap_or_default();
         let journals = tempfile::tempdir()?;
         let body = request(&remote.id, journals.path(), Script::Greeting);
         let result = http.test(body.clone()).await?;
@@ -192,7 +225,7 @@ async fn a4c_1_2_4_targeted_greeting_configuration_failure_and_no_business_chang
         );
         assert_eq!(snapshot(&rig)?, before);
         assert_eq!(
-            std::fs::read(rig.machine_home().join("harness-pids.tsv"))?,
+            std::fs::read(rig.machine_home().join("harness-pids.tsv")).unwrap_or_default(),
             local_journal
         );
         assert!(

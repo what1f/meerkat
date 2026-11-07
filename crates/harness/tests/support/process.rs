@@ -46,6 +46,9 @@ impl HarnessFactory for ProcessHarnessFactory {
     fn probe<'a>(&'a self, c: &'a HarnessConfig) -> HarnessFuture<'a, ProbeResult> {
         self.plugin.probe(c)
     }
+    fn capabilities(&self, c: &HarnessConfig) -> std::collections::BTreeSet<HarnessCapability> {
+        self.plugin.capabilities(c)
+    }
     fn models<'a>(&'a self, c: &'a HarnessConfig) -> HarnessFuture<'a, Vec<NativeModel>> {
         self.plugin.models(c)
     }

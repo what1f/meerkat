@@ -1,16 +1,16 @@
-//! Native CLI versions. The Machine detects them when it starts and keeps
-//! them on disk, so an Agent starts with a known version. A background check
-//! probes a CLI again only when its executable file changes.
+//! What the Machine knows about each native CLI. Starting the Machine only
+//! checks that an executable resolves; versions and model lists are probed
+//! when a person asks for them or an Agent starts, and kept on disk.
 
-use super::Inner;
-use meerkat_harness::{HarnessConfig, HarnessError, HarnessFactory, ProbeResult};
+use meerkat_harness::{
+    HarnessAvailability, HarnessConfig, HarnessError, HarnessFactory, ProbeResult,
+};
+use meerkat_protocol::ModelCatalog;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, Weak};
-use std::time::{Duration, UNIX_EPOCH};
-
-pub(super) const CHECK_INTERVAL: Duration = Duration::from_secs(60);
+use std::sync::Mutex;
+use std::time::UNIX_EPOCH;
 
 /// Identifies the executable file a CLI path currently resolves to.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -30,6 +30,22 @@ struct Entry {
     /// `None` until a probe succeeds for the current file.
     stamp: Option<Stamp>,
     version: Option<String>,
+    /// The last model list; it outlives CLI updates so names keep showing.
+    #[serde(default)]
+    models: Option<ModelCatalog>,
+}
+
+impl Entry {
+    fn new(config: &HarnessConfig) -> Self {
+        Self {
+            harness_id: config.harness_id.clone(),
+            cli_path: config.cli_path.clone(),
+            search_path: search_path(config),
+            stamp: None,
+            version: None,
+            models: None,
+        }
+    }
 }
 
 pub(super) struct CliVersions {
@@ -46,6 +62,27 @@ impl CliVersions {
         Self {
             path,
             entries: Mutex::new(entries),
+        }
+    }
+
+    /// Inventory for a CLI without starting it: present or not, plus what the
+    /// last probe of this same executable found.
+    pub fn snapshot(&self, factory: &dyn HarnessFactory, config: &HarnessConfig) -> ProbeResult {
+        let current = stamp(&config.cli_path, search_path(config).as_deref());
+        let entries = self.entries.lock().unwrap();
+        let known = entries
+            .get(&key(config))
+            .filter(|entry| current.is_some() && entry.stamp == current);
+        ProbeResult {
+            info: factory.info().clone(),
+            availability: if current.is_some() {
+                HarnessAvailability::Available
+            } else {
+                HarnessAvailability::Unavailable
+            },
+            version: known.and_then(|entry| entry.version.clone()),
+            capabilities: factory.capabilities(config),
+            reason: current.is_none().then(|| "not installed".into()),
         }
     }
 
@@ -74,6 +111,23 @@ impl CliVersions {
         }
     }
 
+    pub fn models(&self, config: &HarnessConfig) -> Option<ModelCatalog> {
+        self.entries
+            .lock()
+            .unwrap()
+            .get(&key(config))
+            .and_then(|entry| entry.models.clone())
+    }
+
+    pub fn set_models(&self, config: &HarnessConfig, models: ModelCatalog) {
+        let mut entries = self.entries.lock().unwrap();
+        let entry = entries
+            .entry(key(config))
+            .or_insert_with(|| Entry::new(config));
+        entry.models = Some(models);
+        self.save(&entries);
+    }
+
     /// Probe a CLI and record its version.
     pub async fn probe(
         &self,
@@ -85,13 +139,9 @@ impl CliVersions {
         let current = stamp(&config.cli_path, search_path.as_deref());
         let result = factory.probe(config).await;
         let mut entries = self.entries.lock().unwrap();
-        let entry = entries.entry(key(config)).or_insert_with(|| Entry {
-            harness_id: config.harness_id.clone(),
-            cli_path: config.cli_path.clone(),
-            search_path: search_path.clone(),
-            stamp: None,
-            version: None,
-        });
+        let entry = entries
+            .entry(key(config))
+            .or_insert_with(|| Entry::new(config));
         entry.search_path = search_path;
         match &result {
             Ok(probe) => {
@@ -119,44 +169,6 @@ impl CliVersions {
         })();
         if let Err(error) = result {
             log::warn!("[machine] CLI versions were not saved: {error}");
-        }
-    }
-
-    /// Configurations whose executable changed or was never probed successfully.
-    fn changed(&self) -> Vec<(String, PathBuf)> {
-        self.entries
-            .lock()
-            .unwrap()
-            .values()
-            .filter(|entry| {
-                entry.stamp.is_none()
-                    || stamp(&entry.cli_path, entry.search_path.as_deref()) != entry.stamp
-            })
-            .map(|entry| (entry.harness_id.clone(), entry.cli_path.clone()))
-            .collect()
-    }
-}
-
-/// Re-probe CLIs whose executable changed, until the Machine stops.
-pub(super) async fn watch(inner: Weak<Inner>) {
-    loop {
-        tokio::time::sleep(CHECK_INTERVAL).await;
-        let Some(inner) = inner.upgrade() else { return };
-        if inner.stop_tx.borrow().is_some() {
-            return;
-        }
-        for (harness_id, cli_path) in inner.cli_versions.changed() {
-            let (Some(factory), Some(defaults)) = (
-                inner.factories.get(&harness_id).map(Arc::clone),
-                inner.defaults.get(&harness_id),
-            ) else {
-                continue;
-            };
-            let config = HarnessConfig {
-                cli_path,
-                ..defaults.clone()
-            };
-            let _ = inner.cli_versions.probe(factory.as_ref(), &config).await;
         }
     }
 }

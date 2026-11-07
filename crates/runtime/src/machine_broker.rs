@@ -25,6 +25,7 @@ struct BrokerInner {
     link_rejections: StdRwLock<BTreeMap<String, meerkat_protocol::link::CloseReason>>,
     pending: StdMutex<BTreeMap<i64, PendingExecution>>,
     pending_harness_tests: StdMutex<BTreeMap<String, PendingHarnessTest>>,
+    pending_model_lists: StdMutex<BTreeMap<String, PendingModelList>>,
     pending_agent_deletions: StdMutex<BTreeMap<String, oneshot::Sender<Result<(), String>>>>,
 }
 
@@ -44,6 +45,24 @@ struct PendingHarnessTest {
     machine_id: String,
     instance_id: String,
     response: oneshot::Sender<meerkat_protocol::TestHarnessResponse>,
+}
+
+struct PendingModelList {
+    machine_id: String,
+    instance_id: String,
+    response: oneshot::Sender<meerkat_protocol::link::ListModelsResult>,
+}
+
+struct PendingModelListGuard<'a> {
+    inner: &'a BrokerInner,
+    id: String,
+}
+impl Drop for PendingModelListGuard<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut pending) = self.inner.pending_model_lists.lock() {
+            pending.remove(&self.id);
+        }
+    }
 }
 
 struct PendingHarnessTestGuard<'a> {
@@ -85,6 +104,7 @@ impl MachineBroker {
                 link_rejections: StdRwLock::new(BTreeMap::new()),
                 pending: StdMutex::new(BTreeMap::new()),
                 pending_harness_tests: StdMutex::new(BTreeMap::new()),
+                pending_model_lists: StdMutex::new(BTreeMap::new()),
                 pending_agent_deletions: StdMutex::new(BTreeMap::new()),
             }),
         }
@@ -101,6 +121,69 @@ impl MachineBroker {
             .attempt_lease_millis
             .store(millis, Ordering::Relaxed);
         Ok(())
+    }
+
+    /// Ask the Machine for a CLI's models. Nothing lists them unless asked.
+    pub async fn list_models(
+        &self,
+        request: meerkat_protocol::ModelCatalogRequest,
+    ) -> Result<meerkat_protocol::ModelCatalog, Status> {
+        let connection = self
+            .inner
+            .connections
+            .read()
+            .map_err(|_| crate::peer::status(RuntimeError::RuntimeLockPoisoned))?
+            .get(&request.machine_id)
+            .cloned()
+            .ok_or_else(|| Status::unavailable("Machine is offline"))?;
+        if connection.revoked.load(Ordering::Acquire) {
+            return Err(Status::unavailable("Machine is offline"));
+        }
+        if !connection
+            .harnesses
+            .iter()
+            .any(|harness| harness.harness_id == request.harness_id)
+        {
+            return Err(Status::not_found("Harness not found"));
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        let (sender, receiver) = oneshot::channel();
+        self.inner
+            .pending_model_lists
+            .lock()
+            .map_err(|_| crate::peer::status(RuntimeError::RuntimeLockPoisoned))?
+            .insert(
+                id.clone(),
+                PendingModelList {
+                    machine_id: request.machine_id,
+                    instance_id: connection.instance_id,
+                    response: sender,
+                },
+            );
+        let _pending = PendingModelListGuard {
+            inner: &self.inner,
+            id: id.clone(),
+        };
+        connection
+            .sender
+            .send(Ok(RuntimeFrame {
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
+                frame: Some(runtime_frame::Frame::ListModels(
+                    meerkat_protocol::link::ListModels {
+                        request_id: id,
+                        harness_id: request.harness_id,
+                    },
+                )),
+            }))
+            .await
+            .map_err(|_| Status::unavailable("Machine is offline"))?;
+        let result = tokio::time::timeout(std::time::Duration::from_secs(30), receiver)
+            .await
+            .map_err(|_| Status::unavailable("Models could not be loaded"))?
+            .map_err(|_| Status::unavailable("Machine is offline"))?;
+        result
+            .catalog
+            .ok_or_else(|| Status::unavailable("Models could not be loaded"))
     }
 
     pub async fn test_harness(
@@ -602,6 +685,19 @@ impl MachineBroker {
             _ => {}
         }
         match frame {
+            machine_frame::Frame::ListModelsResult(result) => {
+                let mut pending = self
+                    .inner
+                    .pending_model_lists
+                    .lock()
+                    .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
+                if pending.get(&result.request_id).is_some_and(|pending| {
+                    pending.machine_id == machine_id && pending.instance_id == instance_id
+                }) && let Some(pending) = pending.remove(&result.request_id)
+                {
+                    let _ = pending.response.send(result);
+                }
+            }
             machine_frame::Frame::TestHarnessResult(result) => {
                 let mut pending = self
                     .inner

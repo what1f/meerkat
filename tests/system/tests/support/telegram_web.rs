@@ -32,7 +32,8 @@ impl TelegramWeb {
                 return Response::file(state.avatar.as_deref().unwrap_or(b"avatar"));
             }
             let method = r.path.rsplit('/').next().unwrap();
-            let body = if r.body.is_empty() {
+            // Photo uploads are multipart, not JSON.
+            let body = if r.body.is_empty() || r.header("content-type").starts_with("multipart/") {
                 Value::Null
             } else {
                 r.json()
@@ -63,7 +64,9 @@ impl TelegramWeb {
                     }
                     chat
                 }
-                "setMyName" | "setMyDescription" | "setMessageReaction" => json!(true),
+                "setMyName" | "setMyDescription" | "setMyProfilePhoto" | "setMessageReaction" => {
+                    json!(true)
+                }
                 "getUpdates" => {
                     if r.path.contains("100:manager") {
                         // Telegram replays unconfirmed updates until getUpdates advances

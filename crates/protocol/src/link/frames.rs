@@ -305,6 +305,7 @@ pub enum MachinePayload {
     InventoryChanged(InventoryChanged),
     DeleteAgentFilesResult(DeleteAgentFilesResult),
     TestHarnessResult(TestHarnessResult),
+    ListModelsResult(ListModelsResult),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Eq)]
@@ -321,6 +322,7 @@ pub enum RuntimePayload {
     Shutdown(Shutdown),
     DeleteAgentFiles(DeleteAgentFiles),
     TestHarness(TestHarness),
+    ListModels(ListModels),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -369,6 +371,20 @@ pub struct TestHarness {
     pub request_id: String,
     pub harness: HarnessConfig,
     pub budget_millis: u64,
+}
+
+/// Ask a Machine for a CLI's models now; nothing lists them on its own.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Eq)]
+pub struct ListModels {
+    pub request_id: String,
+    pub harness_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Eq)]
+pub struct ListModelsResult {
+    pub request_id: String,
+    pub catalog: Option<ModelCatalog>,
+    pub error: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Eq)]

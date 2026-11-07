@@ -230,7 +230,7 @@ async fn pump_link<
     }
 }
 
-async fn make_hello(inner: &Inner) -> MachineHello {
+pub(super) async fn make_hello(inner: &Inner) -> MachineHello {
     let mut ids: Vec<&str> = STANDARD_HARNESS_IDS.to_vec();
     let mut extra: Vec<_> = inner
         .factories
@@ -240,11 +240,12 @@ async fn make_hello(inner: &Inner) -> MachineHello {
         .collect();
     extra.sort_unstable();
     ids.extend(extra);
+    let probes = inner.probes.lock().unwrap().clone();
     let harnesses = ids
         .iter()
         .map(|id| {
             let factory = inner.factories.get(*id);
-            let probe = inner.probes.get(*id);
+            let probe = probes.get(*id);
             let defaults = factory.map(|f| f.defaults()).unwrap_or_default();
             HarnessInfo {
                 default_environment_variables: defaults
@@ -262,15 +263,12 @@ async fn make_hello(inner: &Inner) -> MachineHello {
                             .collect()
                     })
                     .unwrap_or_default(),
+                // The last list someone asked for; a fresh one comes on request.
                 model_catalog: inner
-                    .model_catalogs
+                    .defaults
                     .get(*id)
-                    .and_then(|value| value.0.clone()),
-                model_catalog_error: inner
-                    .model_catalogs
-                    .get(*id)
-                    .map(|value| value.1.clone())
-                    .unwrap_or_default(),
+                    .and_then(|config| inner.cli_versions.models(config)),
+                model_catalog_error: String::new(),
                 harness_id: (*id).to_owned(),
                 display_name: factory
                     .map(|factory| factory.info().display_name.clone())
@@ -314,7 +312,7 @@ async fn make_hello(inner: &Inner) -> MachineHello {
     }
 }
 
-async fn publish_inventory(inner: &Inner) {
+pub(super) async fn publish_inventory(inner: &Inner) {
     send_frame(
         inner,
         MachineFrame {
@@ -337,6 +335,12 @@ async fn dispatch(
     match frame.frame {
         Some(runtime_frame::Frame::CapabilityResponse(response)) => {
             super::proxy::response(&inner, response).await
+        }
+        Some(runtime_frame::Frame::ListModels(request)) => {
+            let task = tokio::spawn(super::models::run(inner.clone(), request));
+            let mut tasks = inner.assignment_tasks.lock().await;
+            tasks.retain(|task| !task.is_finished());
+            tasks.push(task);
         }
         Some(runtime_frame::Frame::TestHarness(request)) => {
             let task = tokio::spawn(super::harness_test::run(

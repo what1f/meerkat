@@ -7,6 +7,7 @@ mod failure;
 mod files;
 mod harness_test;
 mod liveness;
+mod models;
 mod proxy;
 mod records;
 mod sessions;
@@ -16,8 +17,7 @@ use self::control::active_attempts;
 use self::events::restore_event;
 use crate::state::{PersistedState, SessionRecovery};
 use meerkat_harness::{
-    HarnessAvailability as NativeHarnessAvailability, HarnessConfig as NativeHarnessConfig,
-    HarnessFactory, HarnessSession, ProbeResult,
+    HarnessConfig as NativeHarnessConfig, HarnessFactory, HarnessSession, ProbeResult,
 };
 use meerkat_protocol::{ActiveAttempt, AgentRunContext, ExecutionEvent, MachineFrame};
 use serde::{Deserialize, Serialize};
@@ -319,59 +319,16 @@ impl Machine {
         let mut defaults = HashMap::new();
         let mut factories = HashMap::new();
         let mut probes = HashMap::new();
-        let mut model_catalogs = HashMap::new();
         let cli_versions = cli_versions::CliVersions::load(root.join(".machine/cli-versions.json"));
+        // Only look for the executables here: nothing native starts before the
+        // Machine connects. Versions and models are probed on request.
         for (harness_id, registration) in self.harnesses {
-            let mut probe = match cli_versions
-                .probe(registration.factory.as_ref(), &registration.probe_config)
-                .await
-            {
-                Ok(probe) => probe,
-                Err(error) => ProbeResult {
-                    info: registration.factory.info().clone(),
-                    availability: NativeHarnessAvailability::Unavailable,
-                    version: None,
-                    capabilities: Default::default(),
-                    reason: Some(redact_diagnostic(
-                        &error.to_string(),
-                        &registration.probe_config,
-                    )),
-                },
-            };
-            probe.reason = probe
-                .reason
-                .map(|reason| redact_diagnostic(&reason, &registration.probe_config));
-            let models = tokio::time::timeout(
-                Duration::from_secs(5),
-                registration.factory.models(&registration.probe_config),
-            )
-            .await;
-            let catalog = match models {
-                Ok(Ok(models)) => (
-                    Some(meerkat_protocol::ModelCatalog {
-                        models: models
-                            .into_iter()
-                            .map(|model| meerkat_protocol::ModelCatalogItem {
-                                available: true,
-                                model_id: model.id,
-                                display_name: model.name,
-                                description: model.description,
-                                supported_thinking_levels: model.thinking_levels,
-                            })
-                            .collect(),
-                    }),
-                    String::new(),
-                ),
-                Ok(Err(error)) => (
-                    None,
-                    redact_diagnostic(&error.to_string(), &registration.probe_config),
-                ),
-                Err(_) => (None, "Model discovery timed out".into()),
-            };
-            model_catalogs.insert(harness_id.clone(), catalog);
+            probes.insert(
+                harness_id.clone(),
+                cli_versions.snapshot(registration.factory.as_ref(), &registration.probe_config),
+            );
             defaults.insert(harness_id.clone(), registration.probe_config);
-            factories.insert(harness_id.clone(), registration.factory);
-            probes.insert(harness_id, probe);
+            factories.insert(harness_id, registration.factory);
         }
         let (stop_tx, stop_rx) = watch::channel(None);
         let mut resource_http = reqwest::Client::builder()
@@ -401,8 +358,7 @@ impl Machine {
             state_path,
             factories,
             defaults,
-            probes,
-            model_catalogs,
+            probes: std::sync::Mutex::new(probes),
             state: Mutex::new(persisted),
             starting: Mutex::new(HashMap::new()),
             active: Mutex::new(HashMap::new()),
@@ -420,7 +376,6 @@ impl Machine {
             inner: inner.clone(),
             join: Arc::new(Mutex::new(None)),
         };
-        tokio::spawn(cli_versions::watch(Arc::downgrade(&inner)));
         let task = tokio::spawn(run_loop(inner, stop_rx));
         *handle.join.lock().await = Some(task);
         Ok(handle)
@@ -560,8 +515,7 @@ struct Inner {
     state_path: PathBuf,
     factories: HashMap<String, Arc<dyn HarnessFactory>>,
     defaults: HashMap<String, NativeHarnessConfig>,
-    probes: HashMap<String, ProbeResult>,
-    model_catalogs: HashMap<String, (Option<meerkat_protocol::ModelCatalog>, String)>,
+    probes: std::sync::Mutex<HashMap<String, ProbeResult>>,
     state: Mutex<PersistedState>,
     starting: Mutex<HashMap<String, StartingExecution>>,
     active: Mutex<HashMap<String, ActiveExecution>>,
