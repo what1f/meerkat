@@ -276,6 +276,11 @@ pub struct CliCommandDefinition {
     /// executable exists, and the command result becomes that program's
     /// environment and arguments instead of output.
     pub wraps: String,
+    /// Environment variables that name the wrapped program's own config and
+    /// data directories. Machine points each at a directory private to the
+    /// Agent, so the program never reads or changes the user's own setup,
+    /// even when a call does not pass through the shim.
+    pub private_directories: Vec<String>,
     pub handler: Arc<dyn InvocationHandler>,
 }
 macro_rules! definition_debug {
@@ -285,7 +290,7 @@ macro_rules! definition_debug {
 }
 definition_debug!(InterfaceDefinition, id, input_schema, output_schema);
 definition_debug!(ToolDefinition, id, description, input_schema, output_schema);
-definition_debug!(CliCommandDefinition, id, description, wraps);
+definition_debug!(CliCommandDefinition, id, description, wraps, private_directories);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MessageAttachment {

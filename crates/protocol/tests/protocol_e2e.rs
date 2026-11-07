@@ -1285,6 +1285,7 @@ fn assignment() -> AssignExecution {
             description: "Use assigned capabilities".into(),
             argv: vec!["meerkat".into(), "tool".into()],
             wraps: String::new(),
+            private_directories: Vec::new(),
         }],
         resources: vec![attachment],
         execution_token: "execution_token_17".into(),

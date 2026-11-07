@@ -81,6 +81,11 @@ pub(crate) fn command(
         id: "feishu lark-cli".to_owned(),
         description: DESCRIPTION.to_owned(),
         wraps: "lark-cli".to_owned(),
+        private_directories: vec![
+            "LARKSUITE_CLI_CONFIG_DIR".to_owned(),
+            "LARKSUITE_CLI_DATA_DIR".to_owned(),
+            "LARKSUITE_CLI_LOG_DIR".to_owned(),
+        ],
         handler: Arc::new(Handler {
             context,
             client,

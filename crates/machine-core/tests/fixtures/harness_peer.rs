@@ -60,6 +60,12 @@ fn main() {
         std::path::Path::new(directory).join("lark-cli").is_file()
             && !directory.ends_with(".machine/bin")
     });
+    let config_dir = std::env::var("LARKSUITE_CLI_CONFIG_DIR").expect("lark-cli config is private");
+    assert!(
+        config_dir.starts_with(&std::env::var("MEERKAT_AGENT_HOME").unwrap())
+            && std::path::Path::new(&config_dir).is_dir(),
+        "lark-cli never reads the user's own setup"
+    );
     if let Some(user_bin) = user_bin {
         assert!(prompt.contains("- `lark-cli`：Feishu command line"));
         assert!(

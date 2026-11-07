@@ -4073,6 +4073,7 @@ impl Provider for FakeProvider {
                 id: "fixture".into(),
                 description: "Fixture command".into(),
                 wraps: String::new(),
+                private_directories: Vec::new(),
                 handler: Arc::new(Echo),
             }])
         })

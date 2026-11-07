@@ -857,6 +857,7 @@ fn protocol_cli(value: CliCommandDefinition) -> CliCommand {
         description: value.description,
         argv: Vec::new(),
         wraps: value.wraps,
+        private_directories: value.private_directories,
     }
 }
 

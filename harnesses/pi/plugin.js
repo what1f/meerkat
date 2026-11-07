@@ -1,12 +1,22 @@
 "use strict";
 function prepare(request) {
-  return prepareNative(request, {
+  const paths = prepareNative(request, {
     sourceVariable: "PI_CODING_AGENT_DIR",
     sourceRelative: ".pi/agent",
     files: ["auth.json", "models.json", "settings.json"],
     resources: ["extensions", "skills", "prompts", "SYSTEM.md"],
     pathKeys: ["extensions", "skills", "prompts", "themes"],
   });
+  // A user shell prefix may rewrite PATH; keep Meerkat's commands in front.
+  const settingsPath = paths.directory + "/settings.json";
+  if (request.config.environment.MEERKAT_PATH && ctx.exists(settingsPath)) {
+    const settings = JSON.parse(ctx.read(settingsPath));
+    if (settings.shellCommandPrefix) {
+      settings.shellCommandPrefix += '\nexport PATH="$MEERKAT_PATH:$PATH"';
+      ctx.write(settingsPath, JSON.stringify(settings, null, 2));
+    }
+  }
+  return paths;
 }
 let request,
   paths,

@@ -32,6 +32,22 @@ Provider-agnostic. Feishu is the only user.
   (empty for ordinary commands). A non-empty value names a user executable
   this command wraps, e.g. `"lark-cli"`. Runtime names such a capability
   `exec: <id>` instead of `cli: <id>`.
+- `CliCommandDefinition` and `CliCommand` also carry `private_directories`:
+  environment variable names for the wrapped program's own config and data
+  directories. Machine sets each one for the Harness to
+  `<agent home>/.meerkat/<wraps>/<variable, lowercase>`, whether or not a shim
+  is installed. A call that bypasses the shim then sees only the Agent's own
+  empty setup, never the user's login or app config. Names must be
+  `[A-Z0-9_]+`, not `PATH` and not `MEERKAT_*`. Feishu declares
+  `LARKSUITE_CLI_CONFIG_DIR`, `LARKSUITE_CLI_DATA_DIR` and
+  `LARKSUITE_CLI_LOG_DIR`.
+- Machine also exports `MEERKAT_PATH`, the shim and `meerkat` directories.
+  Harness shell setup may rewrite PATH, so plugins put these entries back in
+  front before each command where the Harness allows it: Pi appends
+  `export PATH="$MEERKAT_PATH:$PATH"` to the user's `shellCommandPrefix`;
+  Claude Code gets the same line through `CLAUDE_ENV_FILE`, which it sources
+  after the user's shell snapshot. Codex has no such hook and relies on the
+  launch PATH.
 - Machine (`capability_cli::inject`), for each command with `wraps`:
   - Find the executable on the Machine's user executable path (the login-shell
     PATH already stored in Machine config), skipping Meerkat's own shim

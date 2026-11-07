@@ -78,6 +78,8 @@ pub struct CliCommand {
     pub argv: Vec<String>,
     #[serde(default)]
     pub wraps: String,
+    #[serde(default)]
+    pub private_directories: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]

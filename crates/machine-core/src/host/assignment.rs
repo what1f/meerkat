@@ -366,6 +366,7 @@ async fn prepare_assignment(
     crate::capability_cli::inject(
         inner.capability_cli.as_deref(),
         &inner.root.join(".machine/bin"),
+        &agent_home,
         &mut native_config,
         &assign.cli_commands,
         &mut system_prompt,

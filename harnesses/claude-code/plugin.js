@@ -132,6 +132,11 @@ defineHarness({
     const compact = compactTokens(request.config);
     if (compact && request.config.environment.CLAUDE_CODE_AUTO_COMPACT_WINDOW === undefined)
       env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(compact);
+    // Sourced after the user's shell setup, which may rewrite PATH.
+    if (request.config.environment.MEERKAT_PATH) {
+      env.CLAUDE_ENV_FILE = paths.root + "/env.sh";
+      ctx.write(env.CLAUDE_ENV_FILE, 'export PATH="$MEERKAT_PATH:$PATH"\n');
+    }
     args.push(sessionExists() ? "--resume" : "--session-id", nativeId);
     processId = launch(request.config, args, {
       cwd: request.working_directory,

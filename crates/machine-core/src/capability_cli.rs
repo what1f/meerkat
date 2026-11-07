@@ -39,10 +39,36 @@ fn executable_file(path: &Path) -> bool {
 pub(crate) fn inject(
     executable: Option<&Path>,
     shim_directory: &Path,
+    agent_home: &Path,
     config: &mut HarnessConfig,
     commands: &[CliCommand],
     prompt: &mut String,
 ) -> Result<(), MachineError> {
+    // Set before any PATH handling: a call that reaches the real program by
+    // another route still finds only the Agent's own directories.
+    for command in commands.iter().filter(|command| !command.wraps.is_empty()) {
+        for variable in &command.private_directories {
+            let valid = !variable.is_empty()
+                && variable
+                    .bytes()
+                    .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
+                && variable != "PATH"
+                && !variable.starts_with("MEERKAT_");
+            if !valid {
+                return Err(MachineError::InvalidAssignment(
+                    "invalid_private_directory".into(),
+                ));
+            }
+            let directory = agent_home
+                .join(".meerkat")
+                .join(&command.wraps)
+                .join(variable.to_lowercase());
+            std::fs::create_dir_all(&directory)?;
+            config
+                .environment
+                .insert(variable.clone(), directory.to_string_lossy().into_owned());
+        }
+    }
     let Some(executable) = executable else {
         // Wrapped commands are optional; only ordinary commands need the CLI.
         if commands.iter().all(|command| !command.wraps.is_empty()) {
@@ -81,12 +107,17 @@ pub(crate) fn inject(
         paths.push(shim_directory.to_path_buf());
     }
     paths.push(directory.to_path_buf());
+    let invalid = || MachineError::InvalidAssignment("invalid_capability_cli_path".into());
+    // Harnesses whose shell setup rewrites PATH put these entries back in front.
+    let own = std::env::join_paths(&paths).map_err(|_| invalid())?;
     paths.extend(inherited);
-    let path = std::env::join_paths(paths)
-        .map_err(|_| MachineError::InvalidAssignment("invalid_capability_cli_path".into()))?;
+    let path = std::env::join_paths(paths).map_err(|_| invalid())?;
     config
         .environment
         .insert("PATH".into(), path.to_string_lossy().into_owned());
+    config
+        .environment
+        .insert("MEERKAT_PATH".into(), own.to_string_lossy().into_owned());
     config.environment.insert(
         "MEERKAT_CLI".into(),
         executable.to_string_lossy().into_owned(),
