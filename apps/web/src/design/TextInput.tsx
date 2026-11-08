@@ -8,6 +8,8 @@ export type TextInputProps = Omit<UIProps, 'className' | 'style'> & {
   align?: 'start' | 'center';
   mono?: boolean;
   invalid?: boolean;
+  /** Masks what is typed, such as a key. */
+  secret?: boolean;
   placeholder: string;
 };
 export function TextInput({
@@ -17,12 +19,14 @@ export function TextInput({
   align = 'start',
   mono,
   invalid,
+  secret,
   placeholder,
   ...rest
 }: TextInputProps) {
   return (
     <input
       {...rest}
+      type={secret ? 'password' : 'text'}
       autoCorrect="off"
       autoCapitalize="off"
       spellCheck={false}

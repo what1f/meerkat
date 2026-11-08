@@ -1,0 +1,54 @@
+diff --git a/src/core/auth/browser_callback.zig b/src/core/auth/browser_callback.zig
+index 0febc7b..1a1b79f 100644
+--- a/src/core/auth/browser_callback.zig
++++ b/src/core/auth/browser_callback.zig
+@@ -372,8 +372,7 @@ fn callbackPage(comptime title: []const u8, comptime detail: []const u8) []const
+     return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">" ++
+         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" ++
+         "<meta name=\"theme-color\" content=\"#000000\">" ++
+-        "<link rel=\"icon\" href=\"" ++ callback_icon ++ "\">" ++
+-        "<title>fx</title><style>" ++
++        "<title>Meerkat</title><style>" ++
+         ":root{color-scheme:dark;font-family:\"Geist Mono\",ui-monospace,SFMono-Regular,Menlo,monospace;" ++
+         "font-size:15px;line-height:1.75}" ++
+         "*{box-sizing:border-box}" ++
+@@ -387,9 +386,8 @@ fn callbackPage(comptime title: []const u8, comptime detail: []const u8) []const
+         "footer{display:flex;justify-content:flex-end;padding:32px 32px 40px;font-size:14px;color:#a1a1a1}" ++
+         "footer a{color:inherit;text-decoration:none;transition:color .15s}" ++
+         "footer a:hover,footer a:focus-visible{color:#ededed}" ++
+-        "</style></head><body><main>" ++ callback_logo ++
+-        "<h1>" ++ title ++ "</h1><p>" ++ detail ++ "</p></main>" ++
+-        "<footer><a href=\"https://vercel.com/labs\">Vercel Labs</a></footer></body></html>";
++        "</style></head><body><main>" ++
++        "<h1>" ++ title ++ "</h1><p>" ++ detail ++ "</p></main></body></html>";
+ }
+ 
+ pub fn writeResponse(stream: std.Io.net.Stream, outcome: Response, cors_origin: ?[]const u8) !void {
+@@ -398,14 +396,14 @@ pub fn writeResponse(stream: std.Io.net.Stream, outcome: Response, cors_origin:
+             .status = "200 OK",
+             .body = comptime callbackPage(
+                 "Authorization complete",
+-                "You can close this tab and return to fx.",
++                "You can close this tab and return to Meerkat.",
+             ),
+         },
+         .failed => .{
+             .status = "400 Bad Request",
+             .body = comptime callbackPage(
+                 "Authorization failed",
+-                "Return to fx for details.",
++                "Return to Meerkat for details.",
+             ),
+         },
+         .unrelated => .{
+@@ -834,8 +832,6 @@ test "browser callback permits the xAI CORS private-network preflight" {
+     try std.testing.expect(std.mem.find(u8, callback, "<h1>Authorization complete</h1>") != null);
+     try std.testing.expect(std.mem.find(u8, callback, "background:#000") != null);
+     try std.testing.expect(std.mem.find(u8, callback, "Content-Security-Policy: default-src 'none'; img-src data:;") != null);
+-    try std.testing.expect(std.mem.find(u8, callback, "<link rel=\"icon\" href=\"data:image/svg+xml;base64,") != null);
+-    try std.testing.expect(std.mem.find(u8, callback, "<svg class=\"brand\"") != null);
+-    try std.testing.expect(std.mem.find(u8, callback, "</p></main><footer>") != null);
+-    try std.testing.expect(std.mem.endsWith(u8, callback, "<a href=\"https://vercel.com/labs\">Vercel Labs</a></footer></body></html>"));
++    try std.testing.expect(std.mem.find(u8, callback, "fx") == null);
++    try std.testing.expect(std.mem.endsWith(u8, callback, "</main></body></html>"));
+ }

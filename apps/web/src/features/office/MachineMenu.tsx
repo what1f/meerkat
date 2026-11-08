@@ -1,15 +1,18 @@
-import { IconButton, Icon, InlineText, Menu } from '../../design';
+import { BrandMark, IconButton, Icon, InlineText, Menu } from '../../design';
 import { useT } from '../../lib/i18n';
 import './messages';
 
 export function MachineMenu({
   id,
   removable,
+  onBuiltin,
   onRename,
   onRemove,
 }: {
   id: string;
   removable: boolean;
+  /** Present when the Computer runs the Built-in Agent. */
+  onBuiltin?: () => void;
   onRename: () => void;
   onRemove: () => void;
 }) {
@@ -25,6 +28,11 @@ export function MachineMenu({
         />
       }
     >
+      {onBuiltin && (
+        <Menu.Item leading={<BrandMark brand="builtin" size={14} />} onSelect={onBuiltin}>
+          {t('office.builtin')}
+        </Menu.Item>
+      )}
       <Menu.Item leading={<Icon name="pencil" size={14} />} returnFocus={false} onSelect={onRename}>
         {t('office.rename')}
       </Menu.Item>

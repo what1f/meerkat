@@ -2394,6 +2394,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "meerkat-harness-builtin"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "meerkat-harness",
+ "meerkat-testkit",
+ "reqwest 0.12.28",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "uuid",
+]
+
+[[package]]
 name = "meerkat-harness-claude-code"
 version = "0.1.0"
 dependencies = [
@@ -2440,6 +2455,7 @@ dependencies = [
  "meerkat-client",
  "meerkat-daemon-runtime",
  "meerkat-harness",
+ "meerkat-harness-builtin",
  "meerkat-harness-claude-code",
  "meerkat-harness-codex",
  "meerkat-harness-pi",
@@ -2610,6 +2626,7 @@ dependencies = [
  "meerkat-core",
  "meerkat-daemon-runtime",
  "meerkat-harness",
+ "meerkat-harness-builtin",
  "meerkat-machine",
  "meerkat-machine-core",
  "meerkat-protocol",

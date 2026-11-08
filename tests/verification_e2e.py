@@ -137,7 +137,7 @@ def run():
             shutil.copy2(ROOT / name, root / name)
         binary_dir = root / "release"
         binary_dir.mkdir()
-        for name in ("meerkat", "meerkat-desktop", "meerkatd", "meerkat-machine"):
+        for name in ("meerkat", "meerkat-desktop", "meerkatd", "meerkat-machine", "meerkat-agent"):
             executable(binary_dir / name, "#!/bin/sh\nexit 0\n")
         snapshot, provenance = root / "snapshot.json", root / "provenance.json"
         provenance_tool = str(scripts / "release-provenance")
@@ -228,6 +228,7 @@ def run():
             "meerkatd": "Contents/Library/LaunchServices/meerkatd",
             "meerkat-machine": "Contents/Library/LaunchServices/meerkat-machine",
             "meerkat": "Contents/Resources/bin/meerkat",
+            "meerkat-agent": "Contents/Resources/bin/meerkat-agent",
         }
         for name, relative in layout.items():
             destination = bundle / relative

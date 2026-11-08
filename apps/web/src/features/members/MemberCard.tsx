@@ -7,7 +7,7 @@ import { useMachines } from '../../lib/queries/machines';
 import { agentStatus, useAgentAvatar } from '../../lib/queries/agents';
 import { dataUrl } from './draft';
 
-const brands = ['codex', 'claude_code', 'pi'] as const;
+const brands = ['builtin', 'codex', 'claude_code', 'pi'] as const;
 type Brand = (typeof brands)[number];
 export const isBrand = (id: string): id is Brand => (brands as readonly string[]).includes(id);
 export const modelLabel = (model: string) => model.split('/').pop() ?? model;

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Scroller } from './Scroller';
 import type { UIProps } from './types';
 
 import css from './OptionColumn.module.css';
@@ -13,11 +14,7 @@ export function OptionColumn({ title, children, control, ...rest }: OptionColumn
   return (
     <section {...rest} className={css.root} aria-label={title}>
       <h3>{title}</h3>
-      {children && (
-        <div role="listbox" aria-label={title}>
-          {children}
-        </div>
-      )}
+      {children && <Scroller label={title}>{children}</Scroller>}
       {control && <div className={css.control}>{control}</div>}
     </section>
   );

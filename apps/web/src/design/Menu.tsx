@@ -3,6 +3,7 @@ import type { UIProps } from './types';
 import type { ReactElement } from 'react';
 import { Menu as BaseMenu } from '@base-ui/react/menu';
 import { Icon } from './Icon';
+import { useLayer } from './layer';
 import css from './Menu.module.css';
 export type MenuProps = Omit<UIProps, 'className' | 'style'> & {
   trigger: ReactElement;
@@ -14,12 +15,19 @@ export type MenuProps = Omit<UIProps, 'className' | 'style'> & {
 const KeepFocus = createContext<RefObject<boolean> | null>(null);
 export function Menu({ trigger, align = 'start', side = 'bottom', children, ...rest }: MenuProps) {
   const keep = useRef(false);
+  const layer = useLayer();
   return (
     <KeepFocus value={keep}>
       <BaseMenu.Root>
         <BaseMenu.Trigger {...rest} className={css.root} render={trigger} />
-        <BaseMenu.Portal>
-          <BaseMenu.Positioner className={css.positioner} align={align} side={side} sideOffset={4}>
+        <BaseMenu.Portal container={layer.container}>
+          <BaseMenu.Positioner
+            positionMethod={layer.positionMethod}
+            className={css.positioner}
+            align={align}
+            side={side}
+            sideOffset={4}
+          >
             <BaseMenu.Popup
               className={css.popup}
               finalFocus={() => {

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Build the Built-in Agent binary from the pinned revision of Meerkat's fork.
+# Usage: tools/builtin-agent/build [debug|release]
+set -euo pipefail
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+PROFILE="${1:-debug}"
+# The fork's `meerkat` branch. Local while unpushed; later https://github.com/what1f/fx.
+SOURCE_URL="https://github.com/what1f/fx.git"
+REVISION="$(tr -d '[:space:]' < "$ROOT_DIR/tools/builtin-agent/REVISION")"
+# Local changes applied on top of the pinned revision, in name order.
+shopt -s nullglob
+PATCHES=("$ROOT_DIR"/tools/builtin-agent/patches/*.patch)
+shopt -u nullglob
+# The cached binary is reused only for the same revision and patches.
+STAMP="$REVISION"
+if ((${#PATCHES[@]})); then
+  STAMP="$REVISION+$(cat "${PATCHES[@]}" | shasum -a 256 | cut -c1-16)"
+fi
+TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT_DIR/target}"
+WORK="$TARGET_DIR/builtin-agent"
+SOURCE="$WORK/src"
+CACHED="$WORK/bin/meerkat-agent"
+OUTPUT="$TARGET_DIR/$PROFILE/meerkat-agent"
+
+if [[ ! "$REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "tools/builtin-agent/REVISION must hold a full commit sha" >&2
+  exit 1
+fi
+
+if [[ ! -x "$CACHED" || "$(cat "$WORK/bin/REVISION" 2>/dev/null)" != "$STAMP" ]]; then
+  ZIG="$(command -v zig || true)"
+  [[ -n "$ZIG" ]] || ZIG="$HOME/.local/bin/zig"
+  if [[ ! -x "$ZIG" ]]; then
+    echo "Zig 0.17 is required to build the Built-in Agent (https://ziglang.org/download/)" >&2
+    exit 1
+  fi
+  mkdir -p "$SOURCE"
+  if [[ ! -d "$SOURCE/.git" ]]; then
+    git -C "$SOURCE" init -q
+    git -C "$SOURCE" remote add origin "$SOURCE_URL"
+  fi
+  git -C "$SOURCE" remote set-url origin "$SOURCE_URL"
+  if [[ "$(git -C "$SOURCE" rev-parse -q --verify HEAD 2>/dev/null)" != "$REVISION" ]]; then
+    git -C "$SOURCE" fetch -q --depth 1 origin "$REVISION"
+  fi
+  # Start from a clean tree so patches apply exactly once.
+  git -C "$SOURCE" checkout -q --force --detach "$REVISION"
+  for patch in "${PATCHES[@]}"; do
+    git -C "$SOURCE" apply --whitespace=nowarn "$patch"
+  done
+  echo "Building the Built-in Agent at ${REVISION:0:12}${PATCHES[*]:+ with ${#PATCHES[@]} patch(es)}…"
+  (cd "$SOURCE" && "$ZIG" build -Doptimize=ReleaseSafe)
+  mkdir -p "$WORK/bin"
+  cp "$SOURCE/zig-out/bin/fx" "$CACHED.tmp"
+  chmod 0755 "$CACHED.tmp"
+  mv "$CACHED.tmp" "$CACHED"
+  echo "$STAMP" > "$WORK/bin/REVISION"
+fi
+
+mkdir -p "$TARGET_DIR/$PROFILE"
+if ! cmp -s "$CACHED" "$OUTPUT"; then
+  cp "$CACHED" "$OUTPUT.tmp"
+  mv "$OUTPUT.tmp" "$OUTPUT"
+fi

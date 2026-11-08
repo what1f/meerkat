@@ -477,7 +477,7 @@ async fn machine_e2e() {
                 .iter()
                 .map(|h| h.harness_id.as_str())
                 .collect::<Vec<_>>(),
-            ["pi", "codex", "claude_code"]
+            ["builtin", "pi", "codex", "claude_code"]
         );
         // Models are read only when someone asks for them.
         assert!(hello.harnesses.iter().all(|harness| {

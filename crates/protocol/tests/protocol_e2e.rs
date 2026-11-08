@@ -1194,6 +1194,7 @@ fn machine_hello() -> MachineHello {
             availability: HarnessAvailability::Available.into(),
             version: "1.0".into(),
             reason: String::new(),
+            account: None,
         }],
     }
 }

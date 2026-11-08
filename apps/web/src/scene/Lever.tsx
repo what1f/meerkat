@@ -35,6 +35,9 @@ export function Lever({ levels, value, onChange, ...rest }: LeverProps) {
       aria-valuetext={levels[value]}
       data-held={held}
       onPointerDown={(e) => {
+        // Keep the drag from selecting the level labels; focus still moves here.
+        e.preventDefault();
+        e.currentTarget.focus();
         e.currentTarget.setPointerCapture(e.pointerId);
         setHeld(true);
         set(nearest(e));
@@ -52,8 +55,15 @@ export function Lever({ levels, value, onChange, ...rest }: LeverProps) {
       }}
     >
       <span className={css.gate} />
+      <span className={css.fill} style={{ top: y(value) }} />
       {levels.map((level, i) => (
-        <span key={i} className={css.notch} data-on={i === value} style={{ top: y(i) }}>
+        <span
+          key={i}
+          className={css.notch}
+          data-on={i === value}
+          data-below={i < value}
+          style={{ top: y(i) }}
+        >
           {level}
         </span>
       ))}

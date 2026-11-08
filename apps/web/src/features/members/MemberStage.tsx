@@ -5,6 +5,7 @@ import { Badge, Bench, Hang, QrTag, Scribble, blank } from '../../scene';
 import { useT } from '../../lib/i18n';
 import type { useMemberDraft } from './useMemberDraft';
 import { MemberConsole } from './MemberConsole';
+import { needsSignIn } from './harnessDraft';
 import { AvatarPicker } from './AvatarPicker';
 import { useModelFace } from './MemberCard';
 import css from './MemberBench.module.css';
@@ -55,7 +56,8 @@ export function MemberStage({
     !id &&
     (creation.step === 'idle' || creation.step === 'failed') &&
     m.draft.name.trim() !== '' &&
-    !!m.draft.machine_id;
+    !!m.draft.machine_id &&
+    !needsSignIn(m.machine, m.draft.harness_id);
   const fail = () => toast({ message: t('members.failed') });
   const commit = async () => {
     try {
@@ -184,6 +186,7 @@ export function MemberStage({
             <Scribble key={note} arrow="up" text={note} />
             <LinkButton
               data-testid="member-open-app"
+              external
               onClick={() => window.open(inApp(channel, code), '_blank', 'noopener')}
             >
               <BrandMark brand={channel} size={14} />

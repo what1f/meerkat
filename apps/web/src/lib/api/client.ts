@@ -56,6 +56,22 @@ interface Operations {
   revoke_machine: { input: DTO.RevokeMachineRequest; output: DTO.MachineCatalog };
   get_harness_catalog: { input: DTO.CatalogRequest; output: DTO.HarnessCatalog };
   get_model_catalog: { input: DTO.ModelCatalogRequest; output: DTO.ModelCatalog };
+  builtin_agent_sign_in: {
+    input: DTO.BuiltinAgentSignInRequest;
+    output: DTO.BuiltinAgentSignInResponse;
+  };
+  builtin_agent_sign_in_status: {
+    input: DTO.BuiltinAgentSignInStatusRequest;
+    output: DTO.BuiltinAgentSignInStatus;
+  };
+  builtin_agent_sign_in_cancel: {
+    input: DTO.BuiltinAgentSignInStatusRequest;
+    output: DTO.BuiltinAgentSignInStatus;
+  };
+  builtin_agent_sign_out: {
+    input: DTO.BuiltinAgentSignOutRequest;
+    output: DTO.BuiltinAgentSignOutResponse;
+  };
   get_reaction_catalog: { input: DTO.CatalogRequest; output: DTO.ReactionCatalog };
   list_provider_interfaces: {
     input: DTO.ListProviderInterfacesRequest;

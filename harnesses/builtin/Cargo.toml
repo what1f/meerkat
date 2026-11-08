@@ -1,0 +1,37 @@
+[package]
+autotests = false
+name = "meerkat-harness-builtin"
+version.workspace = true
+edition.workspace = true
+description = "Built-in Agent Harness adapter for Meerkat"
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64 = "0.23.1"
+meerkat-harness = { path = "../../crates/harness" }
+reqwest.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+meerkat-testkit = { path = "../../crates/testkit" }
+tempfile.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+
+[package.metadata.meerkat.e2e]
+command = "cargo test -p meerkat-harness-builtin --test e2e -- --nocapture"
+scenario = "Run the built-in Agent binary against a local OpenAI-compatible Chat Completions endpoint through an API-key connection: reject a wrong key (invalid_key) and a closed endpoint (unreachable) before saving, default to the first listed model, list the connection's models with display names, start with the Machine-shared home, stream assistant and reasoning text with usage, call one Meerkat MCP tool, steer a running turn, resume the session after a restart, cancel a running turn, and sign out. A signed-out home fails with an authentication category before the native process starts."
+prerequisites = "Built Built-in Agent binary (tools/builtin-agent/build); skips with a message when absent"
+classification = "hermetic"
+unattended = "yes"
+status = "implemented"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"
+
+[lib]
+test = false

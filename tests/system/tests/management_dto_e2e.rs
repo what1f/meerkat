@@ -55,9 +55,10 @@ async fn a1_1_string_states_round_trip_and_agent_still_replies() -> Result<()> {
         let catalog = http.post("get_machine_catalog", json!({"request_id":"machines", "workspace":null})).await?;
         let machine = &catalog["machines"][0];
         assert_eq!(machine["observed_state"], "running");
-        assert_eq!(machine["harnesses"][0]["availability"], "available");
+        let pi = |list: &Value| list.as_array().unwrap().iter().find(|h| h["harness_id"] == "pi").cloned().unwrap();
+        assert_eq!(pi(&machine["harnesses"])["availability"], "available");
         let harnesses = http.post("get_harness_catalog", json!({"request_id":"harnesses", "workspace":null})).await?;
-        assert_eq!(harnesses["harnesses"][0]["availability"], "available");
+        assert_eq!(pi(&harnesses["harnesses"])["availability"], "available");
         let onboarding = http.post("get_agent_onboarding", json!({"request_id":"onboarding", "agent":agent_ref})).await?;
         assert_eq!(onboarding["status"], "ready");
         let workspaces = http.post("list_workspaces", json!({"request_id":"workspaces"})).await?;

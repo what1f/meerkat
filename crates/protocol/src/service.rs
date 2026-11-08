@@ -613,6 +613,76 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
         ))
     }
 
+    pub async fn builtin_agent_sign_in(
+        &self,
+        request: Request<BuiltinAgentSignInRequest>,
+    ) -> Result<Response<BuiltinAgentSignInResponse>, Status> {
+        let input = request.get_ref();
+        if input.workspace.is_some() {
+            validate_workspace_ref(input.workspace.as_ref())?;
+        }
+        require_text(&input.machine_id, "machine_id")?;
+        if input.method == BuiltinAgentSignInMethod::ApiKey {
+            for (value, field) in [(&input.base_url, "base_url"), (&input.api_key, "api_key")] {
+                require_text(value.as_deref().unwrap_or(""), field)?;
+            }
+            let base_url = input.base_url.as_deref().unwrap_or("");
+            if !(base_url.starts_with("https://") || base_url.starts_with("http://"))
+                || input
+                    .api_key
+                    .as_deref()
+                    .is_some_and(|key| key.contains(['\n', '\r']))
+            {
+                return Err(Status::invalid_argument("invalid_api_key_connection"));
+            }
+        }
+        Ok(Response::new(
+            self.peer
+                .builtin_agent_sign_in(request.into_inner())
+                .await?,
+        ))
+    }
+
+    pub async fn builtin_agent_sign_in_status(
+        &self,
+        request: Request<BuiltinAgentSignInStatusRequest>,
+    ) -> Result<Response<BuiltinAgentSignInStatus>, Status> {
+        require_text(&request.get_ref().sign_in_id, "sign_in_id")?;
+        Ok(Response::new(
+            self.peer
+                .builtin_agent_sign_in_status(request.into_inner())
+                .await?,
+        ))
+    }
+
+    pub async fn builtin_agent_sign_in_cancel(
+        &self,
+        request: Request<BuiltinAgentSignInStatusRequest>,
+    ) -> Result<Response<BuiltinAgentSignInStatus>, Status> {
+        require_text(&request.get_ref().sign_in_id, "sign_in_id")?;
+        Ok(Response::new(
+            self.peer
+                .builtin_agent_sign_in_cancel(request.into_inner())
+                .await?,
+        ))
+    }
+
+    pub async fn builtin_agent_sign_out(
+        &self,
+        request: Request<BuiltinAgentSignOutRequest>,
+    ) -> Result<Response<BuiltinAgentSignOutResponse>, Status> {
+        let input = request.get_ref();
+        if input.workspace.is_some() {
+            validate_workspace_ref(input.workspace.as_ref())?;
+        }
+        require_text(&input.machine_id, "machine_id")?;
+        Ok(Response::new(
+            self.peer
+                .builtin_agent_sign_out(request.into_inner())
+                .await?,
+        ))
+    }
+
     pub async fn get_reaction_catalog(
         &self,
         request: Request<CatalogRequest>,

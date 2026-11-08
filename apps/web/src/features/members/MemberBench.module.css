@@ -20,8 +20,13 @@
 
 .columns {
   display: grid;
-  grid-template-columns: 1fr 1fr 1.25fr 112px;
+  grid-template-columns: 1fr 1fr 1.25fr;
   column-gap: 6px;
+}
+
+/* The thinking column appears only when the model has levels to choose. */
+.columns[data-thinks] {
+  grid-template-columns: 1fr 1fr 1.25fr 112px;
 }
 
 .advanced {

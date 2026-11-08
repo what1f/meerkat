@@ -14,4 +14,4 @@ pub use host::{
 pub use resources::{agent_directory, resolve_content_file, workspace_directory};
 
 /// Stable harness IDs exposed by a local Machine.
-pub const STANDARD_HARNESS_IDS: [&str; 3] = ["pi", "codex", "claude_code"];
+pub const STANDARD_HARNESS_IDS: [&str; 4] = ["builtin", "pi", "codex", "claude_code"];

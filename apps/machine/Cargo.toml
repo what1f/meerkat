@@ -16,6 +16,7 @@ reqwest.workspace = true
 meerkat-machine-core = { path = "../../crates/machine-core" }
 meerkat-daemon-runtime = { path = "../../crates/daemon-runtime" }
 meerkat-harness = { path = "../../crates/harness" }
+meerkat-harness-builtin = { path = "../../harnesses/builtin" }
 meerkat-harness-pi = { path = "../../harnesses/pi" }
 meerkat-harness-codex = { path = "../../harnesses/codex" }
 meerkat-harness-claude-code = { path = "../../harnesses/claude-code" }
@@ -35,7 +36,7 @@ path = "src/main.rs"
 
 [package.metadata.meerkat.e2e]
 command = "cargo build --locked -p meerkat-machine --example machine_daemon_e2e && cargo test -p meerkat-machine --test e2e machine_daemon_e2e::"
-scenario = "Run the local Machine daemon over a real authenticated Runtime JSON/WS link, with resources over HTTP and Agent calls through private local proxies with three standard Harness choices, interleaved parallel terminal delivery, reconnect/replay, restart, control, resources, and graceful process cleanup. Read idle timeout, total attempt budget, and cancellation grace from the private Machine home configuration with production defaults. Read reconnect backoff, healthy duration, and handshake timeout from machine.json with production defaults. Persist paired credentials and Runtime URL atomically with mode 0600, support pair RUNTIME_URL CODE, and self-pair through local discovery on first start; retain credentials across restarts. Run Agent capability calls over the private JSON socket (S17). Pair and stay in the foreground, persist the certificate pin, reconnect using it, reject non-loopback plaintext, and register the real machine name. Announce the authenticated connection through awaitable Machine readiness; the foreground pairing scenario observes the connected message."
+scenario = "Run the local Machine daemon over a real authenticated Runtime JSON/WS link, with resources over HTTP and Agent calls through private local proxies with four standard Harness choices, interleaved parallel terminal delivery, reconnect/replay, restart, control, resources, and graceful process cleanup. Read idle timeout, total attempt budget, and cancellation grace from the private Machine home configuration with production defaults. Read reconnect backoff, healthy duration, and handshake timeout from machine.json with production defaults. Persist paired credentials and Runtime URL atomically with mode 0600, support pair RUNTIME_URL CODE, and self-pair through local discovery on first start; retain credentials across restarts. Run Agent capability calls over the private JSON socket (S17). Pair and stay in the foreground, persist the certificate pin, reconnect using it, reject non-loopback plaintext, and register the real machine name. Announce the authenticated connection through awaitable Machine readiness; the foreground pairing scenario observes the connected message."
 prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"

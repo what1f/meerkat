@@ -1,6 +1,7 @@
 import type * as DTO from '../../lib/api/generated';
 import { parseArgs } from './args';
 import type { Draft } from './draft';
+import { builtinAccount } from '../builtin-agent';
 
 export function harnessDraft(
   base: Draft,
@@ -49,3 +50,11 @@ export function harnessDefaults(
     launch_arguments: selected?.default_launch_arguments ?? [],
   };
 }
+
+// The Built-in Agent needs an account on this Computer before it can work.
+export const needsSignIn = (machine: DTO.MachineCatalogItem | undefined, harness: string) =>
+  harness === 'builtin' && !!machine && !builtinAccount(machine);
+
+// New picks start at medium when the model offers it.
+export const defaultLevel = (levels: string[]) =>
+  levels.includes('medium') ? 'medium' : (levels[0] ?? '');

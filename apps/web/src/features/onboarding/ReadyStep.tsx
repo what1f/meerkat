@@ -1,4 +1,4 @@
-import { BrandMark, Button, LinkButton, StepHeading } from '../../design';
+import { BrandMark, LinkButton, StepHeading } from '../../design';
 import { Seat } from '../../scene';
 import { useT } from '../../lib/i18n';
 import type { Flow } from './useOnboarding';
@@ -50,17 +50,16 @@ export function ReadyStep({ flow }: { flow: Flow }) {
         </div>
       )}
       <span className={css.go}>
-        <Button
+        <LinkButton
           data-testid="onboarding-open"
-          variant={replied ? 'default' : 'primary'}
-          size="lg"
-          leading={<BrandMark brand={provider} size={16} />}
+          external
           onClick={() =>
             window.open(chatLink(provider, flow.member?.provider_agent_config_json), '_blank')
           }
         >
+          <BrandMark brand={provider} size={14} />
           {t(feishu ? 'onboarding.openFeishu' : 'onboarding.openTelegram')}
-        </Button>
+        </LinkButton>
       </span>
     </div>
   );

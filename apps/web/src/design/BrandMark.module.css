@@ -7,6 +7,7 @@
 .root[data-brand='pi'],
 .root[data-brand='openai'],
 .root[data-brand='moonshot'],
-.root[data-brand='grok'] {
+.root[data-brand='grok'],
+.root[data-brand='openrouter'] {
   filter: var(--mono-mark);
 }

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { UIProps } from './types';
 import type { ReactElement } from 'react';
 import { Popover as BasePopover } from '@base-ui/react/popover';
+import { useLayer } from './layer';
 import css from './Popover.module.css';
 export type PopoverProps = Omit<UIProps, 'className' | 'style'> & {
   trigger: ReactElement;
@@ -18,11 +19,13 @@ export function Popover({
   children,
   ...rest
 }: PopoverProps) {
+  const layer = useLayer();
   return (
     <BasePopover.Root open={open} onOpenChange={onOpenChange}>
       <BasePopover.Trigger {...rest} className={css.root} render={trigger} />
-      <BasePopover.Portal>
+      <BasePopover.Portal container={layer.container}>
         <BasePopover.Positioner
+          positionMethod={layer.positionMethod}
           className={css.positioner}
           align={align}
           sideOffset={6}

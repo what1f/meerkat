@@ -15,6 +15,7 @@ LAYOUT = {
     "meerkatd": "Contents/Library/LaunchServices/meerkatd",
     "meerkat-machine": "Contents/Library/LaunchServices/meerkat-machine",
     "meerkat": "Contents/Resources/bin/meerkat",
+    "meerkat-agent": "Contents/Resources/bin/meerkat-agent",
 }
 
 

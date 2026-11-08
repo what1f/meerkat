@@ -244,6 +244,31 @@ pub trait RuntimePeer: Send + Sync + 'static {
         Err(Status::unimplemented("get_reaction_catalog"))
     }
 
+    async fn builtin_agent_sign_in(
+        &self,
+        _request: BuiltinAgentSignInRequest,
+    ) -> Result<BuiltinAgentSignInResponse, Status> {
+        Err(Status::unimplemented("builtin_agent_sign_in"))
+    }
+    async fn builtin_agent_sign_in_status(
+        &self,
+        _request: BuiltinAgentSignInStatusRequest,
+    ) -> Result<BuiltinAgentSignInStatus, Status> {
+        Err(Status::unimplemented("builtin_agent_sign_in_status"))
+    }
+    async fn builtin_agent_sign_in_cancel(
+        &self,
+        _request: BuiltinAgentSignInStatusRequest,
+    ) -> Result<BuiltinAgentSignInStatus, Status> {
+        Err(Status::unimplemented("builtin_agent_sign_in_cancel"))
+    }
+    async fn builtin_agent_sign_out(
+        &self,
+        _request: BuiltinAgentSignOutRequest,
+    ) -> Result<BuiltinAgentSignOutResponse, Status> {
+        Err(Status::unimplemented("builtin_agent_sign_out"))
+    }
+
     async fn subscribe_management_events(
         &self,
         _request: ManagementSubscription,

@@ -15,9 +15,10 @@ pub use process_group::kill_process_group;
 
 pub use types::{
     AgentEvent, AgentEventKind, AgentEventStream, CancelReceipt, CloseReceipt, ExecuteRequest,
-    FailureCategory, HarnessAvailability, HarnessCapability, HarnessConfig, HarnessDefaults,
-    HarnessError, HarnessErrorCode, HarnessFactory, HarnessFailure, HarnessFuture, HarnessInfo,
-    HarnessSession, HarnessTestPlan, ModelRef, NativeModel, PermissionPolicy, ProbeResult,
-    SessionEntry, SessionHealth, SessionRequest, SteerReceipt, ToolDefinition, ToolResultError,
-    ToolResultReceipt, ToolResultRequest, ToolResultResource,
+    FailureCategory, HarnessAccount, HarnessAccountMethod, HarnessAvailability, HarnessCapability,
+    HarnessConfig, HarnessCredential, HarnessDefaults, HarnessError, HarnessErrorCode,
+    HarnessFactory, HarnessFailure, HarnessFuture, HarnessInfo, HarnessSession, HarnessTestPlan,
+    ModelRef, NativeModel, PermissionPolicy, ProbeResult, SessionEntry, SessionHealth,
+    SessionRequest, SteerReceipt, ToolDefinition, ToolResultError, ToolResultReceipt,
+    ToolResultRequest, ToolResultResource,
 };

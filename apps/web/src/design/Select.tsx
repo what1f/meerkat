@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { UIProps } from './types';
 import { Select as BaseSelect } from '@base-ui/react/select';
 import { Icon } from './Icon';
+import { useLayer } from './layer';
 import css from './Select.module.css';
 export type SelectProps<T> = Omit<UIProps, 'className' | 'style'> & {
   options: { value: T; label: string; leading?: ReactNode; disabled?: boolean }[];
@@ -16,6 +17,7 @@ export function Select<T>({
   variant = 'quiet',
   ...rest
 }: SelectProps<T>) {
+  const layer = useLayer();
   return (
     <BaseSelect.Root
       value={value}
@@ -40,8 +42,9 @@ export function Select<T>({
           <Icon name="chev" size={14} />
         </BaseSelect.Icon>
       </BaseSelect.Trigger>
-      <BaseSelect.Portal>
+      <BaseSelect.Portal container={layer.container}>
         <BaseSelect.Positioner
+          positionMethod={layer.positionMethod}
           className={css.positioner}
           alignItemWithTrigger={false}
           sideOffset={4}

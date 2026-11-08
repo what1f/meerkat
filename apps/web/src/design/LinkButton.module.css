@@ -16,6 +16,16 @@
   color: var(--ink);
 }
 
+.root[data-external='true'] {
+  text-decoration-line: underline;
+  text-decoration-color: var(--ink-4);
+  text-underline-offset: 3px;
+}
+
+.root[data-external='true']:hover {
+  text-decoration-color: var(--ink-3);
+}
+
 .root:focus-visible {
   outline-style: none;
   box-shadow: var(--ring-focus);
