@@ -200,6 +200,67 @@ pub struct HarnessInfo {
     pub default_environment_variables: Vec<EnvironmentVariable>,
     #[serde(default)]
     pub default_launch_arguments: Vec<String>,
+    /// Sign-in state of a Harness that holds its own account; `None` when it
+    /// is signed out or keeps no account.
+    #[serde(default)]
+    pub account: Option<HarnessAccount>,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HarnessAccountMethod {
+    Chatgpt,
+    ApiKey,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Eq)]
+pub struct HarnessAccount {
+    pub method: HarnessAccountMethod,
+    pub label: Option<String>,
+}
+
+/// Credentials for a Harness that keeps its own account. Each Machine gets
+/// its own authorization; the Runtime never keeps a copy.
+#[derive(Clone, PartialEq, Serialize, Deserialize, Eq)]
+#[serde(tag = "method", rename_all = "snake_case")]
+pub enum HarnessCredential {
+    Chatgpt {
+        auth_json: String,
+    },
+    ApiKey {
+        base_url: String,
+        api_key: String,
+        #[serde(default)]
+        model: Option<String>,
+    },
+}
+
+impl std::fmt::Debug for HarnessCredential {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Chatgpt { .. } => formatter.write_str("HarnessCredential::Chatgpt"),
+            Self::ApiKey { base_url, .. } => {
+                write!(formatter, "HarnessCredential::ApiKey({base_url})")
+            }
+        }
+    }
+}
+
+/// Store (`Some`) or remove (`None`) a Harness account on one Machine.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Eq)]
+pub struct SetHarnessCredential {
+    pub request_id: String,
+    pub harness_id: String,
+    pub credential: Option<HarnessCredential>,
+}
+
+/// Empty `error` means the Machine stored the change.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Eq)]
+pub struct SetHarnessCredentialResult {
+    pub request_id: String,
+    pub error: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
@@ -308,6 +369,7 @@ pub enum MachinePayload {
     DeleteAgentFilesResult(DeleteAgentFilesResult),
     TestHarnessResult(TestHarnessResult),
     ListModelsResult(ListModelsResult),
+    SetHarnessCredentialResult(SetHarnessCredentialResult),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Eq)]
@@ -325,6 +387,7 @@ pub enum RuntimePayload {
     DeleteAgentFiles(DeleteAgentFiles),
     TestHarness(TestHarness),
     ListModels(ListModels),
+    SetHarnessCredential(SetHarnessCredential),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

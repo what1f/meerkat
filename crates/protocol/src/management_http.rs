@@ -209,6 +209,26 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
             json::ModelCatalog,
             get_model_catalog
         ),
+        "builtin_agent_sign_in" => call!(
+            json::BuiltinAgentSignInRequest,
+            json::BuiltinAgentSignInResponse,
+            builtin_agent_sign_in
+        ),
+        "builtin_agent_sign_in_status" => call!(
+            json::BuiltinAgentSignInStatusRequest,
+            json::BuiltinAgentSignInStatus,
+            builtin_agent_sign_in_status
+        ),
+        "builtin_agent_sign_in_cancel" => call!(
+            json::BuiltinAgentSignInStatusRequest,
+            json::BuiltinAgentSignInStatus,
+            builtin_agent_sign_in_cancel
+        ),
+        "builtin_agent_sign_out" => call!(
+            json::BuiltinAgentSignOutRequest,
+            json::BuiltinAgentSignOutResponse,
+            builtin_agent_sign_out
+        ),
         "get_reaction_catalog" => call!(
             json::CatalogRequest,
             json::ReactionCatalog,

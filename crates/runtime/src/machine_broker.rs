@@ -26,6 +26,7 @@ struct BrokerInner {
     pending: StdMutex<BTreeMap<i64, PendingExecution>>,
     pending_harness_tests: StdMutex<BTreeMap<String, PendingHarnessTest>>,
     pending_model_lists: StdMutex<BTreeMap<String, PendingModelList>>,
+    pending_credentials: StdMutex<BTreeMap<String, PendingCredential>>,
     pending_agent_deletions: StdMutex<BTreeMap<String, oneshot::Sender<Result<(), String>>>>,
 }
 
@@ -51,6 +52,24 @@ struct PendingModelList {
     machine_id: String,
     instance_id: String,
     response: oneshot::Sender<meerkat_protocol::link::ListModelsResult>,
+}
+
+struct PendingCredential {
+    machine_id: String,
+    instance_id: String,
+    response: oneshot::Sender<String>,
+}
+
+struct PendingCredentialGuard<'a> {
+    inner: &'a BrokerInner,
+    id: String,
+}
+impl Drop for PendingCredentialGuard<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut pending) = self.inner.pending_credentials.lock() {
+            pending.remove(&self.id);
+        }
+    }
 }
 
 struct PendingModelListGuard<'a> {
@@ -105,6 +124,7 @@ impl MachineBroker {
                 pending: StdMutex::new(BTreeMap::new()),
                 pending_harness_tests: StdMutex::new(BTreeMap::new()),
                 pending_model_lists: StdMutex::new(BTreeMap::new()),
+                pending_credentials: StdMutex::new(BTreeMap::new()),
                 pending_agent_deletions: StdMutex::new(BTreeMap::new()),
             }),
         }
@@ -184,6 +204,76 @@ impl MachineBroker {
         result
             .catalog
             .ok_or_else(|| Status::unavailable("Models could not be loaded"))
+    }
+
+    /// Store (`Some`) or remove (`None`) a Harness account on one Machine and
+    /// wait for its acknowledgement. Errors are stable reason codes.
+    pub async fn set_harness_credential(
+        &self,
+        machine_id: &str,
+        harness_id: &str,
+        credential: Option<meerkat_protocol::HarnessCredential>,
+    ) -> Result<(), &'static str> {
+        let connection = self
+            .inner
+            .connections
+            .read()
+            .map_err(|_| "machine_offline")?
+            .get(machine_id)
+            .cloned()
+            .ok_or("machine_offline")?;
+        if connection.revoked.load(Ordering::Acquire) {
+            return Err("machine_offline");
+        }
+        if !connection
+            .harnesses
+            .iter()
+            .any(|harness| harness.harness_id == harness_id)
+        {
+            return Err("machine_rejected");
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        let (sender, receiver) = oneshot::channel();
+        self.inner
+            .pending_credentials
+            .lock()
+            .map_err(|_| "machine_offline")?
+            .insert(
+                id.clone(),
+                PendingCredential {
+                    machine_id: machine_id.to_owned(),
+                    instance_id: connection.instance_id,
+                    response: sender,
+                },
+            );
+        let _pending = PendingCredentialGuard {
+            inner: &self.inner,
+            id: id.clone(),
+        };
+        connection
+            .sender
+            .send(Ok(RuntimeFrame {
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
+                frame: Some(runtime_frame::Frame::SetHarnessCredential(
+                    meerkat_protocol::link::SetHarnessCredential {
+                        request_id: id,
+                        harness_id: harness_id.to_owned(),
+                        credential,
+                    },
+                )),
+            }))
+            .await
+            .map_err(|_| "machine_offline")?;
+        let error = tokio::time::timeout(std::time::Duration::from_secs(30), receiver)
+            .await
+            .map_err(|_| "machine_offline")?
+            .map_err(|_| "machine_offline")?;
+        match error.as_str() {
+            "" => Ok(()),
+            "invalid_key" => Err("invalid_key"),
+            "unreachable" => Err("unreachable"),
+            _ => Err("machine_rejected"),
+        }
     }
 
     pub async fn test_harness(
@@ -696,6 +786,19 @@ impl MachineBroker {
                 }) && let Some(pending) = pending.remove(&result.request_id)
                 {
                     let _ = pending.response.send(result);
+                }
+            }
+            machine_frame::Frame::SetHarnessCredentialResult(result) => {
+                let mut pending = self
+                    .inner
+                    .pending_credentials
+                    .lock()
+                    .map_err(|_| RuntimeError::RuntimeLockPoisoned)?;
+                if pending.get(&result.request_id).is_some_and(|pending| {
+                    pending.machine_id == machine_id && pending.instance_id == instance_id
+                }) && let Some(pending) = pending.remove(&result.request_id)
+                {
+                    let _ = pending.response.send(result.error);
                 }
             }
             machine_frame::Frame::TestHarnessResult(result) => {

@@ -410,6 +410,49 @@ pub struct HarnessDefaults {
     #[serde(default)]
     pub launch_arguments: Vec<String>,
 }
+/// How a Harness that holds its own account is signed in.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HarnessAccountMethod {
+    Chatgpt,
+    ApiKey,
+}
+
+/// Sign-in state a Harness reports from its own files, without starting a CLI.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct HarnessAccount {
+    pub method: HarnessAccountMethod,
+    pub label: Option<String>,
+}
+
+/// Credentials handed to a Harness that keeps its own account.
+#[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "method", rename_all = "snake_case")]
+pub enum HarnessCredential {
+    /// The auth file written by a completed browser sign-in.
+    Chatgpt { auth_json: String },
+    /// An OpenAI-compatible Chat Completions connection. Without a model,
+    /// the first one the endpoint lists is used.
+    ApiKey {
+        base_url: String,
+        api_key: String,
+        #[serde(default)]
+        model: Option<String>,
+    },
+}
+
+impl fmt::Debug for HarnessCredential {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Never print secrets.
+        match self {
+            Self::Chatgpt { .. } => formatter.write_str("HarnessCredential::Chatgpt"),
+            Self::ApiKey { base_url, .. } => {
+                write!(formatter, "HarnessCredential::ApiKey({base_url})")
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct HarnessTestPlan {
     pub request: SessionRequest,
@@ -439,6 +482,27 @@ pub trait HarnessFactory: Send + Sync {
             Err(HarnessError::new(
                 HarnessErrorCode::Unavailable,
                 "This Harness does not provide a model directory",
+            ))
+        })
+    }
+    /// Account state for Harnesses that hold their own sign-in. Read from
+    /// files only; never starts the native CLI.
+    fn account(&self) -> Option<HarnessAccount> {
+        None
+    }
+    /// Whether this Harness keeps its own account (see [`Self::account`]).
+    fn has_account(&self) -> bool {
+        false
+    }
+    /// Store credentials, or remove them with `None`.
+    fn set_credential<'a>(
+        &'a self,
+        _credential: Option<HarnessCredential>,
+    ) -> HarnessFuture<'a, ()> {
+        Box::pin(async {
+            Err(HarnessError::new(
+                HarnessErrorCode::Unavailable,
+                "This Harness does not keep an account",
             ))
         })
     }

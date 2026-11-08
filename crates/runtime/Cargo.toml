@@ -23,7 +23,7 @@ meerkat-storage = { path = "../storage" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["process", "io-util"] }
 tokio-stream.workspace = true
 
 [dev-dependencies]

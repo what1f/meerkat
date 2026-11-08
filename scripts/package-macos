@@ -31,7 +31,7 @@ if (( APP_ONLY == 0 )); then
   command -v uv >/dev/null || { print -u2 'Install uv to build the DMG'; exit 2; }
 fi
 
-for binary in meerkat-desktop meerkatd meerkat-machine meerkat; do
+for binary in meerkat-desktop meerkatd meerkat-machine meerkat meerkat-agent; do
   [[ -x "$RELEASE_DIR/$binary" ]] || {
     print -u2 "release binary is missing: $RELEASE_DIR/$binary"
     exit 4
@@ -54,6 +54,7 @@ cp "$RELEASE_DIR/meerkat-desktop" "$CONTENTS/MacOS/Meerkat"
 cp "$RELEASE_DIR/meerkatd" "$CONTENTS/Library/LaunchServices/meerkatd"
 cp "$RELEASE_DIR/meerkat-machine" "$CONTENTS/Library/LaunchServices/meerkat-machine"
 cp "$RELEASE_DIR/meerkat" "$CONTENTS/Resources/bin/meerkat"
+cp "$RELEASE_DIR/meerkat-agent" "$CONTENTS/Resources/bin/meerkat-agent"
 cp "$ROOT_DIR/apps/desktop/macos/com.meerkat.daemon.plist" "$CONTENTS/Library/LaunchAgents/com.meerkat.daemon.plist"
 cp "$ROOT_DIR/apps/desktop/macos/com.meerkat.machine.plist" "$CONTENTS/Library/LaunchAgents/com.meerkat.machine.plist"
 cp "$ROOT_DIR/apps/desktop/Info.plist" "$CONTENTS/Info.plist"
@@ -90,7 +91,8 @@ chmod 755 \
   "$CONTENTS/MacOS/Meerkat" \
   "$CONTENTS/Library/LaunchServices/meerkatd" \
   "$CONTENTS/Library/LaunchServices/meerkat-machine" \
-  "$CONTENTS/Resources/bin/meerkat"
+  "$CONTENTS/Resources/bin/meerkat" \
+  "$CONTENTS/Resources/bin/meerkat-agent"
 xattr -cr "$APP_DIR"
 "$ROOT_DIR/scripts/package-provenance" stage --binary-dir "$RELEASE_DIR" \
   --build-provenance "$PROVENANCE" --bundle "$APP_DIR" --output "$ICON_TEMP/stage.json"
@@ -98,6 +100,7 @@ for helper in \
   "$CONTENTS/Library/LaunchServices/meerkatd" \
   "$CONTENTS/Library/LaunchServices/meerkat-machine" \
   "$CONTENTS/Resources/bin/meerkat" \
+  "$CONTENTS/Resources/bin/meerkat-agent" \
   "$CONTENTS/MacOS/Meerkat"; do
   codesign --force --sign "$SIGNING_IDENTITY" "$helper"
 done

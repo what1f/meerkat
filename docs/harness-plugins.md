@@ -2,8 +2,10 @@
 
 Runtime keeps the existing Agent configuration and Runtime–Machine protocol.
 Machine loads JavaScript adapters in QuickJS through the existing `HarnessFactory`
-and `HarnessSession` contracts. The three native adapters contain JavaScript
-protocol implementations; their Rust crates only assemble the plugin factory.
+and `HarnessSession` contracts. The four native adapters contain JavaScript
+protocol implementations. The Pi, Codex and Claude Code crates only assemble the
+plugin factory; the Built-in Agent crate also stores its account and injects it
+into the environment (see `docs/builtin-agent.md`).
 Test plugins and scripted peers stay under `tests/`.
 
 ## Ownership

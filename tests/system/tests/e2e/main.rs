@@ -41,3 +41,6 @@ mod web_assets_e2e;
 
 #[path = "../harness_test_e2e.rs"]
 mod harness_test_e2e;
+
+#[path = "../builtin_sign_in_e2e.rs"]
+mod builtin_sign_in_e2e;

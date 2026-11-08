@@ -12,6 +12,7 @@ Meerkat.app/Contents/
 ├── Library/LaunchServices/meerkatd
 ├── Library/LaunchServices/meerkat-machine
 ├── Resources/bin/meerkat
+├── Resources/bin/meerkat-agent
 ├── Resources/AppIcon.icns
 ├── Resources/LICENSE
 ├── Resources/THIRD_PARTY_LICENSES.md
@@ -24,6 +25,8 @@ Meerkat.app/Contents/
 直接运行未打包的开发二进制时，Desktop 临时启动本次运行所需的两个进程，并在退出时清理；这一开发回退不会注册系统后台项目。
 
 `meerkat` 是提供给 Agent 的执行期能力 CLI，不是用户需要单独启动的第四个产品进程。
+
+`meerkat-agent` 是内置 Agent 的二进制，由 `tools/builtin-agent/build release` 编译，随 App 放在 `Resources/bin/` 并一起签名。见 `docs/builtin-agent.md`。
 
 ## Just 命令
 
@@ -110,7 +113,7 @@ App 所在目录不可写或 App 处于 App Translocation 中时，只提示前�
 
 `scripts/verify-package` 不依赖页面操作。它从打包后的 App 主程序启动一个隔离的临时 Meerkat Home，验证：
 
-1. Bundle 中四个可执行文件位置正确；
+1. Bundle 中五个可执行文件位置正确；
 2. App 与内部可执行文件签名有效，`Info.plist` 允许本地网络访问；
 3. ZIP 完整且没有 App 外置的 daemon 或启动脚本；DMG 中的 App 与同一份签名凭据一致，Applications 快捷方式和安装图标位置正确；两个交付物的 SHA-256 一致；
 4. Bundle 包含并签署两个用户级 LaunchAgent 描述；

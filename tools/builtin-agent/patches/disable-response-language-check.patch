@@ -1,0 +1,26 @@
+diff --git a/src/acp/prompt.zig b/src/acp/prompt.zig
+index 139f5d7..57a4997 100644
+--- a/src/acp/prompt.zig
++++ b/src/acp/prompt.zig
+@@ -1439,7 +1439,7 @@ fn buildAgentConfig(
+         .first_call_tool_choice = session.first_call_tool_choice,
+         .workspace_root = state.workspace_root,
+         .access_scope = state.workspace_access.scope(state.workspace_root),
+-        .enforce_response_language = !state.cfg.minimal_kernel,
++        .enforce_response_language = false,
+         .context_limits = state.context_limits,
+     };
+ }
+diff --git a/src/core/agent/runtime/config.zig b/src/core/agent/runtime/config.zig
+index 1026168..caa5538 100644
+--- a/src/core/agent/runtime/config.zig
++++ b/src/core/agent/runtime/config.zig
+@@ -75,7 +75,7 @@ pub const Config = struct {
+     /// persistent child. Internal assistant-authored delegations leave this
+     /// false.
+     current_prompt_is_root_authority: bool = false,
+-    enforce_response_language: bool = true,
++    enforce_response_language: bool = false,
+     tool_result_dir: ?[]const u8 = null,
+     session_child_capability: ?*session_child_store.SessionChildCapability = null,
+     ephemeral_command_replay: ?*command_replay_store.EphemeralStore = null,

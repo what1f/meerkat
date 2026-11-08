@@ -14,6 +14,24 @@ impl RuntimePeerAdapter {
     pub fn new(application: RuntimeApplication) -> Self {
         Self { application }
     }
+    async fn running_machine(&self, machine_id: &str) -> Result<(), Status> {
+        let catalog = self
+            .application
+            .machine_catalog(CatalogRequest::default())
+            .await
+            .map_err(status)?;
+        let machine = catalog
+            .machines
+            .iter()
+            .find(|machine| machine.machine_id == machine_id)
+            .ok_or_else(|| Status::not_found("Machine not found"))?;
+        if machine.observed_state != meerkat_protocol::ObservedState::Running
+            || machine.revoked_at.is_some()
+        {
+            return Err(Status::unavailable("Machine is offline"));
+        }
+        Ok(())
+    }
     pub fn application(&self) -> &RuntimeApplication {
         &self.application
     }
@@ -716,22 +734,51 @@ impl RuntimePeer for RuntimePeerAdapter {
         &self,
         request: meerkat_protocol::ModelCatalogRequest,
     ) -> Result<meerkat_protocol::ModelCatalog, Status> {
-        let catalog = self
-            .application
-            .machine_catalog(CatalogRequest::default())
-            .await
-            .map_err(status)?;
-        let machine = catalog
-            .machines
-            .iter()
-            .find(|machine| machine.machine_id == request.machine_id)
-            .ok_or_else(|| Status::not_found("Machine not found"))?;
-        if machine.observed_state != meerkat_protocol::ObservedState::Running
-            || machine.revoked_at.is_some()
-        {
-            return Err(Status::unavailable("Machine is offline"));
-        }
+        self.running_machine(&request.machine_id).await?;
         self.application.machine_broker().list_models(request).await
+    }
+    async fn builtin_agent_sign_in(
+        &self,
+        request: BuiltinAgentSignInRequest,
+    ) -> Result<BuiltinAgentSignInResponse, Status> {
+        self.running_machine(&request.machine_id).await?;
+        self.application
+            .builtin_sign_ins()
+            .sign_in(self.application.machine_broker(), request)
+            .await
+    }
+    async fn builtin_agent_sign_in_status(
+        &self,
+        request: BuiltinAgentSignInStatusRequest,
+    ) -> Result<BuiltinAgentSignInStatus, Status> {
+        Ok(self
+            .application
+            .builtin_sign_ins()
+            .status(&request.sign_in_id))
+    }
+    async fn builtin_agent_sign_in_cancel(
+        &self,
+        request: BuiltinAgentSignInStatusRequest,
+    ) -> Result<BuiltinAgentSignInStatus, Status> {
+        Ok(self
+            .application
+            .builtin_sign_ins()
+            .cancel(&request.sign_in_id))
+    }
+    async fn builtin_agent_sign_out(
+        &self,
+        request: BuiltinAgentSignOutRequest,
+    ) -> Result<BuiltinAgentSignOutResponse, Status> {
+        self.running_machine(&request.machine_id).await?;
+        self.application
+            .machine_broker()
+            .set_harness_credential(&request.machine_id, "builtin", None)
+            .await
+            .map_err(|reason| match reason {
+                "machine_offline" => Status::unavailable("Machine is offline"),
+                _ => Status::failed_precondition("Sign-out could not be saved"),
+            })?;
+        Ok(BuiltinAgentSignOutResponse {})
     }
     async fn get_harness_catalog(&self, request: CatalogRequest) -> Result<HarnessCatalog, Status> {
         self.application.harness_catalog(request).map_err(status)

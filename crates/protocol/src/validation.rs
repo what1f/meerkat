@@ -51,6 +51,10 @@ pub fn validate_runtime_frame(frame: &RuntimeFrame) -> Result<(), Status> {
             validate_request_id(&request.request_id)?;
             require_text(&request.harness_id, "harness_id")
         }
+        Some(runtime_frame::Frame::SetHarnessCredential(request)) => {
+            validate_request_id(&request.request_id)?;
+            require_text(&request.harness_id, "harness_id")
+        }
         Some(runtime_frame::Frame::DeleteAgentFiles(request)) => {
             validate_request_id(&request.request_id)?;
             validate_agent_ref(request.agent.as_ref())
@@ -99,6 +103,9 @@ impl MachineFrameValidator {
                 validate_request_id(&result.request_id)
             }
             Some(machine_frame::Frame::ListModelsResult(result)) => {
+                validate_request_id(&result.request_id)
+            }
+            Some(machine_frame::Frame::SetHarnessCredentialResult(result)) => {
                 validate_request_id(&result.request_id)
             }
             Some(machine_frame::Frame::DeleteAgentFilesResult(result)) => {

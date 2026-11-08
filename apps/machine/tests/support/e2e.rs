@@ -239,6 +239,7 @@ pub async fn run() -> Result<PathBuf, AppError> {
     production.pi_cli = executable.clone();
     production.codex_cli = executable.clone();
     production.claude_code_cli = executable.clone();
+    production.builtin_agent_cli = executable.clone();
     for registration in production_harnesses(&production) {
         let probe = registration
             .factory
@@ -293,7 +294,7 @@ pub async fn run() -> Result<PathBuf, AppError> {
                 .iter()
                 .map(|item| item.harness_id.as_str())
                 .collect::<Vec<_>>()
-                == ["pi", "codex", "claude_code"],
+                == ["builtin", "pi", "codex", "claude_code"],
             "catalog mismatch",
         )?;
         require(

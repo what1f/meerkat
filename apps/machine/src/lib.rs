@@ -3,6 +3,7 @@
 pub use meerkat_daemon_runtime::InstanceGuard;
 use meerkat_daemon_runtime::{DaemonRuntimeError, create_private_directory};
 use meerkat_harness::{HarnessConfig, ModelRef};
+use meerkat_harness_builtin::BuiltinHarness;
 use meerkat_harness_claude_code::ClaudeCodeHarness;
 use meerkat_harness_codex::CodexHarness;
 use meerkat_harness_pi::PiHarness;
@@ -58,6 +59,7 @@ pub struct DaemonConfig {
     pub instance_id: String,
     pub runtime_url: Option<String>,
     pub link_secret_file: Option<PathBuf>,
+    pub builtin_agent_cli: PathBuf,
     pub pi_cli: PathBuf,
     pub codex_cli: PathBuf,
     pub claude_code_cli: PathBuf,
@@ -74,6 +76,7 @@ impl DaemonConfig {
             instance_id: unique_run_id(),
             runtime_url: None,
             link_secret_file: None,
+            builtin_agent_cli: builtin_agent_cli(),
             pi_cli: PathBuf::from("pi"),
             codex_cli: PathBuf::from("codex"),
             claude_code_cli: PathBuf::from("claude"),
@@ -89,6 +92,7 @@ impl DaemonConfig {
             instance_id: unique_run_id(),
             runtime_url: None,
             link_secret_file: None,
+            builtin_agent_cli: builtin_agent_cli(),
             pi_cli: PathBuf::from("pi"),
             codex_cli: PathBuf::from("codex"),
             claude_code_cli: PathBuf::from("claude"),
@@ -98,6 +102,7 @@ impl DaemonConfig {
 
     pub fn set_executable_path(&mut self, path: impl Into<String>) {
         let path = path.into();
+        self.builtin_agent_cli = resolve_executable(&self.builtin_agent_cli, &path);
         self.pi_cli = resolve_executable(&self.pi_cli, &path);
         self.codex_cli = resolve_executable(&self.codex_cli, &path);
         self.claude_code_cli = resolve_executable(&self.claude_code_cli, &path);
@@ -132,6 +137,11 @@ fn read_reconnect(home: &std::path::Path) -> Result<ReconnectPolicy, AppError> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Default::default()),
         Err(error) => Err(error.into()),
     }
+}
+
+fn builtin_agent_cli() -> PathBuf {
+    meerkat_harness_builtin::discover()
+        .unwrap_or_else(|| PathBuf::from(meerkat_harness_builtin::EXECUTABLE))
 }
 
 fn resolve_executable(executable: &std::path::Path, path: &str) -> PathBuf {
@@ -270,6 +280,15 @@ pub async fn run_with_harnesses(
 pub fn production_harnesses(config: &DaemonConfig) -> Vec<RegisteredHarness> {
     vec![
         RegisteredHarness::new(
+            BuiltinHarness::new(builtin_agent_home(config))
+                .with_context_window(builtin_agent_context_window()),
+            harness_config(
+                meerkat_harness_builtin::HARNESS_ID,
+                config.builtin_agent_cli.clone(),
+                &config.environment,
+            ),
+        ),
+        RegisteredHarness::new(
             PiHarness::new(),
             harness_config("pi", config.pi_cli.clone(), &config.environment),
         ),
@@ -286,6 +305,21 @@ pub fn production_harnesses(config: &DaemonConfig) -> Vec<RegisteredHarness> {
             ),
         ),
     ]
+}
+
+/// `MEERKAT_AGENT_CONTEXT_WINDOW` overrides the Built-in Agent's context
+/// window; anything but a positive token count keeps the default.
+fn builtin_agent_context_window() -> u32 {
+    std::env::var("MEERKAT_AGENT_CONTEXT_WINDOW")
+        .ok()
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .filter(|tokens| *tokens > 0)
+        .unwrap_or(meerkat_harness_builtin::DEFAULT_CONTEXT_WINDOW)
+}
+
+/// One Built-in Agent home per Machine; members keep their own sessions.
+pub fn builtin_agent_home(config: &DaemonConfig) -> PathBuf {
+    config.paths.workspaces.join(".machine/builtin-agent")
 }
 
 /// Local JS packages may replace a bundled adapter or add a CLI harness.

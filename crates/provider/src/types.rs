@@ -290,7 +290,13 @@ macro_rules! definition_debug {
 }
 definition_debug!(InterfaceDefinition, id, input_schema, output_schema);
 definition_debug!(ToolDefinition, id, description, input_schema, output_schema);
-definition_debug!(CliCommandDefinition, id, description, wraps, private_directories);
+definition_debug!(
+    CliCommandDefinition,
+    id,
+    description,
+    wraps,
+    private_directories
+);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MessageAttachment {

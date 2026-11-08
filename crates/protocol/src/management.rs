@@ -360,6 +360,8 @@ pub struct HarnessInfo {
     pub default_environment_variables: Vec<EnvironmentVariable>,
     #[serde(default)]
     pub default_launch_arguments: Vec<String>,
+    #[serde(default)]
+    pub account: Option<HarnessAccount>,
 }
 impl TryFrom<crate::link::HarnessInfo> for HarnessInfo {
     type Error = crate::Status;
@@ -375,6 +377,7 @@ impl TryFrom<crate::link::HarnessInfo> for HarnessInfo {
             capabilities: value.capabilities,
             default_environment_variables: value.default_environment_variables,
             default_launch_arguments: value.default_launch_arguments,
+            account: value.account,
         })
     }
 }
@@ -458,6 +461,96 @@ pub struct ManagementSubscription {
 }
 
 pub use crate::link::ModelCatalog;
+
+pub use crate::link::{HarnessAccount, HarnessAccountMethod};
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BuiltinAgentSignInMethod {
+    /// Browser sign-in with a ChatGPT account, run next to the Runtime.
+    #[default]
+    Chatgpt,
+    /// An OpenAI-compatible Chat Completions endpoint.
+    ApiKey,
+}
+
+/// Sign the Built-in Agent on one Machine in. `api_key` needs `base_url` and
+/// `api_key`; `model` defaults to the first model the endpoint lists.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BuiltinAgentSignInRequest {
+    pub workspace: Option<WorkspaceRef>,
+    pub machine_id: String,
+    pub method: BuiltinAgentSignInMethod,
+    #[serde(default)]
+    #[cfg_attr(feature = "typescript", ts(optional))]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "typescript", ts(optional))]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "typescript", ts(optional))]
+    pub model: Option<String>,
+}
+
+impl std::fmt::Debug for BuiltinAgentSignInRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BuiltinAgentSignInRequest")
+            .field("machine_id", &self.machine_id)
+            .field("method", &self.method)
+            .field("base_url", &self.base_url)
+            .field("model", &self.model)
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BuiltinAgentSignInResponse {
+    pub sign_in_id: String,
+    /// The page to open for a browser sign-in; `null` when nothing is left to do.
+    pub authorize_url: Option<String>,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BuiltinAgentSignInStatusRequest {
+    pub sign_in_id: String,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BuiltinAgentSignInState {
+    #[default]
+    Pending,
+    Succeeded,
+    Failed,
+    Expired,
+}
+
+/// `reason` is a stable code for a failed sign-in: `cancelled`,
+/// `sign_in_failed`, `invalid_key`, `unreachable`, `machine_offline` or
+/// `machine_rejected`.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BuiltinAgentSignInStatus {
+    pub state: BuiltinAgentSignInState,
+    pub reason: Option<String>,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BuiltinAgentSignOutRequest {
+    pub workspace: Option<WorkspaceRef>,
+    pub machine_id: String,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BuiltinAgentSignOutResponse {}
 
 pub use crate::link::ModelCatalogItem;
 

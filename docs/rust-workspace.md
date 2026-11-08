@@ -12,7 +12,7 @@ split into small crates and application composition roots:
 crates/core                 pure domain vocabulary
 crates/protocol             Runtime-Machine/client wire DTOs
 crates/provider             Provider contracts and normalized events
-crates/harness              Pi/Codex/Claude Code execution contract
+crates/harness              Built-in/Pi/Codex/Claude Code execution contract
 crates/storage              Runtime database boundary
 crates/runtime              scheduling, persistence, Provider lifecycle
 crates/machine-core             Agent home and Harness execution boundary
@@ -23,6 +23,7 @@ crates/web-assets           Runtime static frontend assets (disk in debug, embed
 
 providers/feishu            Feishu composition adapter
 providers/telegram          Telegram composition adapter
+harnesses/builtin           Built-in Agent adapter and account storage
 harnesses/pi                Pi composition adapter
 harnesses/codex             Codex composition adapter
 harnesses/claude-code       Claude Code composition adapter

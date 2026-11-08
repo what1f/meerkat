@@ -269,10 +269,24 @@ pub(super) async fn make_hello(inner: &Inner) -> MachineHello {
                     .get(*id)
                     .and_then(|config| inner.cli_versions.models(config)),
                 model_catalog_error: String::new(),
+                account: factory
+                    .and_then(|factory| factory.account())
+                    .map(|account| meerkat_protocol::HarnessAccount {
+                        method: match account.method {
+                            meerkat_harness::HarnessAccountMethod::Chatgpt => {
+                                meerkat_protocol::HarnessAccountMethod::Chatgpt
+                            }
+                            meerkat_harness::HarnessAccountMethod::ApiKey => {
+                                meerkat_protocol::HarnessAccountMethod::ApiKey
+                            }
+                        },
+                        label: account.label,
+                    }),
                 harness_id: (*id).to_owned(),
                 display_name: factory
                     .map(|factory| factory.info().display_name.clone())
                     .unwrap_or_else(|| match *id {
+                        "builtin" => "Built-in Agent".into(),
                         "pi" => "Pi".into(),
                         "codex" => "Codex".into(),
                         _ => "Claude Code".into(),
@@ -338,6 +352,12 @@ async fn dispatch(
         }
         Some(runtime_frame::Frame::ListModels(request)) => {
             let task = tokio::spawn(super::models::run(inner.clone(), request));
+            let mut tasks = inner.assignment_tasks.lock().await;
+            tasks.retain(|task| !task.is_finished());
+            tasks.push(task);
+        }
+        Some(runtime_frame::Frame::SetHarnessCredential(request)) => {
+            let task = tokio::spawn(super::accounts::run(inner.clone(), request));
             let mut tasks = inner.assignment_tasks.lock().await;
             tasks.retain(|task| !task.is_finished());
             tasks.push(task);

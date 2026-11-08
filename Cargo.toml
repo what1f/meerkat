@@ -16,6 +16,7 @@ members = [
     "tools/web-types",
     "providers/feishu",
     "providers/telegram",
+    "harnesses/builtin",
     "harnesses/pi",
     "harnesses/codex",
     "harnesses/claude-code",

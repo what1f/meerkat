@@ -5,6 +5,7 @@
 
 mod agent_profile;
 mod application;
+mod builtin_sign_in;
 mod capability;
 mod capability_link;
 mod coordination;

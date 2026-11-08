@@ -101,6 +101,7 @@ impl MachineThread {
         journal: PathBuf,
         capabilities: Vec<String>,
         models: Option<Vec<meerkat_harness::NativeModel>>,
+        builtin_agent: bool,
     ) -> Self {
         let (stop, stopped) = oneshot::channel();
         let thread = std::thread::spawn(move || {
@@ -123,8 +124,25 @@ impl MachineThread {
                     environment: BTreeMap::from([("MEERKAT_SYSTEM_CAPABILITIES".into(), serde_json::to_string(&capabilities)?)]),
                     config_fingerprint: "system-rig".into(),
                 });
+                let mut registrations = vec![registration];
+                if builtin_agent {
+                    // Account changes only touch files; no native process starts.
+                    let home = meerkat_machine::builtin_agent_home(&config);
+                    registrations.insert(0, RegisteredHarness::new(
+                        meerkat_harness_builtin::BuiltinHarness::new(home),
+                        HarnessConfig {
+                            launch_arguments: Vec::new(),
+                            harness_id: meerkat_harness_builtin::HARNESS_ID.into(),
+                            model: ModelRef::new("", ""),
+                            thinking_level: String::new(),
+                            cli_path: PathBuf::from(meerkat_harness_builtin::EXECUTABLE),
+                            environment: BTreeMap::new(),
+                            config_fingerprint: "system-rig-builtin".into(),
+                        },
+                    ));
+                }
                 tokio::select! {
-                    result = meerkat_machine::run_with_harnesses(config, vec![registration]) => result.map_err(Into::into),
+                    result = meerkat_machine::run_with_harnesses(config, registrations) => result.map_err(Into::into),
                     _ = stopped => Ok(()),
                 }
             });
@@ -350,6 +368,7 @@ impl SystemRig {
             self.machine_home.path().join("harness-pids.tsv"),
             self.config.harness_capabilities.clone(),
             None,
+            false,
         ));
         Ok(())
     }
@@ -443,6 +462,17 @@ impl SystemRig {
         &self,
         models: Option<Vec<meerkat_harness::NativeModel>>,
     ) -> Result<PairedMachine> {
+        self.pair_machine(models, false).await
+    }
+    /// A paired Machine that also offers the Built-in Agent.
+    pub async fn add_machine_with_builtin_agent(&self) -> Result<PairedMachine> {
+        self.pair_machine(None, true).await
+    }
+    async fn pair_machine(
+        &self,
+        models: Option<Vec<meerkat_harness::NativeModel>>,
+        builtin_agent: bool,
+    ) -> Result<PairedMachine> {
         let home = tempfile::tempdir()?;
         let code = self.client.create_pairing_code().await?;
         let (url, _) = self.local_pairing_endpoint()?;
@@ -461,6 +491,7 @@ impl SystemRig {
             home.path().join("harness-pids.tsv"),
             self.config.harness_capabilities.clone(),
             models,
+            builtin_agent,
         );
         timeout(self.config.timeout, async {
             loop {

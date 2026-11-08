@@ -39,6 +39,7 @@ pub(crate) struct ApplicationInner {
     recovery: StdMutex<Option<RecoveryReport>>,
     machine_connected: AtomicBool,
     broker: MachineBroker,
+    builtin_sign_ins: Arc<crate::builtin_sign_in::BuiltinSignIns>,
     resources: StdMutex<Option<Arc<dyn ResourceStore>>>,
     profiles: AgentProfileFiles,
     workspace_tasks: StdMutex<BTreeMap<WorkspaceId, JoinHandle<()>>>,
@@ -146,6 +147,7 @@ impl RuntimeApplication {
                 recovery: StdMutex::new(None),
                 machine_connected: AtomicBool::new(false),
                 broker,
+                builtin_sign_ins: Arc::default(),
                 resources: StdMutex::new(Some(resources)),
                 profiles,
                 workspace_tasks: StdMutex::new(BTreeMap::new()),
@@ -365,6 +367,10 @@ impl RuntimeApplication {
 
     pub fn machine_broker(&self) -> MachineBroker {
         self.inner.broker.clone()
+    }
+
+    pub(crate) fn builtin_sign_ins(&self) -> Arc<crate::builtin_sign_in::BuiltinSignIns> {
+        self.inner.builtin_sign_ins.clone()
     }
 
     pub fn resource_store(&self) -> Result<Arc<dyn ResourceStore>, RuntimeError> {
