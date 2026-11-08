@@ -21,6 +21,7 @@ mod peer;
 mod prompt;
 mod provider_ops;
 mod provider_registry;
+mod relocation;
 mod resource_store;
 mod retry;
 mod session_recovery;

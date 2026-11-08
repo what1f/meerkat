@@ -382,10 +382,19 @@ impl Storage {
         };
         if !machine_id.is_empty() {
             transaction.execute(
-                "INSERT INTO agent_file_deletions(workspace_id,agent_id,machine_id,created_at) VALUES(?1,?2,?3,?4) ON CONFLICT(workspace_id,agent_id) DO UPDATE SET machine_id=excluded.machine_id,created_at=excluded.created_at",
+                "INSERT INTO agent_file_deletions(workspace_id,agent_id,machine_id,created_at) VALUES(?1,?2,?3,?4) ON CONFLICT DO UPDATE SET created_at=excluded.created_at",
                 params![w.as_str(), a.as_str(), machine_id, now],
             )?;
         }
+        // A move in progress may have left files on its target too.
+        transaction.execute(
+            "INSERT INTO agent_file_deletions(workspace_id,agent_id,machine_id,created_at) SELECT workspace_id,agent_id,target_machine_id,?3 FROM agent_relocations WHERE workspace_id=?1 AND agent_id=?2 ON CONFLICT DO UPDATE SET created_at=excluded.created_at",
+            params![w.as_str(), a.as_str(), now],
+        )?;
+        transaction.execute(
+            "DELETE FROM agent_relocations WHERE workspace_id=?1 AND agent_id=?2",
+            params![w.as_str(), a.as_str()],
+        )?;
         delete_agent_state(&transaction, w, a)?;
         let changed = transaction.execute(
             "DELETE FROM agents WHERE workspace_id=?1 AND agent_id=?2",
@@ -400,7 +409,11 @@ impl Storage {
     ) -> Result<Vec<(WorkspaceId, AgentId)>> {
         let connection = self.read_conn()?;
         let mut statement = connection.prepare(
-            "SELECT workspace_id,agent_id FROM agent_file_deletions WHERE machine_id=?1 ORDER BY created_at,workspace_id,agent_id",
+            // A home on its way in must not be removed by an older cleanup.
+            "SELECT d.workspace_id,d.agent_id FROM agent_file_deletions d
+             WHERE d.machine_id=?1 AND NOT EXISTS(SELECT 1 FROM agent_relocations r
+               WHERE r.workspace_id=d.workspace_id AND r.agent_id=d.agent_id AND r.target_machine_id=?1)
+             ORDER BY d.created_at,d.workspace_id,d.agent_id",
         )?;
         Ok(statement
             .query_map([machine_id], |row| {
@@ -410,12 +423,13 @@ impl Storage {
     }
     pub fn complete_agent_file_deletion(
         &self,
+        machine_id: &str,
         workspace_id: &WorkspaceId,
         agent_id: &AgentId,
     ) -> Result<bool> {
         Ok(self.conn()?.execute(
-            "DELETE FROM agent_file_deletions WHERE workspace_id=?1 AND agent_id=?2",
-            params![workspace_id.as_str(), agent_id.as_str()],
+            "DELETE FROM agent_file_deletions WHERE workspace_id=?1 AND agent_id=?2 AND machine_id=?3",
+            params![workspace_id.as_str(), agent_id.as_str(), machine_id],
         )? == 1)
     }
 }

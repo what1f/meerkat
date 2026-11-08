@@ -2476,6 +2476,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "uuid",
+ "zip",
 ]
 
 [[package]]

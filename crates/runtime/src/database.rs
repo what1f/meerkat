@@ -345,12 +345,45 @@ database_methods! {
         let provider_identity_state = provider_identity_state.to_owned();
     ] (&workspace_id, &person_id, expected_revision, &provider_identity_state, now);
     true complete_agent_file_deletion(
+        machine_id: &str,
         workspace_id: &WorkspaceId,
         agent_id: &AgentId,
     ) -> bool [
+        let machine_id = machine_id.to_owned();
         let workspace_id = workspace_id.to_owned();
         let agent_id = agent_id.to_owned();
-    ] (&workspace_id, &agent_id);
+    ] (&machine_id, &workspace_id, &agent_id);
+    false agent_relocation(w: &WorkspaceId, a: &AgentId) -> Option<RelocationRecord> [let w = w.to_owned(); let a = a.to_owned();] (&w, &a);
+    false agent_relocations() -> Vec<RelocationRecord> [] ();
+    true request_agent_relocation(
+        w: &WorkspaceId,
+        a: &AgentId,
+        target_machine_id: &str,
+        without_files: bool,
+        now: i64,
+    ) -> RelocationRecord [
+        let w = w.to_owned();
+        let a = a.to_owned();
+        let target_machine_id = target_machine_id.to_owned();
+    ] (&w, &a, &target_machine_id, without_files, now);
+    true cancel_agent_relocation(w: &WorkspaceId, a: &AgentId) -> bool [let w = w.to_owned(); let a = a.to_owned();] (&w, &a);
+    true stage_agent_relocation(
+        w: &WorkspaceId,
+        a: &AgentId,
+        size: u64,
+        sha256: &str,
+        now: i64,
+    ) -> bool [
+        let w = w.to_owned();
+        let a = a.to_owned();
+        let sha256 = sha256.to_owned();
+    ] (&w, &a, size, &sha256, now);
+    true fail_agent_relocation(w: &WorkspaceId, a: &AgentId, code: &str, now: i64) -> bool [
+        let w = w.to_owned();
+        let a = a.to_owned();
+        let code = code.to_owned();
+    ] (&w, &a, &code, now);
+    true commit_agent_relocation(w: &WorkspaceId, a: &AgentId, now: i64) -> Option<AgentRecord> [let w = w.to_owned(); let a = a.to_owned();] (&w, &a, now);
     true create_execution_with_auth(
         w: &WorkspaceId,
         a: &AgentId,

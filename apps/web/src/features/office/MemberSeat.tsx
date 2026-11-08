@@ -1,5 +1,8 @@
 import type * as DTO from '../../lib/api/generated';
+import { Icon, Menu } from '../../design';
 import { Seat, type CarryHandle } from '../../scene';
+import { useT } from '../../lib/i18n';
+import './messages';
 import { agentStatus, useAgentAvatar } from '../../lib/queries/agents';
 import { useFigurePacks } from '../../lib/queries/catalogs';
 import { figureId, packFrames } from '../../lib/assets';
@@ -16,6 +19,7 @@ export function MemberSeat({
   arriving,
   carry,
   onOpen,
+  move,
 }: {
   agent: DTO.Agent;
   machine: DTO.MachineCatalogItem;
@@ -23,7 +27,10 @@ export function MemberSeat({
   arriving: boolean;
   carry?: CarryHandle;
   onOpen: () => void;
+  // Set while the member is on their way here from another computer.
+  move?: { onCancel: () => void; onWithoutFiles?: () => void };
 }) {
+  const t = useT();
   const id = agent.agent?.agent_id ?? '';
   const { screen } = agentStatus(agent, machine, workspace);
   const workspaceId = agent.agent?.workspace_id ?? '';
@@ -48,9 +55,27 @@ export function MemberSeat({
             }
       }
       arriving={arriving}
+      moving={!!move}
+      wrapBox={
+        move &&
+        ((box) => (
+          <span>
+            <Menu trigger={box}>
+              <Menu.Item leading={<Icon name="x" size={14} />} onSelect={move.onCancel}>
+                {t('office.cancelMove')}
+              </Menu.Item>
+              {move.onWithoutFiles && (
+                <Menu.Item leading={<Icon name="box" size={14} />} onSelect={move.onWithoutFiles}>
+                  {t('office.moveWithoutFiles')}
+                </Menu.Item>
+              )}
+            </Menu>
+          </span>
+        ))
+      }
       label={agent.name}
       badge={{ name: agent.name, avatar: file ? dataUrl(file) : undefined }}
-      onClick={onOpen}
+      onClick={move ? undefined : onOpen}
       carry={carry}
     />
   );

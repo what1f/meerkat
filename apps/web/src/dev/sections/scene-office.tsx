@@ -38,6 +38,36 @@ export function SceneOffice() {
             <S.Seat setup="laptop" screen={screen} occupant={{ figure: '01' }} label={screen} />
           </State>
         ))}
+        <State label="moving in">
+          <S.Seat
+            setup="laptop"
+            screen="ok"
+            occupant={{ figure: '01' }}
+            moving
+            badge={{ name: 'Ana' }}
+            label="Ana"
+          />
+        </State>
+        <State label="mini, moving in">
+          <S.Seat
+            setup="mini"
+            screen="busy"
+            occupant={{ figure: '04' }}
+            moving
+            badge={{ name: 'Kai' }}
+            label="Kai"
+          />
+        </State>
+        <State label="settled, same member">
+          <S.Seat
+            setup="laptop"
+            screen="ok"
+            occupant={{ figure: '01' }}
+            arriving
+            badge={{ name: 'Ana' }}
+            label="Ana"
+          />
+        </State>
         <State label="mini, empty chair, arriving">
           <S.Seat setup="mini" screen="ok" occupant="empty-chair" arriving label="Empty" />
         </State>

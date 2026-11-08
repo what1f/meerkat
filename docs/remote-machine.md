@@ -19,7 +19,8 @@ cloud. Machine links use WebSocket; management and resources use HTTP.
 
 - Agent files (memory, skills, work files, native Harness sessions) stay on the
   Machine that owns the Agent. The Runtime does not back them up or sync them.
-  Moving Agent files between Machines requires an explicit transfer.
+  Moving Agent files between Machines requires an explicit transfer; see
+  [agent-relocation.md](agent-relocation.md).
 - Mounting Agent or Workspace files into a Harness through FUSE. Agents on a
   Machine read local files: chat content arrives in the assignment snapshot,
   attachments are downloaded into the Agent home, and further content is

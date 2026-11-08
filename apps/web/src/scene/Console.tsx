@@ -11,6 +11,8 @@ export type ConsoleProps = Omit<UIProps, 'className' | 'style'> & {
   body?: ReactNode;
   deck: ReactNode;
   drawer?: { label: string; content: ReactNode };
+  /** Notes outside the console, level with the deck: start on its left, end on its right. */
+  notes?: { start?: ReactNode; end?: ReactNode };
   reading?: boolean;
 };
 // A console mounted on the pegboard. The drawer is a tray pulled out from under it.
@@ -22,6 +24,7 @@ export function Console({
   body,
   deck,
   drawer,
+  notes,
   reading,
   ...rest
 }: ConsoleProps) {
@@ -41,6 +44,8 @@ export function Console({
         {screen}
         {body}
         <div className={css.deck}>{deck}</div>
+        {notes?.start && <div className={css.lead}>{notes.start}</div>}
+        {notes?.end && <div className={css.trail}>{notes.end}</div>}
         {drawer && (
           <button
             className={css.tab}

@@ -2,6 +2,11 @@
 import type { AgentActivity } from "./AgentActivity";
 import type { AgentAttention } from "./AgentAttention";
 import type { AgentRef } from "./AgentRef";
+import type { AgentRelocation } from "./AgentRelocation";
 import type { EnvironmentVariable } from "./EnvironmentVariable";
 
-export type Agent = { figure: string, launch_arguments: Array<string>, activity: AgentActivity, agent: AgentRef | null, name: string, role: string, bio: string, avatar_path: string, harness_id: string, model: string, thinking_level: string, auto_reaction: string, soul: string, cli_path: string, environment_variables: Array<EnvironmentVariable>, machine_id: string, created_at: number, updated_at: number, attention: AgentAttention | null, provider_agent_config_json: string, pause_reason: string | null, };
+export type Agent = { figure: string, launch_arguments: Array<string>, activity: AgentActivity, agent: AgentRef | null, name: string, role: string, bio: string, avatar_path: string, harness_id: string, model: string, thinking_level: string, auto_reaction: string, soul: string, cli_path: string, environment_variables: Array<EnvironmentVariable>, machine_id: string, created_at: number, updated_at: number, attention: AgentAttention | null, provider_agent_config_json: string, pause_reason: string | null, 
+/**
+ * Set while the Agent moves to another Machine.
+ */
+relocation: AgentRelocation | null, };

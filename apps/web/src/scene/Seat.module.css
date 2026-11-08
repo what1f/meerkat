@@ -142,6 +142,26 @@
     opacity 0.28s;
 }
 
+@keyframes nudge {
+  0%,
+  78%,
+  100% {
+    transform: none;
+  }
+
+  84% {
+    transform: translateY(-3px) rotate(-3deg);
+  }
+
+  90% {
+    transform: translateY(0) rotate(2deg);
+  }
+
+  95% {
+    transform: rotate(-1deg);
+  }
+}
+
 @keyframes drop-in {
   0% {
     opacity: 0;
@@ -228,10 +248,51 @@
   animation: jiggle 0.6s ease-in-out infinite alternate;
 }
 
+/* Moving in: the chair is pushed aside and a box of the member's things waits on the floor. */
+.root[data-moving='true'] .chair {
+  translate: 30px -2px;
+  rotate: 12deg;
+}
+
+/* The tooltip wrapper holds the box's place, as it does for the figure. */
+.root > :has(> .box) {
+  z-index: 1;
+  top: 106px;
+  left: 50px;
+  width: 58px;
+}
+
+.box {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  cursor: pointer;
+  background: var(--clear);
+  border-style: none;
+  filter: var(--furniture);
+  transform-origin: 50% 100%;
+  animation: nudge 3.2s var(--ease) infinite;
+  animation-delay: calc(var(--phase) * -3s);
+}
+
+.box > img {
+  display: block;
+  width: 100%;
+}
+
 /* Off duty the badge lies on the desk. */
 .root[data-away='true'] .badge {
   animation: none;
   transform: perspective(80px) rotateX(55deg) rotate(-16deg);
+}
+
+.root[data-moving='true'][data-away='true'] .badge {
+  z-index: 2;
+  width: 21px;
+  transform: none;
+  animation: sway 3.2s ease-in-out infinite;
+  animation-delay: calc(var(--phase) * -3s);
 }
 
 .mug {

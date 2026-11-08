@@ -10,6 +10,7 @@ mod liveness;
 mod models;
 mod proxy;
 mod records;
+mod relocation;
 mod sessions;
 
 use self::connection::run_loop;

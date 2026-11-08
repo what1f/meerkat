@@ -53,6 +53,12 @@
   margin: 0 auto;
 }
 
+/* An item spanning the whole board takes the height its content needs, so the
+   board grows with it instead of ending mid-page. */
+.root[data-layout='rails'] .items:has(> [data-span='board']) {
+  grid-auto-rows: auto;
+}
+
 /* One sleeve on an empty board, at the design's optical center. */
 .root[data-layout='rails'] .items:has(> :only-child[data-shape='badge']) {
   grid-template-columns: 192px;

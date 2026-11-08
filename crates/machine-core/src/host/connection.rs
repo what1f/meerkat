@@ -374,6 +374,34 @@ async fn dispatch(
         Some(runtime_frame::Frame::DeleteAgentFiles(request)) => {
             handle_delete_agent_files(&inner, request).await;
         }
+        Some(runtime_frame::Frame::ExportAgentFiles(request)) => {
+            spawn_task(
+                &inner,
+                super::relocation::handle_export(inner.clone(), request),
+            )
+            .await;
+        }
+        Some(runtime_frame::Frame::ReadAgentFiles(request)) => {
+            spawn_task(
+                &inner,
+                super::relocation::handle_read(inner.clone(), request),
+            )
+            .await;
+        }
+        Some(runtime_frame::Frame::WriteAgentFiles(request)) => {
+            spawn_task(
+                &inner,
+                super::relocation::handle_write(inner.clone(), request),
+            )
+            .await;
+        }
+        Some(runtime_frame::Frame::ReleaseAgentFiles(request)) => {
+            spawn_task(
+                &inner,
+                super::relocation::handle_release(inner.clone(), request),
+            )
+            .await;
+        }
         Some(runtime_frame::Frame::ExecutionEventAck(ack)) => {
             if let Some(execution) = ack.execution {
                 let key = assignment_key(execution.execution_id, execution.attempt);
@@ -423,6 +451,13 @@ async fn dispatch(
         }
     }
     Ok(())
+}
+
+async fn spawn_task(inner: &Inner, work: impl std::future::Future<Output = ()> + Send + 'static) {
+    let task = tokio::spawn(work);
+    let mut tasks = inner.assignment_tasks.lock().await;
+    tasks.retain(|task| !task.is_finished());
+    tasks.push(task);
 }
 
 pub(super) async fn send_frame(inner: &Inner, frame: MachineFrame) {

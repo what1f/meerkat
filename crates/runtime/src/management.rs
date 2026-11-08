@@ -449,14 +449,34 @@ impl RuntimeApplication {
         if let Some(value) = request.cli_path {
             record.cli_path = nonempty(value);
         }
-        if let Some(value) = request.machine_id {
-            record.machine_id = value;
+        // A new Machine is not written here: the move carries the Agent home
+        // first and places the Agent when its files have arrived.
+        let relocation = runtime
+            .database()
+            .agent_relocation(&workspace_id, &agent_id)
+            .await?;
+        let back_to_source = request.machine_id.as_ref() == Some(&old_record.machine_id);
+        let mut relocate_to = request
+            .machine_id
+            .filter(|machine| *machine != old_record.machine_id);
+        let cancel_relocation = back_to_source && relocation.is_some();
+        let without_files = request.relocate_without_files == Some(true);
+        if without_files && relocate_to.is_none() && !cancel_relocation {
+            relocate_to = relocation
+                .as_ref()
+                .map(|relocation| relocation.target_machine_id.clone());
         }
         if let Some(value) = request.provider_agent_config_json {
             record.provider_agent_config = parse_json(&value)?;
         }
         let _registration = self.inner.machine_registration.lock().await;
         self.validate_placement(&record).await?;
+        if let Some(target) = &relocate_to {
+            let mut placed = record.clone();
+            placed.machine_id = target.clone();
+            placed.cli_path = None;
+            self.validate_placement(&placed).await?;
+        }
         let avatar_update = request
             .avatar
             .as_ref()
@@ -492,7 +512,6 @@ impl RuntimeApplication {
             .unwrap_or_default();
         let resume = old_record.harness_id != record.harness_id
             || old_record.model != record.model
-            || old_record.machine_id != record.machine_id
             || old_record.thinking != record.thinking
             || old_record.cli_path != record.cli_path
             || old_record.launch_arguments != record.launch_arguments
@@ -510,6 +529,41 @@ impl RuntimeApplication {
                     .map(|avatar| &avatar.avatar),
             )
             .await;
+        if result.is_ok() && (relocate_to.is_some() || cancel_relocation) {
+            let database = runtime.database();
+            match &relocate_to {
+                Some(target) => {
+                    let relocation = database
+                        .request_agent_relocation(
+                            &workspace_id,
+                            &agent_id,
+                            target,
+                            without_files,
+                            now_millis(),
+                        )
+                        .await?;
+                    if without_files {
+                        // Nothing to carry, so the Agent is placed before this returns.
+                        self.finish_relocation(&database, &relocation).await?;
+                    } else {
+                        self.drive_relocation(workspace_id.clone(), agent_id.clone());
+                    }
+                }
+                None => {
+                    database
+                        .cancel_agent_relocation(&workspace_id, &agent_id)
+                        .await?;
+                    self.drop_relocation_archive(&workspace_id, &agent_id);
+                    database.wake();
+                }
+            }
+            self.emit_management(
+                ManagementEventKind::AgentUpdated,
+                &workspace_id,
+                Some(&agent_id),
+                now_millis(),
+            );
+        }
         if result.is_ok() && resume {
             runtime
                 .database()
@@ -522,6 +576,15 @@ impl RuntimeApplication {
                 now_millis(),
             );
         }
+        let result = match result {
+            Ok(_) if without_files => {
+                runtime
+                    .database()
+                    .agent_record(&workspace_id, &agent_id)
+                    .await
+            }
+            other => other,
+        };
         match (result, avatar_update) {
             (Ok(record), Some(avatar)) => {
                 avatar.finish();
@@ -1039,8 +1102,16 @@ async fn agent_dto_with_activity(
     let pause_reason = storage
         .agent_pause_reason(&record.workspace_id, &record.agent_id)
         .await?;
+    let relocation = storage
+        .agent_relocation(&record.workspace_id, &record.agent_id)
+        .await?
+        .map(|relocation| meerkat_protocol::AgentRelocation {
+            machine_id: relocation.target_machine_id,
+            failed: relocation.state == meerkat_storage::RelocationState::Failed,
+        });
     Ok(ProtocolAgent {
         pause_reason,
+        relocation,
         figure: record.figure,
         launch_arguments: record.launch_arguments,
         activity: if busy {

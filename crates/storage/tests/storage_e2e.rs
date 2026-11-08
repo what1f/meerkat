@@ -387,7 +387,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
     );
     assert!(
         storage
-            .complete_agent_file_deletion(&workspace_a, &departed_id)
+            .complete_agent_file_deletion("fixture-machine", &workspace_a, &departed_id)
             .unwrap()
     );
     assert!(

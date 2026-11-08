@@ -55,6 +55,30 @@
   animation-name: draw-left;
 }
 
+/* After: the beside arrow turned round, running right from the note. */
+.root[data-arrow='after'] {
+  grid-template-columns: auto auto;
+  align-items: center;
+  justify-content: end;
+  width: auto;
+}
+
+[data-arrow='after'] .text {
+  grid-row: 1;
+  margin: -22px 2px 0 0;
+  white-space: pre;
+}
+
+[data-arrow='after'] .arrow {
+  grid-row: 1;
+  width: 90px;
+  height: 48px;
+  margin: 0;
+  mask-image: url('../assets/scribble/beside.svg');
+  transform: scaleX(-1);
+  animation-name: draw-left;
+}
+
 /* Up: the arrow rises from above the note to what hangs over it. */
 .root[data-arrow='up'] {
   justify-items: center;

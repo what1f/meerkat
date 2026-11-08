@@ -9,6 +9,7 @@ export type { AgentFirstReply } from './AgentFirstReply';
 export type { AgentFirstReplyState } from './AgentFirstReplyState';
 export type { AgentOnboardingState } from './AgentOnboardingState';
 export type { AgentRef } from './AgentRef';
+export type { AgentRelocation } from './AgentRelocation';
 export type { AttemptFailure } from './AttemptFailure';
 export type { AttentionMode } from './AttentionMode';
 export type { CancelAttemptRequest } from './CancelAttemptRequest';

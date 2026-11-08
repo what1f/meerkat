@@ -27,6 +27,7 @@ export function MemberStage({
   status,
   onCreated,
   autoOpen,
+  guide,
   onResume,
   onDelete,
 }: {
@@ -38,6 +39,8 @@ export function MemberStage({
   onCreated: (id: string) => void;
   /** Opens the member as soon as they have joined, instead of offering to. */
   autoOpen?: boolean;
+  /** Hand-drawn notes on what to set and when to add. */
+  guide?: boolean;
   onResume: () => void;
   onDelete: () => void;
 }) {
@@ -95,6 +98,7 @@ export function MemberStage({
         onReading={setReading}
         canCreate={canCreate}
         autoOpen={autoOpen}
+        guide={guide}
         onCommit={() => void commit()}
         onResume={onResume}
         onDelete={onDelete}

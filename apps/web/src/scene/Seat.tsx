@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties } from 'react';
+import { useEffect, type CSSProperties, type ReactElement, type ReactNode } from 'react';
 import type { UIProps } from '../design/index';
 import { Tooltip } from '../design';
 import { Figure } from './Figure';
@@ -13,6 +13,7 @@ import plant from '../assets/office/props/plant.webp';
 import mugArt from '../assets/office/props/mug.webp';
 import badgeArt from '../assets/office/props/badge.webp';
 import confetti from '../assets/office/props/confetti.webp';
+import movingBox from '../assets/office/props/moving-box.webp';
 import css from './Seat.module.css';
 import screenCss from './SeatScreen.module.css';
 import { mainScreen, moves, MoodProps, sideScreen, type SeatScreen } from './SeatMood';
@@ -22,6 +23,9 @@ export type SeatProps = Omit<UIProps, 'className' | 'style'> & {
   screen: SeatScreen;
   occupant: { figure: string; pack?: FigurePack; seed?: string } | 'empty-chair';
   arriving?: boolean;
+  // Moving in from another office: the chair waits and the member's things sit boxed on the floor.
+  moving?: boolean;
+  wrapBox?: (box: ReactElement) => ReactNode; // e.g. a menu on the box; a tooltip by default
   // `hero` is the desk at 1.35 times, for the first-run steps.
   size?: 'seat' | 'hero';
   label: string;
@@ -40,9 +44,11 @@ const phaseOf = (seed: string) =>
   ([...seed].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 11) % 997) / 997;
 export function Seat({
   setup,
-  screen,
+  screen: requested,
   occupant,
   arriving,
+  moving,
+  wrapBox = (box) => <Tooltip label={label}>{box}</Tooltip>,
   size = 'seat',
   label,
   badge,
@@ -50,6 +56,7 @@ export function Seat({
   carry,
   ...rest
 }: SeatProps) {
+  const screen = moving ? 'boot' : requested;
   const desk = desks[setup];
   const k = seatWidth / desk.width;
   const top = seatHeight - deskBottom - desk.height * k;
@@ -79,8 +86,9 @@ export function Seat({
       </span>
     );
   });
-  const figure = occupant === 'empty-chair' ? null : occupant.figure;
+  const figure = occupant === 'empty-chair' || moving ? null : occupant.figure;
   const { pack, seed } = occupant === 'empty-chair' ? {} : occupant;
+  const settled = badge && !moving;
   const carried = figure ? figureFrame(figure, 'carry', sitter, pack, seed) : null;
   const who = {
     className: css.who,
@@ -126,6 +134,7 @@ export function Seat({
       data-setup={setup}
       data-screen={screen}
       data-arriving={arriving}
+      data-moving={moving}
       data-size={size}
       data-away={!figure}
       style={{ '--phase': phase } as CSSProperties}
@@ -133,14 +142,14 @@ export function Seat({
       <span className={css.floor} />
       {screens}
       <img className={css.desk} src={setup === 'laptop' ? laptop : mini} alt="" />
-      {badge && (
+      {settled && (
         <span className={css.mug} style={mug} aria-hidden="true">
           <img src={mugArt} alt="" />
           <i />
           <i />
         </span>
       )}
-      {badge && desk.plant && (
+      {settled && desk.plant && (
         <img
           className={css.plant}
           style={{ left: desk.plant[0] * k, top: top + desk.plant[1] * k }}
@@ -148,13 +157,21 @@ export function Seat({
           alt=""
         />
       )}
+      {moving &&
+        wrapBox(
+          <button className={css.box} type="button" aria-label={label} onClick={onClick}>
+            <img src={movingBox} alt="" />
+          </button>,
+        )}
       {badge && (
         <span
           className={css.badge}
           style={
-            figure
-              ? { left: main.left - 17, top: main.top - 3 }
-              : { left: mug.left - 30, top: mug.top - 4 }
+            moving
+              ? { left: 68, top: 122 }
+              : figure
+                ? { left: main.left - 17, top: main.top - 3 }
+                : { left: mug.left - 30, top: mug.top - 4 }
           }
           aria-hidden="true"
         >
@@ -175,7 +192,7 @@ export function Seat({
           )}
         </Tooltip>
       ) : (
-        <img className={css.chair} src={badge ? jacketChair : chair} alt={label} />
+        <img className={css.chair} src={settled ? jacketChair : chair} alt={moving ? '' : label} />
       )}
       {figure && <MoodProps screen={screen} main={main} />}
     </div>

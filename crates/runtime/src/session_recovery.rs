@@ -81,6 +81,9 @@ pub(crate) fn should_start_fresh(
 /// nothing to add beyond the unread list. Messages already shown in the
 /// unread snapshot are left out; when over budget, whole oldest messages drop
 /// first so every line that remains is complete.
+/// First run after the Agent moved to another Machine.
+pub(crate) const MOVED_NOTICE: &str = "你刚搬到了另一台电脑，记忆和工作文件已经带过来。之前记下的绝对路径、本机工具和登录状态可能不一样了，用到之前先核实。";
+
 pub(crate) fn render_recovery(
     conversations: &[RecentConversationView],
     snapshot: &SnapshotView,

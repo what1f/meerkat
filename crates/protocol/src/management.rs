@@ -102,6 +102,17 @@ pub struct Agent {
     pub attention: Option<AgentAttention>,
     pub provider_agent_config_json: String,
     pub pause_reason: Option<String>,
+    /// Set while the Agent moves to another Machine.
+    pub relocation: Option<AgentRelocation>,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentRelocation {
+    /// Where the Agent is going; `Agent::machine_id` stays the source until it arrives.
+    pub machine_id: String,
+    /// The move stopped and the Agent keeps working at the source.
+    pub failed: bool,
 }
 
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
@@ -575,6 +586,8 @@ pub struct UpdateAgentRequest {
     pub cli_path: Option<String>,
     pub environment_variables: Option<EnvironmentVariableSet>,
     pub machine_id: Option<String>,
+    /// With `machine_id`: move without the Agent's files, for a source that is offline.
+    pub relocate_without_files: Option<bool>,
     pub avatar: Option<AgentAvatarUpload>,
     pub attention: Option<AgentAttention>,
     pub provider_agent_config_json: Option<String>,

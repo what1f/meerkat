@@ -116,6 +116,57 @@ pub struct DeleteAgentFilesResult {
     pub error_message: String,
 }
 
+/// Pack the Agent home into an archive the Runtime then reads in chunks.
+/// Any earlier archive for the Agent is replaced.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
+pub struct ExportAgentFiles {
+    pub request_id: String,
+    pub agent: Option<AgentRef>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
+pub struct ReadAgentFiles {
+    pub request_id: String,
+    pub agent: Option<AgentRef>,
+    pub offset: u64,
+    pub length: u64,
+}
+
+/// One chunk of an archive for this Machine. The chunk marked `eof` checks
+/// `size` and `sha256` and replaces the Agent home with the archive contents.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
+pub struct WriteAgentFiles {
+    pub request_id: String,
+    pub agent: Option<AgentRef>,
+    pub offset: u64,
+    #[serde(with = "crate::management::base64_bytes")]
+    pub bytes: Vec<u8>,
+    pub eof: bool,
+    pub size: u64,
+    pub sha256: String,
+}
+
+/// Drop any archive kept for the Agent, sent or received.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
+pub struct ReleaseAgentFiles {
+    pub request_id: String,
+    pub agent: Option<AgentRef>,
+}
+
+/// Answer to every Agent file request; `size`, `sha256` and `bytes` are set
+/// by export and read.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
+pub struct AgentFilesResult {
+    pub request_id: String,
+    pub success: bool,
+    pub error_code: String,
+    pub error_message: String,
+    pub size: u64,
+    pub sha256: String,
+    #[serde(with = "crate::management::base64_bytes")]
+    pub bytes: Vec<u8>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
 pub struct DeliverSteer {
     pub execution: Option<ExecutionRef>,
@@ -306,6 +357,7 @@ pub enum MachinePayload {
     ResourceTransferResult(ResourceTransferResult),
     InventoryChanged(InventoryChanged),
     DeleteAgentFilesResult(DeleteAgentFilesResult),
+    AgentFilesResult(AgentFilesResult),
     TestHarnessResult(TestHarnessResult),
     ListModelsResult(ListModelsResult),
 }
@@ -323,6 +375,10 @@ pub enum RuntimePayload {
     ExecutionCommitted(ExecutionCommitted),
     Shutdown(Shutdown),
     DeleteAgentFiles(DeleteAgentFiles),
+    ExportAgentFiles(ExportAgentFiles),
+    ReadAgentFiles(ReadAgentFiles),
+    WriteAgentFiles(WriteAgentFiles),
+    ReleaseAgentFiles(ReleaseAgentFiles),
     TestHarness(TestHarness),
     ListModels(ListModels),
 }

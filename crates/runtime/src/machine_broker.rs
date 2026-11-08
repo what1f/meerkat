@@ -27,6 +27,8 @@ struct BrokerInner {
     pending_harness_tests: StdMutex<BTreeMap<String, PendingHarnessTest>>,
     pending_model_lists: StdMutex<BTreeMap<String, PendingModelList>>,
     pending_agent_deletions: StdMutex<BTreeMap<String, oneshot::Sender<Result<(), String>>>>,
+    pending_agent_files:
+        StdMutex<BTreeMap<String, oneshot::Sender<meerkat_protocol::AgentFilesResult>>>,
 }
 
 #[derive(Clone)]
@@ -106,6 +108,7 @@ impl MachineBroker {
                 pending_harness_tests: StdMutex::new(BTreeMap::new()),
                 pending_model_lists: StdMutex::new(BTreeMap::new()),
                 pending_agent_deletions: StdMutex::new(BTreeMap::new()),
+                pending_agent_files: StdMutex::new(BTreeMap::new()),
             }),
         }
     }
@@ -1089,6 +1092,17 @@ impl MachineBroker {
                 }
             }
             machine_frame::Frame::ResourceTransferResult(_) => {}
+            machine_frame::Frame::AgentFilesResult(result) => {
+                if let Some(sender) = self
+                    .inner
+                    .pending_agent_files
+                    .lock()
+                    .map_err(|_| RuntimeError::RuntimeLockPoisoned)?
+                    .remove(&result.request_id)
+                {
+                    let _ = sender.send(result);
+                }
+            }
             machine_frame::Frame::DeleteAgentFilesResult(result) => {
                 if let Some(sender) = self
                     .inner
@@ -1190,10 +1204,68 @@ impl MachineBroker {
         };
         if result.is_ok() {
             self.database()?
-                .complete_agent_file_deletion(workspace_id, agent_id)
+                .complete_agent_file_deletion(machine_id, workspace_id, agent_id)
                 .await?;
         }
         result
+    }
+
+    /// Sends one Agent file request and waits for its answer. An error means
+    /// the Machine could not be reached or did not answer in time; a refusal
+    /// comes back as an unsuccessful result.
+    pub(crate) async fn agent_files_request(
+        &self,
+        machine_id: &str,
+        timeout: std::time::Duration,
+        frame: impl FnOnce(String) -> runtime_frame::Frame,
+    ) -> Result<meerkat_protocol::AgentFilesResult, RuntimeError> {
+        let connection = self
+            .inner
+            .connections
+            .read()
+            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?
+            .get(machine_id)
+            .cloned()
+            .ok_or_else(|| RuntimeError::Application("machine disconnected".into()))?;
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        let request_id = format!(
+            "agent-files-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        );
+        let (sender, receiver) = oneshot::channel();
+        self.inner
+            .pending_agent_files
+            .lock()
+            .map_err(|_| RuntimeError::RuntimeLockPoisoned)?
+            .insert(request_id.clone(), sender);
+        let forget = || {
+            self.inner
+                .pending_agent_files
+                .lock()
+                .ok()
+                .and_then(|mut values| values.remove(&request_id));
+        };
+        if let Err(error) = connection
+            .sender
+            .send(Ok(RuntimeFrame {
+                protocol_version: meerkat_protocol::PROTOCOL_VERSION,
+                frame: Some(frame(request_id.clone())),
+            }))
+            .await
+        {
+            forget();
+            return Err(RuntimeError::Application(error.to_string()));
+        }
+        match tokio::time::timeout(timeout, receiver).await {
+            Ok(Ok(result)) => Ok(result),
+            _ => {
+                forget();
+                Err(RuntimeError::Application(
+                    "agent files request timed out".into(),
+                ))
+            }
+        }
     }
 
     pub(crate) async fn retry_agent_file_deletions(

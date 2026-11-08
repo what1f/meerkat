@@ -69,6 +69,14 @@ async fn s13_1_placement_requires_registered_non_revoked_machine_and_reported_ha
     let mut moved = original.clone();
     moved.machine_id = destination.id.clone();
     rig.management().update_agent(moved, None).await?;
+    // The move carries the Agent home first; the Machine is released once it lands.
+    timeout(Duration::from_secs(20), async {
+        while agent.view().await?.machine_id != destination.id {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    })
+    .await??;
     rig.management().revoke_machine(&machine).await?;
     let revoked = AgentDraft {
         id: "clark".into(),
@@ -133,6 +141,76 @@ async fn s13_2_each_agent_runs_only_on_its_own_machine() -> Result<()> {
         assert!(meerkat_machine_core::agent_directory(&root, "team", present)?.exists());
         assert!(!meerkat_machine_core::agent_directory(&root, "team", absent)?.exists());
     }
+    drop(second);
+    rig.close().await
+}
+
+#[tokio::test]
+async fn agent_moves_to_another_machine_with_its_home() -> Result<()> {
+    let rig = SystemRig::start(config()).await?;
+    let first = rig
+        .management()
+        .get_machine_catalog(None)
+        .await?
+        .remove(0)
+        .id;
+    let second = rig.add_machine().await?;
+    let team = rig.workspace("team").await?;
+    let agent = team
+        .agent("bruce")
+        .machine(&first)
+        .harness(Script::reply("hi"))
+        .create()
+        .await?;
+    team.direct_message(&agent, "alice", "one").await?;
+    rig.settle().await?;
+    let home = |root: &std::path::Path| {
+        meerkat_machine_core::agent_directory(&root.join("workspaces"), "team", "bruce")
+    };
+    let old_home = home(rig.machine_home())?;
+    std::fs::create_dir_all(old_home.join("memory"))?;
+    std::fs::write(
+        old_home.join("memory/MEMORY.md"),
+        "- Alice takes her tea green\n",
+    )?;
+    std::fs::create_dir_all(old_home.join("notes/drafts"))?;
+    std::fs::write(old_home.join("notes/drafts/plan.md"), "ship friday")?;
+    std::fs::create_dir_all(old_home.join("resources"))?;
+    std::fs::write(old_home.join("resources/cache.bin"), [1, 2, 3])?;
+
+    let mut moved = agent.view().await?;
+    moved.machine_id = second.id.clone();
+    rig.management().update_agent(moved, None).await?;
+    timeout(Duration::from_secs(20), async {
+        while agent.view().await?.machine_id != second.id || old_home.exists() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    })
+    .await??;
+    let new_home = home(second.home.path())?;
+    assert_eq!(
+        std::fs::read_to_string(new_home.join("memory/MEMORY.md"))?,
+        "- Alice takes her tea green\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(new_home.join("notes/drafts/plan.md"))?,
+        "ship friday"
+    );
+    assert!(!new_home.join("resources").exists());
+
+    team.direct_message(&agent, "alice", "two").await?;
+    rig.settle().await?;
+    assert_eq!(
+        team.dm_transcript(&agent, "alice"),
+        ["one", "hi", "two", "hi"]
+    );
+    let first_run = agent.harness_inputs()?.pop().unwrap_or_default();
+    assert!(
+        first_run.contains("Alice takes her tea green"),
+        "{first_run}"
+    );
+    assert!(first_run.contains("另一台电脑"), "{first_run}");
     drop(second);
     rig.close().await
 }
@@ -352,10 +430,11 @@ async fn placement_changes_invalidate_tokens_even_after_moving_back() -> Result<
         )?
         .success
     );
+    // Both Machines are offline, so the Agent moves without its files.
     for (offset, machine) in [&second_id, &original.machine_id].into_iter().enumerate() {
-        let mut moved = agent.view().await?;
-        moved.machine_id = machine.clone();
-        rig.management().update_agent(moved, None).await?;
+        rig.management()
+            .move_agent_without_files("team", "bruce", machine)
+            .await?;
         assert_eq!(generation()?, initial + offset as i64 + 1);
         assert_eq!(download().send().await?.status(), 403);
         let response = invoke(&mut link, capability()).await?;
@@ -502,10 +581,13 @@ async fn stale_unacknowledged_progress_is_discarded_without_disconnect_after_pla
     .await??;
     let original = agent.view().await?;
     rig.stop_machine()?;
-    let mut moved = original.clone();
-    moved.machine_id = second.id.clone();
-    rig.management().update_agent(moved, None).await?;
-    rig.management().update_agent(original, None).await?;
+    let management = rig.management();
+    management
+        .move_agent_without_files("team", "bruce", &second.id)
+        .await?;
+    management
+        .move_agent_without_files("team", "bruce", &original.machine_id)
+        .await?;
     rig.proxy.as_ref().unwrap().restore();
     // A new listener replaces the old proxy target. Use direct local discovery
     // for the next Machine, retaining the same paired home and durable outbox.

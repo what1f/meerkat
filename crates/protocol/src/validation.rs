@@ -55,6 +55,22 @@ pub fn validate_runtime_frame(frame: &RuntimeFrame) -> Result<(), Status> {
             validate_request_id(&request.request_id)?;
             validate_agent_ref(request.agent.as_ref())
         }
+        Some(runtime_frame::Frame::ExportAgentFiles(request)) => {
+            validate_request_id(&request.request_id)?;
+            validate_agent_ref(request.agent.as_ref())
+        }
+        Some(runtime_frame::Frame::ReadAgentFiles(request)) => {
+            validate_request_id(&request.request_id)?;
+            validate_agent_ref(request.agent.as_ref())
+        }
+        Some(runtime_frame::Frame::WriteAgentFiles(request)) => {
+            validate_request_id(&request.request_id)?;
+            validate_agent_ref(request.agent.as_ref())
+        }
+        Some(runtime_frame::Frame::ReleaseAgentFiles(request)) => {
+            validate_request_id(&request.request_id)?;
+            validate_agent_ref(request.agent.as_ref())
+        }
         Some(_) => Ok(()),
         None => Err(Status::invalid_argument("unknown_runtime_frame")),
     }
@@ -102,6 +118,9 @@ impl MachineFrameValidator {
                 validate_request_id(&result.request_id)
             }
             Some(machine_frame::Frame::DeleteAgentFilesResult(result)) => {
+                validate_request_id(&result.request_id)
+            }
+            Some(machine_frame::Frame::AgentFilesResult(result)) => {
                 validate_request_id(&result.request_id)
             }
             Some(_) => Ok(()),

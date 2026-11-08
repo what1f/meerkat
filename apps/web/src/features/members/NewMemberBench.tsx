@@ -19,6 +19,7 @@ export function NewMemberBench({
       id={null}
       channel={channel}
       autoOpen
+      guide
       onCreated={onJoined}
       onResume={() => undefined}
       onDelete={() => undefined}

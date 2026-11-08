@@ -45,6 +45,7 @@ export function pick(agent: DTO.Agent): Draft {
 }
 export const emptyUpdate = (): Omit<DTO.UpdateAgentRequest, 'agent'> => ({
   request_id: crypto.randomUUID(),
+  relocate_without_files: null,
   figure: null,
   launch_arguments: null,
   name: null,

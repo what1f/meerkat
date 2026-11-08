@@ -71,6 +71,7 @@ fn agent(input: wire::CreateAgentRequest) -> wire::Agent {
         figure: Default::default(),
         launch_arguments: Default::default(),
         pause_reason: None,
+        relocation: None,
         agent: input.agent,
         name: input.name,
         role: input.role,

@@ -12,6 +12,8 @@ import { MachineMenu, MachineTitle } from './MachineMenu';
 import { AddMachineDialog, usePairing } from './AddMachineDialog';
 import { RemoveMachineDialog } from './RemoveMachineDialog';
 import { LoadState } from './LoadState';
+import { useMoveFailures } from './useMoveFailures';
+import { move } from './move';
 import './messages';
 import css from './OfficePage.module.css';
 
@@ -26,27 +28,6 @@ const rowStatus: Partial<Record<DTO.ObservedState, Status>> = {
   starting: 'busy',
   error: 'err',
 };
-const move = (agent: DTO.AgentRef, machine_id: string): DTO.UpdateAgentRequest => ({
-  request_id: 'move_agent',
-  agent,
-  machine_id,
-  figure: null,
-  launch_arguments: null,
-  name: null,
-  role: null,
-  bio: null,
-  harness_id: null,
-  model: null,
-  thinking_level: null,
-  auto_reaction: null,
-  soul: null,
-  cli_path: null,
-  environment_variables: null,
-  avatar: null,
-  attention: null,
-  provider_agent_config_json: null,
-  provider_agent_secrets_json: null,
-});
 
 export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePageProps) {
   const t = useT();
@@ -73,6 +54,10 @@ export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePa
       onError: () => toast({ message: t('office.moveFailed') }),
     });
   });
+  useMoveFailures(agents, (agent, ref) => {
+    toast({ message: t('office.moveFailed') });
+    update.mutate(move(ref, agent.machine_id));
+  });
   const bar = {};
   // Members that failed to load must not read as an empty office.
   const failed = [catalog, ...(ref ? [crew] : [])].filter((q) => q.isError && !q.data);
@@ -85,11 +70,15 @@ export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePa
     );
   const machines = catalog.data.machines.filter((m) => m.registered && m.revoked_at === null);
   // Until the catalog refetches, a member who was just carried stays where they were dropped.
-  const moving = update.isPending ? update.variables : undefined;
+  const pending = update.isPending ? update.variables : undefined;
+  // A member on the move already sits at the new computer, boxed up until the files arrive.
   const placeOf = (agent: DTO.Agent) =>
-    moving && moving.agent?.agent_id === agent.agent?.agent_id
-      ? moving.machine_id
-      : agent.machine_id;
+    (pending && pending.agent?.agent_id === agent.agent?.agent_id
+      ? pending.machine_id
+      : undefined) ??
+    (agent.relocation && !agent.relocation.failed ? agent.relocation.machine_id : agent.machine_id);
+  const online = (id: string) =>
+    machines.some((m) => m.machine_id === id && m.observed_state === 'running');
   const crewOf = (id: string) => (agents ?? []).filter((agent) => placeOf(agent) === id);
   const fresh = pairing.known && machines.find((m) => !pairing.known!.has(m.machine_id));
   const nameOf = (m: DTO.MachineCatalogItem) =>
@@ -147,6 +136,16 @@ export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePa
                   // One move at a time, so a failed move always lands back where it started.
                   carry={update.isPending ? undefined : seatHandle(member)}
                   onOpen={() => navigate({ kind: 'member', id: member, from: 'office' })}
+                  move={
+                    agent.agent && placeOf(agent) !== agent.machine_id
+                      ? {
+                          onCancel: () => update.mutate(move(agent.agent!, agent.machine_id)),
+                          onWithoutFiles: online(agent.machine_id)
+                            ? undefined
+                            : () => update.mutate(move(agent.agent!, id, true)),
+                        }
+                      : undefined
+                  }
                 />
               );
             })}

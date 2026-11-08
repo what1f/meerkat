@@ -76,6 +76,29 @@
   margin-top: 26px;
 }
 
+/* Notes on the board beside the console, level with the deck's keys. */
+.lead,
+.trail {
+  position: absolute;
+  bottom: 58px;
+  translate: 0 50%;
+}
+
+.lead {
+  right: calc(100% + var(--sp-sm));
+}
+
+/* A narrow window leaves no room on the left. */
+@media (width < 1200px) {
+  .lead {
+    display: none;
+  }
+}
+
+.trail {
+  left: calc(100% + var(--sp-sm));
+}
+
 .tab {
   position: absolute;
   bottom: -1px;
@@ -131,7 +154,7 @@
   transition: opacity var(--d-base);
 }
 
-.root[data-reading='true'] :is(.figure, .sticker, .tab, .drawer),
+.root[data-reading='true'] :is(.figure, .sticker, .tab, .drawer, .lead, .trail),
 .root[data-reading='true'] .body > :not(.deck, [data-reading-surface]) {
   opacity: 0.35;
 }

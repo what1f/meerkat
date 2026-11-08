@@ -4,4 +4,8 @@ import type { AgentAvatarUpload } from "./AgentAvatarUpload";
 import type { AgentRef } from "./AgentRef";
 import type { EnvironmentVariableSet } from "./EnvironmentVariableSet";
 
-export type UpdateAgentRequest = { figure: string | null, launch_arguments: Array<string> | null, request_id: string, agent: AgentRef | null, name: string | null, role: string | null, bio: string | null, harness_id: string | null, model: string | null, thinking_level: string | null, auto_reaction: string | null, soul: string | null, cli_path: string | null, environment_variables: EnvironmentVariableSet | null, machine_id: string | null, avatar: AgentAvatarUpload | null, attention: AgentAttention | null, provider_agent_config_json: string | null, provider_agent_secrets_json: string | null, };
+export type UpdateAgentRequest = { figure: string | null, launch_arguments: Array<string> | null, request_id: string, agent: AgentRef | null, name: string | null, role: string | null, bio: string | null, harness_id: string | null, model: string | null, thinking_level: string | null, auto_reaction: string | null, soul: string | null, cli_path: string | null, environment_variables: EnvironmentVariableSet | null, machine_id: string | null, 
+/**
+ * With `machine_id`: move without the Agent's files, for a source that is offline.
+ */
+relocate_without_files: boolean | null, avatar: AgentAvatarUpload | null, attention: AgentAttention | null, provider_agent_config_json: string | null, provider_agent_secrets_json: string | null, };

@@ -123,6 +123,8 @@ defineHarness({
       request.system_prompt,
     ];
     const env = { ...paths.env, ENABLE_TOOL_SEARCH: request.config.environment.ENABLE_TOOL_SEARCH ?? "true" };
+    // memory/ in the Agent home is the only long-term store, so it moves with the Agent.
+    env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = request.config.environment.CLAUDE_CODE_DISABLE_AUTO_MEMORY ?? "1";
     if (request.config.thinking_level === "off")
       env.CLAUDE_CODE_DISABLE_THINKING = "1";
     else if (request.config.thinking_level) {

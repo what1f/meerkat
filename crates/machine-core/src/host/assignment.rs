@@ -51,6 +51,7 @@ pub(super) async fn handle_delete_agent_files(
             super::liveness::wait_for_stop(terminated, inner.liveness.cancel_grace).await;
         }
         super::sessions::close(inner, &key).await;
+        super::relocation::release(&inner.root, agent)?;
         let directory = agent_directory(&inner.root, &agent.workspace_id, &agent.agent_id)?;
         match std::fs::remove_dir_all(&directory) {
             Ok(()) => Ok(()),
@@ -629,7 +630,7 @@ fn assignment_fingerprint(assign: &AssignExecution) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn error_code(error: &MachineError) -> &'static str {
+pub(super) fn error_code(error: &MachineError) -> &'static str {
     match error {
         MachineError::InvalidAssignment(value) if value == "agent_busy" => "agent_busy",
         MachineError::InvalidAssignment(value) if value == "duplicate_assignment" => {
@@ -646,7 +647,7 @@ fn error_code(error: &MachineError) -> &'static str {
     }
 }
 
-fn public_error(error: &MachineError) -> String {
+pub(super) fn public_error(error: &MachineError) -> String {
     match error {
         MachineError::InvalidAssignment(value) => value.clone(),
         MachineError::PathOutsideAgentHome => "Content file is outside the Agent directory".into(),

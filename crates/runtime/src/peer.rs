@@ -204,6 +204,7 @@ impl meerkat_protocol::MachinePeer for RuntimePeerAdapter {
                 );
             })
             .map_err(status)?;
+        self.application.resume_relocations();
         self.application.spawn_background(async move {
             if let Err(error) = cleanup_broker
                 .retry_agent_file_deletions(&cleanup_machine_id)

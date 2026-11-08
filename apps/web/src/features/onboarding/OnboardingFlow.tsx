@@ -32,7 +32,7 @@ export function OnboardingFlow({
     <div className={css.root} data-testid="onboarding" data-step={step}>
       {isDesktopShell() && <div aria-hidden="true" data-desktop-safe-area data-tauri-drag-region />}
       <Board layout="rails" holes={step === 0 || step === last ? 'fade' : 'on'}>
-        <div className={css.column}>
+        <div className={css.column} data-span="board">
           {step > 0 && <Dashes total={last} current={step - 1} />}
           <div className={css.body} key={step}>
             {step === 0 && <WelcomeStep flow={flow} />}

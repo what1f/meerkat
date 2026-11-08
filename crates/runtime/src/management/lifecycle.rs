@@ -505,6 +505,8 @@ impl<'a> AgentLifecycle<'a> {
             record.avatar.as_deref(),
         );
         runtime.remove_agent(&workspace_id, &agent_id).await;
+        self.application
+            .drop_relocation_archive(&workspace_id, &agent_id);
         self.application.emit_management(
             ManagementEventKind::AgentDeleted,
             &workspace_id,

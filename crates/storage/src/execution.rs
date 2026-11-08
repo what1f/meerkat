@@ -497,7 +497,7 @@ impl Storage {
             return Err(StorageError::Invalid("active execution".into()));
         }
         let paused: bool = t.query_row(
-            "SELECT pause_reason IS NOT NULL FROM agents WHERE workspace_id=?1 AND agent_id=?2",
+            "SELECT pause_reason IS NOT NULL OR EXISTS(SELECT 1 FROM agent_relocations r WHERE r.workspace_id=?1 AND r.agent_id=?2 AND r.state!='failed') FROM agents WHERE workspace_id=?1 AND agent_id=?2",
             params![w.as_str(), a.as_str()],
             |r| r.get(0),
         )?;

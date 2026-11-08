@@ -47,6 +47,9 @@ pub(crate) struct ApplicationInner {
     scheduler_started: AtomicBool,
     background_tasks: StdMutex<tokio::task::JoinSet<()>>,
     shutdown_timeout: Duration,
+    /// Agent homes held between leaving one Machine and reaching the next.
+    pub(crate) relocation_root: std::path::PathBuf,
+    pub(crate) relocations: StdMutex<std::collections::BTreeSet<(WorkspaceId, AgentId)>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -124,6 +127,7 @@ impl RuntimeApplication {
             .parent()
             .unwrap_or_else(|| std::path::Path::new("."))
             .join("resources");
+        let relocation_root = resource_root.with_file_name("relocations");
         let runtime = Arc::new(
             tokio::task::spawn_blocking(move || Runtime::new(config))
                 .await
@@ -154,6 +158,8 @@ impl RuntimeApplication {
                 scheduler_started: AtomicBool::new(false),
                 background_tasks: StdMutex::new(tokio::task::JoinSet::new()),
                 shutdown_timeout,
+                relocation_root,
+                relocations: StdMutex::new(Default::default()),
             }),
         };
         application
@@ -169,6 +175,7 @@ impl RuntimeApplication {
         let runtime = self.runtime()?;
         self.start_scheduler()?;
         self.inner.state.store(APP_RUNNING, Ordering::Release);
+        self.resume_relocations();
         for workspace in runtime.database().list_workspace_records().await? {
             if workspace.active {
                 match runtime.resume_workspace(&workspace.id, now_millis()).await {

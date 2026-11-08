@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Button, Callout, Icon, type Status } from '../../design';
-import { Console, ConsoleKey, SoulSlot, Sticker } from '../../scene';
+import { Console, ConsoleKey, Scribble, SoulSlot, Sticker } from '../../scene';
 import { useT } from '../../lib/i18n';
 import type { useMemberDraft } from './useMemberDraft';
 import { BrainPicker } from './BrainPicker';
@@ -20,6 +20,7 @@ export function MemberConsole({
   onReading,
   canCreate,
   autoOpen,
+  guide,
   onCommit,
   onResume,
   onDelete,
@@ -33,6 +34,8 @@ export function MemberConsole({
   onReading: (reading: boolean) => void;
   canCreate: boolean;
   autoOpen?: boolean;
+  /** Points out the read reaction and, once the member can be added, the add key. */
+  guide?: boolean;
   onCommit: () => void;
   onResume: () => void;
   onDelete: () => void;
@@ -165,6 +168,14 @@ export function MemberConsole({
             data-testid={isNew ? 'member-create' : 'member-save'}
           />
         </>
+      }
+      notes={
+        guide && isNew
+          ? {
+              start: !reaction && <Scribble arrow="after" text={t('members.reactionHint')} />,
+              end: canCreate && <Scribble arrow="beside" text={t('members.createHint')} />,
+            }
+          : undefined
       }
       drawer={{ label: t('members.advanced'), content: <AdvancedDrawer m={m} /> }}
     />

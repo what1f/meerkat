@@ -171,7 +171,19 @@ impl Runtime {
                 RECENT_MESSAGE_LIMIT,
             )
             .await?;
-        Ok(render_recovery(&conversations, snapshot, now))
+        let agent = self.storage.agent_record(workspace_id, agent_id).await?;
+        let moved = agent.session_config.get("native_session_id").is_none()
+            && agent
+                .session_config
+                .get("native_session_machine")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|machine| machine != agent.machine_id);
+        let recent = render_recovery(&conversations, snapshot, now);
+        Ok(if moved {
+            format!("{MOVED_NOTICE}\n\n{recent}")
+        } else {
+            recent
+        })
     }
 
     /// Builds Provider-owned prompt and capabilities from the same runtime

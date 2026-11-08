@@ -437,6 +437,16 @@ pub trait ManagementClient: Send + Sync {
     ) -> Result<Agent, ClientError> {
         Err(ClientError::Protocol("Agent resume is unavailable".into()))
     }
+    /// Places an Agent on another Machine while its own Machine is offline,
+    /// leaving its files behind.
+    async fn move_agent_without_files(
+        &self,
+        _workspace_id: &str,
+        _agent_id: &str,
+        _machine_id: &str,
+    ) -> Result<Agent, ClientError> {
+        Err(ClientError::Protocol("Agent moves are unavailable".into()))
+    }
     async fn delete_agent(&self, workspace_id: &str, agent_id: &str) -> Result<(), ClientError> {
         let _ = (workspace_id, agent_id);
         Err(ClientError::Protocol(
@@ -1211,6 +1221,7 @@ impl ManagementClient for RuntimeManagementClient {
                         entries: envs(&a.environment_variables),
                     }),
                     machine_id: Some(a.machine_id),
+                    relocate_without_files: None,
                     avatar: avatar.map(|avatar| wire::AgentAvatarUpload {
                         media_type: avatar.media_type,
                         bytes: avatar.bytes,
@@ -1218,6 +1229,29 @@ impl ManagementClient for RuntimeManagementClient {
                     attention: None,
                     provider_agent_config_json: Some(a.provider_agent_config.to_string()),
                     provider_agent_secrets_json: None,
+                })
+                .await
+                .map_err(map_status)?
+                .into_inner(),
+        )
+    }
+    async fn move_agent_without_files(
+        &self,
+        workspace_id: &str,
+        agent_id: &str,
+        machine_id: &str,
+    ) -> Result<Agent, ClientError> {
+        expect_agent(
+            workspace_id,
+            Some(agent_id),
+            self.client
+                .clone()
+                .update_agent(wire::UpdateAgentRequest {
+                    request_id: self.request_id(),
+                    agent: Some(aref(workspace_id, agent_id)),
+                    machine_id: Some(machine_id.into()),
+                    relocate_without_files: Some(true),
+                    ..Default::default()
                 })
                 .await
                 .map_err(map_status)?
