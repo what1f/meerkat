@@ -109,6 +109,7 @@ export function Tasklist({ workspace, handle }: { workspace: Workspace; handle?:
         data-testid="tasklist"
         shape="clipboard"
         label={t('team.tasks')}
+        busy={update.isPending}
         onClick={() => turn(true)}
       />
     );

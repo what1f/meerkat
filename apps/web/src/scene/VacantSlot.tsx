@@ -1,6 +1,6 @@
 import type { Ref } from 'react';
 import type { UIProps } from '../design/index';
-import { Icon } from '../design';
+import { Icon, Spinner } from '../design';
 import type { PegPosition } from './Hang';
 import peg from './peg.module.css';
 import css from './VacantSlot.module.css';
@@ -12,9 +12,11 @@ export type VacantSlotProps = Omit<UIProps, 'className' | 'style'> & {
   label: string;
   onClick: () => void;
   shape: 'badge' | 'clipboard';
+  /** Waiting for the click to take effect: the plus turns into a spinner. */
+  busy?: boolean;
 };
 // A sleeve waits for a badge; a clipboard keeps its dashed placeholder.
-export function VacantSlot({ label, onClick, shape, ref, style, ...rest }: VacantSlotProps) {
+export function VacantSlot({ label, onClick, shape, busy, ref, style, ...rest }: VacantSlotProps) {
   return (
     <button
       {...rest}
@@ -22,7 +24,8 @@ export function VacantSlot({ label, onClick, shape, ref, style, ...rest }: Vacan
       style={style}
       className={css.root}
       type="button"
-      onClick={onClick}
+      onClick={busy ? undefined : onClick}
+      aria-busy={busy || undefined}
       data-shape={shape}
     >
       <span className={peg.peg} data-peg="" />
@@ -31,7 +34,7 @@ export function VacantSlot({ label, onClick, shape, ref, style, ...rest }: Vacan
       <span className={css.outline}>
         {shape === 'badge' && <span className={css.slot} />}
         <span className={css.plus}>
-          <Icon name="plus" size={20} />
+          {busy ? <Spinner size="md" /> : <Icon name="plus" size={20} />}
         </span>
         {label}
       </span>

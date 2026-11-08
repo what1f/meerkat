@@ -100,3 +100,11 @@
 .root[data-shape='badge']:focus-visible .outline {
   box-shadow: var(--sleeve-shadow-focus);
 }
+
+.root[aria-busy] {
+  cursor: progress;
+}
+
+.root[aria-busy] .plus {
+  transform: none;
+}
