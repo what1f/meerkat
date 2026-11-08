@@ -156,6 +156,7 @@ export default ts.config(
       'src/scene/drag/*.ts',
       'src/design/Toast.tsx',
       'src/design/Command.tsx',
+      'src/design/Scroller.tsx',
     ],
     rules: {
       'no-restricted-syntax': [

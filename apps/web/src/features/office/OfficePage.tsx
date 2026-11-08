@@ -9,6 +9,7 @@ import { ApiError } from '../../lib/api/client';
 import { useT } from '../../lib/i18n';
 import { MemberSeat } from './MemberSeat';
 import { MachineMenu, MachineTitle } from './MachineMenu';
+import { BuiltinSignInDialog } from '../builtin-agent';
 import { AddMachineDialog, usePairing } from './AddMachineDialog';
 import { RemoveMachineDialog } from './RemoveMachineDialog';
 import { LoadState } from './LoadState';
@@ -65,6 +66,7 @@ export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePa
   const [removing, setRemoving] = useState<{ machine?: DTO.MachineCatalogItem; open: boolean }>({
     open: false,
   });
+  const [signing, setSigning] = useState<{ id?: string; open: boolean }>({ open: false });
   const [arrived, setArrived] = useState<string | null>(null);
   const { seatHandle, rowProps } = useCarry((id, machine) => {
     if (!workspace) return;
@@ -84,6 +86,7 @@ export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePa
       </div>,
     );
   const machines = catalog.data.machines.filter((m) => m.registered && m.revoked_at === null);
+  const signingMachine = (id?: string) => machines.find((m) => m.machine_id === id);
   // Until the catalog refetches, a member who was just carried stays where they were dropped.
   const moving = update.isPending ? update.variables : undefined;
   const placeOf = (agent: DTO.Agent) =>
@@ -125,6 +128,11 @@ export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePa
               <MachineMenu
                 id={id}
                 removable={!machine.is_local}
+                onBuiltin={
+                  machine.harnesses.some((h) => h.harness_id === 'builtin')
+                    ? () => setSigning({ id, open: true })
+                    : undefined
+                }
                 onRename={() => setRenaming(id)}
                 onRemove={() =>
                   // The Runtime keeps a computer while members are assigned to it.
@@ -159,6 +167,13 @@ export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePa
         onClick={() => void pairing.start(machines.map((m) => m.machine_id))}
       />
       <AddMachineDialog key={pairing.id} pairing={pairing} connected={fresh?.display_name} />
+      {signing.open && signingMachine(signing.id) && (
+        <BuiltinSignInDialog
+          machine={signingMachine(signing.id)!}
+          open={signing.open}
+          onClose={() => setSigning({ ...signing, open: false })}
+        />
+      )}
       <RemoveMachineDialog
         name={removing.machine?.display_name ?? ''}
         open={removing.open}

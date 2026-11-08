@@ -19,7 +19,7 @@ const steers = new Map(),
 
 // Keep native product names out of anything a user can read.
 function neutral(text) {
-  return String(text || "").replace(/(?:𝒇x|\bfx\b)/gi, "Built-in Agent");
+  return String(text || "").replace(/(?:𝒇x|\bfx\b)/gi, "Meerkat");
 }
 function send(method, params) {
   const id = nextId++;
@@ -134,25 +134,31 @@ function settle() {
   active = false;
   completed(lastText || output);
 }
-function models(config) {
+// One `models --json` run. A connect that stalls is cut short so a retry
+// still fits inside the Runtime's wait for the catalog.
+function readModels(config, timeout) {
   const process = launch(config, ["models", "--json"], { cwd: ctx.directory() });
-  let directory = null;
   try {
-    const deadline = Date.now() + 30000;
-    while (Date.now() < deadline && !directory) {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
       const packet = ctx.receive(100);
       if (!packet || packet.process !== process) continue;
       if (packet.exit) {
         if (packet.success === false)
           failure("invalid_config", neutral(packet.detail || "Model list failed"));
-        break;
+        return null;
       }
-      if (packet.message?.kind === "models") directory = packet.message;
+      if (packet.message?.kind === "models") return packet.message;
     }
+    return null;
   } finally {
     ctx.terminate(process);
   }
+}
+function models(config) {
+  let directory = readModels(config, 8000);
   // An unreachable model service is reported in-band with a zero exit.
+  if (!Array.isArray(directory?.models)) directory = readModels(config, 8000);
   if (directory?.error && !Array.isArray(directory.models))
     failure("stream_interrupted", "Could not reach the model service");
   if (!Array.isArray(directory?.models))
@@ -183,14 +189,14 @@ defineHarness({
   reuseSession: true,
   apiVersion: 1,
   id: "builtin",
-  displayName: "Built-in Agent",
+  displayName: "Meerkat",
   defaults: { environment: {}, launch_arguments: [] },
   probe(config) {
     const result = probeVersion(config);
     const match = /\d+\.\d+\.\d+[0-9A-Za-z.+-]*/.exec(result.version || "");
     result.version = match ? match[0] : null;
     if (result.availability !== "available")
-      result.reason = "Built-in Agent could not start";
+      result.reason = "Meerkat could not start";
     return result;
   },
   models(config) {

@@ -70,7 +70,7 @@ impl BuiltinSignIns {
             }
             BuiltinAgentSignInMethod::Chatgpt => {
                 let executable = discover()
-                    .ok_or_else(|| Status::unavailable("Built-in Agent is not installed"))?;
+                    .ok_or_else(|| Status::unavailable("The Meerkat agent is not installed"))?;
                 self.cancel_pending();
                 let guard = self.login.clone().lock_owned().await;
                 let home =

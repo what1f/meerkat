@@ -8,7 +8,7 @@ import { avatarUrl } from '../../lib/assets';
 import { builtinUpload, defaultAvatar } from '../../lib/avatars';
 import { creationConfig, creationOf, onboards, type Creation } from './creation';
 import { formatArgs } from './args';
-import { harnessDefaults, harnessDraft } from './harnessDraft';
+import { defaultLevel, harnessDefaults, harnessDraft, needsSignIn } from './harnessDraft';
 import {
   blank,
   broken,
@@ -61,13 +61,13 @@ export function useMemberDraft(workspace: string, id: string | null, provider?: 
   );
   const models = useModelCatalog(
     { request_id: 'member', workspace: ref, machine_id: draft.machine_id, harness_id: harness },
-    !!draft.machine_id && !!harness,
+    !!draft.machine_id && !!harness && !needsSignIn(machine, harness),
     machine?.harnesses.find((h) => h.harness_id === harness)?.model_catalog,
   );
   if (!id && !draft.model) {
     const first = models.data?.models.find((m) => m.available) ?? models.data?.models[0];
     draft.model = first?.model_id ?? '';
-    draft.thinking_level ||= first?.supported_thinking_levels[0] ?? '';
+    draft.thinking_level ||= defaultLevel(first?.supported_thinking_levels ?? []);
   }
 
   const changed = fields.filter((key) => !same(draft[key], base[key]));

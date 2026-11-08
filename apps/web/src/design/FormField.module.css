@@ -1,0 +1,32 @@
+.root {
+  display: grid;
+  row-gap: 6px;
+}
+
+.head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: var(--t-small);
+  color: var(--ink-2);
+}
+
+.head a {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  font-size: var(--t-caption);
+  color: var(--ink-3);
+  text-decoration: var(--none);
+}
+
+.head a:hover {
+  color: var(--ink);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--t-caption);
+  color: var(--err);
+}

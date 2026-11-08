@@ -169,6 +169,7 @@
   --led-off: inset 0 1px 1px rgb(0 0 0 / 25%);
   --gate-face: linear-gradient(90deg, #1c1d21, #34353b);
   --gate-shadow: inset 0 1px 3px rgb(0 0 0 / 70%), 0 1px 0 rgb(255 255 255 / 70%);
+  --gate-fill-shadow: inset 0 1px 2px rgb(0 0 0 / 35%);
   --knob-face: radial-gradient(circle at 35% 30%, #fff, #d5d7dd 45%, #9b9ea8 100%);
   --knob-shadow: 0 3px 6px rgb(0 0 0 / 30%), inset 0 -2px 3px rgb(0 0 0 / 15%);
   --lip-face: linear-gradient(180deg, #1b1c20, #2b2c31);
@@ -375,6 +376,7 @@
   --on-ink: #fff;
   --accent: #626ccc;
   --accent-soft: rgb(98 108 204 / 16%);
+  --gate-fill: linear-gradient(90deg, #4a53a8, #626ccc);
   --ok: #2e9b5c;
   --busy: #d18c1a;
   --err: #d14343;
@@ -461,6 +463,7 @@
   --on-ink: #17181d;
   --accent: #8c95ec;
   --accent-soft: rgb(140 149 236 / 22%);
+  --gate-fill: linear-gradient(90deg, #5d66c4, #8c95ec);
   --ok: #4cc282;
   --busy: #efb04a;
   --err: #f07a7a;

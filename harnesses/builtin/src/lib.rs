@@ -86,12 +86,8 @@ impl BuiltinHarness {
     /// `home` is the Machine-shared home, `<machine root>/.machine/builtin-agent`.
     pub fn new(home: impl Into<PathBuf>) -> Self {
         Self {
-            inner: JsHarnessFactory::new(
-                HARNESS_ID,
-                "Built-in Agent",
-                include_str!("../plugin.js"),
-            )
-            .expect("valid embedded Harness plugin"),
+            inner: JsHarnessFactory::new(HARNESS_ID, "Meerkat", include_str!("../plugin.js"))
+                .expect("valid embedded Harness plugin"),
             home: home.into(),
             context_window: DEFAULT_CONTEXT_WINDOW,
             writes: Arc::default(),
@@ -451,7 +447,7 @@ impl HarnessFactory for BuiltinHarness {
 }
 
 fn signed_out() -> HarnessError {
-    let message = "Built-in Agent is not signed in";
+    let message = "Meerkat has no model connected";
     let mut error = HarnessError::new(HarnessErrorCode::Unavailable, message);
     error.failure = HarnessFailure {
         code: "harness_signed_out".into(),

@@ -1,8 +1,43 @@
 .root {
   min-width: 0;
-  max-height: 236px;
   padding: 10px 6px;
-  overflow: auto;
+}
+
+/* Only the options scroll. 6.5 rows end level with a Lever column, and the
+   cut row shows there is more. The native bar is hidden; a thin thumb shows
+   while scrolling or while the pointer is near the column's edge. */
+.scroller {
+  position: relative;
+  margin: 0 -6px;
+}
+
+.list {
+  max-height: 208px;
+  padding: 0 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.list::-webkit-scrollbar {
+  display: none;
+}
+
+.thumb {
+  position: absolute;
+  top: 0;
+  right: 1px;
+  width: 4px;
+  pointer-events: none;
+  background: var(--ink-4);
+  border-radius: var(--r-pill);
+  opacity: 0;
+  transition: opacity var(--d-slow);
+}
+
+.thumb[data-shown='true'] {
+  opacity: 1;
+  transition-duration: var(--d-fast);
 }
 
 .root > h3 {

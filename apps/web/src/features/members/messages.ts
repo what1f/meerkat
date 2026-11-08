@@ -56,6 +56,7 @@ const en = {
   retry: 'Try again',
   levels: {
     none: 'Off',
+    disable: 'Off',
     minimal: 'Minimal',
     low: 'Low',
     medium: 'Medium',
@@ -121,6 +122,7 @@ const zh: typeof en = {
   retry: '重试',
   levels: {
     none: '关闭',
+    disable: '关闭',
     minimal: '最少',
     low: '低',
     medium: '中',

@@ -6,12 +6,14 @@ members without the user installing an AI CLI first.
 | Item | Value |
 |---|---|
 | Harness id | `builtin` |
-| Display name | Built-in Agent |
+| Display name | Meerkat (the web shows the same name in every language) |
 | Binary | `meerkat-agent`, built from the fork revision in `tools/builtin-agent/REVISION` |
 | Adapter | `harnesses/builtin` (`plugin.js` over ACP plus a Rust wrapper) |
 
-The upstream product name never reaches users: the adapter rewrites it in
-messages, and reasons are fixed codes.
+Users see it as **Meerkat**, next to Pi, Codex and Claude Code. The upstream
+product name never reaches users: the adapter rewrites it to Meerkat in
+messages, and reasons are fixed codes. Connecting it is "connect a model", not
+"sign in": an API key is the main path and a ChatGPT account is one option.
 
 ## Fork
 
@@ -32,6 +34,7 @@ On top of the fork revision, the build applies the patches in
 | Patch | Why |
 |---|---|
 | `disable-response-language-check.patch` | Upstream rejects a reply whose script differs from the prompt's, retries once and then fails the turn with `ResponseLanguageMismatch`, streaming its failure notice as assistant text. A Meerkat prompt is a Chinese envelope plus ids like `channel_id=group_chat`, so an English message made a longer Chinese reply fail. The check is off in every mode. |
+| `neutral-oauth-page.patch` | The page the browser shows after a ChatGPT sign-in named fx, showed its logo and linked to Vercel Labs. It now names Meerkat and shows neither. |
 
 ## Build and discovery
 
@@ -87,7 +90,9 @@ Meerkat tool calls.
 Models are read only when the picker asks:
 
 - ChatGPT: `models --json`; thinking levels from the model list, or else from
-  the ACP effort option. The default model is `gpt-6-luna`.
+  the ACP effort option. The default model is `gpt-6-luna`. Its connect can
+  stall for 30 s, longer than the Runtime waits for a catalog, so each run is
+  cut at 8 s and tried twice.
 - API key: `GET {base_url}/models`, id plus display name when present. Every
   model offers `disable, low, medium, high, xhigh, max`; `disable` is passed as
   `--effort none` (sent as `reasoning_effort: "none"`), the others verbatim, and

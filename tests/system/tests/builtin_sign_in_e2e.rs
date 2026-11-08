@@ -110,7 +110,7 @@ async fn builtin_agent_api_key_sign_in_and_sign_out() -> Result<()> {
             .join(".machine/builtin-agent");
 
         let initial = http.builtin(machine).await?;
-        assert_eq!(initial["display_name"], "Built-in Agent");
+        assert_eq!(initial["display_name"], "Meerkat");
         assert_eq!(initial["account"], Value::Null);
 
         // A rejected key fails with a stable reason and saves nothing.

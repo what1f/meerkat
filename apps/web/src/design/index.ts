@@ -29,6 +29,7 @@ export * from './Spinner';
 export * from './EmptyState';
 export * from './Callout';
 export * from './TrayField';
+export * from './FormField';
 export * from './Message';
 export * from './QrCode';
 export * from './SearchField';

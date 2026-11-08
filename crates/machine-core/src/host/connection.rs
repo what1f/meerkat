@@ -286,7 +286,7 @@ pub(super) async fn make_hello(inner: &Inner) -> MachineHello {
                 display_name: factory
                     .map(|factory| factory.info().display_name.clone())
                     .unwrap_or_else(|| match *id {
-                        "builtin" => "Built-in Agent".into(),
+                        "builtin" => "Meerkat".into(),
                         "pi" => "Pi".into(),
                         "codex" => "Codex".into(),
                         _ => "Claude Code".into(),

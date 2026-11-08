@@ -12,6 +12,13 @@ const stamp = 1792454400;
 const levels = ["low", "medium", "high", "xhigh"];
 const harnesses: HarnessCatalogItem[] = [
   {
+    harness_id: "builtin",
+    display_name: "Meerkat",
+    description: "",
+    availability: "available",
+    supported_thinking_levels: levels,
+  },
+  {
     harness_id: "codex",
     display_name: "Codex",
     description: "",
@@ -34,6 +41,11 @@ const harnesses: HarnessCatalogItem[] = [
   },
 ];
 const catalogs: Record<string, [string, string][]> = {
+  builtin: [
+    ["gpt-6-luna", "GPT-6 Luna"],
+    ["gpt-6-sol", "GPT-6 Sol"],
+    ["gpt-6.1-sol", "GPT-6.1 Sol"],
+  ],
   codex: [
     ["gpt-5.5", "GPT-5.5"],
     ["gpt-5.5-mini", "GPT-5.5 Mini"],
@@ -84,8 +96,39 @@ const machines: MachineCatalogItem[] = [
     model_catalog: { models: models(h.harness_id) as ModelCatalogItem[] },
     model_catalog_error: "",
     capabilities: [],
+    // Only the Mac mini starts signed in, so the preview shows both states.
+    ...(h.harness_id === "builtin"
+      ? {
+          account:
+            machine_id === "mini"
+              ? { method: "chatgpt", label: "lin@example.com" }
+              : null,
+        }
+      : {}),
   })),
 })) as MachineCatalogItem[];
+// Sign-ins finish on their own a few seconds after the browser step opens.
+const signIns = new Map<
+  string,
+  { machine_id: string; done_at: number; account: unknown; reason: string | null }
+>();
+const setAccount = (machine_id: string, account: unknown) => {
+  const entry = machines
+    .find((m) => m.machine_id === machine_id)
+    ?.harnesses.find((h) => h.harness_id === "builtin");
+  if (!entry) return;
+  const key = (account as { method?: string } | null)?.method === "api_key";
+  const list = key
+    ? ["deepseek-v4-pro", "deepseek-flash"].map((model_id) => ({
+        model_id,
+        display_name: "",
+        description: "",
+        available: true,
+        supported_thinking_levels: levels,
+      }))
+    : models("builtin");
+  Object.assign(entry, { account, model_catalog: { models: list } });
+};
 const workspaces: Workspace[] = [
   ["product", "产品组", "feishu"],
   ["lab", "实验室", "telegram"],
@@ -322,8 +365,59 @@ globalThis.fetch = async (input, init) => {
       return json({ machines });
     case "get_harness_catalog":
       return json({ harnesses });
-    case "get_model_catalog":
+    case "builtin_agent_sign_in": {
+      const sign_in_id = `s${signIns.size + 1}`;
+      signIns.set(sign_in_id, {
+        machine_id: data.machine_id,
+        done_at: Date.now() + (data.method === "api_key" ? 1200 : 4000),
+        account:
+          data.method === "api_key"
+            ? { method: "api_key", label: new URL(data.base_url).host }
+            : { method: "chatgpt", label: "lin@example.com" },
+        reason: data.method === "api_key" && data.api_key === "bad" ? "invalid_key" : null,
+      });
+      if (data.method === "api_key") return json({ sign_in_id, authorize_url: null });
+      return json({ sign_in_id, authorize_url: "about:blank" });
+    }
+    case "builtin_agent_sign_in_status": {
+      const sign_in = signIns.get(data.sign_in_id);
+      if (!sign_in) return json({ state: "expired", reason: null });
+      if (Date.now() < sign_in.done_at)
+        return json({ state: "pending", reason: null });
+      if (sign_in.reason) return json({ state: "failed", reason: sign_in.reason });
+      setAccount(sign_in.machine_id, sign_in.account);
+      return json({ state: "succeeded", reason: null });
+    }
+    case "builtin_agent_sign_in_cancel":
+      signIns.delete(data.sign_in_id);
+      return json(null);
+    case "builtin_agent_sign_out":
+      setAccount(data.machine_id, null);
+      return json(null);
+    case "get_model_catalog": {
+      // A key account lists what that service offers.
+      const account = (
+        machines
+          .find((m) => m.machine_id === data.machine_id)
+          ?.harnesses.find((h) => h.harness_id === "builtin") as
+          | { account?: { method: string; label: string } | null }
+          | undefined
+      )?.account;
+      if (data.harness_id === "builtin" && account?.method === "api_key")
+        return json({
+          models: [
+            ["deepseek-v4-pro", ""],
+            ["deepseek-flash", ""],
+          ].map(([model_id]) => ({
+            model_id,
+            display_name: "",
+            description: "",
+            available: true,
+            supported_thinking_levels: levels,
+          })),
+        });
       return json({ models: models(data.harness_id) });
+    }
     case "get_reaction_catalog":
       return json({
         reactions: reactions.map((reaction_id) => ({

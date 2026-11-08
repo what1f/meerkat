@@ -4,18 +4,34 @@
   height: 196px;
   margin: 0 auto;
   touch-action: none;
+  user-select: none;
   outline-style: none;
 }
 
-.gate {
+.gate,
+.fill {
   position: absolute;
-  top: 8px;
   bottom: 8px;
   left: 14px;
   width: 10px;
-  background: var(--gate-face);
   border-radius: var(--r-gate);
+}
+
+.gate {
+  top: 8px;
+  background: var(--gate-face);
   box-shadow: var(--gate-shadow);
+}
+
+/* The part of the gate at and below the chosen level. */
+.fill {
+  background: var(--gate-fill);
+  box-shadow: var(--gate-fill-shadow);
+  transition: top 0.35s var(--ease-pop);
+}
+
+.root[data-held='true'] .fill {
+  transition: none;
 }
 
 .notch {
@@ -38,6 +54,11 @@
   content: '';
   background: var(--line-strong);
   border-radius: var(--r-hairline);
+}
+
+.notch[data-on='true']::before,
+.notch[data-below='true']::before {
+  background: var(--accent);
 }
 
 .notch[data-on='true'] {

@@ -15,9 +15,12 @@ import meta from '../assets/brand/lobehub/meta.svg';
 import grok from '../assets/brand/lobehub/grok.svg';
 import zhipu from '../assets/brand/lobehub/zhipu.svg';
 import minimax from '../assets/brand/lobehub/minimax.svg';
+import openrouter from '../assets/brand/lobehub/openrouter.svg';
+import builtin from '../assets/brand/builtin.png';
 const marks = {
   feishu,
   telegram,
+  builtin,
   codex,
   claude_code: claudeCode,
   pi,
@@ -32,6 +35,7 @@ const marks = {
   grok,
   zhipu,
   minimax,
+  openrouter,
 };
 import css from './BrandMark.module.css';
 export type BrandMarkProps = Omit<UIProps, 'className' | 'style'> & {

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { UIProps } from './types';
 import { useEffect, useId, useRef } from 'react';
+import { Layer } from './layer';
 import css from './Dialog.module.css';
 export type DialogProps = Omit<UIProps, 'className' | 'style'> & {
   open: boolean;
@@ -58,8 +59,10 @@ export function Dialog({
       <header>
         <h2 id={id}>{title}</h2>
       </header>
-      <div>{children}</div>
-      <footer>{footer}</footer>
+      <Layer value={ref}>
+        <div>{children}</div>
+        <footer>{footer}</footer>
+      </Layer>
     </dialog>
   );
 }
