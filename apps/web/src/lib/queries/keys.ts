@@ -8,6 +8,7 @@ export const keys = {
   figures: ['catalogs', 'figures'],
   humans: ['workspaces', 'humans'],
   tasks: ['workspaces', 'tasks'],
+  timers: ['workspaces', 'timers'],
 } as const;
 const all = Object.values(keys);
 export const eventKeys = {
@@ -21,4 +22,5 @@ export const eventKeys = {
   catalog_changed: [keys.catalogs],
   agent_deleted: [keys.agents, keys.onboarding],
   machine_catalog_changed: [keys.machines, keys.catalogs, keys.agents],
+  timers_changed: [keys.timers],
 } satisfies Record<ManagementEventKind, readonly (readonly string[])[]>;

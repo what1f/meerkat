@@ -28,6 +28,8 @@ import {
   MessageSquare,
   Zap,
   KeyRound,
+  Repeat,
+  Clock,
 } from 'lucide-react';
 export const icons = {
   users: Users,
@@ -59,5 +61,7 @@ export const icons = {
   msg: MessageSquare,
   zap: Zap,
   key: KeyRound,
+  repeat: Repeat,
+  clock: Clock,
 };
 export type IconName = keyof typeof icons;

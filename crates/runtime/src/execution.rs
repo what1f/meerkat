@@ -896,6 +896,7 @@ fn trigger_reason_name(reason: &DispatchReason) -> String {
         DispatchReason::Schedule => "schedule".to_owned(),
         DispatchReason::Reaction { reaction, .. } => format!("reaction:{reaction}"),
         DispatchReason::Custom { name, .. } => format!("custom:{name}"),
+        DispatchReason::Timer { timer_id, .. } => format!("timer:{timer_id}"),
     }
 }
 
@@ -1002,6 +1003,13 @@ fn render_snapshot(snapshot: &SnapshotView) -> String {
             markdown.push_str(&truncate_message(&message.content));
             render_attachment_links(&mut markdown, message);
             render_reply(&mut markdown, message);
+        }
+        for reason in &chat.trigger_reasons {
+            if let DispatchReason::Timer { timer_id, prompt } = reason {
+                markdown.push_str(&format!(
+                    "\n- 你设置的定时任务到点了 [timer_id={timer_id}]：{prompt}"
+                ));
+            }
         }
         for (reason, message) in chat.trigger_reasons.iter().zip(&chat.trigger_messages) {
             if let DispatchReason::Reaction {

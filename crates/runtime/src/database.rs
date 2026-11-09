@@ -249,6 +249,14 @@ database_methods! {
         let agent = agent.to_owned();
     ] (&workspace, &agent, dispatchable);
     false next_attempt_lease_at() -> Option<i64> [] ();
+    true create_timer(timer: &meerkat_storage::NewTimer, now: i64) -> meerkat_storage::TimerRecord [let timer = timer.clone();] (&timer, now);
+    false list_timers(workspace: &WorkspaceId, agent: Option<&AgentId>) -> Vec<meerkat_storage::TimerRecord> [let workspace = workspace.clone(); let agent = agent.cloned();] (&workspace, agent.as_ref());
+    true cancel_timer(workspace: &WorkspaceId, agent: Option<&AgentId>, timer_id: i64, now: i64) -> Option<meerkat_storage::TimerRecord> [let workspace = workspace.clone(); let agent = agent.cloned();] (&workspace, agent.as_ref(), timer_id, now);
+    false cancelled_timer(workspace: &WorkspaceId, timer_id: i64) -> Option<meerkat_storage::TimerRecord> [let workspace = workspace.clone();] (&workspace, timer_id);
+    true restore_timer(workspace: &WorkspaceId, timer_id: i64, next_fire_at: i64, now: i64) -> Option<meerkat_storage::TimerRecord> [let workspace = workspace.clone();] (&workspace, timer_id, next_fire_at, now);
+    false due_timers(workspace: &WorkspaceId, now: i64) -> Vec<meerkat_storage::TimerRecord> [let workspace = workspace.clone();] (&workspace, now);
+    false next_timer_at(workspace: &WorkspaceId) -> Option<i64> [let workspace = workspace.clone();] (&workspace);
+    true fire_timer(timer_id: i64, expected: i64, next: Option<i64>, now: i64) -> bool [] (timer_id, expected, next, now);
     true accept_execution_attempt(
         execution_id: i64,
         attempt: i64,

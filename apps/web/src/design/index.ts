@@ -19,6 +19,7 @@ export * from './Popover';
 export * from './GridPicker';
 export * from './Tooltip';
 export * from './Dialog';
+export * from './Closeup';
 export * from './ConfirmDialog';
 export * from './Toast';
 export * from './Command';

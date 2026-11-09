@@ -2,6 +2,8 @@
 mod paused_send_e2e;
 #[path = "../../../tests/support/registered_machine.rs"]
 mod registered_machine;
+#[path = "e2e/timer_e2e.rs"]
+mod timer_e2e;
 #[path = "../../protocol/tests/support/ws.rs"]
 mod ws;
 use meerkat_core::{
@@ -488,8 +490,11 @@ async fn scenario(db: &Path) -> Result<(), String> {
         )?;
     }
     ensure(
-        assignments[0].tools.len() == 8,
-        "standard and dynamic tools",
+        assignments[0].tools.len() == 11
+            && ["timer_set", "timer_list", "timer_cancel"]
+                .iter()
+                .all(|name| assignments[0].tools.iter().any(|tool| &tool.name == name)),
+        "standard, timer and dynamic tools",
     )?;
     ensure(assignments[0].cli_commands.len() == 1, "dynamic cli")?;
     let provider_contexts = state_a.runtime_contexts.lock().map_err(err)?.clone();

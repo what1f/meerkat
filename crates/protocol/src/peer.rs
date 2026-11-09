@@ -95,6 +95,15 @@ pub trait RuntimePeer: Send + Sync + 'static {
     ) -> Result<Vec<HumanTeamMember>, Status> {
         Err(Status::unimplemented("list_human_members"))
     }
+    async fn list_timers(&self, _request: GetWorkspaceRequest) -> Result<Vec<Timer>, Status> {
+        Err(Status::unimplemented("list_timers"))
+    }
+    async fn cancel_timer(&self, _request: TimerRequest) -> Result<Timer, Status> {
+        Err(Status::unimplemented("cancel_timer"))
+    }
+    async fn restore_timer(&self, _request: TimerRequest) -> Result<Timer, Status> {
+        Err(Status::unimplemented("restore_timer"))
+    }
     async fn sync_human_profile(
         &self,
         _request: SyncHumanProfileRequest,

@@ -168,7 +168,12 @@ fn delete_agent_state(
             params![workspace_id.as_str(), agent_id.as_str()],
         )?;
     }
+    transaction.execute(
+        "DELETE FROM agent_timer_fires WHERE timer_id IN (SELECT timer_id FROM agent_timers WHERE workspace_id=?1 AND agent_id=?2)",
+        params![workspace_id.as_str(), agent_id.as_str()],
+    )?;
     for table in [
+        "agent_timers",
         "unread_snapshots",
         "agent_inbox_items",
         "agent_chat_cursors",

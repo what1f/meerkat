@@ -16,6 +16,7 @@ mod relocation;
 mod scheduling;
 mod schema;
 mod send;
+mod timer;
 mod workspace;
 
 pub use agent::{AgentRecord, AgentSpec, AgentView, AttentionRecord};
@@ -43,6 +44,7 @@ pub use send::{
     CursorView, FinishSendResult, GuardedSendResult, RecoverableSendView, SendAttemptView,
     SendOutcome, SendRequest, ToolInvocationRequest, ToolInvocationResult,
 };
+pub use timer::{NewTimer, TIMER_LIMIT, TimerRecord, TimerRepeatRecord};
 pub use workspace::{
     SecretValue, WorkspaceRecord, WorkspaceSecretRef, WorkspaceSetupStatus, WorkspaceSpec,
     WorkspaceView,

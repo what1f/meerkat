@@ -594,6 +594,9 @@ impl RuntimeApplication {
             if !runtime.is_workspace_active(&workspace_id).unwrap_or(false) {
                 continue;
             }
+            if let Some(due) = self.fire_due_timers(runtime, &workspace_id).await? {
+                next_due = Some(next_due.map_or(due, |current: i64| current.min(due)));
+            }
             let agents = runtime.database().list_agent_records(&workspace_id).await?;
             for agent in agents {
                 let connected = self.inner.broker.can_dispatch(

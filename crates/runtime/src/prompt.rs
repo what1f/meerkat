@@ -41,6 +41,7 @@ pub(crate) fn system_prompt(
         include_str!("prompts/work.md").trim().to_owned(),
         include_str!("prompts/im.md").trim().to_owned(),
         include_str!("prompts/attention.md").trim().to_owned(),
+        include_str!("prompts/timer.md").trim().to_owned(),
         workspace_rules.trim().to_owned(),
         provider_section.trim().to_owned(),
         include_str!("prompts/completion.md").trim().to_owned(),

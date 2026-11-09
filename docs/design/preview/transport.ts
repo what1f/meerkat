@@ -6,6 +6,7 @@ import type {
   HarnessCatalogItem,
   ModelCatalogItem,
   HumanTeamMember,
+  Timer,
 } from "../../../apps/web/src/lib/api/generated";
 import { avatarUrl } from "../../../apps/web/src/lib/assets";
 const stamp = 1792454400;
@@ -229,6 +230,38 @@ const agents: Agent[] = crew.map(
     updated_at: stamp,
   }),
 ) as Agent[];
+// Timers fire relative to now, so the preview always shows near times.
+const at = (days: number, hour: number, minute = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setHours(hour, minute, 0, 0);
+  return d.getTime();
+};
+const timer = (
+  timer_id: number,
+  agent_id: string,
+  prompt: string,
+  repeat: Timer["repeat"],
+  next_fire_at: number,
+  chat_name: string,
+): Timer => ({
+  timer_id,
+  agent: { workspace_id: "product", agent_id },
+  prompt,
+  repeat,
+  timezone: "Asia/Shanghai",
+  next_fire_at,
+  last_fired_at: null,
+  chat_name,
+  created_at: stamp,
+});
+const timers: Timer[] = [
+  timer(1, "1", "整理昨天群里的需求讨论，发一份晨报到产品群", { kind: "cron", expression: "30 9 * * 1-5" }, at(1, 9, 30), "产品讨论群"),
+  timer(2, "4", "看一下周活跃数据看板，有异常就提醒林小满", { kind: "every", minutes: 120 }, at(0, 16), "林小满"),
+  timer(3, "2", "回访首页改版的走查意见，确认是否都已修改", { kind: "once" }, at(1, 15), "首页改版"),
+  timer(4, "5", "跑一遍 2.3 回归用例，把结果贴到任务评论", { kind: "cron", expression: "0 10 * * 5" }, at(4, 10), "产品讨论群"),
+];
+const removedTimers = new Map<number, Timer>();
 const humans: HumanTeamMember[] = [
   {
     person_id: "lead",
@@ -429,6 +462,19 @@ globalThis.fetch = async (input, init) => {
       });
     case "list_figure_packs":
       return json([]);
+    case "list_timers":
+      return json(wid === "product" ? timers : []);
+    case "cancel_timer": {
+      const index = timers.findIndex((t) => t.timer_id === data.timer_id);
+      const [removed] = timers.splice(index, 1);
+      removedTimers.set(removed.timer_id, removed);
+      return json(removed);
+    }
+    case "restore_timer": {
+      const restored = removedTimers.get(data.timer_id)!;
+      timers.push(restored);
+      return json(restored);
+    }
     case "list_human_members":
       return json(wid === "product" ? humans : []);
     case "sync_human_profile":

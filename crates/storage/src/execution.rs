@@ -524,15 +524,7 @@ impl Storage {
         let sid = t.last_insert_rowid();
         let mut map = std::collections::BTreeMap::<i64, Vec<i64>>::new();
         for (_, ch, source, source_kind, _) in &p {
-            let message_id = if source_kind == "reaction" {
-                t.query_row(
-                    "SELECT target_message_id FROM reactions WHERE reaction_id=?1",
-                    [-*source],
-                    |r| r.get(0),
-                )?
-            } else {
-                *source
-            };
+            let message_id = trigger_message_id(&t, *ch, *source, source_kind)?;
             map.entry(*ch).or_default().push(message_id)
         }
         let mut chats = vec![];
@@ -556,16 +548,7 @@ impl Storage {
                     {
                         return None;
                     }
-                    if source_kind == "reaction" {
-                        t.query_row(
-                            "SELECT target_message_id FROM reactions WHERE reaction_id=?1",
-                            [-*source_id],
-                            |row| row.get(0),
-                        )
-                        .ok()
-                    } else {
-                        Some(*source_id)
-                    }
+                    trigger_message_id(&t, ch, *source_id, source_kind).ok()
                 },
             );
             let mut recent=t.prepare("SELECT message_id FROM messages m WHERE chat_id=?1 AND message_id>?2 AND message_id<=?3 AND send_status IN ('received','sent') AND NOT EXISTS(SELECT 1 FROM agent_inbox_items i WHERE i.workspace_id=?5 AND i.agent_id=?6 AND i.source_kind='message' AND i.source_id=m.message_id AND i.state='consumed') ORDER BY message_id DESC LIMIT ?4")?;
@@ -597,15 +580,7 @@ impl Storage {
             })
         }
         for (position, (_, chat_id, source_id, source_kind, reason)) in p.iter().enumerate() {
-            let message_id = if source_kind == "reaction" {
-                t.query_row(
-                    "SELECT target_message_id FROM reactions WHERE reaction_id=?1",
-                    [-*source_id],
-                    |r| r.get(0),
-                )?
-            } else {
-                *source_id
-            };
+            let message_id = trigger_message_id(&t, *chat_id, *source_id, source_kind)?;
             t.execute("INSERT INTO unread_snapshot_triggers(snapshot_id,chat_id,message_id,reason_json,position)VALUES(?1,?2,?3,?4,?5)",params![sid,chat_id,message_id,reason,position as i64])?;
         }
         let (attempt, token_hash, token_expires_at) = auth
@@ -1016,4 +991,27 @@ impl Storage {
             last_context_tokens: tokens.and_then(|tokens| u64::try_from(tokens).ok()),
         }))
     }
+}
+
+// The message a trigger points at: the reacted-to message, the message itself, or for a
+// timer the latest message in its conversation.
+fn trigger_message_id(
+    t: &rusqlite::Transaction<'_>,
+    chat_id: i64,
+    source_id: i64,
+    source_kind: &str,
+) -> Result<i64> {
+    Ok(match source_kind {
+        "reaction" => t.query_row(
+            "SELECT target_message_id FROM reactions WHERE reaction_id=?1",
+            [-source_id],
+            |r| r.get(0),
+        )?,
+        "timer" => t.query_row(
+            "SELECT last_message_id FROM chats WHERE chat_id=?1",
+            [chat_id],
+            |r| r.get(0),
+        )?,
+        _ => source_id,
+    })
 }

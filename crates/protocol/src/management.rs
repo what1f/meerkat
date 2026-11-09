@@ -58,6 +58,42 @@ pub enum WorkspaceTasksInput {
     Rename { name: String },
 }
 
+/// How often a timer wakes its Agent.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TimerRepeat {
+    Once,
+    Every { minutes: u32 },
+    Cron { expression: String },
+}
+
+/// A timer an Agent set to wake itself, as the team sees it.
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Timer {
+    pub timer_id: i64,
+    pub agent: Option<AgentRef>,
+    pub prompt: String,
+    pub repeat: TimerRepeat,
+    /// IANA zone the schedule is read in.
+    pub timezone: String,
+    pub next_fire_at: i64,
+    pub last_fired_at: Option<i64>,
+    /// The conversation the Agent reports back to.
+    pub chat_name: String,
+    pub created_at: i64,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TimerRequest {
+    pub request_id: String,
+    pub workspace: Option<WorkspaceRef>,
+    pub timer_id: i64,
+}
+
 pub const PREFIX: &str = "/api/v1/";
 pub const EVENTS_PATH: &str = "/api/v1/events";
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]

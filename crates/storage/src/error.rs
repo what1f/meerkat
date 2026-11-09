@@ -23,7 +23,8 @@ impl fmt::Display for StorageError {
             Self::Json(e) => write!(f, "storage_json: {e}"),
             Self::UnsupportedSchemaVersion(version) => write!(
                 f,
-                "unsupported storage schema version {version}; expected 1"
+                "unsupported storage schema version {version}; expected {}",
+                crate::schema::SCHEMA_VERSION
             ),
             Self::Invalid(e) => write!(f, "storage_invalid: {e}"),
             Self::Conflict(e) => write!(f, "storage_conflict: {e}"),

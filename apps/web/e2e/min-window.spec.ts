@@ -227,7 +227,7 @@ for (const { name, width, layout } of crowded) {
     await page.setViewportSize({ width: 1600, height: 900 });
     await open(page, workspace, 'team');
     await page.getByTestId('tasklist').click();
-    await expect(page.getByTestId('tasklist').getByRole('button', { name: 'More' })).toBeVisible();
+    await expect(page.getByTestId('tasklist')).toHaveAttribute('aria-haspopup', 'dialog');
 
     await page.setViewportSize({ width, height: 660 });
     let last = '';
@@ -249,9 +249,12 @@ for (const { name, width, layout } of crowded) {
     expect(apart(rules, shift)).toBe(true);
     expect(apart(tasks, shift)).toBe(true);
     expect(await noSideways(page)).toBe(true);
-    await page.getByTestId('tasklist').getByRole('button', { name: 'More' }).click();
+    await page.getByTestId('tasklist').click();
+    await page.getByTestId('tasklist-board').getByRole('button', { name: 'More' }).click();
     await expect(page.getByRole('menuitem', { name: 'Turn off' })).toBeVisible();
     await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('tasklist-board')).toBeHidden();
     await page.getByRole('switch').click();
     await expect(page.getByTestId('team-shift')).toHaveAttribute('data-on', 'false');
   });
@@ -272,7 +275,7 @@ for (const { name, layout } of grown) {
     if (layout) await hang(page, workspace, layout);
     await open(page, workspace, 'team');
     await page.getByTestId('tasklist').click();
-    await expect(page.getByTestId('tasklist').getByRole('button', { name: 'More' })).toBeVisible();
+    await expect(page.getByTestId('tasklist')).toHaveAttribute('aria-haspopup', 'dialog');
 
     const rulesBox = page.locator('[data-spot="rules"]');
     const short = (await rulesBox.boundingBox())!.height;
@@ -300,9 +303,12 @@ for (const { name, layout } of grown) {
     expect(apart(rules, tasks)).toBe(true);
     expect(apart(rules, shift)).toBe(true);
     expect(apart(tasks, shift)).toBe(true);
-    await page.getByTestId('tasklist').getByRole('button', { name: 'More' }).click();
+    await page.getByTestId('tasklist').click();
+    await page.getByTestId('tasklist-board').getByRole('button', { name: 'More' }).click();
     await expect(page.getByRole('menuitem', { name: 'Turn off' })).toBeVisible();
     await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('tasklist-board')).toBeHidden();
     await page.getByRole('switch').click();
     await expect(page.getByTestId('team-shift')).toHaveAttribute('data-on', 'false');
   });

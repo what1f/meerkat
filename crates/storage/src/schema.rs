@@ -62,22 +62,16 @@ fn initialize_schema(c: &mut Connection) -> Result<()> {
         0 => {
             let transaction = c.transaction()?;
             transaction.execute_batch(BASELINE_SCHEMA)?;
-            transaction.pragma_update(None, "user_version", 1)?;
+            transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             transaction.commit()?;
         }
-        1 | 2 => {}
+        SCHEMA_VERSION => {}
         version => return Err(StorageError::UnsupportedSchemaVersion(version)),
-    }
-    if version < 2 {
-        let transaction = c.transaction()?;
-        transaction.execute_batch(OBSERVATION_SCHEMA)?;
-        transaction.pragma_update(None, "user_version", 2)?;
-        transaction.commit()?;
     }
     Ok(())
 }
 
-const OBSERVATION_SCHEMA: &str = r#"CREATE TABLE IF NOT EXISTS agent_chat_observations(workspace_id TEXT NOT NULL,agent_id TEXT NOT NULL,chat_id INTEGER NOT NULL REFERENCES chats(chat_id),message_id INTEGER NOT NULL REFERENCES messages(message_id),observed_at INTEGER NOT NULL,PRIMARY KEY(workspace_id,agent_id,chat_id),FOREIGN KEY(workspace_id,agent_id) REFERENCES agents(workspace_id,agent_id));"#;
+pub(crate) const SCHEMA_VERSION: i64 = 3;
 
 const BASELINE_SCHEMA: &str = r#"
 CREATE TABLE workspaces(workspace_id TEXT PRIMARY KEY,name TEXT NOT NULL,provider_id TEXT NOT NULL,provider_config_json TEXT NOT NULL,desired_state TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,rules TEXT NOT NULL DEFAULT '',cover_resource_id INTEGER,setup_status TEXT NOT NULL DEFAULT 'pending',setup_error_code TEXT,provider_state_json TEXT NOT NULL DEFAULT '{}');
@@ -97,8 +91,12 @@ CREATE TABLE messages(message_id INTEGER PRIMARY KEY AUTOINCREMENT,chat_id INTEG
 CREATE TABLE message_provider_parts(chat_id INTEGER NOT NULL REFERENCES chats(chat_id),provider_message_id TEXT NOT NULL,message_id INTEGER NOT NULL REFERENCES messages(message_id) ON DELETE CASCADE,PRIMARY KEY(chat_id,provider_message_id));
 CREATE UNIQUE INDEX message_provider_key ON messages(chat_id,provider_message_id)WHERE provider_message_id IS NOT NULL;
 CREATE TABLE reactions(reaction_id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id TEXT NOT NULL REFERENCES workspaces(workspace_id),chat_id INTEGER NOT NULL REFERENCES chats(chat_id),target_message_id INTEGER NOT NULL REFERENCES messages(message_id),provider_event_id TEXT NOT NULL,sender_kind TEXT NOT NULL,sender_id TEXT NOT NULL,sender_name TEXT NOT NULL,reaction TEXT NOT NULL,action TEXT NOT NULL,origin TEXT NOT NULL,occurred_at INTEGER NOT NULL,created_at INTEGER NOT NULL,UNIQUE(workspace_id,provider_event_id));
-CREATE TABLE agent_inbox_items(inbox_item_id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id TEXT NOT NULL,agent_id TEXT NOT NULL,chat_id INTEGER NOT NULL REFERENCES chats(chat_id),source_id INTEGER NOT NULL,source_kind TEXT NOT NULL DEFAULT 'message',trigger_reason_json TEXT NOT NULL DEFAULT '{"kind":"follow"}',available_at INTEGER NOT NULL,state TEXT NOT NULL,claimed_execution_id INTEGER,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL, retry_batch_id INTEGER, failure_count INTEGER NOT NULL DEFAULT 0,FOREIGN KEY(workspace_id,agent_id)REFERENCES agents(workspace_id,agent_id),UNIQUE(workspace_id,agent_id,source_id));
+CREATE TABLE agent_inbox_items(inbox_item_id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id TEXT NOT NULL,agent_id TEXT NOT NULL,chat_id INTEGER NOT NULL REFERENCES chats(chat_id),source_id INTEGER NOT NULL,source_kind TEXT NOT NULL DEFAULT 'message',trigger_reason_json TEXT NOT NULL DEFAULT '{"kind":"follow"}',available_at INTEGER NOT NULL,state TEXT NOT NULL,claimed_execution_id INTEGER,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL, retry_batch_id INTEGER, failure_count INTEGER NOT NULL DEFAULT 0,FOREIGN KEY(workspace_id,agent_id)REFERENCES agents(workspace_id,agent_id),UNIQUE(workspace_id,agent_id,source_kind,source_id));
 CREATE TABLE agent_chat_cursors(workspace_id TEXT NOT NULL,agent_id TEXT NOT NULL,chat_id INTEGER NOT NULL REFERENCES chats(chat_id),read_to_message_id INTEGER NOT NULL REFERENCES messages(message_id),updated_at INTEGER NOT NULL,PRIMARY KEY(workspace_id,agent_id,chat_id),FOREIGN KEY(workspace_id,agent_id)REFERENCES agents(workspace_id,agent_id));
+CREATE TABLE agent_chat_observations(workspace_id TEXT NOT NULL,agent_id TEXT NOT NULL,chat_id INTEGER NOT NULL REFERENCES chats(chat_id),message_id INTEGER NOT NULL REFERENCES messages(message_id),observed_at INTEGER NOT NULL,PRIMARY KEY(workspace_id,agent_id,chat_id),FOREIGN KEY(workspace_id,agent_id) REFERENCES agents(workspace_id,agent_id));
+CREATE TABLE agent_timers(timer_id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id TEXT NOT NULL,agent_id TEXT NOT NULL,chat_id INTEGER NOT NULL REFERENCES chats(chat_id),prompt TEXT NOT NULL,repeat_json TEXT NOT NULL,timezone TEXT NOT NULL,next_fire_at INTEGER NOT NULL,last_fired_at INTEGER,state TEXT NOT NULL CHECK(state IN('active','cancelled','done')),created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,FOREIGN KEY(workspace_id,agent_id) REFERENCES agents(workspace_id,agent_id));
+CREATE INDEX agent_timers_due ON agent_timers(workspace_id,next_fire_at) WHERE state='active';
+CREATE TABLE agent_timer_fires(fire_id INTEGER PRIMARY KEY AUTOINCREMENT,timer_id INTEGER NOT NULL REFERENCES agent_timers(timer_id),fired_at INTEGER NOT NULL);
 CREATE TABLE agent_chat_attention(workspace_id TEXT NOT NULL,agent_id TEXT NOT NULL,chat_id INTEGER NOT NULL REFERENCES chats(chat_id),attention_json TEXT NOT NULL,updated_at INTEGER NOT NULL,PRIMARY KEY(workspace_id,agent_id,chat_id),FOREIGN KEY(workspace_id,agent_id)REFERENCES agents(workspace_id,agent_id));
 CREATE TABLE unread_snapshots(snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id TEXT NOT NULL,agent_id TEXT NOT NULL,state TEXT NOT NULL,created_at INTEGER NOT NULL,completed_at INTEGER,FOREIGN KEY(workspace_id,agent_id)REFERENCES agents(workspace_id,agent_id));
 CREATE TABLE unread_snapshot_chats(snapshot_id INTEGER NOT NULL REFERENCES unread_snapshots(snapshot_id),chat_id INTEGER NOT NULL REFERENCES chats(chat_id),read_from_message_id INTEGER,read_to_message_id INTEGER NOT NULL REFERENCES messages(message_id),unread_count INTEGER NOT NULL,trigger_summary TEXT NOT NULL,PRIMARY KEY(snapshot_id,chat_id));

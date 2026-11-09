@@ -1,0 +1,140 @@
+.root {
+  position: relative;
+  display: block;
+  width: 184px;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+  text-align: start;
+  background: var(--clear);
+  border-style: none;
+  outline-style: none;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--paper-face);
+  border-radius: var(--r-lg);
+  box-shadow: var(--card-shadow);
+  transition: box-shadow var(--d-base);
+}
+
+.root:focus-visible .card {
+  box-shadow: var(--card-shadow-focus);
+}
+
+.band {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  align-items: flex-end;
+  justify-content: center;
+  height: 46px;
+  padding-bottom: 9px;
+  font-size: var(--t-caption);
+  font-weight: 600;
+  color: var(--on-band);
+  text-indent: 0.3em;
+  letter-spacing: 0.3em;
+  background: var(--band-face);
+  box-shadow: var(--band-shadow);
+}
+
+.alert {
+  width: 6px;
+  height: 6px;
+  margin-bottom: 4px;
+  background: var(--on-band);
+  border-radius: var(--r-full);
+}
+
+/* Binder rings through the band and the pages. */
+.rings {
+  position: absolute;
+  top: 38px;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 30px;
+  pointer-events: none;
+}
+
+.rings > i {
+  position: relative;
+  width: 5px;
+  height: 16px;
+  background: var(--clip-face);
+  border-radius: var(--r-full);
+  box-shadow: var(--clip-shadow);
+}
+
+.rings > i::after {
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  z-index: -1;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  content: '';
+  background: var(--pad-hole);
+  border-radius: var(--r-full);
+}
+
+.page {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 10px 12px 4px;
+}
+
+/* The margin rule a planner prints its days left of. */
+.page::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 45px;
+  width: 1px;
+  content: '';
+  background: var(--margin-rule);
+}
+
+.slot {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  margin: 0 -12px;
+  border-bottom: var(--rule-line);
+}
+
+.slot:last-child {
+  border-bottom-style: none;
+}
+
+.day {
+  overflow: hidden;
+  font-size: var(--t-tiny);
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.time {
+  padding-left: 9px;
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.who {
+  display: flex;
+}

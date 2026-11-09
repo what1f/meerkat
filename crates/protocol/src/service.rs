@@ -313,6 +313,36 @@ impl<P: RuntimePeer> ValidatedRuntimeService<P> {
             self.peer.list_human_members(request.into_inner()).await?,
         ))
     }
+    pub async fn list_timers(
+        &self,
+        request: Request<GetWorkspaceRequest>,
+    ) -> Result<Response<Vec<Timer>>, Status> {
+        validate_request_id(&request.get_ref().request_id)?;
+        validate_workspace_ref(request.get_ref().workspace.as_ref())?;
+        Ok(Response::new(
+            self.peer.list_timers(request.into_inner()).await?,
+        ))
+    }
+    pub async fn cancel_timer(
+        &self,
+        request: Request<TimerRequest>,
+    ) -> Result<Response<Timer>, Status> {
+        validate_request_id(&request.get_ref().request_id)?;
+        validate_workspace_ref(request.get_ref().workspace.as_ref())?;
+        Ok(Response::new(
+            self.peer.cancel_timer(request.into_inner()).await?,
+        ))
+    }
+    pub async fn restore_timer(
+        &self,
+        request: Request<TimerRequest>,
+    ) -> Result<Response<Timer>, Status> {
+        validate_request_id(&request.get_ref().request_id)?;
+        validate_workspace_ref(request.get_ref().workspace.as_ref())?;
+        Ok(Response::new(
+            self.peer.restore_timer(request.into_inner()).await?,
+        ))
+    }
     pub async fn sync_human_profile(
         &self,
         request: Request<SyncHumanProfileRequest>,

@@ -135,3 +135,30 @@ export function useRenameWorkspaceTasklist() {
     },
   });
 }
+
+// Timers the team's members set to wake themselves, soonest first.
+export function useTimers(input: DTO.GetWorkspaceRequest, enabled = true) {
+  return useQuery({
+    queryKey: [...keys.timers, { ...input, request_id: undefined }],
+    queryFn: ({ signal }) => call('list_timers', input, signal),
+    enabled,
+  });
+}
+export function useCancelTimer() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: DTO.TimerRequest) => call('cancel_timer', input),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: keys.timers });
+    },
+  });
+}
+export function useRestoreTimer() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: DTO.TimerRequest) => call('restore_timer', input),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: keys.timers });
+    },
+  });
+}

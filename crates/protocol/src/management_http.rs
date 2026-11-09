@@ -117,6 +117,9 @@ pub(crate) async fn dispatch<P: RuntimePeer>(
             Vec<json::HumanTeamMember>,
             update_human_position
         ),
+        "list_timers" => call!(json::GetWorkspaceRequest, Vec<json::Timer>, list_timers),
+        "cancel_timer" => call!(json::TimerRequest, json::Timer, cancel_timer),
+        "restore_timer" => call!(json::TimerRequest, json::Timer, restore_timer),
         "list_agents" => call!(
             json::ListAgentsRequest,
             json::ListAgentsResponse,

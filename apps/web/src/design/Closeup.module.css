@@ -1,0 +1,82 @@
+/* The dialog box fills the viewport so a click on the dimmed page lands on it, not the object. */
+.root {
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
+  max-height: none;
+  padding: 48px 24px;
+  margin: 0;
+  overflow: auto;
+  color: var(--ink);
+  background: var(--clear);
+  border-style: none;
+  opacity: 0;
+  transition:
+    opacity var(--d-base) var(--ease),
+    overlay var(--d-base) allow-discrete,
+    display var(--d-base) allow-discrete;
+}
+
+.root[open] {
+  display: grid;
+  place-items: center;
+  opacity: 1;
+  transition:
+    opacity var(--d-slow) var(--ease),
+    overlay var(--d-slow) allow-discrete,
+    display var(--d-slow) allow-discrete;
+}
+
+@starting-style {
+  .root[open] {
+    opacity: 0;
+  }
+}
+
+.root > * {
+  grid-area: 1 / 1;
+}
+
+/* Popups opened inside portal into the dialog too; only the object itself lifts. */
+.object {
+  filter: drop-shadow(var(--closeup-drop));
+  transform: translateY(6px) scale(0.96);
+  transition: transform var(--d-base) var(--ease);
+}
+
+.root[open] > .object {
+  transform: none;
+  transition: transform var(--d-slow) var(--ease-pop);
+}
+
+@starting-style {
+  .root[open] > .object {
+    transform: translateY(14px) scale(0.92);
+  }
+}
+
+.root::backdrop {
+  background: var(--clear);
+  backdrop-filter: blur(0);
+  transition:
+    background-color var(--d-base) var(--ease),
+    backdrop-filter var(--d-base) var(--ease),
+    overlay var(--d-base) allow-discrete,
+    display var(--d-base) allow-discrete;
+}
+
+.root[open]::backdrop {
+  background: var(--backdrop);
+  backdrop-filter: blur(3px);
+}
+
+@starting-style {
+  .root[open]::backdrop {
+    background: var(--clear);
+    backdrop-filter: blur(0);
+  }
+}
+
+.root:focus-visible {
+  outline-style: none;
+}

@@ -26,6 +26,7 @@ mod relocation;
 mod resource_store;
 mod retry;
 mod session_recovery;
+mod timer;
 pub use application::*;
 pub use coordination::{AttentionPolicy, CoordinatedEvent};
 pub use error::RuntimeError;

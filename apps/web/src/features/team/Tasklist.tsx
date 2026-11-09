@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Button, Callout, Icon, IconButton, InlineText, Menu, useToast } from '../../design';
-import { ChecklistRow, Clipboard, VacantSlot, type HoleHandle } from '../../scene';
+import { ChecklistRow, Clipboard, VacantSlot } from '../../scene';
 import { useT } from '../../lib/i18n';
 import {
   useUpdateWorkspace,
@@ -14,13 +14,18 @@ import './messages';
 
 // The team's Feishu task list on a clipboard; a vacant outline while the task system is off.
 // When the list can't be read the clipboard stays, with a retry and a way to turn it off.
-export function Tasklist({ workspace, handle }: { workspace: Workspace; handle?: HoleHandle }) {
+export function TasklistBoard({
+  workspace,
+  onTurnedOff,
+}: {
+  workspace: Workspace;
+  onTurnedOff: () => void;
+}) {
   const t = useT();
   const toast = useToast();
   const failed = () => toast({ message: t('team.failed') });
   const request = { request_id: 'workspace_tasks', workspace: workspace.workspace };
   const tasks = useWorkspaceTasks(request);
-  const update = useUpdateWorkspace(`tasks-${workspace.workspace?.workspace_id}`);
   const rename = useRenameWorkspaceTasklist();
   const [draft, setDraft] = useState<string | null>(null);
   const cancelled = useRef(false);
@@ -39,25 +44,7 @@ export function Tasklist({ workspace, handle }: { workspace: Workspace; handle?:
       },
     );
   };
-  const peg = { ref: handle?.ref, style: handle?.style };
-  const turn = (enabled: boolean) => {
-    const config: unknown = JSON.parse(workspace.provider_config_json || '{}');
-    update.mutate(
-      {
-        request_id: 'update_workspace_tasks',
-        workspace: workspace.workspace,
-        name: null,
-        rules: null,
-        provider_config_json: JSON.stringify({
-          ...(config && typeof config === 'object' ? config : {}),
-          task_system_enabled: enabled,
-        }),
-        cover_resource_id: null,
-        provider_secrets_json: null,
-      },
-      { onError: failed },
-    );
-  };
+  const { turn, turning } = useTurnTasks(workspace, onTurnedOff);
   const menu = (
     <Menu align="end" trigger={<IconButton icon="more" label={t('team.more')} size="sm" />}>
       <Menu.Item leading={<Icon name="ban" size={14} />} onSelect={() => turn(false)}>
@@ -68,13 +55,7 @@ export function Tasklist({ workspace, handle }: { workspace: Workspace; handle?:
   // A list that has failed keeps its clipboard while it is read again, even with nothing loaded.
   if (tasks.isError || (!tasks.data && tasks.errorUpdateCount > 0))
     return (
-      <Clipboard
-        {...peg}
-        data-testid="tasklist"
-        title={t('team.tasks')}
-        actions={menu}
-        footer={null}
-      >
+      <Clipboard data-testid="tasklist-board" title={t('team.tasks')} actions={menu} footer={null}>
         <Callout
           tone="quiet"
           action={
@@ -92,32 +73,24 @@ export function Tasklist({ workspace, handle }: { workspace: Workspace; handle?:
   const enabled = tasks.data ? tasks.data.enabled : configured(workspace);
   if (!tasks.data && enabled)
     return (
-      <Clipboard
-        {...peg}
-        data-testid="tasklist"
-        title={t('team.tasks')}
-        actions={menu}
-        footer={null}
-      >
+      <Clipboard data-testid="tasklist-board" title={t('team.tasks')} actions={menu} footer={null}>
         {null}
       </Clipboard>
     );
   if (!enabled)
     return (
       <VacantSlot
-        {...peg}
-        data-testid="tasklist"
+        data-testid="tasklist-board"
         shape="clipboard"
         label={t('team.tasks')}
-        busy={update.isPending}
+        busy={turning}
         onClick={() => turn(true)}
       />
     );
   if (!tasks.data) return null;
   return (
     <Clipboard
-      {...peg}
-      data-testid="tasklist"
+      data-testid="tasklist-board"
       title={
         <InlineText
           mode="live"
@@ -150,17 +123,32 @@ export function Tasklist({ workspace, handle }: { workspace: Workspace; handle?:
   );
 }
 
-// Whether the task list hangs as a list rather than an empty slot: what Feishu said, else the setting.
-export function useTasksOn(workspace: Workspace, feishu: boolean) {
-  const tasks = useWorkspaceTasks(
-    { request_id: 'workspace_tasks', workspace: workspace.workspace },
-    feishu,
-  );
-  if (tasks.isError || (!tasks.data && tasks.errorUpdateCount > 0)) return true;
-  return tasks.data ? tasks.data.enabled : configured(workspace);
+export function useTurnTasks(workspace: Workspace, onDone?: () => void) {
+  const t = useT();
+  const toast = useToast();
+  const update = useUpdateWorkspace(`tasks-${workspace.workspace?.workspace_id}`);
+  const turn = (enabled: boolean) => {
+    const config: unknown = JSON.parse(workspace.provider_config_json || '{}');
+    update.mutate(
+      {
+        request_id: 'update_workspace_tasks',
+        workspace: workspace.workspace,
+        name: null,
+        rules: null,
+        provider_config_json: JSON.stringify({
+          ...(config && typeof config === 'object' ? config : {}),
+          task_system_enabled: enabled,
+        }),
+        cover_resource_id: null,
+        provider_secrets_json: null,
+      },
+      { onSuccess: onDone, onError: () => toast({ message: t('team.failed') }) },
+    );
+  };
+  return { turn, turning: update.isPending };
 }
 
-function configured(workspace: Workspace) {
+export function configured(workspace: Workspace) {
   try {
     const config: unknown = JSON.parse(workspace.provider_config_json || '{}');
     return !!config && typeof config === 'object' && 'task_system_enabled' in config

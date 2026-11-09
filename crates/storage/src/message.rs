@@ -73,6 +73,10 @@ pub enum DispatchReason {
         name: String,
         object_id: String,
     },
+    Timer {
+        timer_id: i64,
+        prompt: String,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]

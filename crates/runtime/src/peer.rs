@@ -545,6 +545,27 @@ impl RuntimePeer for RuntimePeerAdapter {
             .await
             .map_err(status)
     }
+    async fn list_timers(
+        &self,
+        request: GetWorkspaceRequest,
+    ) -> Result<Vec<meerkat_protocol::Timer>, Status> {
+        self.application.list_timers(request).await.map_err(status)
+    }
+    async fn cancel_timer(
+        &self,
+        request: meerkat_protocol::TimerRequest,
+    ) -> Result<meerkat_protocol::Timer, Status> {
+        self.application.cancel_timer(request).await.map_err(status)
+    }
+    async fn restore_timer(
+        &self,
+        request: meerkat_protocol::TimerRequest,
+    ) -> Result<meerkat_protocol::Timer, Status> {
+        self.application
+            .restore_timer(request)
+            .await
+            .map_err(status)
+    }
     async fn sync_human_profile(
         &self,
         request: meerkat_protocol::SyncHumanProfileRequest,

@@ -45,6 +45,14 @@
   border-radius: var(--r-badge-lg);
 }
 
+.root[data-shape='pad'] .outline {
+  gap: 10px;
+  width: 184px;
+  height: 208px;
+  font-size: var(--t-small);
+  border-radius: var(--r-lg);
+}
+
 .plus {
   display: flex;
   align-items: center;
@@ -107,4 +115,9 @@
 
 .root[aria-busy] .plus {
   transform: none;
+}
+
+.root[data-shape='pad'] .plus {
+  width: 40px;
+  height: 40px;
 }

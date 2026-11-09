@@ -30,9 +30,9 @@ pub use crate::management::{
     ProviderCatalog, ProviderCatalogItem, ProviderInterface, ProviderOnboardingState,
     ReactionCatalog, ReactionCatalogItem, RemoteAccess, RenameMachineRequest, RevokeMachineRequest,
     SetRemoteAccessRequest, SetWorkspaceStateRequest, SyncHumanProfileRequest, TestHarnessRequest,
-    TestHarnessResponse, UpdateAgentRequest, UpdateHumanPositionRequest, UpdateWorkspaceRequest,
-    UploadWorkspaceImageRequest, UploadWorkspaceImageResponse, Workspace, WorkspaceImageRequest,
-    WorkspaceImageResponse,
+    TestHarnessResponse, Timer, TimerRepeat, TimerRequest, UpdateAgentRequest,
+    UpdateHumanPositionRequest, UpdateWorkspaceRequest, UploadWorkspaceImageRequest,
+    UploadWorkspaceImageResponse, Workspace, WorkspaceImageRequest, WorkspaceImageResponse,
 };
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Eq)]
@@ -386,6 +386,7 @@ pub enum ManagementEventKind {
     CatalogChanged = 7,
     AgentDeleted = 8,
     MachineCatalogChanged = 9,
+    TimersChanged = 10,
 }
 impl Default for ManagementEventKind {
     fn default() -> Self {
@@ -406,6 +407,7 @@ impl TryFrom<i32> for ManagementEventKind {
             7 => Ok(Self::CatalogChanged),
             8 => Ok(Self::AgentDeleted),
             9 => Ok(Self::MachineCatalogChanged),
+            10 => Ok(Self::TimersChanged),
             _ => Err(crate::Status::invalid_argument("unknown_enum_value")),
         }
     }

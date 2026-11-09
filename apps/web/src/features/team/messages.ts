@@ -12,6 +12,12 @@ const en = {
   on: 'Open',
   off: 'Closed',
   failed: 'Couldn’t save changes',
+  timers: 'Timers',
+  timersUnavailable: 'Timers can’t be read right now',
+  repeats: 'Repeats',
+  removeTimer: 'Delete',
+  timerRemoved: 'Timer deleted',
+  undo: 'Undo',
 };
 declare module '../../lib/i18n' {
   interface MessageCatalog {
@@ -33,5 +39,11 @@ registerMessages('team', {
     on: '上班',
     off: '下班',
     failed: '没有保存成功',
+    timers: '定时任务',
+    timersUnavailable: '定时任务暂时读不到',
+    repeats: '重复',
+    removeTimer: '删除',
+    timerRemoved: '已删除定时任务',
+    undo: '撤销',
   },
 });

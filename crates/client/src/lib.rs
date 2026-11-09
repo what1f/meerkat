@@ -281,6 +281,7 @@ pub enum ManagementEventKind {
     ProviderOnboardingChanged,
     CatalogChanged,
     MachineCatalogChanged,
+    TimersChanged,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ManagementEvent {
@@ -1668,6 +1669,9 @@ impl ManagementClient for RuntimeManagementClient {
                         }
                         wire::ManagementEventKind::CatalogChanged => {
                             ManagementEventKind::CatalogChanged
+                        }
+                        wire::ManagementEventKind::TimersChanged => {
+                            ManagementEventKind::TimersChanged
                         }
                         _ => return Err(ClientError::Protocol("unspecified event kind".into())),
                     };

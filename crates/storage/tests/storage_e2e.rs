@@ -117,7 +117,7 @@ fn run_scenario(run_id: &str, artifact_dir: &Path) -> Result<serde_json::Value, 
 
     let storage = Storage::open(config.clone()).map_err(|error| error.to_string())?;
     registered_machine::register(&storage, &["fixture-machine", "machine-a", "machine-b"]).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 2);
+    assert_eq!(storage.schema_version().unwrap(), 3);
     assert_eq!(storage.sqlite_settings().unwrap().journal_mode, "wal");
     assert!(storage.sqlite_settings().unwrap().foreign_keys);
 
@@ -1957,7 +1957,7 @@ fn placement_changes_preserve_queued_work_and_invalidates_old_authorizations() {
     storage.close().unwrap();
     let storage = Storage::open(config.clone()).unwrap();
     registered_machine::register(&storage, &["fixture-machine", "machine-a", "machine-b"]).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 2);
+    assert_eq!(storage.schema_version().unwrap(), 3);
     assert_eq!(storage.inbox_items(&workspace, &agent).unwrap().len(), 1);
     let run = storage
         .create_execution_with_auth(
@@ -2049,31 +2049,22 @@ fn baseline_reopens_and_unsupported_versions_are_refused() {
     let config = DatabaseConfig::new(home.path().join("runtime.db"));
     let storage = Storage::open(config.clone()).unwrap();
     registered_machine::register(&storage, &["fixture-machine", "machine-a", "machine-b"]).unwrap();
-    assert_eq!(storage.schema_version().unwrap(), 2);
+    assert_eq!(storage.schema_version().unwrap(), 3);
     storage.close().unwrap();
-    Storage::open(config.clone()).unwrap().close().unwrap();
-    // Reopen an existing v1 installation and preserve its machine registrations.
-    let connection = rusqlite::Connection::open(&config.path).unwrap();
-    let machines: i64 = connection
-        .query_row("SELECT count(*) FROM machines", [], |row| row.get(0))
-        .unwrap();
-    connection
-        .execute_batch("DROP TABLE agent_chat_observations; PRAGMA user_version=1;")
-        .unwrap();
-    drop(connection);
-    let upgraded = Storage::open(config.clone()).unwrap();
-    assert_eq!(upgraded.schema_version().unwrap(), 2);
-    upgraded.close().unwrap();
+    // Reopening the baseline keeps its machine registrations.
+    let reopened = Storage::open(config.clone()).unwrap();
+    assert_eq!(reopened.schema_version().unwrap(), 3);
+    reopened.close().unwrap();
     let connection = rusqlite::Connection::open(&config.path).unwrap();
     assert_eq!(
         connection
             .query_row("SELECT count(*) FROM machines", [], |row| row
                 .get::<_, i64>(0))
             .unwrap(),
-        machines
+        3
     );
     drop(connection);
-    for version in [-1, 3, 15, 20, 21] {
+    for version in [-1, 1, 2, 4, 20] {
         let connection = rusqlite::Connection::open(&config.path).unwrap();
         connection
             .pragma_update(None, "user_version", version)

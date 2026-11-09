@@ -1,0 +1,142 @@
+.root {
+  position: relative;
+  display: block;
+  width: 184px;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+  text-align: start;
+  background: var(--clear);
+  border-style: none;
+  outline-style: none;
+}
+
+.back {
+  position: relative;
+  display: block;
+  padding: 38px 9px 12px;
+  background: var(--wood);
+  border-radius: var(--r-lg);
+  box-shadow: var(--wood-shadow);
+  transition: box-shadow var(--d-base);
+}
+
+.root:focus-visible .back {
+  box-shadow: var(--wood-shadow-focus);
+}
+
+/* The wire runs over the top edge of the sheets and through a punched hole. */
+.coil {
+  position: absolute;
+  top: 27px;
+  right: 17px;
+  left: 17px;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.coil > i {
+  position: relative;
+  width: 4px;
+  height: 17px;
+  background: var(--clip-face);
+  border-radius: var(--r-full);
+  box-shadow: var(--clip-shadow);
+}
+
+.coil > i::after {
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  z-index: -1;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  content: '';
+  background: var(--pad-hole);
+  border-radius: var(--r-full);
+}
+
+.paper {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 166px;
+  padding: 18px 12px 6px;
+  isolation: isolate;
+  background: var(--paper-face);
+  border-radius: var(--r-paper);
+  box-shadow: var(--pad-stack);
+}
+
+.paper::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  content: '';
+  background: var(--paper-noise);
+  opacity: var(--paper-grain);
+  mix-blend-mode: multiply;
+}
+
+.title {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  height: 22px;
+  font-size: var(--t-small);
+  font-weight: 600;
+}
+
+.title > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alert {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  background: var(--danger);
+  border-radius: var(--r-full);
+}
+
+.line {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  margin: 0 -12px;
+  font-size: var(--t-small);
+  color: var(--ink-2);
+  border-bottom: var(--rule-line);
+}
+
+.line:last-child {
+  border-bottom-style: none;
+}
+
+.box {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-color: var(--ink-4);
+  border-style: solid;
+  border-width: 1.5px;
+  border-radius: var(--r-xs);
+}
+
+.text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

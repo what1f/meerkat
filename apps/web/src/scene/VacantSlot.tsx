@@ -11,11 +11,11 @@ export type VacantSlotProps = Omit<UIProps, 'className' | 'style'> & {
   style?: PegPosition;
   label: string;
   onClick: () => void;
-  shape: 'badge' | 'clipboard';
+  shape: 'badge' | 'clipboard' | 'pad';
   /** Waiting for the click to take effect: the plus turns into a spinner. */
   busy?: boolean;
 };
-// A sleeve waits for a badge; a clipboard keeps its dashed placeholder.
+// A sleeve waits for a badge; a clipboard or a memo pad keeps its dashed placeholder.
 export function VacantSlot({ label, onClick, shape, busy, ref, style, ...rest }: VacantSlotProps) {
   return (
     <button

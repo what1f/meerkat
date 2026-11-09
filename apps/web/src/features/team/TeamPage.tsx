@@ -16,8 +16,9 @@ import {
   hang,
 } from './wallLayout';
 import { RulesTag } from './RulesTag';
-import { Tasklist, useTasksOn } from './Tasklist';
+import { TaskPad, useTasksOn } from './TaskPad';
 import { ShiftToggle } from './ShiftToggle';
+import { Timers } from './Timers';
 import './messages';
 
 export type TeamPageProps = {
@@ -65,7 +66,9 @@ function TeamWall({ workspace }: { workspace: Workspace }) {
   const layout = !feishu
     ? plain
     : (tiers.find((l) => l.span <= (cols ?? 0)) ?? tiers[tiers.length - 1]!);
-  const spots: Spot[] = feishu ? ['rules', 'tasks', 'shift'] : ['rules', 'shift'];
+  const spots: Spot[] = feishu
+    ? ['rules', 'tasks', 'timers', 'shift']
+    : ['rules', 'timers', 'shift'];
   // The size of each hung piece follows its content.
   const [sizes, setSizes] = useState<Partial<Record<Spot, Size>>>({});
   const items = cols === null ? [] : hang(spots, saved, layout, cols, sizes);
@@ -100,7 +103,8 @@ function TeamWall({ workspace }: { workspace: Workspace }) {
   };
   const content: Record<Spot, (handle: HoleHandle | undefined) => ReactNode> = {
     rules: (handle) => <RulesTag workspace={workspace} handle={handle} />,
-    tasks: (handle) => <Tasklist workspace={workspace} handle={handle} />,
+    tasks: (handle) => <TaskPad workspace={workspace} handle={handle} />,
+    timers: (handle) => <Timers workspace={workspace} handle={handle} />,
     shift: (handle) => <ShiftToggle workspace={workspace} handle={handle} />,
   };
   return (

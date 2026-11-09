@@ -16,6 +16,14 @@ async function openTeam(page: Page, workspace: string) {
   await expect(page.getByTestId('team-name')).toContainText(workspace);
 }
 
+// The wall shows a small pad; the full clipboard opens over it.
+const board = (page: Page) => page.getByTestId('tasklist-board');
+async function openList(page: Page) {
+  await page.getByTestId('tasklist').click();
+  await expect(board(page)).toBeVisible();
+  return board(page);
+}
+
 async function replies(workspace: string) {
   const { outbound } = await rig({ op: 'settle' });
   return outbound!.filter((m) => m.workspace === workspace && m.chat === 'group');
@@ -88,7 +96,8 @@ test('the Feishu task list is read-only and can be turned off', async ({ page, b
   await addFeishuMember(baseURL!, workspace);
   await turnTasksOn(baseURL!, workspace);
   await openTeam(page, workspace);
-  const list = page.getByTestId('tasklist');
+  await expect(page.getByTestId('tasklist').getByText('Draft the launch notes')).toBeVisible();
+  const list = await openList(page);
   await expect(list.getByText('Draft the launch notes')).toBeVisible();
   await expect(list.getByRole('textbox')).toHaveCount(1);
   await expect(list.getByRole('checkbox').first()).toBeDisabled();
@@ -117,9 +126,11 @@ test('the Feishu task list is read-only and can be turned off', async ({ page, b
     await client.dispose();
   }
   await page.reload();
+  await openList(page);
   await expect(list.getByText('Draft the launch notes')).toBeVisible();
   await list.getByRole('button', { name: 'More' }).click();
   await page.getByRole('menuitem', { name: 'Turn off' }).click();
+  await expect(list).toBeHidden();
   expect(await tasksEnabled(baseURL!, workspace)).toBe(false);
 });
 
@@ -132,7 +143,8 @@ test('the task list name saves on Enter or blur and restores on failure or Escap
   await addFeishuMember(baseURL!, workspace);
   await turnTasksOn(baseURL!, workspace);
   await openTeam(page, workspace);
-  const title = page.getByTestId('tasklist').getByRole('textbox');
+  await openList(page);
+  const title = board(page).getByRole('textbox');
   await expect(title).toHaveValue(/.+/);
   const original = await title.inputValue();
   await title.fill('Cancelled');
@@ -159,11 +171,13 @@ test('the task list name saves on Enter or blur and restores on failure or Escap
     ],
   ]);
   await page.reload();
+  await openList(page);
   await expect(title).toHaveValue('Release checklist');
   await title.fill('Launch tasks');
   await title.blur();
   await expect(title).toHaveAttribute('aria-busy', 'false');
   await page.reload();
+  await openList(page);
   await expect(title).toHaveValue('Launch tasks');
   await rig({ op: 'feishu_tasklist', workspace, fail: true });
   await title.fill('Denied');
@@ -171,6 +185,7 @@ test('the task list name saves on Enter or blur and restores on failure or Escap
   await expect(title).toHaveValue('Launch tasks');
   await expect(page.getByRole('status')).toContainText('Couldn’t save changes');
   await page.reload();
+  await openList(page);
   await expect(title).toHaveValue('Launch tasks');
 });
 
@@ -180,7 +195,8 @@ test('a task list turned on before the team lead is bound can be retried or turn
 }) => {
   const workspace = 'unbound_team';
   await createFeishuTeam(workspace);
-  const list = page.getByTestId('tasklist');
+  const pad = page.getByTestId('tasklist');
+  const list = board(page);
   const retry = list.getByRole('button', { name: 'Try again' });
   const hint = 'The task list can’t be opened right now';
   let reads = 0;
@@ -201,21 +217,25 @@ test('a task list turned on before the team lead is bound can be retried or turn
   await openTeam(page, workspace);
   await initialRead;
 
-  await list.click();
+  await pad.click();
   await expect.poll(() => tasksEnabled(baseURL!, workspace)).toBe(true);
+  await openList(page);
   await expect(list).toContainText(hint, { timeout: 2_000 });
   await expect(retry).toBeVisible();
   await list.getByRole('button', { name: 'More' }).click();
   await page.getByRole('menuitem', { name: 'Turn off' }).click();
-  await expect(retry).toBeHidden();
-  await expect(list).toHaveText('Task list');
+  await expect(list).toBeHidden();
+  await expect(pad).toHaveText('Task list');
   expect(await tasksEnabled(baseURL!, workspace)).toBe(false);
 
-  await list.click();
+  await pad.click();
+  await expect.poll(() => tasksEnabled(baseURL!, workspace)).toBe(true);
+  await openList(page);
   await expect(retry).toBeVisible();
   // After a reload nothing was ever read; retrying keeps the clipboard and its way to turn off.
   const beforeReload = reads;
   await page.reload();
+  await openList(page);
   await expect(retry).toBeVisible({ timeout: 2_000 });
   expect(reads).toBe(beforeReload + 1); // One read, without automatic retries.
   const beforeRetry = reads;
@@ -228,11 +248,14 @@ test('a task list turned on before the team lead is bound can be retried or turn
   expect(reads).toBe(beforeRetry + 1);
   await expect(list).not.toContainText('Add member');
   await page.screenshot({ path: test.info().outputPath('task-unavailable.png') });
+  await page.keyboard.press('Escape');
+  await expect(list).toBeHidden();
   await page.getByTestId('team-switcher').click();
   await page.getByTestId('team-settings').click();
   await page.getByTestId('settings-language').click();
   await page.getByRole('option', { name: '简体中文' }).click();
   await page.getByTestId('nav-team').click();
+  await openList(page);
   await expect(list).toContainText('任务清单暂时打不开');
   await expect(list).not.toContainText('添加成员');
   await page.screenshot({ path: test.info().outputPath('task-unavailable-zh.png') });
@@ -240,6 +263,8 @@ test('a task list turned on before the team lead is bound can be retried or turn
   await addFeishuMember(baseURL!, workspace);
   await rig({ op: 'feishu_task', workspace, text: 'Book the venue' });
   await expect(list.getByText('Book the venue')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(pad.getByText('Book the venue')).toBeVisible();
 });
 
 test('pieces moved on the wall stay where they were hung, per team', async ({ page }) => {
@@ -250,7 +275,8 @@ test('pieces moved on the wall stay where they were hung, per team', async ({ pa
   const before = (await sign.boundingBox())!;
   await page.mouse.move(before.x + before.width / 2, before.y + 4);
   await page.mouse.down();
-  await page.mouse.move(before.x + before.width / 2 + 60, before.y + 200, { steps: 12 });
+  // Clear of the timer schedule hung under the sign.
+  await page.mouse.move(before.x + before.width / 2 + 200, before.y + 200, { steps: 12 });
   await page.mouse.up();
   await expect.poll(async () => (await sign.boundingBox())!.y).toBeGreaterThan(before.y + 150);
   await expect(page.locator('[data-settling]')).toHaveCount(0);
@@ -353,8 +379,6 @@ test('dragging a piece leaves the wall texture and the board size alone', async 
   await createFeishuTeam(workspace);
   await addFeishuMember(baseURL!, workspace);
   await turnTasksOn(baseURL!, workspace);
-  // A list long enough that every new task makes the clipboard taller.
-  for (let i = 0; i < 10; i++) await rig({ op: 'feishu_task', workspace, text: `Errand ${i}` });
   await page.setViewportSize({ width: 1600, height: 1000 });
   await openTeam(page, workspace);
   await expect(page.getByTestId('tasklist').getByText('Draft the launch notes')).toBeVisible();
@@ -382,8 +406,14 @@ test('dragging a piece leaves the wall texture and the board size alone', async 
     await page.mouse.move(at.x + at.width / 2 + dx, at.y + 4 + dy, { steps: 8 });
     // Something redraws the wall mid-drag: a task arrives from Feishu.
     await rig({ op: 'feishu_task', workspace, text: `Arrived ${dy}` });
+    const arrived = page.waitForResponse(
+      async (response) =>
+        response.url().endsWith('/api/v1/invoke_provider_interface') &&
+        (await response.text()).includes(`Arrived ${dy}`),
+    );
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await expect(page.getByTestId('tasklist').getByText(`Arrived ${dy}`)).toBeVisible();
+    await arrived;
+    await page.waitForTimeout(100);
     expect(await wall()).toEqual(still);
   }
   await page.mouse.up();
@@ -429,7 +459,7 @@ test('with the task list off the rules hang on the middle hole of the board', as
   expect(apart(bare.list, bare.shift)).toBe(true);
 
   await page.getByTestId('tasklist').click();
-  await expect(page.getByTestId('tasklist').getByRole('textbox')).toHaveCount(1);
+  await expect(page.getByTestId('tasklist')).toHaveAttribute('aria-haspopup', 'dialog');
   await expect
     .poll(async () => {
       const { board, rules } = await boxes();

@@ -1,0 +1,126 @@
+.root {
+  position: absolute;
+  top: 0;
+  right: 10px;
+  left: 10px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 74px;
+  padding: 8px 12px;
+  font: inherit;
+  color: var(--ink);
+  text-align: start;
+  cursor: pointer;
+  background: var(--paper-face);
+  border-style: none;
+  border-radius: var(--r-paper);
+  outline-style: none;
+  box-shadow: var(--paper-shadow);
+  transition: transform var(--d-base) var(--ease);
+}
+
+.root:hover {
+  transform: translateY(-3px);
+}
+
+.root[data-lifted] {
+  transform: translateY(-10px);
+}
+
+.root:focus-visible {
+  box-shadow: var(--paper-shadow-focus);
+}
+
+.head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  height: 22px;
+}
+
+.when {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  font-size: var(--t-small);
+  color: var(--ink-3);
+}
+
+.time {
+  flex: 1;
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.avatar {
+  display: flex;
+}
+
+.text {
+  overflow: hidden;
+  font-size: var(--t-small);
+  line-height: 18px;
+  color: var(--ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 280px;
+  padding: 16px;
+}
+
+.note > header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-weight: 600;
+}
+
+.note > p {
+  margin: 0;
+  font-size: var(--t-body);
+  line-height: 20px;
+  white-space: pre-wrap;
+}
+
+.note > ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.note li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: var(--t-small);
+  color: var(--ink-2);
+}
+
+.note li > svg {
+  flex: none;
+  color: var(--ink-3);
+}
+
+.note code {
+  font-family: var(--font-mono);
+}
+
+.note > footer {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 -8px -8px 0;
+}

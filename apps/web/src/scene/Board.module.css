@@ -65,8 +65,9 @@
   padding-top: 72px;
 }
 
-/* Free board: every item hangs on a hole by its peg and can move to another. */
-.root[data-layout='free'] .items > * {
+/* Free board: every item hangs on a hole by its peg and can move to another. A dialog an item
+   opens sits in the top layer, not on the board. */
+.root[data-layout='free'] .items > :not(dialog) {
   position: absolute;
   touch-action: none;
   cursor: grab;

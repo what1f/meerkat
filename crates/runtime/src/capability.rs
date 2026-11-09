@@ -39,6 +39,21 @@ pub(crate) fn standard_tool_definitions() -> Vec<ToolDefinition> {
             "Choose how closely to follow one group conversation.",
             r#"{"type":"object","required":["channel_id","chat_id","level"],"properties":{"channel_id":{"type":"string"},"chat_id":{"type":"string"},"level":{"type":"string","enum":["follow","schedule","mention","mute"]},"interval_minutes":{"type":"integer","enum":[5,15,30,60,120,240,480,1440]}} ,"additionalProperties":false}"#,
         ),
+        (
+            "timer_set",
+            "Set a timer that wakes you later in a conversation you belong to, once or on repeat.",
+            r#"{"type":"object","required":["channel_id","chat_id","prompt"],"properties":{"channel_id":{"type":"string"},"chat_id":{"type":"string"},"prompt":{"type":"string","description":"到点时交给你自己的工作说明，写清楚要做什么、结果发到哪里。"},"at":{"type":"string","description":"首次或唯一一次触发时间，YYYY-MM-DDTHH:MM，按 timezone 的当地时间。"},"in_minutes":{"type":"integer","minimum":1,"description":"多少分钟后首次或唯一一次触发。"},"every_minutes":{"type":"integer","minimum":5,"description":"每隔多少分钟重复。"},"cron":{"type":"string","description":"五段 cron：分 时 日 月 周，按 timezone 的当地时间，如 0 9 * * 1-5。"},"timezone":{"type":"string","description":"IANA 时区，如 Asia/Shanghai；默认本机时区。"}},"additionalProperties":false}"#,
+        ),
+        (
+            "timer_list",
+            "List your active timers and the current time.",
+            r#"{"type":"object","additionalProperties":false}"#,
+        ),
+        (
+            "timer_cancel",
+            "Cancel one of your timers.",
+            r#"{"type":"object","required":["timer_id"],"properties":{"timer_id":{"type":"integer"}},"additionalProperties":false}"#,
+        ),
     ]
     .into_iter()
     .map(|(name, description, input_schema_json)| ToolDefinition {
@@ -700,6 +715,15 @@ async fn invoke_standard_tool(
             ));
         }
         "unread_current" => validated.runtime_spec.unread_snapshot.clone(),
+        name if name.starts_with("timer_") => {
+            match application
+                .invoke_timer_tool(name, validated, arguments)
+                .await?
+            {
+                Some(result) => result,
+                None => return Ok(None),
+            }
+        }
         "attention_set" => {
             let object = argument_object(arguments)?;
             let level = required_text(object, "level")?;
