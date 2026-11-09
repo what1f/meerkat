@@ -98,7 +98,10 @@ Delivery rules:
 
 1. The Desktop asks the Runtime for a pairing code. Codes are single-use and
    expire after ten minutes.
-2. The Machine runs `meerkat-machine pair <wss-url> <code> --cert-sha256 <hex>`. It stays in the foreground after pairing. On
+2. The Machine runs `meerkat-machine pair <wss-url> <code> --cert-sha256 <hex>`. On
+   macOS it then installs itself as a per-user LaunchAgent and exits once
+   connected; `--foreground` and other platforms keep running in the
+   foreground. On
    successful pairing the Runtime generates a random `machine_id`. The Machine
    stores it with the device
    credential in its home directory, readable only by its owner.
@@ -318,4 +321,13 @@ and can be used once. The Desktop renews expired commands while the dialog is
 open and detects new online registrations by polling the public catalog.
 
 No installer is included. The remote machine must already have
-`meerkat-machine` on PATH. Its `pair` command stays in the foreground.
+`meerkat-machine` on PATH.
+
+On macOS, `pair` writes `~/Library/LaunchAgents/com.meerkat.machine.remote.plist`
+pointing at the running executable and its home, loads it, and waits up to 45
+seconds for the background Machine to connect. A background process needs
+Local Network access to reach a LAN Runtime; until the user allows it the link
+fails with `EHOSTUNREACH`, and `pair` says where to allow it. The agent keeps
+retrying and connects once access is allowed. A revoked or unknown Machine
+exits cleanly so launchd does not restart it. `--foreground` skips the
+LaunchAgent and keeps the pairing process attached.

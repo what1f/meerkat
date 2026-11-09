@@ -68,7 +68,7 @@ fn command(
 ) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_meerkat-machine"));
     if let (Some(url), Some(code)) = (url, code) {
-        command.args(["pair", url, code]);
+        command.args(["pair", url, code, "--foreground"]);
     }
     if let Some(pin) = pin {
         command.args(["--cert-sha256", pin]);

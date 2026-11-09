@@ -1,4 +1,7 @@
 #![forbid(unsafe_code)]
+#[cfg(target_os = "macos")]
+mod background;
+
 use meerkat_machine::{AppError, DaemonConfig};
 use std::{
     env,
@@ -12,6 +15,11 @@ use std::{
 #[tokio::main]
 async fn main() {
     if let Err(error) = execute().await {
+        if is_revoked(&error) {
+            log::error!("This machine was removed from the workspace.");
+            // A clean exit keeps launchd from restarting a removed Machine.
+            std::process::exit(0);
+        }
         let message = match &error {
             AppError::Io(error) => error.to_string(),
             AppError::InvalidArgument(message) => message.to_string(),
@@ -34,6 +42,7 @@ async fn execute() -> Result<(), AppError> {
     let mut instance_id = None;
     let mut pairing = None;
     let mut cert_sha256 = None;
+    let mut foreground = false;
     while let Some(argument) = arguments.next() {
         if argument == "pair" {
             let url = arguments
@@ -55,12 +64,14 @@ async fn execute() -> Result<(), AppError> {
                     .to_string_lossy()
                     .into_owned(),
             );
+        } else if argument == "--foreground" {
+            foreground = true;
         } else if argument == "--version" {
             println!("meerkat-machine {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         } else if argument == "--help" {
             println!(
-                "Usage: meerkat-machine [pair URL CODE [--cert-sha256 HEX]] [--home PATH] [--instance-id ID] [--runtime-url URL] [--link-secret-file PATH]"
+                "Usage: meerkat-machine [pair URL CODE [--cert-sha256 HEX] [--foreground]] [--home PATH] [--instance-id ID] [--runtime-url URL] [--link-secret-file PATH]"
             );
             return Ok(());
         } else if argument == "--home" {
@@ -103,7 +114,12 @@ async fn execute() -> Result<(), AppError> {
     let mut config = DaemonConfig::for_home(paths.home)?;
     if let Some((url, code)) = pairing {
         meerkat_machine::pair_with_pin(&config.paths, &url, &code, cert_sha256.as_deref()).await?;
+        #[cfg(target_os = "macos")]
+        if !foreground {
+            return background::install(&config.paths).await;
+        }
     }
+    let _ = foreground;
     config.runtime_url = runtime_url;
     config.link_secret_file = link_secret_file;
     if let Some(path) = user_executable_path() {
@@ -113,6 +129,16 @@ async fn execute() -> Result<(), AppError> {
         config.instance_id = instance_id;
     }
     meerkat_machine::run(config).await
+}
+
+fn is_revoked(error: &AppError) -> bool {
+    use meerkat_protocol::link::{CloseReason, LinkError};
+    matches!(
+        error,
+        AppError::Machine(meerkat_machine_core::MachineError::Link(LinkError::Closed(
+            CloseReason::MachineRevoked | CloseReason::MachineUnknown
+        )))
+    )
 }
 
 fn user_executable_path() -> Option<OsString> {

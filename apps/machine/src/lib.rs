@@ -259,6 +259,8 @@ pub async fn run_with_harnesses(
         .spawn(&config.paths.runtime_run)
         .await
         .map_err(AppError::Machine)?;
+    let connected_marker = connected_marker(&config.paths);
+    let _ = std::fs::remove_file(&connected_marker);
     let shutdown = wait_for_shutdown();
     tokio::pin!(shutdown);
     let mut announced = false;
@@ -271,10 +273,16 @@ pub async fn run_with_harnesses(
             }
             _ = handle.wait_until_connected(), if !announced => {
                 println!("Connected as {}", machine_name());
+                std::fs::write(&connected_marker, &run_id)?;
                 announced = true;
             }
         }
     }
+}
+
+/// Written once the Machine link is authenticated, so a waiting `pair` can see it.
+pub fn connected_marker(paths: &MachineDaemonPaths) -> PathBuf {
+    paths.run.join("machine-connected")
 }
 
 pub fn production_harnesses(config: &DaemonConfig) -> Vec<RegisteredHarness> {
