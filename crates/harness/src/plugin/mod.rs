@@ -18,6 +18,9 @@ use std::{
 };
 use tokio::sync::oneshot;
 use tokio_stream::wrappers::UnboundedReceiverStream;
+const HOOK_TIMEOUT: Duration = Duration::from_secs(30);
+/// Starting a session may install the harness packages first.
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(200);
 
 #[derive(Clone, Debug)]
 pub struct JsHarnessFactory {
@@ -79,7 +82,11 @@ impl JsHarnessFactory {
             ));
         }
         let worker = self.worker(Some(request.clone()))?;
-        let operation = worker.call(if resume { "resume" } else { "start" }, json!(request));
+        let operation = worker.call_within(
+            if resume { "resume" } else { "start" },
+            json!(request),
+            STARTUP_TIMEOUT,
+        );
         let result = if let Some(deadline) = deadline {
             match tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), operation).await
             {
@@ -412,6 +419,14 @@ impl Worker {
         Ok(Self { commands, shared })
     }
     async fn call(&self, hook: &str, input: Value) -> Result<Value, HarnessError> {
+        self.call_within(hook, input, HOOK_TIMEOUT).await
+    }
+    async fn call_within(
+        &self,
+        hook: &str,
+        input: Value,
+        timeout: Duration,
+    ) -> Result<Value, HarnessError> {
         let (tx, rx) = oneshot::channel();
         self.commands
             .send(Invocation {
@@ -422,7 +437,7 @@ impl Worker {
             .map_err(|_| {
                 HarnessError::new(HarnessErrorCode::InvalidState, "Plugin worker closed")
             })?;
-        match tokio::time::timeout(Duration::from_secs(30), rx).await {
+        match tokio::time::timeout(timeout, rx).await {
             Ok(reply) => reply.map_err(|_| {
                 HarnessError::new(HarnessErrorCode::StreamInterrupted, "Plugin worker ended")
             })?,

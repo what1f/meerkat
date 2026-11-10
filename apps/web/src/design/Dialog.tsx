@@ -7,7 +7,7 @@ export type DialogProps = Omit<UIProps, 'className' | 'style'> & {
   open: boolean;
   onClose: () => void;
   title: string;
-  size?: 'sm' | 'md';
+  size?: 'sm' | 'md' | 'lg';
   children: ReactNode;
   footer: ReactNode;
 };

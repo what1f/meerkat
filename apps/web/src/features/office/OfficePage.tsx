@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from 'react';
 import type * as DTO from '../../lib/api/generated';
 import { type Status, useToast } from '../../design';
-import { AddRow, WorkRow, useCarry } from '../../scene';
+import { AddRow, WorkRow } from '../../scene';
 import { useMachines, useRenameMachine, useRevokeMachine } from '../../lib/queries/machines';
-import { useAgents, useUpdateAgent } from '../../lib/queries/agents';
+import { useAgents } from '../../lib/queries/agents';
 import { useWorkspace } from '../../lib/queries/workspaces';
 import { ApiError } from '../../lib/api/client';
 import { useT } from '../../lib/i18n';
@@ -13,8 +13,7 @@ import { BuiltinSignInDialog } from '../builtin-agent';
 import { AddMachineDialog, usePairing } from './AddMachineDialog';
 import { RemoveMachineDialog } from './RemoveMachineDialog';
 import { LoadState } from './LoadState';
-import { useMoveFailures } from './useMoveFailures';
-import { move } from './move';
+import { useMoves, type MoveDialog } from './useMoves';
 import './messages';
 import css from './OfficePage.module.css';
 
@@ -23,6 +22,7 @@ export type OfficePageProps = {
   navigate: (page: { kind: 'member'; id: string; from: 'office' }) => void;
   // Supplied by the app shell, which puts the top bar and body in place.
   frame: (bar: Record<string, never>, body: ReactNode) => ReactNode;
+  moveDialog: MoveDialog;
 };
 const rowStatus: Partial<Record<DTO.ObservedState, Status>> = {
   running: 'ok',
@@ -30,7 +30,12 @@ const rowStatus: Partial<Record<DTO.ObservedState, Status>> = {
   error: 'err',
 };
 
-export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePageProps) {
+export function OfficePage({
+  workspaceId: workspace,
+  navigate,
+  frame,
+  moveDialog,
+}: OfficePageProps) {
   const t = useT();
   const toast = useToast();
   const ref = workspace ? { workspace_id: workspace } : null;
@@ -38,7 +43,6 @@ export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePa
   const crew = useAgents({ request_id: 'list_agents', workspace: ref }, !!ref);
   const agents = crew.data?.agents;
   const team = useWorkspace({ request_id: 'get_workspace', workspace: ref }, !!ref).data;
-  const update = useUpdateAgent();
   const rename = useRenameMachine();
   const revoke = useRevokeMachine();
   const pairing = usePairing();
@@ -48,18 +52,10 @@ export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePa
     open: false,
   });
   const [signing, setSigning] = useState<{ id?: string; open: boolean }>({ open: false });
-  const [arrived, setArrived] = useState<string | null>(null);
-  const { seatHandle, rowProps } = useCarry((id, machine) => {
-    if (!workspace) return;
-    setArrived(id);
-    update.mutate(move({ workspace_id: workspace, agent_id: id }, machine), {
-      onError: () => toast({ message: t('office.moveFailed') }),
-    });
-  });
-  useMoveFailures(agents, (agent, ref) => {
-    toast({ message: t('office.moveFailed') });
-    update.mutate(move(ref, agent.machine_id));
-  });
+  const machines = (catalog.data?.machines ?? []).filter(
+    (m) => m.registered && m.revoked_at === null,
+  );
+  const moves = useMoves(agents, machines, moveDialog);
   const bar = {};
   // Members that failed to load must not read as an empty office.
   const failed = [catalog, ...(ref ? [crew] : [])].filter((q) => q.isError && !q.data);
@@ -70,19 +66,8 @@ export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePa
         <LoadState failed={failed} />
       </div>,
     );
-  const machines = catalog.data.machines.filter((m) => m.registered && m.revoked_at === null);
   const signingMachine = (id?: string) => machines.find((m) => m.machine_id === id);
-  // Until the catalog refetches, a member who was just carried stays where they were dropped.
-  const pending = update.isPending ? update.variables : undefined;
-  // A member on the move already sits at the new computer, boxed up until the files arrive.
-  const placeOf = (agent: DTO.Agent) =>
-    (pending && pending.agent?.agent_id === agent.agent?.agent_id
-      ? pending.machine_id
-      : undefined) ??
-    (agent.relocation && !agent.relocation.failed ? agent.relocation.machine_id : agent.machine_id);
-  const online = (id: string) =>
-    machines.some((m) => m.machine_id === id && m.observed_state === 'running');
-  const crewOf = (id: string) => (agents ?? []).filter((agent) => placeOf(agent) === id);
+  const crewOf = (id: string) => (agents ?? []).filter((agent) => moves.placeOf(agent) === id);
   const fresh = pairing.known && machines.find((m) => !pairing.known!.has(m.machine_id));
   const nameOf = (m: DTO.MachineCatalogItem) =>
     rename.isPending && rename.variables.machine_id === m.machine_id
@@ -96,7 +81,7 @@ export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePa
         return (
           <WorkRow
             key={id}
-            {...rowProps(id)}
+            {...moves.rowProps(id)}
             data-testid={`machine-row-${id}`}
             status={rowStatus[machine.observed_state] ?? 'idle'}
             arriving={!!pairing.known && !pairing.known.has(id)}
@@ -140,20 +125,11 @@ export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePa
                   agent={agent}
                   machine={machine}
                   workspace={team}
-                  arriving={arrived === member}
+                  arriving={moves.arrived === member}
                   // One move at a time, so a failed move always lands back where it started.
-                  carry={update.isPending ? undefined : seatHandle(member)}
+                  carry={moves.busy ? undefined : moves.seatHandle(member)}
                   onOpen={() => navigate({ kind: 'member', id: member, from: 'office' })}
-                  move={
-                    agent.agent && placeOf(agent) !== agent.machine_id
-                      ? {
-                          onCancel: () => update.mutate(move(agent.agent!, agent.machine_id)),
-                          onWithoutFiles: online(agent.machine_id)
-                            ? undefined
-                            : () => update.mutate(move(agent.agent!, id, true)),
-                        }
-                      : undefined
-                  }
+                  move={moves.moveOf(agent)}
                 />
               );
             })}
@@ -165,6 +141,7 @@ export function OfficePage({ workspaceId: workspace, navigate, frame }: OfficePa
         label={t('office.add')}
         onClick={() => void pairing.start(machines.map((m) => m.machine_id))}
       />
+      {moves.dialog}
       <AddMachineDialog key={pairing.id} pairing={pairing} connected={fresh?.display_name} />
       {signing.open && signingMachine(signing.id) && (
         <BuiltinSignInDialog

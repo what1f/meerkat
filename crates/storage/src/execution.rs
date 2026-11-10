@@ -497,7 +497,7 @@ impl Storage {
             return Err(StorageError::Invalid("active execution".into()));
         }
         let paused: bool = t.query_row(
-            "SELECT pause_reason IS NOT NULL OR EXISTS(SELECT 1 FROM agent_relocations r WHERE r.workspace_id=?1 AND r.agent_id=?2 AND r.state!='failed') FROM agents WHERE workspace_id=?1 AND agent_id=?2",
+            "SELECT pause_reason IS NOT NULL OR EXISTS(SELECT 1 FROM agent_relocations r WHERE r.workspace_id=?1 AND r.agent_id=?2 AND r.state IN('waiting','staged')) FROM agents WHERE workspace_id=?1 AND agent_id=?2",
             params![w.as_str(), a.as_str()],
             |r| r.get(0),
         )?;
@@ -994,7 +994,7 @@ impl Storage {
 }
 
 // The message a trigger points at: the reacted-to message, the message itself, or for a
-// timer the latest message in its conversation.
+// timer or a move the latest message in its conversation.
 fn trigger_message_id(
     t: &rusqlite::Transaction<'_>,
     chat_id: i64,
@@ -1007,7 +1007,7 @@ fn trigger_message_id(
             [-source_id],
             |r| r.get(0),
         )?,
-        "timer" => t.query_row(
+        "timer" | "move" => t.query_row(
             "SELECT last_message_id FROM chats WHERE chat_id=?1",
             [chat_id],
             |r| r.get(0),

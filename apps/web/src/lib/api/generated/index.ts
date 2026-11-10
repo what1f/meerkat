@@ -10,6 +10,7 @@ export type { AgentFirstReplyState } from './AgentFirstReplyState';
 export type { AgentOnboardingState } from './AgentOnboardingState';
 export type { AgentRef } from './AgentRef';
 export type { AgentRelocation } from './AgentRelocation';
+export type { AgentRelocationState } from './AgentRelocationState';
 export type { AttemptFailure } from './AttemptFailure';
 export type { AttentionMode } from './AttentionMode';
 export type { BuiltinAgentSignInMethod } from './BuiltinAgentSignInMethod';

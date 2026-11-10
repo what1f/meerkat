@@ -32,6 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Agent,
         AgentActivity,
         AgentRelocation,
+        AgentRelocationState,
         FigureFrames,
         FigurePack,
         ImportFigurePackRequest,

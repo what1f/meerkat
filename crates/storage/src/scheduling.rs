@@ -22,7 +22,7 @@ impl Storage {
                 UNION ALL SELECT min(available_at) FROM agent_inbox_items i JOIN agents p USING(workspace_id,agent_id)
                 WHERE i.workspace_id=?1 AND i.agent_id=?2 AND i.state='pending'
                   AND ?3 AND p.pause_reason IS NULL
-                  AND NOT EXISTS(SELECT 1 FROM agent_relocations r WHERE r.workspace_id=?1 AND r.agent_id=?2 AND r.state!='failed')
+                  AND NOT EXISTS(SELECT 1 FROM agent_relocations r WHERE r.workspace_id=?1 AND r.agent_id=?2 AND r.state IN('waiting','staged'))
                   AND coalesce(i.retry_batch_id,0)=coalesce((SELECT retry_batch_id FROM agent_inbox_items
                     WHERE workspace_id=?1 AND agent_id=?2 AND state='pending' ORDER BY inbox_item_id LIMIT 1),0)
                   AND NOT EXISTS(SELECT 1 FROM executions e WHERE e.workspace_id=?1 AND e.agent_id=?2

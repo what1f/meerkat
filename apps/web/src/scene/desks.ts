@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 export type DeskGeometry = {
   width: number;
   height: number;
@@ -43,3 +44,22 @@ export const desks: Record<'laptop' | 'mini', DeskGeometry> = {
     ],
   },
 };
+
+// Each screen is clipped to its hole so nothing shows through gaps elsewhere in the art.
+export const screenRects = (desk: DeskGeometry, k: number, top: number) =>
+  desk.screens.map((quad) => {
+    const xs = quad.map(([x]) => x * k);
+    const ys = quad.map(([, y]) => y * k);
+    const l = Math.min(...xs) - 1;
+    const t = Math.min(...ys) - 1;
+    const clip = quad
+      .map(([x, y], c) => `${x * k - l + [-1, 1, 1, -1][c]!}px ${y * k - t + [-1, -1, 1, 1][c]!}px`)
+      .join(',');
+    return {
+      left: l,
+      top: top + t,
+      width: Math.max(...xs) - l + 1,
+      height: Math.max(...ys) - t + 1,
+      clipPath: `polygon(${clip})`,
+    } satisfies CSSProperties;
+  });

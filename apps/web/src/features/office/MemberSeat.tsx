@@ -1,7 +1,7 @@
 import type * as DTO from '../../lib/api/generated';
-import { Icon, Menu } from '../../design';
+import { Icon, Menu, type IconName } from '../../design';
 import { Seat, type CarryHandle } from '../../scene';
-import { useT } from '../../lib/i18n';
+import { useLanguage, useT, type MessageKey } from '../../lib/i18n';
 import './messages';
 import { agentStatus, useAgentAvatar } from '../../lib/queries/agents';
 import { useFigurePacks } from '../../lib/queries/catalogs';
@@ -27,10 +27,17 @@ export function MemberSeat({
   arriving: boolean;
   carry?: CarryHandle;
   onOpen: () => void;
-  // Set while the member is on their way here from another computer.
-  move?: { onCancel: () => void; onWithoutFiles?: () => void };
+  // Set while the member is on their way here from another computer, until they start here.
+  move?: {
+    stuck?: boolean;
+    onCancel?: () => void;
+    onWithoutFiles?: () => void;
+    onRetry?: () => void;
+    onReturn?: () => void;
+  };
 }) {
   const t = useT();
+  const language = useLanguage();
   const id = agent.agent?.agent_id ?? '';
   const { screen } = agentStatus(agent, machine, workspace);
   const workspaceId = agent.agent?.workspace_id ?? '';
@@ -41,6 +48,12 @@ export function MemberSeat({
   const away = workspace?.desired_state === 'paused';
   const avatar = useAgentAvatar({ request_id: 'seat', agent: agent.agent }, !!agent.avatar_path);
   const file = avatar.data?.avatar;
+  const items: [IconName, MessageKey, (() => void) | undefined][] = [
+    ['refresh', 'office.retryArrival', move?.onRetry],
+    ['chevl', 'office.moveBack', move?.onReturn],
+    ['x', 'office.cancelMove', move?.onCancel],
+    ['box', 'office.moveWithoutFiles', move?.onWithoutFiles],
+  ];
   return (
     <Seat
       setup={pick(id, 2) ? 'mini' : 'laptop'}
@@ -55,20 +68,24 @@ export function MemberSeat({
             }
       }
       arriving={arriving}
-      moving={!!move}
+      moving={move?.stuck ? 'stuck' : !!move}
+      lang={language}
       wrapBox={
         move &&
         ((box) => (
           <span>
             <Menu trigger={box}>
-              <Menu.Item leading={<Icon name="x" size={14} />} onSelect={move.onCancel}>
-                {t('office.cancelMove')}
-              </Menu.Item>
-              {move.onWithoutFiles && (
-                <Menu.Item leading={<Icon name="box" size={14} />} onSelect={move.onWithoutFiles}>
-                  {t('office.moveWithoutFiles')}
-                </Menu.Item>
-              )}
+              {items
+                .filter(([, , onSelect]) => onSelect)
+                .map(([icon, label, onSelect]) => (
+                  <Menu.Item
+                    key={label}
+                    leading={<Icon name={icon} size={14} />}
+                    onSelect={onSelect!}
+                  >
+                    {t(label)}
+                  </Menu.Item>
+                ))}
             </Menu>
           </span>
         ))

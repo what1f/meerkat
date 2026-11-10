@@ -61,6 +61,10 @@
   width: 460px;
 }
 
+.root[data-size='lg'] {
+  width: 600px;
+}
+
 .root > header > h2 {
   margin: 0;
   font-family: var(--font-display);

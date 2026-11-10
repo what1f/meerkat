@@ -368,12 +368,14 @@ database_methods! {
         a: &AgentId,
         target_machine_id: &str,
         without_files: bool,
+        brain: Option<&meerkat_storage::RelocationBrain>,
         now: i64,
     ) -> RelocationRecord [
         let w = w.to_owned();
         let a = a.to_owned();
         let target_machine_id = target_machine_id.to_owned();
-    ] (&w, &a, &target_machine_id, without_files, now);
+        let brain = brain.cloned();
+    ] (&w, &a, &target_machine_id, without_files, brain.as_ref(), now);
     true cancel_agent_relocation(w: &WorkspaceId, a: &AgentId) -> bool [let w = w.to_owned(); let a = a.to_owned();] (&w, &a);
     true stage_agent_relocation(
         w: &WorkspaceId,
@@ -391,7 +393,16 @@ database_methods! {
         let a = a.to_owned();
         let code = code.to_owned();
     ] (&w, &a, &code, now);
-    true commit_agent_relocation(w: &WorkspaceId, a: &AgentId, now: i64) -> Option<AgentRecord> [let w = w.to_owned(); let a = a.to_owned();] (&w, &a, now);
+    true commit_agent_relocation(w: &WorkspaceId, a: &AgentId, now: i64) -> Option<(AgentRecord, bool)> [let w = w.to_owned(); let a = a.to_owned();] (&w, &a, now);
+    true finish_agent_arrival(w: &WorkspaceId, a: &AgentId, now: i64) -> bool [let w = w.to_owned(); let a = a.to_owned();] (&w, &a, now);
+    true stall_agent_arrival(w: &WorkspaceId, a: &AgentId, code: &str, now: i64) -> bool [
+        let w = w.to_owned();
+        let a = a.to_owned();
+        let code = code.to_owned();
+    ] (&w, &a, &code, now);
+    true retry_agent_arrival(w: &WorkspaceId, a: &AgentId, now: i64) -> bool [let w = w.to_owned(); let a = a.to_owned();] (&w, &a, now);
+    true return_agent_from_arrival(w: &WorkspaceId, a: &AgentId, now: i64) -> Option<AgentRecord> [let w = w.to_owned(); let a = a.to_owned();] (&w, &a, now);
+    false arrival_failure(w: &WorkspaceId, a: &AgentId) -> Option<String> [let w = w.to_owned(); let a = a.to_owned();] (&w, &a);
     true create_execution_with_auth(
         w: &WorkspaceId,
         a: &AgentId,

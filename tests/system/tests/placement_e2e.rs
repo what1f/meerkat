@@ -181,6 +181,8 @@ async fn agent_moves_to_another_machine_with_its_home() -> Result<()> {
     let mut moved = agent.view().await?;
     moved.machine_id = second.id.clone();
     rig.management().update_agent(moved, None).await?;
+    // The old home stays until the Agent has started on its new Machine,
+    // which the move itself wakes it to do.
     timeout(Duration::from_secs(20), async {
         while agent.view().await?.machine_id != second.id || old_home.exists() {
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -199,18 +201,19 @@ async fn agent_moves_to_another_machine_with_its_home() -> Result<()> {
     );
     assert!(!new_home.join("resources").exists());
 
-    team.direct_message(&agent, "alice", "two").await?;
     rig.settle().await?;
-    assert_eq!(
-        team.dm_transcript(&agent, "alice"),
-        ["one", "hi", "two", "hi"]
-    );
     let first_run = agent.harness_inputs()?.pop().unwrap_or_default();
     assert!(
         first_run.contains("Alice takes her tea green"),
         "{first_run}"
     );
-    assert!(first_run.contains("另一台电脑"), "{first_run}");
+    assert!(first_run.contains("工区"), "{first_run}");
+    team.direct_message(&agent, "alice", "two").await?;
+    rig.settle().await?;
+    assert_eq!(
+        team.dm_transcript(&agent, "alice"),
+        ["one", "hi", "hi", "two", "hi"]
+    );
     drop(second);
     rig.close().await
 }

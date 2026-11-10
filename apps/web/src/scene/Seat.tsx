@@ -3,7 +3,7 @@ import type { UIProps } from '../design/index';
 import { Tooltip } from '../design';
 import { Figure } from './Figure';
 import { deskFigure, deskMoves, figureFrame, moveStrip, type FigurePack } from './figures';
-import { desks } from './desks';
+import { desks, screenRects } from './desks';
 import type { CarryHandle } from './drag/useCarry';
 import laptop from '../assets/office/desk-laptop.png';
 import mini from '../assets/office/desk-mini.png';
@@ -14,6 +14,9 @@ import mugArt from '../assets/office/props/mug.webp';
 import badgeArt from '../assets/office/props/badge.webp';
 import confetti from '../assets/office/props/confetti.webp';
 import movingBox from '../assets/office/props/moving-box.webp';
+import movingZh from '../assets/office/props/moving-zh.webp';
+import movingEn from '../assets/office/props/moving-en.webp';
+import movingDot from '../assets/office/props/moving-dot.webp';
 import css from './Seat.module.css';
 import screenCss from './SeatScreen.module.css';
 import { mainScreen, moves, MoodProps, sideScreen, type SeatScreen } from './SeatMood';
@@ -23,8 +26,9 @@ export type SeatProps = Omit<UIProps, 'className' | 'style'> & {
   screen: SeatScreen;
   occupant: { figure: string; pack?: FigurePack; seed?: string } | 'empty-chair';
   arriving?: boolean;
-  // Moving in from another office: the chair waits and the member's things sit boxed on the floor.
-  moving?: boolean;
+  // Moving in: the member's things sit boxed on the floor; `stuck` when they could not start here.
+  moving?: boolean | 'stuck';
+  lang?: 'zh' | 'en'; // picks the moving-in note's lettering
   wrapBox?: (box: ReactElement) => ReactNode; // e.g. a menu on the box; a tooltip by default
   // `hero` is the desk at 1.35 times, for the first-run steps.
   size?: 'seat' | 'hero';
@@ -48,6 +52,7 @@ export function Seat({
   occupant,
   arriving,
   moving,
+  lang = 'en',
   wrapBox = (box) => <Tooltip label={label}>{box}</Tooltip>,
   size = 'seat',
   label,
@@ -56,28 +61,12 @@ export function Seat({
   carry,
   ...rest
 }: SeatProps) {
-  const screen = moving ? 'boot' : requested;
+  const screen = moving === 'stuck' ? 'alert' : moving ? 'boot' : requested;
   const desk = desks[setup];
   const k = seatWidth / desk.width;
   const top = seatHeight - deskBottom - desk.height * k;
   const lit = screen !== 'dark' && screen !== 'asleep';
-  // Each screen is clipped to its hole so nothing shows through gaps elsewhere in the art.
-  const rects = desk.screens.map((quad) => {
-    const xs = quad.map(([x]) => x * k);
-    const ys = quad.map(([, y]) => y * k);
-    const l = Math.min(...xs) - 1;
-    const t = Math.min(...ys) - 1;
-    const clip = quad
-      .map(([x, y], c) => `${x * k - l + [-1, 1, 1, -1][c]!}px ${y * k - t + [-1, -1, 1, 1][c]!}px`)
-      .join(',');
-    return {
-      left: l,
-      top: top + t,
-      width: Math.max(...xs) - l + 1,
-      height: Math.max(...ys) - t + 1,
-      clipPath: `polygon(${clip})`,
-    } satisfies CSSProperties;
-  });
+  const rects = screenRects(desk, k, top);
   const screens = rects.map((style, i) => {
     const state = i ? (lit ? 'ok' : screen) : screen;
     return (
@@ -134,7 +123,7 @@ export function Seat({
       data-setup={setup}
       data-screen={screen}
       data-arriving={arriving}
-      data-moving={moving}
+      data-moving={!!moving}
       data-size={size}
       data-away={!figure}
       style={{ '--phase': phase } as CSSProperties}
@@ -163,6 +152,14 @@ export function Seat({
             <img src={movingBox} alt="" />
           </button>,
         )}
+      {moving === true && (
+        <span className={css.moving} aria-hidden="true">
+          <img className={css.word} src={lang === 'zh' ? movingZh : movingEn} alt="" />
+          {[0, 1, 2].map((i) => (
+            <img key={i} className={css.dot} src={movingDot} alt="" />
+          ))}
+        </span>
+      )}
       {badge && (
         <span
           className={css.badge}

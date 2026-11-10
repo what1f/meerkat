@@ -189,6 +189,18 @@
   }
 }
 
+@keyframes wave {
+  0%,
+  60%,
+  100% {
+    transform: none;
+  }
+
+  30% {
+    transform: translateY(-4px);
+  }
+}
+
 /* The member badge, hung on its black lanyard from the monitor's edge. */
 .badge {
   z-index: 0;
@@ -279,6 +291,11 @@
 .box > img {
   display: block;
   width: 100%;
+}
+
+/* A member who could not start here leaves the box standing still. */
+.root[data-moving='true'][data-screen='alert'] .box {
+  animation: none;
 }
 
 /* Off duty the badge lies on the desk. */
@@ -1026,4 +1043,33 @@
     opacity: 0;
     transform: translate(26px, -22px) rotate(-8deg) scale(0.8);
   }
+}
+
+/* Puffy lettering over the pushed-aside chair while the member moves in; its dots wave. */
+.moving {
+  z-index: 3;
+  top: 54px;
+  left: 102px;
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+.word {
+  height: 17px;
+}
+
+.dot {
+  height: 6px;
+  margin-bottom: 1px;
+  animation: wave 1.2s var(--ease) infinite;
+}
+
+.dot:nth-child(3) {
+  animation-delay: 0.15s;
+}
+
+.dot:nth-child(4) {
+  animation-delay: 0.3s;
 }

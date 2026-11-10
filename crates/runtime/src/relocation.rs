@@ -16,6 +16,10 @@ const CHUNK_TIMEOUT: Duration = Duration::from_secs(120);
 /// Packing or unpacking a large home can take a while; there is no size cap.
 const ARCHIVE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const DRAIN_POLL: Duration = Duration::from_secs(2);
+/// How long a moved Agent may take to start on its new Machine.
+const ARRIVAL_TIMEOUT_MS: i64 = 3 * 60 * 1000;
+const ARRIVAL_POLL: Duration = Duration::from_secs(2);
+const STALLED_POLL: Duration = Duration::from_secs(5);
 
 enum Step {
     /// Look at the relocation row again.
@@ -104,6 +108,9 @@ impl RuntimeApplication {
                 RelocationState::Failed => return Ok(()),
                 RelocationState::Waiting => self.export_step(&database, &relocation).await?,
                 RelocationState::Staged => self.import_step(&database, &relocation).await?,
+                RelocationState::Arriving | RelocationState::Stalled => {
+                    self.arrival_step(&database, &relocation).await?
+                }
             };
             match step {
                 Step::Again => {}
@@ -125,9 +132,8 @@ impl RuntimeApplication {
                     );
                     return Ok(());
                 }
-                Step::Done => {
-                    return self.finish_relocation(&database, &relocation).await;
-                }
+                // Placed; the loop now watches the Agent start on its target.
+                Step::Done => self.place_relocated(&database, &relocation).await?,
             }
         }
     }
@@ -298,35 +304,155 @@ impl RuntimeApplication {
         }
     }
 
-    pub(crate) async fn finish_relocation(
+    /// Places the Agent on its target and wakes it there. An Agent with no
+    /// conversation to wake in has arrived at once.
+    pub(crate) async fn place_relocated(
         &self,
         database: &Database,
         relocation: &RelocationRecord,
     ) -> Result<(), RuntimeError> {
         let (w, a) = (&relocation.workspace_id, &relocation.agent_id);
-        let Some(record) = database.commit_agent_relocation(w, a, now_millis()).await? else {
+        let Some((record, arriving)) = database.commit_agent_relocation(w, a, now_millis()).await?
+        else {
             return Ok(());
         };
         self.drop_relocation_archive(w, a);
-        let runtime = self.runtime()?;
-        let workspace = database.workspace_record(w).await?;
-        runtime
-            .configure_agent(w, agent_runtime_config(&workspace, record)?)
-            .await?;
-        self.emit_management(ManagementEventKind::AgentUpdated, w, Some(a), now_millis());
+        self.configure_relocated(database, record).await?;
         database.wake();
-        let broker = self.machine_broker();
-        let source = relocation.source_machine_id.clone();
-        let (cleanup_w, cleanup_a) = (w.clone(), a.clone());
-        self.spawn_background(async move {
-            // Queued in storage; retried when the source reconnects.
-            if let Err(error) = broker
-                .delete_agent_files(&source, &cleanup_w, &cleanup_a)
-                .await
+        if !arriving {
+            self.remove_agent_home(&relocation.source_machine_id, w, a)?;
+        }
+        Ok(())
+    }
+
+    /// Watches a placed Agent until its first native session on the target
+    /// starts. A failed first run or a timeout leaves it stalled, from where
+    /// the owner retries or takes it back.
+    async fn arrival_step(
+        &self,
+        database: &Database,
+        relocation: &RelocationRecord,
+    ) -> Result<Step, RuntimeError> {
+        let (w, a) = (&relocation.workspace_id, &relocation.agent_id);
+        let agent = database.agent_record(w, a).await?;
+        let session = |key: &str| {
+            agent
+                .session_config
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.is_empty())
+        };
+        if session("native_session_id").is_some()
+            && session("native_session_machine") == Some(relocation.target_machine_id.as_str())
+        {
+            if database.finish_agent_arrival(w, a, now_millis()).await? {
+                self.emit_management(ManagementEventKind::AgentUpdated, w, Some(a), now_millis());
+                self.remove_agent_home(&relocation.source_machine_id, w, a)?;
+            }
+            return Ok(Step::Again);
+        }
+        if relocation.state == RelocationState::Stalled {
+            tokio::time::sleep(STALLED_POLL).await;
+            return Ok(Step::Again);
+        }
+        let stalled = match database.arrival_failure(w, a).await? {
+            Some(code) => Some(if code.is_empty() {
+                "arrival_failed".into()
+            } else {
+                code
+            }),
+            None if now_millis() - relocation.arriving_at.unwrap_or(0) > ARRIVAL_TIMEOUT_MS => {
+                Some("arrival_timeout".to_owned())
+            }
+            None => None,
+        };
+        if let Some(code) = stalled {
+            log::error!("[runtime] workspace={w} agent={a} did not start after moving: {code}");
+            if database
+                .stall_agent_arrival(w, a, &code, now_millis())
+                .await?
             {
-                log::warn!(
-                    "[runtime] workspace={cleanup_w} agent={cleanup_a} old home cleanup deferred: {error}"
-                );
+                self.emit_management(ManagementEventKind::AgentUpdated, w, Some(a), now_millis());
+            }
+            return Ok(Step::Again);
+        }
+        tokio::time::sleep(ARRIVAL_POLL).await;
+        Ok(Step::Again)
+    }
+
+    /// Wakes a stalled Agent on its target once more.
+    pub(crate) async fn retry_arrival(
+        &self,
+        workspace_id: &WorkspaceId,
+        agent_id: &AgentId,
+    ) -> Result<(), RuntimeError> {
+        let database = self.runtime()?.database();
+        if database
+            .retry_agent_arrival(workspace_id, agent_id, now_millis())
+            .await?
+        {
+            database.wake();
+            self.drive_relocation(workspace_id.clone(), agent_id.clone());
+        }
+        Ok(())
+    }
+
+    /// Takes an Agent that has not started on its target back to where it
+    /// was. Its files never left there, so nothing is carried.
+    pub(crate) async fn return_relocated(
+        &self,
+        workspace_id: &WorkspaceId,
+        agent_id: &AgentId,
+        target_machine_id: &str,
+    ) -> Result<(), RuntimeError> {
+        let database = self.runtime()?.database();
+        let Some(record) = database
+            .return_agent_from_arrival(workspace_id, agent_id, now_millis())
+            .await?
+        else {
+            return Ok(());
+        };
+        self.configure_relocated(&database, record).await?;
+        database.wake();
+        self.remove_agent_home(target_machine_id, workspace_id, agent_id)
+    }
+
+    async fn configure_relocated(
+        &self,
+        database: &Database,
+        record: meerkat_storage::AgentRecord,
+    ) -> Result<(), RuntimeError> {
+        let (w, a) = (record.workspace_id.clone(), record.agent_id.clone());
+        let workspace = database.workspace_record(&w).await?;
+        self.runtime()?
+            .configure_agent(&w, agent_runtime_config(&workspace, record)?)
+            .await?;
+        self.emit_management(
+            ManagementEventKind::AgentUpdated,
+            &w,
+            Some(&a),
+            now_millis(),
+        );
+        Ok(())
+    }
+
+    /// Removes the Agent's home from a Machine it no longer runs on. Queued in
+    /// storage, so an offline Machine is cleaned when it reconnects.
+    fn remove_agent_home(
+        &self,
+        machine_id: &str,
+        workspace_id: &WorkspaceId,
+        agent_id: &AgentId,
+    ) -> Result<(), RuntimeError> {
+        let broker = self.machine_broker();
+        let (machine, w, a) = (
+            machine_id.to_owned(),
+            workspace_id.clone(),
+            agent_id.clone(),
+        );
+        self.spawn_background(async move {
+            if let Err(error) = broker.delete_agent_files(&machine, &w, &a).await {
+                log::warn!("[runtime] workspace={w} agent={a} old home cleanup deferred: {error}");
             }
         })?;
         Ok(())

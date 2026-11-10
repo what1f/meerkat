@@ -8,4 +8,8 @@ export type UpdateAgentRequest = { figure: string | null, launch_arguments: Arra
 /**
  * With `machine_id`: move without the Agent's files, for a source that is offline.
  */
-relocate_without_files: boolean | null, avatar: AgentAvatarUpload | null, attention: AgentAttention | null, provider_agent_config_json: string | null, provider_agent_secrets_json: string | null, };
+relocate_without_files: boolean | null, 
+/**
+ * Wakes an Agent that did not start on its new Machine once more.
+ */
+retry_arrival: boolean | null, avatar: AgentAvatarUpload | null, attention: AgentAttention | null, provider_agent_config_json: string | null, provider_agent_secrets_json: string | null, };

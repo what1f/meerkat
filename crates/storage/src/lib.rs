@@ -38,7 +38,7 @@ pub use message::{
     SnapshotChatView, SnapshotView,
 };
 pub use person::{HumanTeamMemberView, PersonRecord, TeamRole};
-pub use relocation::{RelocationRecord, RelocationState};
+pub use relocation::{RelocationBrain, RelocationRecord, RelocationState};
 pub use schema::{RecoveryState, SqliteSettings};
 pub use send::{
     CursorView, FinishSendResult, GuardedSendResult, RecoverableSendView, SendAttemptView,

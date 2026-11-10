@@ -4,7 +4,7 @@ import type { SheetClose } from '../scene';
 import { TeamPage } from '../features/team';
 import { SettingsPage } from '../features/settings';
 import { OfficePage } from '../features/office';
-import { MembersPage, NewMemberBench } from '../features/members';
+import { MembersPage, MoveMemberDialog, NewMemberBench } from '../features/members';
 import { OnboardingFlow } from '../features/onboarding';
 export type Page =
   | { kind: 'members' }
@@ -29,12 +29,15 @@ export type FrameBar = TopBarProps & { close?: SheetClose };
 // Onboarding makes its first member on the members page's bench.
 const Onboarding = (props: PageViewProps) =>
   createElement(OnboardingFlow, { ...props, memberBench: NewMemberBench });
+// Dropping a member on another computer asks which AI they run there.
+const Office = (props: PageViewProps) =>
+  createElement(OfficePage, { ...props, moveDialog: MoveMemberDialog });
 export const pageViews: Partial<Record<Page['kind'], ComponentType<PageViewProps>>> = {
   members: MembersPage,
   member: MembersPage,
   team: TeamPage,
   settings: SettingsPage,
-  office: OfficePage,
+  office: Office,
   onboarding: Onboarding,
 };
 export function parseHash(hash: string): Page {

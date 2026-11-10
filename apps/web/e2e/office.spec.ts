@@ -19,6 +19,12 @@ async function carry(from: string, to: string) {
   await page.mouse.down();
   await page.mouse.move(target.x + 120, target.y + target.height / 2, { steps: 12 });
   await page.mouse.up();
+  // Dropped on another computer, the member is asked which AI they run there.
+  const dialog = page.getByTestId('move-member');
+  await expect(dialog).toBeVisible();
+  await expect(seat(row(from))).toBeVisible();
+  await dialog.getByRole('button', { name: 'Move', exact: true }).click();
+  await expect(dialog).toBeHidden();
   await expect(seat(row(to))).toBeVisible();
   await expect(seat(row(from))).toHaveCount(0);
 }

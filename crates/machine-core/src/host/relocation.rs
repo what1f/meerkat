@@ -26,7 +26,7 @@ struct Answer {
 pub(super) async fn handle_export(inner: Arc<Inner>, request: meerkat_protocol::ExportAgentFiles) {
     let result = async {
         let agent = agent(request.agent.as_ref())?;
-        super::sessions::close(
+        super::sessions::forget(
             &inner,
             &format!("{}/{}", agent.workspace_id, agent.agent_id),
         )
@@ -73,7 +73,7 @@ pub(super) async fn handle_write(inner: Arc<Inner>, request: meerkat_protocol::W
         let key = format!("{}/{}", agent.workspace_id, agent.agent_id);
         if request.eof {
             // Nothing of this Agent may run here while its home is replaced.
-            super::sessions::close(&inner, &key).await;
+            super::sessions::forget(&inner, &key).await;
             if inner.starting.lock().await.contains_key(&key)
                 || inner
                     .active

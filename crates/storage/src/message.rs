@@ -77,6 +77,11 @@ pub enum DispatchReason {
         timer_id: i64,
         prompt: String,
     },
+    /// The Agent was just moved to another 工区; names are the Machines' display names.
+    Moved {
+        from: String,
+        to: String,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]

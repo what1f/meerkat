@@ -1223,6 +1223,7 @@ impl ManagementClient for RuntimeManagementClient {
                     }),
                     machine_id: Some(a.machine_id),
                     relocate_without_files: None,
+                    retry_arrival: None,
                     avatar: avatar.map(|avatar| wire::AgentAvatarUpload {
                         media_type: avatar.media_type,
                         bytes: avatar.bytes,
@@ -1252,6 +1253,7 @@ impl ManagementClient for RuntimeManagementClient {
                     agent: Some(aref(workspace_id, agent_id)),
                     machine_id: Some(machine_id.into()),
                     relocate_without_files: Some(true),
+                    retry_arrival: None,
                     ..Default::default()
                 })
                 .await

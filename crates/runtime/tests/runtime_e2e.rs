@@ -2285,6 +2285,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             environment_variables: None,
             machine_id: None,
             relocate_without_files: None,
+            retry_arrival: None,
             avatar: None,
             attention: None,
             provider_agent_config_json: Some(json!({"tenant":"opaque-updated"}).to_string()),
@@ -2419,7 +2420,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         execution_token: token.into(),
     };
     let mut agent_client =
-        meerkat_protocol::connect_uds(socket.join("agent.sock"), DEFAULT_MAX_MESSAGE_BYTES)
+        meerkat_protocol::connect_local(socket.join("agent.sock"), DEFAULT_MAX_MESSAGE_BYTES)
             .await
             .map_err(err)?;
     let denied = agent_client
@@ -2516,6 +2517,7 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
             environment_variables: None,
             machine_id: None,
             relocate_without_files: None,
+            retry_arrival: None,
             avatar: None,
             attention: None,
             provider_agent_config_json: Some(json!({"deny_echo":true}).to_string()),

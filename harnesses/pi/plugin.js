@@ -39,11 +39,12 @@ function send(type, fields = {}) {
   ctx.send(processId, { id, type, ...fields });
   return id;
 }
-function rpc(type, fields = {}) {
+function rpc(type, fields = {}, timeout) {
   const id = send(type, fields);
   const response = receiveUntil(
     processId,
     (m) => m.type === "response" && m.id === id,
+    timeout,
   );
   if (!response.success)
     failure("invalid_state", response.error || "Pi command failed");
@@ -165,7 +166,8 @@ function open(value, resume) {
         4 * 1024 * 1024,
     },
   });
-  const state = rpc("get_state");
+  // Pi answers only after installing its packages, which a fresh home lacks.
+  const state = rpc("get_state", {}, 180000);
   nativeId = state?.sessionId;
   if (!nativeId) failure("bind_failed", "Pi get_state omitted sessionId");
   ctx.bindSession(nativeId);

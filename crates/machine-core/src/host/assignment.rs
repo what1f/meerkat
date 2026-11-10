@@ -50,7 +50,7 @@ pub(super) async fn handle_delete_agent_files(
         for terminated in cancellations {
             super::liveness::wait_for_stop(terminated, inner.liveness.cancel_grace).await;
         }
-        super::sessions::close(inner, &key).await;
+        super::sessions::forget(inner, &key).await;
         super::relocation::release(&inner.root, agent)?;
         let directory = agent_directory(&inner.root, &agent.workspace_id, &agent.agent_id)?;
         match std::fs::remove_dir_all(&directory) {

@@ -431,14 +431,36 @@ impl RuntimeApplication {
         if let Some(value) = request.bio {
             record.bio = value;
         }
-        if let Some(value) = request.harness_id {
-            record.harness_id = value;
-        }
-        if let Some(value) = request.model {
-            record.model = value;
-        }
-        if let Some(value) = request.thinking_level {
-            record.thinking = value;
+        // A move carries the AI it runs on the new Machine; the record keeps
+        // the current one until the Agent is placed there.
+        let moving = request
+            .machine_id
+            .as_ref()
+            .is_some_and(|machine| *machine != old_record.machine_id);
+        let brain = moving.then(|| meerkat_storage::RelocationBrain {
+            harness_id: request
+                .harness_id
+                .clone()
+                .unwrap_or_else(|| old_record.harness_id.clone()),
+            model: request
+                .model
+                .clone()
+                .unwrap_or_else(|| old_record.model.clone()),
+            thinking: request
+                .thinking_level
+                .clone()
+                .unwrap_or_else(|| old_record.thinking.clone()),
+        });
+        if !moving {
+            if let Some(value) = request.harness_id {
+                record.harness_id = value;
+            }
+            if let Some(value) = request.model {
+                record.model = value;
+            }
+            if let Some(value) = request.thinking_level {
+                record.thinking = value;
+            }
         }
         if let Some(value) = request.auto_reaction {
             record.auto_reaction = nonempty(value);
@@ -455,11 +477,45 @@ impl RuntimeApplication {
             .database()
             .agent_relocation(&workspace_id, &agent_id)
             .await?;
+        let landing = relocation.as_ref().filter(|relocation| {
+            matches!(
+                relocation.state,
+                meerkat_storage::RelocationState::Arriving
+                    | meerkat_storage::RelocationState::Stalled
+            )
+        });
+        if let Some(landing) = landing {
+            // Until it has started on its new Machine, an Agent can only be
+            // woken there again or taken back.
+            if request.retry_arrival == Some(true) {
+                self.retry_arrival(&workspace_id, &agent_id).await?;
+            } else if request.machine_id.as_ref() == Some(&landing.source_machine_id) {
+                let target = landing.target_machine_id.clone();
+                let _registration = self.inner.machine_registration.lock().await;
+                self.return_relocated(&workspace_id, &agent_id, &target)
+                    .await?;
+            } else if moving {
+                return Err(RuntimeError::Application("agent_still_arriving".into()));
+            }
+            if request.retry_arrival.is_some() || moving {
+                self.emit_management(
+                    ManagementEventKind::AgentUpdated,
+                    &workspace_id,
+                    Some(&agent_id),
+                    now_millis(),
+                );
+                let record = runtime
+                    .database()
+                    .agent_record(&workspace_id, &agent_id)
+                    .await?;
+                return agent_dto(record, runtime.database()).await;
+            }
+        }
         let back_to_source = request.machine_id.as_ref() == Some(&old_record.machine_id);
         let mut relocate_to = request
             .machine_id
             .filter(|machine| *machine != old_record.machine_id);
-        let cancel_relocation = back_to_source && relocation.is_some();
+        let cancel_relocation = back_to_source && relocation.is_some() && landing.is_none();
         let without_files = request.relocate_without_files == Some(true);
         if without_files && relocate_to.is_none() && !cancel_relocation {
             relocate_to = relocation
@@ -470,11 +526,23 @@ impl RuntimeApplication {
             record.provider_agent_config = parse_json(&value)?;
         }
         let _registration = self.inner.machine_registration.lock().await;
-        self.validate_placement(&record).await?;
+        if relocate_to.is_none() {
+            self.validate_placement(&record).await?;
+        }
         if let Some(target) = &relocate_to {
             let mut placed = record.clone();
             placed.machine_id = target.clone();
             placed.cli_path = None;
+            let brain = brain.clone().or_else(|| {
+                relocation
+                    .as_ref()
+                    .and_then(|relocation| relocation.brain.clone())
+            });
+            if let Some(brain) = brain {
+                placed.harness_id = brain.harness_id;
+                placed.model = brain.model;
+                placed.thinking = brain.thinking;
+            }
             self.validate_placement(&placed).await?;
         }
         let avatar_update = request
@@ -539,15 +607,15 @@ impl RuntimeApplication {
                             &agent_id,
                             target,
                             without_files,
+                            brain.as_ref(),
                             now_millis(),
                         )
                         .await?;
                     if without_files {
                         // Nothing to carry, so the Agent is placed before this returns.
-                        self.finish_relocation(&database, &relocation).await?;
-                    } else {
-                        self.drive_relocation(workspace_id.clone(), agent_id.clone());
+                        self.place_relocated(&database, &relocation).await?;
                     }
+                    self.drive_relocation(workspace_id.clone(), agent_id.clone());
                 }
                 None => {
                     database
@@ -1107,7 +1175,22 @@ async fn agent_dto_with_activity(
         .await?
         .map(|relocation| meerkat_protocol::AgentRelocation {
             machine_id: relocation.target_machine_id,
-            failed: relocation.state == meerkat_storage::RelocationState::Failed,
+            source_machine_id: relocation.source_machine_id,
+            state: match relocation.state {
+                meerkat_storage::RelocationState::Waiting
+                | meerkat_storage::RelocationState::Staged => {
+                    meerkat_protocol::AgentRelocationState::Moving
+                }
+                meerkat_storage::RelocationState::Failed => {
+                    meerkat_protocol::AgentRelocationState::Failed
+                }
+                meerkat_storage::RelocationState::Arriving => {
+                    meerkat_protocol::AgentRelocationState::Arriving
+                }
+                meerkat_storage::RelocationState::Stalled => {
+                    meerkat_protocol::AgentRelocationState::Stalled
+                }
+            },
         });
     Ok(ProtocolAgent {
         pause_reason,

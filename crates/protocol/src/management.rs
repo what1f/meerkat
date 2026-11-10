@@ -145,10 +145,26 @@ pub struct Agent {
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentRelocation {
-    /// Where the Agent is going; `Agent::machine_id` stays the source until it arrives.
+    /// Where the Agent is going.
     pub machine_id: String,
-    /// The move stopped and the Agent keeps working at the source.
-    pub failed: bool,
+    /// Where it comes from; taking the Agent back puts it there.
+    pub source_machine_id: String,
+    pub state: AgentRelocationState,
+}
+
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentRelocationState {
+    /// Files are on their way; `Agent::machine_id` is still the source.
+    #[default]
+    Moving,
+    /// The move stopped before the Agent was placed; it stays at the source.
+    Failed,
+    /// Placed on the target and starting there.
+    Arriving,
+    /// Placed on the target, but it did not start there.
+    Stalled,
 }
 
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
@@ -717,6 +733,8 @@ pub struct UpdateAgentRequest {
     pub machine_id: Option<String>,
     /// With `machine_id`: move without the Agent's files, for a source that is offline.
     pub relocate_without_files: Option<bool>,
+    /// Wakes an Agent that did not start on its new Machine once more.
+    pub retry_arrival: Option<bool>,
     pub avatar: Option<AgentAvatarUpload>,
     pub attention: Option<AgentAttention>,
     pub provider_agent_config_json: Option<String>,

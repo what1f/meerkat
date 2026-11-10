@@ -29,6 +29,20 @@
   grid-template-columns: 1fr 1fr 1.25fr 112px;
 }
 
+/* Picking the AI for a settled office: the office column is left out. */
+.brain:not([data-place]) {
+  width: 100%;
+  padding: 0;
+}
+
+.brain:not([data-place]) > .columns {
+  grid-template-columns: 1fr 1.25fr;
+}
+
+.brain:not([data-place]) > .columns[data-thinks] {
+  grid-template-columns: 1fr 1.25fr 112px;
+}
+
 .advanced {
   display: grid;
   row-gap: 18px;

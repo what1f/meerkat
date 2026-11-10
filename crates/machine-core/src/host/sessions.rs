@@ -89,6 +89,22 @@ pub(super) async fn close(inner: &Inner, agent_key: &str) {
     }
 }
 
+/// Closes the Agent's idle session and drops every native session remembered
+/// for it, so the next run starts fresh. Used when its home leaves, arrives or
+/// is deleted: a remembered session would otherwise resume old context.
+pub(super) async fn forget(inner: &Inner, agent_key: &str) {
+    close(inner, agent_key).await;
+    let prefix = format!("{agent_key}/");
+    let mut state = inner.state.lock().await;
+    let before = state.sessions.len();
+    state.sessions.retain(|key, _| !key.starts_with(&prefix));
+    if state.sessions.len() != before
+        && let Err(error) = state.save(&inner.state_path)
+    {
+        log::error!("[machine] remembered sessions could not be saved: {error}");
+    }
+}
+
 pub(super) async fn close_all(inner: &Inner) {
     let sessions = std::mem::take(&mut *inner.idle_sessions.lock().await);
     for cached in sessions.into_values() {

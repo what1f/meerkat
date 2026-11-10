@@ -171,19 +171,7 @@ impl Runtime {
                 RECENT_MESSAGE_LIMIT,
             )
             .await?;
-        let agent = self.storage.agent_record(workspace_id, agent_id).await?;
-        let moved = agent.session_config.get("native_session_id").is_none()
-            && agent
-                .session_config
-                .get("native_session_machine")
-                .and_then(serde_json::Value::as_str)
-                .is_some_and(|machine| machine != agent.machine_id);
-        let recent = render_recovery(&conversations, snapshot, now);
-        Ok(if moved {
-            format!("{MOVED_NOTICE}\n\n{recent}")
-        } else {
-            recent
-        })
+        Ok(render_recovery(&conversations, snapshot, now))
     }
 
     /// Builds Provider-owned prompt and capabilities from the same runtime
@@ -897,6 +885,7 @@ fn trigger_reason_name(reason: &DispatchReason) -> String {
         DispatchReason::Reaction { reaction, .. } => format!("reaction:{reaction}"),
         DispatchReason::Custom { name, .. } => format!("custom:{name}"),
         DispatchReason::Timer { timer_id, .. } => format!("timer:{timer_id}"),
+        DispatchReason::Moved { .. } => "moved".to_owned(),
     }
 }
 
@@ -1005,10 +994,14 @@ fn render_snapshot(snapshot: &SnapshotView) -> String {
             render_reply(&mut markdown, message);
         }
         for reason in &chat.trigger_reasons {
-            if let DispatchReason::Timer { timer_id, prompt } = reason {
-                markdown.push_str(&format!(
+            match reason {
+                DispatchReason::Timer { timer_id, prompt } => markdown.push_str(&format!(
                     "\n- 你设置的定时任务到点了 [timer_id={timer_id}]：{prompt}"
-                ));
+                )),
+                DispatchReason::Moved { from, to } => {
+                    markdown.push_str(&format!("\n- 你刚从「{from}」工区搬到了「{to}」工区。"))
+                }
+                _ => {}
             }
         }
         for (reason, message) in chat.trigger_reasons.iter().zip(&chat.trigger_messages) {
