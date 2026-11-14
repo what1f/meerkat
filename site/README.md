@@ -12,5 +12,6 @@ pnpm build    # outputs dist/
 - Repository and download links live in `src/site.ts`.
 - Art in `src/assets` is copied from the app; the site never imports app code.
 - Fonts are bundled: Geist Mono for Latin, Noto Sans SC for Chinese, both OFL.
+  The navigation wordmark uses Maple Mono SemiBold; its license is bundled in `public/fonts/MapleMono-OFL.txt`.
   After changing copy, run `pnpm fonts` (needs `uv`) to re-subset them into `public/fonts`.
 - The Feishu QR code in the setup section is real and opens the repository.

@@ -1,4 +1,12 @@
 @font-face {
+  font-family: 'Meerkat Brand';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/brand.woff2') format('woff2');
+}
+
+@font-face {
   font-family: 'Meerkat Mono';
   font-style: normal;
   font-weight: 400 700;
@@ -15,16 +23,25 @@
   src: url('/fonts/sc.woff2') format('woff2');
 }
 
-/* The landing page speaks the app's language: a quiet canvas, hung objects,
-   color only for avatars, figures, reactions, and status. */
+@font-face {
+  font-family: 'Meerkat Serif';
+  font-style: normal;
+  font-weight: 500 700;
+  font-display: swap;
+  src: url('/fonts/serif.woff2') format('woff2');
+}
+
+/* A desert at both ends, warm paper in between: daylight in the light theme,
+   night in the dark theme. */
 :root {
-  /* System sans for reading; mono only for code and file names. */
+  /* System sans for reading; serif for headings; mono only for code and file names. */
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', 'PingFang SC', 'Meerkat SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif;
   --font-display: var(--font);
+  --font-serif: 'Meerkat Serif', 'Songti SC', 'Noto Serif CJK SC', 'Source Han Serif SC', serif;
   --font-mono: ui-monospace, 'SF Mono', 'Meerkat Mono', Menlo, monospace;
 
   /* Four sizes only. */
-  --fs-display: clamp(34px, 4.2vw, 54px);
+  --fs-display: clamp(36px, 4.6vw, 60px);
   --fs-lede: 18px;
   --fs-body: 15px;
   --fs-small: 13px;
@@ -46,47 +63,67 @@
   color-scheme: light;
 }
 
+/* Ground is the page; sky and dune match the edges of the illustrations. */
 :root,
 [data-theme='light'] {
-  --canvas: #f3f4f7;
-  --surface: #fff;
-  --well: #f6f7f9;
-  --glass: rgb(246 246 249 / 72%);
-  --edge: rgb(27 29 38 / 7%);
-  --line: rgb(27 29 38 / 8%);
-  --line-strong: rgb(27 29 38 / 14%);
-  --field: rgb(27 29 38 / 4%);
-  --hover: rgb(27 29 38 / 5%);
-  --ink: #1b1d26;
-  --ink-2: rgb(27 29 38 / 62%);
-  --ink-3: rgb(27 29 38 / 40%);
-  --ink-4: rgb(27 29 38 / 22%);
-  --on-ink: #fff;
+  --ground: #f4efe6;
+  --grain-opacity: 0.05;
+  --sky-wash: linear-gradient(90deg, #e9d8d6, #c6cde7 34%, #abc2e9);
+  --sky-veil: rgb(255 240 226 / 30%);
+  --sky-text-shadow: 0 1px 24px rgb(255 244 232 / 60%);
+  --dune: #d38460;
+}
+
+[data-theme='dark'] {
+  --ground: #14163a;
+  --grain-opacity: 0.07;
+  --sky-wash: #121229;
+  --sky-veil: rgb(18 18 41 / 55%);
+  --sky-text-shadow: 0 2px 30px rgb(10 10 30 / 45%);
+  --dune: #221d38;
+}
+
+:root,
+[data-theme='light'] {
+  --shade: 58 38 20;
+  --surface: #fffdf9;
+  --well: #f8f3eb;
+  --glass: rgb(244 239 230 / 76%);
+  --edge: rgb(58 38 20 / 8%);
+  --line: rgb(58 38 20 / 9%);
+  --line-strong: rgb(58 38 20 / 16%);
+  --field: rgb(58 38 20 / 4%);
+  --hover: rgb(58 38 20 / 5%);
+  --ink: #2a231f;
+  --ink-2: rgb(42 35 31 / 66%);
+  --ink-3: rgb(42 35 31 / 44%);
+  --ink-4: rgb(42 35 31 / 24%);
+  --on-ink: #fffdf9;
   --accent: #626ccc;
   --accent-soft: rgb(98 108 204 / 14%);
+  --ember: #c2643c;
   --lanyard-lead: #6c78d2;
   --ok: #2e9b5c;
   --busy: #d18c1a;
-  --idle: rgb(27 29 38 / 26%);
+  --idle: rgb(42 35 31 / 26%);
 
-  --board: #ececee;
-  --board-top: #f5f5f7;
-  --hole: rgb(27 29 38 / 13%);
-  --hole-lip: rgb(255 255 255 / 90%);
-  --peg: #c9cbd2;
-  --peg-edge: #8e919c;
-  --cord: #2c2e35;
-  --card: #fff;
-  --paper: #fcfbf7;
-  --tape: rgb(248 247 242 / 78%);
-  --bubble-me: #e3e6fb;
-  --hang-shadow: 0 1px 2px rgb(20 22 40 / 6%), 0 18px 28px -14px rgb(20 22 40 / 30%);
-  --shadow-1: 0 0 0 0.5px var(--edge), 0 1px 2px rgb(20 22 40 / 5%);
-  --shadow-2: 0 0 0 0.5px var(--edge), 0 1px 2px rgb(20 22 40 / 6%), 0 10px 28px -8px rgb(20 22 40 / 16%);
-  --shadow-3: 0 0 0 0.5px var(--edge), 0 2px 6px rgb(20 22 40 / 6%), 0 40px 80px -24px rgb(20 22 40 / 30%);
-  --haze-a: rgb(195 204 255 / 55%);
-  --haze-b: rgb(255 214 190 / 38%);
-  --haze-c: rgb(230 221 255 / 60%);
+  --board: #ebe5da;
+  --board-top: #f6f1e8;
+  --hole: rgb(58 38 20 / 14%);
+  --hole-lip: rgb(255 253 249 / 90%);
+  --peg: #d2c9bb;
+  --peg-edge: #988c7b;
+  --cord: #2f2a26;
+  --card: #fffdf9;
+  --paper: #fcf9f2;
+  --tape: rgb(250 246 238 / 78%);
+  --bubble-me: #e6e5f6;
+  --hang-shadow: 0 1px 2px rgb(var(--shade) / 7%), 0 18px 28px -14px rgb(var(--shade) / 30%);
+  --shadow-1: 0 0 0 0.5px var(--edge), 0 1px 2px rgb(var(--shade) / 5%);
+  --shadow-2: 0 0 0 0.5px var(--edge), 0 1px 2px rgb(var(--shade) / 6%), 0 12px 30px -10px rgb(var(--shade) / 16%);
+  --shadow-3: 0 0 0 0.5px var(--edge), 0 2px 6px rgb(var(--shade) / 6%), 0 40px 80px -28px rgb(var(--shade) / 28%);
+  --haze-a: rgb(255 222 186 / 45%);
+  --haze-b: rgb(236 214 196 / 40%);
   --furniture: none;
   --sitter: none;
   --screen-off: #0f1013;
@@ -94,47 +131,48 @@
 
 [data-theme='dark'] {
   color-scheme: dark;
-  --canvas: #101115;
-  --surface: #17181d;
-  --well: #1c1d23;
-  --glass: rgb(30 31 37 / 72%);
-  --edge: rgb(255 255 255 / 7%);
-  --line: rgb(255 255 255 / 7%);
-  --line-strong: rgb(255 255 255 / 13%);
-  --field: rgb(255 255 255 / 5%);
-  --hover: rgb(255 255 255 / 6%);
-  --ink: #e8e9ee;
-  --ink-2: rgb(232 233 238 / 62%);
-  --ink-3: rgb(232 233 238 / 40%);
-  --ink-4: rgb(232 233 238 / 22%);
-  --on-ink: #17181d;
+  --shade: 4 4 16;
+  --surface: #1d2046;
+  --well: #191b3f;
+  --glass: rgb(20 22 58 / 70%);
+  --edge: rgb(255 214 160 / 10%);
+  --line: rgb(241 232 218 / 8%);
+  --line-strong: rgb(241 232 218 / 15%);
+  --field: rgb(241 232 218 / 5%);
+  --hover: rgb(241 232 218 / 7%);
+  --ink: #f3eadc;
+  --ink-2: rgb(243 234 220 / 68%);
+  --ink-3: rgb(243 234 220 / 44%);
+  --ink-4: rgb(243 234 220 / 24%);
+  --on-ink: #1a1c3f;
   --accent: #8c95ec;
   --accent-soft: rgb(140 149 236 / 20%);
+  --ember: #f0a85a;
   --lanyard-lead: #7d88e0;
   --ok: #4cc282;
   --busy: #efb04a;
-  --idle: rgb(255 255 255 / 28%);
+  --idle: rgb(243 234 220 / 28%);
 
-  --board: #18191d;
-  --board-top: #1d1e23;
-  --hole: rgb(0 0 0 / 60%);
-  --hole-lip: rgb(255 255 255 / 5%);
-  --peg: #8a8d98;
-  --peg-edge: #4a4c55;
-  --cord: #4b4e58;
-  --card: #24252c;
-  --paper: #2a2a2e;
-  --tape: rgb(255 255 255 / 12%);
-  --bubble-me: #2c3060;
-  --hang-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 20px 30px -12px rgb(0 0 0 / 75%);
-  --shadow-1: 0 0 0 0.5px var(--edge), 0 1px 2px rgb(0 0 0 / 30%);
-  --shadow-2: 0 0 0 0.5px var(--edge), 0 1px 2px rgb(0 0 0 / 30%), 0 10px 28px -8px rgb(0 0 0 / 60%);
-  --shadow-3: 0 0 0 0.5px var(--edge), 0 2px 6px rgb(0 0 0 / 30%), 0 40px 80px -24px rgb(0 0 0 / 80%);
-  --haze-a: rgb(57 66 126 / 45%);
-  --haze-b: rgb(107 90 154 / 25%);
-  --haze-c: rgb(87 74 140 / 35%);
-  --furniture: brightness(0.62) contrast(1.1);
-  --sitter: brightness(0.8);
+  --board: #1d2044;
+  --board-top: #23264c;
+  --hole: rgb(4 4 16 / 60%);
+  --hole-lip: rgb(255 240 220 / 5%);
+  --peg: #918b96;
+  --peg-edge: #4e4b5e;
+  --cord: #4b4d68;
+  --card: #262950;
+  --paper: #2b2d52;
+  --tape: rgb(255 240 220 / 12%);
+  --bubble-me: #2f3474;
+  /* Cards read as lit windows: a warm rim and a faint lantern spill. */
+  --hang-shadow: 0 1px 2px rgb(var(--shade) / 40%), 0 20px 30px -12px rgb(var(--shade) / 70%);
+  --shadow-1: 0 0 0 0.5px var(--edge), 0 1px 2px rgb(var(--shade) / 30%);
+  --shadow-2: 0 0 0 0.5px var(--edge), 0 1px 2px rgb(var(--shade) / 30%), 0 12px 30px -10px rgb(var(--shade) / 60%), 0 0 40px -16px rgb(240 168 90 / 22%);
+  --shadow-3: 0 0 0 0.5px var(--edge), 0 2px 6px rgb(var(--shade) / 30%), 0 40px 80px -28px rgb(var(--shade) / 80%), 0 0 90px -30px rgb(240 168 90 / 26%);
+  --haze-a: rgb(240 168 90 / 10%);
+  --haze-b: rgb(120 112 210 / 16%);
+  --furniture: brightness(0.66) contrast(1.08) saturate(0.9);
+  --sitter: brightness(0.82);
 }
 
 /* Shared paint that reads the theme. */
@@ -170,11 +208,32 @@ body {
   font-size: var(--fs-body);
   line-height: 1.6;
   color: var(--ink);
-  background: var(--canvas);
+  background: var(--ground);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   transition: background-color var(--d-slow) var(--ease), color var(--d-slow) var(--ease);
+}
+
+/* Paper grain over everything; the dark theme adds faint stars. */
+body::after {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  content: '';
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1.4 -0.2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: var(--grain-opacity);
+}
+
+[data-theme='dark'] body {
+  background:
+    radial-gradient(1px 1px at 23px 41px, rgb(255 244 226 / 55%), transparent),
+    radial-gradient(1px 1px at 157px 113px, rgb(255 244 226 / 40%), transparent),
+    radial-gradient(1.5px 1.5px at 71px 187px, rgb(255 244 226 / 45%), transparent),
+    radial-gradient(1px 1px at 199px 61px, rgb(255 244 226 / 30%), transparent),
+    var(--ground);
+  background-size: 211px 223px, 307px 281px, 401px 389px, 263px 241px, auto;
 }
 
 img,
@@ -206,15 +265,15 @@ button {
 }
 
 :lang(en) .display {
-  letter-spacing: -0.03em;
+  letter-spacing: -0.015em;
 }
 
 .display {
   margin: 0;
-  font-family: var(--font-display);
+  font-family: var(--font-serif);
   font-weight: 600;
-  line-height: 1.15;
-  letter-spacing: -0.01em;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
   text-wrap: balance;
 }
 
@@ -281,6 +340,18 @@ button {
 
 .btn-default:hover {
   background: var(--well);
+}
+
+/* On the night sky the secondary button is a quiet outline. */
+[data-theme='dark'] .btn-default {
+  background: rgb(243 234 220 / 4%);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+[data-theme='dark'] .btn-default:hover {
+  background: var(--hover);
 }
 
 .btn-lg {

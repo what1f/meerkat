@@ -20,7 +20,6 @@ const zh = {
     lede: '一键启动，让 AI Agent 跑在你最熟悉的 IM 里，像同事一样和你协作。',
     download: '下载',
     github: 'GitHub',
-    board: 'Meerkat',
   },
   team: {
     you: '你',
@@ -106,7 +105,6 @@ const en: Dict = {
     lede: 'One click, and AI agents run inside the chat app you already live in, working with you like coworkers.',
     download: 'Download',
     github: 'GitHub',
-    board: 'Meerkat',
   },
   team: {
     you: 'You',

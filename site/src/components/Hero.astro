@@ -1,41 +1,50 @@
 ---
 import { Picture } from 'astro:assets';
 import Icon from './Icon.astro';
-import boardLight from '../assets/hero/board-light.png';
-import boardDark from '../assets/hero/board-dark.png';
+import day from '../assets/hero/day-restored.png';
+import night from '../assets/hero/night-restored.png';
 import { dicts, type Lang } from '../i18n';
 import { repo, download } from '../site';
 
 interface Props { lang: Lang }
 const { lang } = Astro.props;
 const t = dicts[lang];
-const sizes = '(max-width: 980px) 92vw, 640px';
-const widths = [480, 720, 960, 1280];
+// Account for the full image width behind the object-fit crop, not just the viewport.
+const sceneSizes = '(max-width: 722px) 128vw, (max-width: 860px) 925px, max(100vw, clamp(933px, 146svh, 1429px))';
 ---
 <section class="hero">
-  <div class="haze" aria-hidden="true"></div>
-  <div class="wrap grid">
-    <div class="copy">
-      <h1 class="display title">
-        <span>{t.hero.title[0]}</span>
-        <span>{t.hero.title[1]}</span>
-      </h1>
-      <p class="sub">{t.hero.lede}</p>
-      <div class="actions">
-        <a class="btn btn-primary btn-lg" href={download}>
-          <Icon name="download" />
-          {t.hero.download}
-        </a>
-        <a class="btn btn-default btn-lg" href={repo} rel="noopener">
-          <Icon name="github" />
-          {t.hero.github}
-        </a>
-      </div>
-    </div>
+  <div class="scene" aria-hidden="true">
+    {[{ src: day, theme: 'light' }, { src: night, theme: 'dark' }].map((art) => (
+      <Picture
+        formats={['avif', 'webp']}
+        fallbackFormat="jpeg"
+        class={`art art-${art.theme}`}
+        src={art.src}
+        alt=""
+        quality={90}
+        widths={[800, 1200, art.src.width]}
+        sizes={sceneSizes}
+        loading="lazy"
+        fetchpriority="high"
+      />
+    ))}
+  </div>
 
-    <div class="stage" aria-hidden="true">
-      <Picture formats={['avif', 'webp']} class="art light" src={boardLight} alt="" widths={widths} sizes={sizes} loading="eager" fetchpriority="high" />
-      <Picture formats={['avif', 'webp']} class="art dark" src={boardDark} alt="" widths={widths} sizes={sizes} loading="lazy" />
+  <div class="wrap copy">
+    <h1 class="display title">
+      <span>{t.hero.title[0]}</span>
+      <span>{t.hero.title[1]}</span>
+    </h1>
+    <p class="sub">{t.hero.lede}</p>
+    <div class="actions">
+      <a class="btn btn-primary btn-lg" href={download}>
+        <Icon name="download" />
+        {t.hero.download}
+      </a>
+      <a class="btn btn-default btn-lg" href={repo} rel="noopener">
+        <Icon name="github" />
+        {t.hero.github}
+      </a>
     </div>
   </div>
 </section>
@@ -43,32 +52,73 @@ const widths = [480, 720, 960, 1280];
 <style>
   .hero {
     position: relative;
-    padding: calc(var(--nav-h) + clamp(40px, 9vh, 104px)) 0 clamp(72px, 12vh, 140px);
-    overflow: clip;
-  }
-
-  .haze {
-    position: absolute;
-    inset: -20% -10% auto;
-    z-index: -1;
-    height: 120%;
-    background:
-      radial-gradient(40% 50% at 18% 18%, var(--haze-a), transparent 70%),
-      radial-gradient(36% 44% at 34% 74%, var(--haze-b), transparent 70%),
-      radial-gradient(50% 60% at 85% 10%, var(--haze-c), transparent 70%);
-    filter: blur(20px);
-    mask: linear-gradient(#000 55%, transparent);
-  }
-
-  .grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: clamp(24px, 3vw, 48px);
+    display: flex;
     align-items: center;
+    min-height: clamp(640px, 100svh, 980px);
+    padding: var(--nav-h) 0 clamp(120px, 18vh, 200px);
+    overflow: clip;
+    /* Sky behind the copy; the last pixel row belongs to the page. */
+    background: linear-gradient(180deg, transparent 60%, var(--ground) 60%), var(--sky-wash);
+  }
+
+  .scene {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    animation: dawn 1.6s var(--ease) both;
+  }
+
+  /* Fit the width and sit on the bottom edge; taller screens get more sky above. */
+  .scene :global(.art) {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: auto;
+    min-height: 82%;
+    object-fit: cover;
+    object-position: 75% 100%;
+    mask-image: linear-gradient(180deg, transparent, #000 14%);
+  }
+
+  /* Day for the light theme, night for the dark; the hidden one never loads. */
+  :global([data-theme='light']) .scene :global(.art-dark),
+  :global([data-theme='dark']) .scene :global(.art-light) {
+    display: none;
+  }
+
+  /* Shade the open sky behind the copy, then let the sand sink into the page. */
+  .scene::before,
+  .scene::after {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    content: '';
+  }
+
+  .scene::before {
+    background: linear-gradient(90deg, var(--sky-veil), transparent 52%);
+  }
+
+  .scene::after {
+    background: linear-gradient(
+      180deg,
+      transparent 58%,
+      color-mix(in srgb, var(--ground) 35%, transparent) 78%,
+      var(--ground) 98%
+    );
+  }
+
+  .copy {
+    position: relative;
+    z-index: 1;
   }
 
   .title {
-    font-size: var(--fs-display);
+    font-size: clamp(42px, 5.4vw, 76px);
+    font-weight: 600;
+    line-height: 1.16;
+    text-shadow: var(--sky-text-shadow);
   }
 
   .title span {
@@ -77,10 +127,10 @@ const widths = [480, 720, 960, 1280];
   }
 
   .sub {
-    max-width: 24em;
-    margin: 20px 0 0;
+    max-width: 23em;
+    margin: 24px 0 0;
     font-size: var(--fs-lede);
-    line-height: 1.6;
+    line-height: 1.7;
     color: var(--ink-2);
     text-wrap: pretty;
   }
@@ -89,50 +139,26 @@ const widths = [480, 720, 960, 1280];
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
-    margin-top: 36px;
+    margin-top: 40px;
   }
 
   .copy > * {
     animation: rise 0.9s var(--ease) both;
+    animation-delay: 0.25s;
   }
 
   .copy > :nth-child(2) {
-    animation-delay: 80ms;
+    animation-delay: 0.33s;
   }
 
   .copy > :nth-child(3) {
-    animation-delay: 160ms;
+    animation-delay: 0.41s;
   }
 
-  .stage {
-    position: relative;
-    width: min(640px, 48vw);
-    animation: float-in 1.1s var(--ease) 0.15s both;
-  }
-
-  .stage :global(.art) {
-    width: 100%;
-    height: auto;
-    filter: drop-shadow(0 30px 40px rgb(20 22 40 / 14%));
-  }
-
-  .stage :global(.art.dark) {
-    display: none;
-  }
-
-  :global([data-theme='dark']) .stage :global(.art.light) {
-    display: none;
-  }
-
-  :global([data-theme='dark']) .stage :global(.art.dark) {
-    display: block;
-    filter: drop-shadow(0 30px 40px rgb(0 0 0 / 50%));
-  }
-
-  @keyframes float-in {
+  @keyframes dawn {
     from {
       opacity: 0;
-      transform: translateY(24px) scale(0.98);
+      transform: scale(1.04);
     }
   }
 
@@ -143,23 +169,52 @@ const widths = [480, 720, 960, 1280];
     }
   }
 
-  @media (max-width: 980px) {
-    .grid {
-      grid-template-columns: 1fr;
+  /* Narrow screens: copy over the sky, the board below it. */
+  @media (max-width: 860px) {
+    .hero {
+      flex-direction: column;
+      align-items: stretch;
+      min-height: auto;
+      padding: calc(var(--nav-h) + 40px) 0 0;
+      background: var(--sky-wash);
+    }
+
+    .scene {
+      position: relative;
+      inset: auto;
+      order: 2;
+      margin-top: 8px;
+    }
+
+    .scene :global(.art) {
+      position: static;
+      height: min(72vw, 520px);
+      min-height: 0;
+      object-position: 82% 50%;
+      mask-image: linear-gradient(180deg, transparent, #000 32%);
+    }
+
+    .scene::before {
+      display: none;
+    }
+
+    .copy {
+      order: 1;
       text-align: center;
+    }
+
+    .title {
+      font-size: clamp(36px, 9.6vw, 56px);
     }
 
     .sub {
       margin-inline: auto;
+      font-size: var(--fs-body);
     }
 
     .actions {
       justify-content: center;
-    }
-
-    .stage {
-      width: min(560px, 100%);
-      margin: 16px auto 0;
+      margin-top: 28px;
     }
   }
 </style>

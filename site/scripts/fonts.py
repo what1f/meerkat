@@ -4,7 +4,7 @@
 # ///
 """Subset the site fonts to the copy actually used.
 
-Geist Mono (Latin) and Noto Sans SC (Chinese), both OFL, are fetched into
+Geist Mono (Latin), Maple Mono (wordmark), Noto Sans SC (Chinese) and Noto Serif SC (headings), all OFL, are fetched into
 .cache/fonts and written to public/fonts as small variable woff2 files.
 Run `pnpm fonts` after changing copy.
 """
@@ -20,8 +20,10 @@ ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / ".cache" / "fonts"
 OUT = ROOT / "public" / "fonts"
 SOURCES = {
+    "MapleMono.woff2": "https://raw.githubusercontent.com/subframe7536/maple-font/5f603dce88ea54742c239315c593d73c3ca50dc0/woff2/variable/MapleMono%5Bwght%5D-VF.woff2",
     "GeistMono.ttf": "https://github.com/google/fonts/raw/main/ofl/geistmono/GeistMono%5Bwght%5D.ttf",
     "NotoSansSC.ttf": "https://github.com/google/fonts/raw/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
+    "NotoSerifSC.ttf": "https://github.com/google/fonts/raw/main/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf",
 }
 
 
@@ -64,7 +66,9 @@ def main() -> None:
     cjk = "".join(sorted(c for c in used if ord(c) > 0x2E7F))
     cjk += "，。、；：？！“”‘’（）《》「」【】—…·"
     build(fetch("GeistMono.ttf"), OUT / "mono.woff2", latin, (400, 700))
+    build(fetch("MapleMono.woff2"), OUT / "brand.woff2", "Meerkat", (600, 600))
     build(fetch("NotoSansSC.ttf"), OUT / "sc.woff2", cjk, (400, 700))
+    build(fetch("NotoSerifSC.ttf"), OUT / "serif.woff2", latin + cjk, (500, 700))
 
 
 if __name__ == "__main__":

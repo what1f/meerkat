@@ -57,20 +57,24 @@ const other: Lang = lang === 'zh' ? 'en' : 'zh';
     padding-right: max(var(--gutter), 64px);
   }
 
+  .nav {
+    color: var(--ink);
+  }
+
   .brand {
     display: flex;
     gap: 10px;
     align-items: center;
-    font-family: var(--font-display);
-    font-size: var(--fs-body);
-    font-weight: 700;
-    letter-spacing: -0.01em;
+    font-family: 'Meerkat Brand', 'Meerkat Mono', ui-monospace, monospace;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0;
   }
 
   .brand :global(.icon) {
     width: 30px;
     height: 30px;
-    box-shadow: 0 0 0 0.5px var(--edge), 0 2px 6px -2px rgb(60 70 180 / 35%);
+    filter: drop-shadow(0 2px 2px rgb(60 70 180 / 25%));
   }
 
   .links {

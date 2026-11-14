@@ -22,7 +22,7 @@ const { alpha, nova, echo, pixel } = byId as Record<string, NonNullable<(typeof 
 const role = (k: keyof typeof t.team.roles) => t.team.roles[k];
 const you = lang === 'zh' ? '你' : 'Y';
 const assignees = [pixel!, nova!, echo!];
-const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
+const swatches = ['#14163a', '#1d2046', '#f0a85a', '#f3eadc'];
 ---
 <section class="story" id="story">
   <div class="wrap head" data-reveal>
@@ -301,7 +301,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     display: block;
     width: 100%;
     height: 100%;
-    background: var(--accent);
+    background: var(--ember);
     transform: scaleY(0);
     transform-origin: 50% 0;
   }
@@ -371,7 +371,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     color: var(--ink);
     background: var(--surface);
     border-radius: 14px;
-    box-shadow: 0 0 0 0.5px var(--edge), 0 30px 60px -20px rgb(20 22 40 / 30%);
+    box-shadow: 0 0 0 0.5px var(--edge), 0 30px 60px -20px rgb(var(--shade) / 30%);
     transform: translate(var(--tx), var(--ty)) scale(var(--s));
     transform-origin: 0 0;
     transition: transform 1.2s cubic-bezier(0.65, 0, 0.25, 1);
@@ -676,7 +676,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     padding: 8px 12px;
     background: var(--surface);
     border-radius: 4px 12px 12px;
-    box-shadow: 0 0 0 0.5px var(--edge), 0 1px 2px rgb(20 22 40 / 4%);
+    box-shadow: 0 0 0 0.5px var(--edge), 0 1px 2px rgb(var(--shade) / 4%);
   }
 
   .bubble.me {
@@ -734,7 +734,7 @@ const swatches = ['#101115', '#1c1d23', '#8c95ec', '#e8e9ee'];
     padding: 12px 14px;
     background: var(--surface);
     border-radius: 12px;
-    box-shadow: 0 0 0 0.5px var(--edge), 0 6px 16px -10px rgb(20 22 40 / 30%);
+    box-shadow: 0 0 0 0.5px var(--edge), 0 6px 16px -10px rgb(var(--shade) / 30%);
   }
 
   .card-title {
