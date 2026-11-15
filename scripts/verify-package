@@ -9,6 +9,7 @@ import runpy
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 import tomllib
@@ -72,7 +73,12 @@ def main():
                     *(str(extracted / relative) for relative in (
                         "Contents/Library/LaunchServices/meerkatd", "Contents/Library/LaunchServices/meerkat-machine",
                         "Contents/Resources/bin/meerkat", "Contents/Resources/bin/meerkat-agent"))], check=True)
-                subprocess.run(["xcrun", "stapler", "validate", str(extracted)], check=True)
+                for attempt in range(6):
+                    if subprocess.run(["xcrun", "stapler", "validate", str(extracted)]).returncode == 0:
+                        break
+                    if attempt == 5:
+                        raise RuntimeError(f"xcrun stapler validate failed for {extracted}")
+                    time.sleep(5)
                 subprocess.run(["spctl", "--assess", "--type", "execute", str(extracted)], check=True)
             home = root / "home"
             prepare_bootstrap_home(home)
@@ -86,6 +92,9 @@ def main():
                     env=env,
                     stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
                 try:
+                    tests_dir = str(ROOT / "apps/desktop/tests")
+                    if tests_dir not in sys.path:
+                        sys.path.insert(0, tests_dir)
                     bootstrap_contract = runpy.run_path(str(ROOT / "apps/desktop/tests/bootstrap_e2e.py"))
                     code, discovered_url = bootstrap_contract["wait_for_smoke"](process, home, timeout=45)
                     result["exit_status"] = code
@@ -104,14 +113,22 @@ def main():
                         raise ValueError("extracted Desktop left service endpoints behind")
                     result.update(bootstrap=observed, signature="passed", archive_content="passed", cleanup="passed")
                 finally:
+                    process.poll()
                     if group_members(process.pid):
-                        os.killpg(process.pid, signal.SIGTERM)
+                        try:
+                            os.killpg(process.pid, signal.SIGTERM)
+                        except (ProcessLookupError, PermissionError):
+                            pass
                         deadline = time.monotonic() + 3
                         while group_members(process.pid) and time.monotonic() < deadline:
+                            process.poll()
                             time.sleep(0.05)
                         if group_members(process.pid):
-                            os.killpg(process.pid, signal.SIGKILL)
-                        process.wait()
+                            try:
+                                os.killpg(process.pid, signal.SIGKILL)
+                            except (ProcessLookupError, PermissionError):
+                                pass
+                    process.wait()
                     if (home / "logs").exists():
                         shutil.copytree(home / "logs", artifacts / "services")
         # Recheck after the process run so a concurrent archive replacement is

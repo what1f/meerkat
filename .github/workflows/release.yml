@@ -203,9 +203,7 @@ jobs:
           retention-days: 14
       - name: Remove signing material
         if: always()
-        run: |
-          rm -f "$RUNNER_TEMP/meerkat-notary.p8"
-          security delete-keychain signing_temp.keychain || true
+        run: rm -f "$RUNNER_TEMP/meerkat-notary.p8"
     defaults:
       run:
         shell: bash
