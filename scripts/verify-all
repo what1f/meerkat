@@ -121,7 +121,9 @@ run_hermetic() {
     fi
   done < "$ROOT_DIR/tests/e2e-modules.tsv"
   run_step 'Hermetic business E2Es (workspace, one feature set)' "$SCRIPT_DIR/run-hermetic-tests" || return $?
-  run_step 'Web browser business E2Es' just web-e2e
+  if [[ "${MEERKAT_HERMETIC_SKIP_WEB:-0}" != 1 ]]; then
+    run_step 'Web browser business E2Es' just web-e2e
+  fi
 }
 run_release_regressions() {
   run_step 'Desktop real process startup and cleanup' python3 "$ROOT_DIR/apps/desktop/tests/bootstrap_e2e.py" \
