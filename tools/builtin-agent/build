@@ -46,9 +46,14 @@ if [[ ! -x "$CACHED" || "$(cat "$CACHE/REVISION" 2>/dev/null)" != "$STAMP" ]]; t
     echo "Zig 0.17 is required to build the Built-in Agent (https://ziglang.org/download/)" >&2
     exit 1
   fi
-  mkdir -p "$SOURCE"
-  if [[ ! -d "$SOURCE/.git" ]]; then
+  export GIT_CEILING_DIRECTORIES="$WORK"
+  if [[ ! -f "$SOURCE/.git/HEAD" ]]; then
+    rm -rf "$SOURCE"
+    mkdir -p "$SOURCE"
     git -C "$SOURCE" init -q
+    git -C "$SOURCE" remote add origin "$SOURCE_URL"
+  fi
+  if ! git -C "$SOURCE" remote get-url origin >/dev/null 2>&1; then
     git -C "$SOURCE" remote add origin "$SOURCE_URL"
   fi
   git -C "$SOURCE" remote set-url origin "$SOURCE_URL"
