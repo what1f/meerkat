@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Stage a complete draft, verify downloaded assets, then make it public."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+directory = Path(sys.argv[1]).resolve()
+tag = os.environ["RELEASE_TAG"]
+commit = os.environ["RELEASE_COMMIT"]
+repository = os.environ["GITHUB_REPOSITORY"]
+files = sorted(path for path in directory.iterdir() if path.is_file())
+manifest = json.loads((directory / "release-manifest.json").read_text())
+if manifest["commit"] != commit or f"v{manifest['version']}" != tag:
+    raise SystemExit("release manifest does not match the requested tag and commit")
+expected = {path.name for path in files}
+if expected != set(manifest["assets"]) | {"release-manifest.json", "SHA256SUMS"}:
+    raise SystemExit("unexpected publication input")
+
+
+def gh(*arguments, **kwargs):
+    return subprocess.run(["gh", *arguments], check=True, **kwargs)
+
+
+for path in files:
+    if path.name in manifest["assets"] and hashlib.sha256(path.read_bytes()).hexdigest() != manifest["assets"][path.name]["sha256"]:
+        raise SystemExit(f"release input changed: {path.name}")
+    gh("attestation", "verify", str(path), "--repo", repository,
+       "--signer-workflow", f"{repository}/.github/workflows/release.yml", "--source-digest", commit,
+       stdout=subprocess.DEVNULL)
+
+view = subprocess.run(["gh", "release", "view", tag, "--repo", repository, "--json", "isDraft,assets"], capture_output=True, text=True)
+if view.returncode == 0:
+    release = json.loads(view.stdout)
+    if not release["isDraft"]:
+        raise SystemExit("release is already public; publish a new version")
+    if {asset["name"] for asset in release["assets"]} - expected:
+        raise SystemExit("draft contains unexpected assets; resolve before retrying")
+else:
+    arguments = ["release", "create", tag, "--repo", repository, "--verify-tag", "--target", commit, "--draft", "--generate-notes"]
+    if os.environ["RELEASE_PRERELEASE"] == "true":
+        arguments.append("--prerelease")
+    gh(*arguments)
+gh("release", "upload", tag, "--repo", repository, "--clobber", *(str(path) for path in files))
+with tempfile.TemporaryDirectory(prefix="meerkat-release-download-") as temporary:
+    gh("release", "download", tag, "--repo", repository, "--dir", temporary)
+    downloaded = {path.name: path for path in Path(temporary).iterdir()}
+    if set(downloaded) != expected:
+        raise SystemExit("uploaded release matrix is incomplete or contains unexpected files")
+    for path in files:
+        if hashlib.sha256(path.read_bytes()).digest() != hashlib.sha256(downloaded[path.name].read_bytes()).digest():
+            raise SystemExit(f"uploaded release differs: {path.name}")
+# Recheck the remote tag immediately before visibility changes.
+remote = gh("api", f"repos/{repository}/commits/{tag}", "--jq", ".sha", capture_output=True, text=True).stdout.strip()
+if remote != commit:
+    raise SystemExit("remote release tag changed during publication")
+latest = "false" if os.environ["RELEASE_PRERELEASE"] == "true" else "true"
+gh("release", "edit", tag, "--repo", repository, "--draft=false", f"--latest={latest}",
+   f"--prerelease={os.environ['RELEASE_PRERELEASE']}")

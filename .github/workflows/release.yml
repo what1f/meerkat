@@ -3,37 +3,314 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build and publish
+        required: true
+        type: string
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
-  macos:
-    runs-on: macos-latest
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      commit: ${{ steps.version.outputs.commit }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          toolchain: 1.96.0
-      - uses: taiki-e/install-action@just
-      - uses: pnpm/action-setup@v4
+          ref: ${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate the tag, versions and protected branch ancestry
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          DISPATCH_REF: ${{ github.ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_COMMIT: ${{ github.sha }}
+        run: ./scripts/release-preflight
+
+  verify:
+    needs: preflight
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.preflight.outputs.commit }}
+
+  macos-build:
+    needs: [preflight, verify]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      MEERKAT_INSTALL_SCRIPT_URL: https://github.com/${{ github.repository }}/releases/download/${{ needs.preflight.outputs.tag }}/install.sh
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          package_json_file: apps/web/package.json
-      - uses: astral-sh/setup-uv@v6
-      - name: Match tag and app version
+          ref: ${{ needs.preflight.outputs.commit }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2
+        with:
+          tool: cargo-deny@0.20.2
+      - name: Audit the exact desktop target before building
+        env:
+          ARCH: ${{ matrix.arch }}
         run: |
-          version="$(sed -nE 's/^version = "([^"]+)"/\1/p' apps/desktop/Cargo.toml | head -n 1)"
-          [[ "$GITHUB_REF_NAME" == "v$version" ]] || {
-            echo "Tag $GITHUB_REF_NAME does not match app version $version" >&2
-            exit 1
-          }
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-      - name: Package
-        run: just package
-      - name: Publish
+          case "$ARCH" in
+            arm64) target=aarch64-apple-darwin ;;
+            x86_64) target=x86_64-apple-darwin ;;
+            *) exit 1 ;;
+          esac
+          ./scripts/verify-dependency-advisories "$target" desktop
+      - name: Build the release binaries once
+        run: ./scripts/build-release
+      - name: Preserve executable modes and build provenance
+        run: |
+          mkdir -p target/build-output
+          COPYFILE_DISABLE=1 tar -cf target/build-output/build.tar \
+            target/release/meerkat-desktop target/release/meerkatd \
+            target/release/meerkat-machine target/release/meerkat target/release/meerkat-agent \
+            target/release/build-provenance.json \
+            target/builtin-agent/src/LICENSE target/builtin-agent/src/THIRD_PARTY_NOTICES.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          overwrite: true
+          name: build-macos-${{ matrix.arch }}
+          path: target/build-output/build.tar
+          if-no-files-found: error
+          retention-days: 14
+
+  macos-sign:
+    needs: [preflight, macos-build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            arch: x86_64
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    environment: release
+    env:
+      VERSION: ${{ needs.preflight.outputs.version }}
+      RUST_TARGET: ${{ matrix.target }}
+      ARCH: ${{ matrix.arch }}
+      MEERKAT_INSTALL_SCRIPT_URL: https://github.com/${{ github.repository }}/releases/download/${{ needs.preflight.outputs.tag }}/install.sh
+      MEERKAT_RELEASE_SIGNING: '1'
+      MEERKAT_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+      MEERKAT_APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      MEERKAT_NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+      MEERKAT_NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          persist-credentials: false
+      - name: Require all signing and notarization credentials
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY_P8 }}
+        run: |
+          for name in CERTIFICATE CERTIFICATE_PASSWORD NOTARY_KEY MEERKAT_CODESIGN_IDENTITY MEERKAT_APPLE_TEAM_ID MEERKAT_NOTARY_KEY_ID MEERKAT_NOTARY_ISSUER; do
+            [[ -n "${!name}" ]] || { echo "Missing release configuration: $name" >&2; exit 1; }
+          done
+      - uses: ./.github/actions/setup
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: build-macos-${{ matrix.arch }}
+          path: target/build-input
+      - name: Restore the exact unsigned build
+        run: tar -xf target/build-input/build.tar -C .
+      - uses: apple-actions/import-codesign-certs@63fff01cd422d4b7b855d40ca1e9d34d2de9427d # v3
+        with:
+          p12-file-base64: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          p12-password: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      - name: Prepare the notarization key
+        env:
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+        run: |
+          umask 077
+          printf '%s' "$NOTARY_KEY_P8" > "$RUNNER_TEMP/meerkat-notary.p8"
+          echo "MEERKAT_NOTARY_KEY=$RUNNER_TEMP/meerkat-notary.p8" >> "$GITHUB_ENV"
+      - name: Sign, notarize and package the desktop
+        run: ./scripts/package-macos
+      - name: Verify the final desktop distribution
+        env:
+          MEERKAT_PACKAGE_VERIFICATION_OUTPUT: target/release/desktop-verification.json
+        run: ./scripts/verify-package
+      - name: Package the Machine from the same binaries
+        env:
+          MEERKAT_MACHINE_BIN_DIR: target/release
+        run: ./scripts/package-machine "$RUST_TARGET"
+      - name: Verify the native Machine installer
+        run: ./scripts/verify-machine-package "target/machine-packages/meerkat-machine-$VERSION-macos-$ARCH.tar.gz"
+      - name: Collect only verified distribution files
+        run: |
+          mkdir -p target/distribution
+          base="Meerkat-$VERSION-macos-$ARCH"
+          cp "target/release/$base.zip" "target/release/$base.dmg" "target/release/$base.sha256" target/distribution/
+          cp target/release/build-provenance.json "target/distribution/$base.build.json"
+          cp target/release/package-provenance.json "target/distribution/$base.package.json"
+          cp target/release/desktop-verification.json "target/distribution/$base.verification.json"
+          cp target/machine-packages/* target/distribution/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          overwrite: true
+          name: release-macos-${{ matrix.arch }}
+          path: target/distribution/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain signing and package diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: diagnostics-macos-${{ matrix.arch }}
+          path: |
+            target/notarization/
+            target/e2e-artifacts/package/
+          retention-days: 14
+      - name: Remove signing material
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/meerkat-notary.p8"
+          security delete-keychain signing_temp.keychain || true
+    defaults:
+      run:
+        shell: bash
+
+  linux:
+    needs: [preflight, verify]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.preflight.outputs.version }}
+      RUST_TARGET: ${{ matrix.target }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2
+        with:
+          tool: cargo-zigbuild@0.20.1,cargo-deny@0.20.2
+      - name: Audit the exact Machine target before building
+        run: ./scripts/verify-dependency-advisories "$RUST_TARGET" machine
+      - name: Native portable business scenarios
+        run: cargo test --locked -p meerkat-protocol -p meerkat-daemon-runtime -p meerkat-machine --tests
+      - name: Build and package against glibc 2.28
+        run: ./scripts/package-machine "$RUST_TARGET"
+      - name: Verify the native Machine installer
+        run: ./scripts/verify-machine-package "target/machine-packages/meerkat-machine-$VERSION-linux-$ARCH.tar.gz"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          overwrite: true
+          name: release-linux-${{ matrix.arch }}
+          path: target/machine-packages/
+          if-no-files-found: error
+          retention-days: 14
+
+  source:
+    needs: [preflight, verify]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          persist-credentials: false
+      - run: mkdir -p target/source
+      - name: Generate the source dependency SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          path: .
+          format: spdx-json
+          syft-version: v1.27.1
+          output-file: target/source/sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Export the exact release source
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          mkdir -p target/source
+          git archive --format=tar.gz --prefix="Meerkat-$VERSION/" HEAD > "target/source/Meerkat-$VERSION-source.tar.gz"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          overwrite: true
+          name: release-source
+          path: target/source/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [preflight, macos-sign, linux, source]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-*
+          path: target/release-inputs
+      - name: Verify the full release matrix and create the manifest
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          COMMIT: ${{ needs.preflight.outputs.commit }}
+        run: ./scripts/release-assets --source target/release-inputs --output target/publish --version "$VERSION" --commit "$COMMIT"
+      - name: Attest every final file
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: target/publish/*
+      - name: Upload, verify and publish the complete Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          base="target/release/Meerkat-$VERSION-macos-arm64"
-          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes \
-            "$base.zip" "$base.dmg" "$base.sha256"
+          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.preflight.outputs.commit }}
+          RELEASE_PRERELEASE: ${{ needs.preflight.outputs.prerelease }}
+        run: ./scripts/publish-release target/publish

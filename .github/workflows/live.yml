@@ -1,0 +1,81 @@
+name: Live acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      gate:
+        description: Uses isolated test accounts and may incur model usage
+        required: true
+        type: choice
+        options: [live-provider, live-harness, live-composition]
+      confirm_isolated_accounts:
+        description: I authorize this run using the dedicated runner's isolated test accounts
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-isolated-accounts
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require explicit opt-in on the default branch
+        env:
+          CONFIRMED: ${{ inputs.confirm_isolated_accounts }}
+          REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          [[ "$CONFIRMED" == true && "$REF" == "refs/heads/$DEFAULT_BRANCH" ]] || exit 1
+
+  accept:
+    needs: authorize
+    environment: live-testing
+    runs-on: [self-hosted, macOS, meerkat-live]
+    timeout-minutes: 60
+    env:
+      MEERKAT_E2E_LIVE: '1'
+      MEERKAT_E2E_TEAM_ROOT: ${{ vars.E2E_TEAM_ROOT }}
+      MEERKAT_FEISHU_E2E_APPS: ${{ secrets.FEISHU_E2E_APPS }}
+      MEERKAT_E2E_LARK_CLI: ${{ vars.E2E_LARK_CLI }}
+      MEERKAT_E2E_OAUTH_DIR: ${{ vars.E2E_OAUTH_DIR }}
+      MEERKAT_E2E_CHAT_ID: ${{ secrets.E2E_CHAT_ID }}
+      MEERKAT_TELEGRAM_E2E_FIXTURE: ${{ vars.TELEGRAM_E2E_FIXTURE }}
+      MEERKAT_TELEGRAM_E2E_CHAT_ID: ${{ secrets.TELEGRAM_E2E_CHAT_ID }}
+      MEERKAT_TELEGRAM_AUTHORIZED_FIXTURE_CHAT_ID: ${{ secrets.TELEGRAM_E2E_CHAT_ID }}
+      MEERKAT_PI_PATH: ${{ vars.PI_PATH }}
+      MEERKAT_PI_MODELS_PATH: ${{ vars.PI_MODELS_PATH }}
+      MEERKAT_CODEX_PATH: ${{ vars.CODEX_PATH }}
+      MEERKAT_CODEX_CONFIG_PATH: ${{ vars.CODEX_CONFIG_PATH }}
+      MEERKAT_CLAUDE_CODE_PATH: ${{ vars.CLAUDE_CODE_PATH }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Require dedicated fixture and Harness paths
+        env:
+          GATE: ${{ inputs.gate }}
+        run: |
+          case "$GATE" in
+            live-provider|live-composition)
+              for name in MEERKAT_E2E_TEAM_ROOT MEERKAT_FEISHU_E2E_APPS MEERKAT_E2E_OAUTH_DIR MEERKAT_E2E_CHAT_ID MEERKAT_TELEGRAM_E2E_FIXTURE MEERKAT_TELEGRAM_E2E_CHAT_ID; do
+                [[ -n "${!name}" ]] || { echo "Missing isolated fixture: $name" >&2; exit 1; }
+              done ;;
+          esac
+          case "$GATE" in
+            live-harness|live-composition)
+              for name in MEERKAT_PI_PATH MEERKAT_PI_MODELS_PATH MEERKAT_CODEX_PATH MEERKAT_CODEX_CONFIG_PATH MEERKAT_CLAUDE_CODE_PATH; do
+                [[ -n "${!name}" ]] || { echo "Missing isolated Harness setup: $name" >&2; exit 1; }
+              done ;;
+          esac
+      - name: Run the explicitly authorized live gate
+        env:
+          GATE: ${{ inputs.gate }}
+        run: ./scripts/verify-all --gate "$GATE"

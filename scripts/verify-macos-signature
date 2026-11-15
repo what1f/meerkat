@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""Require Developer ID, the expected team, hardened runtime and timestamp."""
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+if len(sys.argv) < 2:
+    raise SystemExit("usage: verify-macos-signature PATH [PATH ...]")
+team = os.environ.get("MEERKAT_APPLE_TEAM_ID")
+if not team:
+    raise SystemExit("MEERKAT_APPLE_TEAM_ID is required for distribution verification")
+for argument in sys.argv[1:]:
+    path = Path(argument)
+    subprocess.run(["codesign", "--verify", "--strict", str(path)], check=True)
+    details = subprocess.run(
+        ["codesign", "--display", "--verbose=4", str(path)],
+        check=True, capture_output=True, text=True,
+    ).stderr
+    lines = details.splitlines()
+    if f"TeamIdentifier={team}" not in lines:
+        raise SystemExit(f"Unexpected signing team: {path.name}")
+    if not any(line.startswith("Authority=Developer ID Application:") for line in lines):
+        raise SystemExit(f"Developer ID Application signature required: {path.name}")
+    if not any(line.startswith("Timestamp=") for line in lines):
+        raise SystemExit(f"Secure signing timestamp required: {path.name}")
+    # Disk images are containers; hardened runtime applies to executable code.
+    if path.suffix != ".dmg" and not any("flags=" in line and "runtime" in line for line in lines):
+        raise SystemExit(f"Hardened runtime required: {path.name}")
+print("[distribution-signature] PASS")

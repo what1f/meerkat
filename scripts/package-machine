@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Packages the Machine bundle that install.sh downloads on another computer:
+# meerkat-machine, the meerkat capability CLI and the Built-in Agent.
+# Usage: scripts/package-machine RUST_TARGET
+#
+# Linux targets are cross-built with cargo-zigbuild against glibc 2.28.
+# On macOS, MEERKAT_CODESIGN_IDENTITY signs with a Developer ID (default
+# ad-hoc). With MEERKAT_NOTARY_KEY, MEERKAT_NOTARY_KEY_ID and
+# MEERKAT_NOTARY_ISSUER set, the signed binaries are also notarized.
+set -euo pipefail
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+TARGET="${1:-}"
+case "$TARGET" in
+  aarch64-apple-darwin) PLATFORM=macos-arm64 ;;
+  x86_64-apple-darwin) PLATFORM=macos-x86_64 ;;
+  x86_64-unknown-linux-gnu) PLATFORM=linux-x86_64 ;;
+  aarch64-unknown-linux-gnu) PLATFORM=linux-arm64 ;;
+  *)
+    echo "usage: scripts/package-machine aarch64-apple-darwin|x86_64-apple-darwin|x86_64-unknown-linux-gnu|aarch64-unknown-linux-gnu" >&2
+    exit 2
+    ;;
+esac
+
+./scripts/verify-production-boundary
+VERSION="$(sed -nE '/^\[workspace\.package\]/,/^\[/ s/^version = "([^"]+)"/\1/p' Cargo.toml)"
+TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT_DIR/target}"
+BUILD_DIR="$TARGET_DIR/$TARGET/release"
+BUILD_DIR="${MEERKAT_MACHINE_BIN_DIR:-$BUILD_DIR}"
+OUTPUT_DIR="${MEERKAT_PACKAGE_OUTPUT_DIR:-$TARGET_DIR/machine-packages}"
+NAME="meerkat-machine-$VERSION-$PLATFORM"
+BINARIES=(meerkat-machine meerkat meerkat-agent)
+
+if [[ -z "${MEERKAT_MACHINE_BIN_DIR:-}" ]]; then
+  if [[ "$TARGET" == *-linux-gnu ]]; then
+    cargo zigbuild --release --locked --target "$TARGET.2.28" --bin meerkat-machine --bin meerkat
+  else
+    cargo build --release --locked --target "$TARGET" --bin meerkat-machine --bin meerkat
+  fi
+  ./tools/builtin-agent/build release "$TARGET"
+fi
+
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+mkdir "$STAGE/$NAME"
+for binary in "${BINARIES[@]}"; do
+  install -m 0755 "$BUILD_DIR/$binary" "$STAGE/$NAME/$binary"
+done
+cp LICENSE THIRD_PARTY_LICENSES.md "$STAGE/$NAME/"
+cp -R licenses "$STAGE/$NAME/licenses"
+mkdir "$STAGE/$NAME/licenses/builtin-agent"
+cp "$TARGET_DIR/builtin-agent/src/LICENSE" "$TARGET_DIR/builtin-agent/src/THIRD_PARTY_NOTICES.md" \
+  "$STAGE/$NAME/licenses/builtin-agent/"
+
+if [[ "$TARGET" == *-apple-darwin ]]; then
+  IDENTITY="${MEERKAT_CODESIGN_IDENTITY:--}"
+  if [[ "${MEERKAT_RELEASE_SIGNING:-0}" == 1 ]]; then
+    [[ "$IDENTITY" == 'Developer ID Application:'* ]] || {
+      echo 'A Developer ID Application identity is required for a release' >&2; exit 2;
+    }
+    : "${MEERKAT_APPLE_TEAM_ID:?}" "${MEERKAT_NOTARY_KEY:?}" \
+      "${MEERKAT_NOTARY_KEY_ID:?}" "${MEERKAT_NOTARY_ISSUER:?}"
+  fi
+  for binary in "${BINARIES[@]}"; do
+    if [[ "$IDENTITY" == "-" ]]; then
+      codesign --force --sign - "$STAGE/$NAME/$binary"
+    else
+      codesign --force --options runtime --timestamp --sign "$IDENTITY" "$STAGE/$NAME/$binary"
+    fi
+    codesign --verify --strict "$STAGE/$NAME/$binary"
+    if [[ "${MEERKAT_RELEASE_SIGNING:-0}" == 1 ]]; then
+      ./scripts/verify-macos-signature "$STAGE/$NAME/$binary"
+    fi
+  done
+  if [[ -n "${MEERKAT_NOTARY_KEY:-}" ]]; then
+    # Bare binaries cannot carry a stapled ticket; Gatekeeper looks it up online.
+    ditto -c -k --keepParent "$STAGE/$NAME" "$STAGE/notarize.zip"
+    mv "$STAGE/notarize.zip" "$STAGE/$NAME.zip"
+    ./scripts/notarize-macos "$STAGE/$NAME.zip"
+  fi
+fi
+
+mkdir -p "$OUTPUT_DIR"
+ARCHIVE="$OUTPUT_DIR/$NAME.tar.gz"
+COPYFILE_DISABLE=1 tar -czf "$ARCHIVE" -C "$STAGE" "$NAME"
+(cd "$OUTPUT_DIR" && shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256")
+sed "s/@VERSION@/$VERSION/" apps/machine/install.sh > "$OUTPUT_DIR/install.sh"
+echo "Package ready: $ARCHIVE"

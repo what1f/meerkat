@@ -1,10 +1,21 @@
 #!/usr/bin/env bash
 # Build the Built-in Agent binary from the pinned revision of Meerkat's fork.
-# Usage: tools/builtin-agent/build [debug|release]
+# Usage: tools/builtin-agent/build [debug|release] [RUST_TARGET]
+# With a Rust target triple the binary lands next to Cargo's output for that
+# target; Linux builds link against glibc 2.28 so they run on older systems.
 set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 PROFILE="${1:-debug}"
-# The fork's `meerkat` branch. Local while unpushed; later https://github.com/what1f/fx.
+RUST_TARGET="${2:-}"
+case "$RUST_TARGET" in
+  "") ZIG_TARGET="" ;;
+  aarch64-apple-darwin) ZIG_TARGET="aarch64-macos" ;;
+  x86_64-apple-darwin) ZIG_TARGET="x86_64-macos" ;;
+  x86_64-unknown-linux-gnu) ZIG_TARGET="x86_64-linux-gnu.2.28" ;;
+  aarch64-unknown-linux-gnu) ZIG_TARGET="aarch64-linux-gnu.2.28" ;;
+  *) echo "Unsupported target for the Built-in Agent: $RUST_TARGET" >&2; exit 2 ;;
+esac
+# The fork's `meerkat` branch at https://github.com/what1f/fx.
 SOURCE_URL="https://github.com/what1f/fx.git"
 REVISION="$(tr -d '[:space:]' < "$ROOT_DIR/tools/builtin-agent/REVISION")"
 # Local changes applied on top of the pinned revision, in name order.
@@ -19,15 +30,16 @@ fi
 TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT_DIR/target}"
 WORK="$TARGET_DIR/builtin-agent"
 SOURCE="$WORK/src"
-CACHED="$WORK/bin/meerkat-agent"
-OUTPUT="$TARGET_DIR/$PROFILE/meerkat-agent"
+CACHE="$WORK/bin${RUST_TARGET:+/$RUST_TARGET}"
+CACHED="$CACHE/meerkat-agent"
+OUTPUT="$TARGET_DIR/${RUST_TARGET:+$RUST_TARGET/}$PROFILE/meerkat-agent"
 
 if [[ ! "$REVISION" =~ ^[0-9a-f]{40}$ ]]; then
   echo "tools/builtin-agent/REVISION must hold a full commit sha" >&2
   exit 1
 fi
 
-if [[ ! -x "$CACHED" || "$(cat "$WORK/bin/REVISION" 2>/dev/null)" != "$STAMP" ]]; then
+if [[ ! -x "$CACHED" || "$(cat "$CACHE/REVISION" 2>/dev/null)" != "$STAMP" ]]; then
   ZIG="$(command -v zig || true)"
   [[ -n "$ZIG" ]] || ZIG="$HOME/.local/bin/zig"
   if [[ ! -x "$ZIG" ]]; then
@@ -49,15 +61,16 @@ if [[ ! -x "$CACHED" || "$(cat "$WORK/bin/REVISION" 2>/dev/null)" != "$STAMP" ]]
     git -C "$SOURCE" apply --whitespace=nowarn "$patch"
   done
   echo "Building the Built-in Agent at ${REVISION:0:12}${PATCHES[*]:+ with ${#PATCHES[@]} patch(es)}…"
-  (cd "$SOURCE" && "$ZIG" build -Doptimize=ReleaseSafe)
-  mkdir -p "$WORK/bin"
+  rm -rf "$SOURCE/zig-out"
+  (cd "$SOURCE" && "$ZIG" build -Doptimize=ReleaseSafe ${ZIG_TARGET:+"-Dtarget=$ZIG_TARGET"})
+  mkdir -p "$CACHE"
   cp "$SOURCE/zig-out/bin/fx" "$CACHED.tmp"
   chmod 0755 "$CACHED.tmp"
   mv "$CACHED.tmp" "$CACHED"
-  echo "$STAMP" > "$WORK/bin/REVISION"
+  echo "$STAMP" > "$CACHE/REVISION"
 fi
 
-mkdir -p "$TARGET_DIR/$PROFILE"
+mkdir -p "$(dirname "$OUTPUT")"
 if ! cmp -s "$CACHED" "$OUTPUT"; then
   cp "$CACHED" "$OUTPUT.tmp"
   mv "$OUTPUT.tmp" "$OUTPUT"

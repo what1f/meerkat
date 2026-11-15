@@ -1,0 +1,7 @@
+[graph]
+exclude-dev = true
+
+[advisories]
+unmaintained = "all"
+yanked = "deny"
+ignore = []

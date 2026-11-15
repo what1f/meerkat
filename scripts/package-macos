@@ -17,6 +17,13 @@ VERSION="$(sed -nE 's/^version = "([^"]+)"/\1/p' "$ROOT_DIR/apps/desktop/Cargo.t
 ARCHITECTURE="$(uname -m)"
 ARCHIVE="$OUTPUT_DIR/Meerkat-$VERSION-macos-$ARCHITECTURE.zip"
 SIGNING_IDENTITY="${MEERKAT_CODESIGN_IDENTITY:--}"
+if [[ "${MEERKAT_RELEASE_SIGNING:-0}" == 1 ]]; then
+  [[ "$SIGNING_IDENTITY" == 'Developer ID Application:'* ]] || {
+    print -u2 'A Developer ID Application identity is required for a release'; exit 2;
+  }
+  : "${MEERKAT_APPLE_TEAM_ID:?}" "${MEERKAT_NOTARY_KEY:?}" \
+    "${MEERKAT_NOTARY_KEY_ID:?}" "${MEERKAT_NOTARY_ISSUER:?}"
+fi
 APP_ONLY=0
 
 if [[ "${1:-}" == "--app-only" ]]; then
@@ -60,6 +67,10 @@ cp "$ROOT_DIR/apps/desktop/macos/com.meerkat.machine.plist" "$CONTENTS/Library/L
 cp "$ROOT_DIR/apps/desktop/Info.plist" "$CONTENTS/Info.plist"
 cp "$ROOT_DIR/LICENSE" "$ROOT_DIR/THIRD_PARTY_LICENSES.md" "$CONTENTS/Resources/"
 cp -R "$ROOT_DIR/licenses" "$CONTENTS/Resources/licenses"
+AGENT_SOURCE="${CARGO_TARGET_DIR:-$ROOT_DIR/target}/builtin-agent/src"
+mkdir -p "$CONTENTS/Resources/licenses/builtin-agent"
+cp "$AGENT_SOURCE/LICENSE" "$AGENT_SOURCE/THIRD_PARTY_NOTICES.md" \
+  "$CONTENTS/Resources/licenses/builtin-agent/"
 if [[ "$SIGNING_IDENTITY" == "-" ]]; then
   touch "$CONTENTS/Resources/AdHocBackgroundServices"
 fi
@@ -96,16 +107,26 @@ chmod 755 \
 xattr -cr "$APP_DIR"
 "$ROOT_DIR/scripts/package-provenance" stage --binary-dir "$RELEASE_DIR" \
   --build-provenance "$PROVENANCE" --bundle "$APP_DIR" --output "$ICON_TEMP/stage.json"
+SIGNING_OPTIONS=()
+if [[ "$SIGNING_IDENTITY" != '-' ]]; then SIGNING_OPTIONS=(--options runtime --timestamp); fi
 for helper in \
   "$CONTENTS/Library/LaunchServices/meerkatd" \
   "$CONTENTS/Library/LaunchServices/meerkat-machine" \
   "$CONTENTS/Resources/bin/meerkat" \
   "$CONTENTS/Resources/bin/meerkat-agent" \
   "$CONTENTS/MacOS/Meerkat"; do
-  codesign --force --sign "$SIGNING_IDENTITY" "$helper"
+  codesign --force "${SIGNING_OPTIONS[@]}" --sign "$SIGNING_IDENTITY" "$helper"
 done
-codesign --force --sign "$SIGNING_IDENTITY" "$APP_DIR"
+codesign --force "${SIGNING_OPTIONS[@]}" --sign "$SIGNING_IDENTITY" "$APP_DIR"
 codesign --verify --deep --strict "$APP_DIR"
+if [[ "${MEERKAT_RELEASE_SIGNING:-0}" == 1 ]]; then
+  "$ROOT_DIR/scripts/verify-macos-signature" "$APP_DIR" \
+    "$CONTENTS/Library/LaunchServices/meerkatd" \
+    "$CONTENTS/Library/LaunchServices/meerkat-machine" \
+    "$CONTENTS/Resources/bin/meerkat" "$CONTENTS/Resources/bin/meerkat-agent"
+  "$ROOT_DIR/scripts/notarize-macos" "$APP_DIR"
+  spctl --assess --type execute --verbose=2 "$APP_DIR"
+fi
 
 print "App ready: $APP_DIR"
 if (( APP_ONLY == 0 )); then
@@ -122,6 +143,13 @@ if (( APP_ONLY == 0 )); then ARCHIVE_ARGS=(--archive "$ARCHIVE"); fi
   --stage "$ICON_TEMP/stage.json" --output "$OUTPUT_DIR/package-provenance.json"
 if (( APP_ONLY == 0 )); then
   "$ROOT_DIR/scripts/package-macos-dmg" "$APP_DIR" "$OUTPUT_DIR/Meerkat-$VERSION-macos-$ARCHITECTURE.dmg"
+  if [[ "${MEERKAT_RELEASE_SIGNING:-0}" == 1 ]]; then
+    DMG="$OUTPUT_DIR/Meerkat-$VERSION-macos-$ARCHITECTURE.dmg"
+    codesign --force --timestamp --sign "$SIGNING_IDENTITY" "$DMG"
+    "$ROOT_DIR/scripts/verify-macos-signature" "$DMG"
+    "$ROOT_DIR/scripts/notarize-macos" "$DMG"
+    spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
+  fi
   (cd "$OUTPUT_DIR" && shasum -a 256 "${ARCHIVE:t}" "Meerkat-$VERSION-macos-$ARCHITECTURE.dmg" \
     > "Meerkat-$VERSION-macos-$ARCHITECTURE.sha256")
 fi

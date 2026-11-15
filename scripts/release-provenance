@@ -15,10 +15,10 @@ def digest(path):
 
 
 def source_snapshot():
-    files = [ROOT / "Cargo.toml", ROOT / "Cargo.lock", ROOT / "LICENSE", ROOT / "THIRD_PARTY_LICENSES.md"]
+    files = [ROOT / "Cargo.toml", ROOT / "Cargo.lock", ROOT / "rust-toolchain.toml", ROOT / "LICENSE", ROOT / "THIRD_PARTY_LICENSES.md"]
     if (ROOT / "Justfile").is_file():
         files.append(ROOT / "Justfile")
-    for folder in (".cargo", "apps", "crates", "harnesses", "providers", "scripts", "tests", "tools", "licenses"):
+    for folder in (".github", ".cargo", "apps", "crates", "harnesses", "providers", "scripts", "tests", "tools", "licenses"):
         files.extend(path for path in (ROOT / folder).rglob("*")
                      if path.is_file()
                      and not path.is_relative_to(ROOT / "apps/desktop/gen")

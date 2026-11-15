@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Submit an already signed App, disk image, or archive and require acceptance.
+set -euo pipefail
+ARTIFACT="${1:?usage: notarize-macos ARTIFACT}"
+: "${MEERKAT_NOTARY_KEY:?}"
+: "${MEERKAT_NOTARY_KEY_ID:?}"
+: "${MEERKAT_NOTARY_ISSUER:?}"
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+LOG_DIR="${MEERKAT_NOTARY_LOG_DIR:-$ROOT_DIR/target/notarization}"
+mkdir -p "$LOG_DIR"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+NAME="$(basename "$ARTIFACT")"
+SUBMISSION="$ARTIFACT"
+if [[ "$ARTIFACT" == *.app ]]; then
+  SUBMISSION="$WORK/app.zip"
+  ditto -c -k --keepParent "$ARTIFACT" "$SUBMISSION"
+fi
+RESULT="$LOG_DIR/$NAME.json"
+xcrun notarytool submit "$SUBMISSION" --wait --timeout 30m --output-format json \
+  --key "$MEERKAT_NOTARY_KEY" --key-id "$MEERKAT_NOTARY_KEY_ID" \
+  --issuer "$MEERKAT_NOTARY_ISSUER" > "$RESULT"
+ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$RESULT")"
+xcrun notarytool log "$ID" --key "$MEERKAT_NOTARY_KEY" \
+  --key-id "$MEERKAT_NOTARY_KEY_ID" --issuer "$MEERKAT_NOTARY_ISSUER" \
+  "$LOG_DIR/$NAME.log.json"
+python3 - "$RESULT" <<'PY'
+import json, sys
+result = json.load(open(sys.argv[1]))
+if result.get("status") != "Accepted":
+    raise SystemExit("Apple notarization was not accepted; inspect the notarization log")
+PY
+case "$ARTIFACT" in
+  *.app|*.dmg|*.pkg)
+    # Apple can accept a submission before its ticket reaches the CDN.
+    for attempt in 1 2 3 4 5 6; do
+      if xcrun stapler staple "$ARTIFACT"; then break; fi
+      [[ "$attempt" != 6 ]] || exit 1
+      sleep 5
+    done
+    xcrun stapler validate "$ARTIFACT"
+    ;;
+esac

@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+"""Require one existing tag, one source commit, and matching product versions."""
+import json
+import os
+from pathlib import Path
+import plistlib
+import re
+import subprocess
+import tomllib
+
+ROOT = Path(__file__).resolve().parent.parent
+tag = os.environ["RELEASE_TAG"]
+if not re.fullmatch(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", tag):
+    raise SystemExit("release requires an existing semantic version tag")
+branch = os.environ["DEFAULT_BRANCH"]
+if os.environ.get("EVENT_NAME") == "workflow_dispatch" and os.environ["DISPATCH_REF"] not in (
+        f"refs/heads/{branch}", f"refs/tags/{tag}"):
+    raise SystemExit("manual releases must run the default branch or requested tag workflow")
+
+
+def git(*arguments):
+    return subprocess.check_output(["git", *arguments], cwd=ROOT, text=True).strip()
+
+
+commit = git("rev-parse", f"refs/tags/{tag}^{{commit}}")
+if commit != git("rev-parse", "HEAD"):
+    raise SystemExit("checkout does not match the release tag")
+if commit != os.environ["WORKFLOW_COMMIT"]:
+    raise SystemExit("run this workflow from the release tag so its provenance matches the source commit")
+subprocess.run(["git", "merge-base", "--is-ancestor", commit, f"refs/remotes/origin/{branch}"], cwd=ROOT, check=True)
+version = tag[1:]
+versions = [
+    tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"],
+    tomllib.loads((ROOT / "apps/desktop/Cargo.toml").read_text())["package"]["version"],
+    json.loads((ROOT / "apps/desktop/tauri.conf.json").read_text())["version"],
+]
+info = plistlib.loads((ROOT / "apps/desktop/Info.plist").read_bytes())
+versions.extend((info["CFBundleVersion"], info["CFBundleShortVersionString"]))
+if any(observed != version for observed in versions):
+    raise SystemExit("tag, Cargo, Tauri and Info.plist versions must match")
+with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+    output.write(f"version={version}\ntag={tag}\ncommit={commit}\nprerelease={str('-' in version).lower()}\n")
+print(f"[release-preflight] PASS: {tag} at {commit}")

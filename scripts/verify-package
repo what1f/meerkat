@@ -67,6 +67,13 @@ def main():
             if info.get("NSAppTransportSecurity", {}).get("NSAllowsLocalNetworking") is not True:
                 raise ValueError("local networking is not allowed in Info.plist")
             subprocess.run(["codesign", "--verify", "--deep", "--strict", str(extracted)], check=True)
+            if os.environ.get("MEERKAT_RELEASE_SIGNING") == "1":
+                subprocess.run([str(ROOT / "scripts/verify-macos-signature"), str(extracted),
+                    *(str(extracted / relative) for relative in (
+                        "Contents/Library/LaunchServices/meerkatd", "Contents/Library/LaunchServices/meerkat-machine",
+                        "Contents/Resources/bin/meerkat", "Contents/Resources/bin/meerkat-agent"))], check=True)
+                subprocess.run(["xcrun", "stapler", "validate", str(extracted)], check=True)
+                subprocess.run(["spctl", "--assess", "--type", "execute", str(extracted)], check=True)
             home = root / "home"
             prepare_bootstrap_home(home)
             bootstrap_result = artifacts / "bootstrap.json"
@@ -119,6 +126,12 @@ def main():
         raise
     finally:
         (artifacts / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+        if destination := os.environ.get("MEERKAT_PACKAGE_VERIFICATION_OUTPUT"):
+            Path(destination).write_text(json.dumps({
+                "status": result["status"], "version": version, "cleanup": result["cleanup"],
+                "archive_sha256": result["archive_sha256"], "dmg_sha256": result["dmg_sha256"],
+                "distribution_signing": "developer-id-notarized" if os.environ.get("MEERKAT_RELEASE_SIGNING") == "1" else "development",
+            }, indent=2) + "\n")
         print(f"Package verification: {result['status']}; artifact={artifacts / 'result.json'}")
 
 
