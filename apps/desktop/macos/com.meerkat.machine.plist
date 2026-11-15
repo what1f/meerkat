@@ -6,10 +6,6 @@
     <string>com.meerkat.machine</string>
     <key>BundleProgram</key>
     <string>Contents/Library/LaunchServices/meerkat-machine</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>Contents/Library/LaunchServices/meerkat-machine</string>
-    </array>
     <key>AssociatedBundleIdentifiers</key>
     <array>
         <string>com.meerkat.desktop</string>

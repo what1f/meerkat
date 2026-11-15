@@ -7,7 +7,7 @@ export interface ReleaseInfo {
 }
 
 const REPO = 'https://github.com/what1f/meerkat';
-export const FALLBACK_VERSION = '0.1.0';
+export const FALLBACK_VERSION = '0.1.1';
 
 export function buildFallbackRelease(version = FALLBACK_VERSION): ReleaseInfo {
   const tag = version.startsWith('v') ? version : `v${version}`;

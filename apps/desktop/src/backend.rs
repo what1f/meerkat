@@ -212,7 +212,7 @@ fn start_runtime(
                 services.prepare(home)?;
                 services.ensure_runtime(home)?;
             }
-            runtime.block_on(connect_with_retry(run))?
+            runtime.block_on(connect_with_retry(run, services))?
         }
         Err(error) => return Err(error),
     };
@@ -295,13 +295,29 @@ fn meerkat_home() -> PathBuf {
     })
 }
 
-async fn connect_with_retry(run: &Path) -> Result<RuntimeManagementClient, ClientError> {
+async fn connect_with_retry(
+    run: &Path,
+    services: &Arc<Mutex<BackgroundServices>>,
+) -> Result<RuntimeManagementClient, ClientError> {
     let client = RuntimeManagementClient::connect_local_lazy(run);
     let mut last_error = ClientError::Unavailable("Meerkat 尚未就绪".into());
-    for _ in 0..50 {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    while tokio::time::Instant::now() < deadline {
         match client.list_workspaces().await {
             Ok(_) => return Ok(client),
             Err(error) => last_error = error,
+        }
+        let exited = services
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .runtime_exited()?;
+        if let Some(status) = exited {
+            if client.list_workspaces().await.is_ok() {
+                return Ok(client);
+            }
+            return Err(ClientError::Unavailable(format!(
+                "本地服务已退出（{status}），请查看服务日志后重试。"
+            )));
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }

@@ -6,10 +6,6 @@
     <string>com.meerkat.daemon</string>
     <key>BundleProgram</key>
     <string>Contents/Library/LaunchServices/meerkatd</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>Contents/Library/LaunchServices/meerkatd</string>
-    </array>
     <key>AssociatedBundleIdentifiers</key>
     <array>
         <string>com.meerkat.desktop</string>

@@ -116,9 +116,11 @@ def run(binary_dir, artifact_dir):
     artifact_dir.mkdir(parents=True, exist_ok=True)
     scenarios = [reuse_running_services(binaries, artifact_dir),
                  replace_running_services(binaries, artifact_dir)]
+    macos_plists = Path(__file__).resolve().parent.parent / "macos"
     for scenario, failed_helper in (
         ("ready", None),
         ("unbundled-default-home-ready", None),
+        ("translocated-bundle-default-home-ready", None),
         ("runtime-exits", "meerkatd"),
         ("machine-exits", "meerkat-machine"),
         ("helper-missing", "missing:meerkatd"),
@@ -127,21 +129,39 @@ def run(binary_dir, artifact_dir):
         scenarios.append(result)
         with tempfile.TemporaryDirectory(prefix="lk-boot-", dir="/tmp") as directory:
             root = Path(directory)
-            default_home = scenario == "unbundled-default-home-ready"
+            translocated_bundle = scenario == "translocated-bundle-default-home-ready"
+            default_home = scenario in ("unbundled-default-home-ready", "translocated-bundle-default-home-ready")
             home = root / (".meerkat" if default_home else "home")
             home.mkdir()
             (home / "runtime.json").write_text(json.dumps({"machine_link_listen": "127.0.0.1:0", "remote_access_port": 0}))
-            bundle = root / "bin"
-            bundle.mkdir()
-            for name, binary in binaries.items():
-                destination = bundle / name
-                if failed_helper == f"missing:{name}":
-                    continue
-                if name == failed_helper:
-                    destination.write_text("#!/bin/sh\nprintf 'PATH=%s\\n' \"$PATH\" >&2\nprintf 'injected helper startup failure\\n' >&2\nexit 42\n")
-                    destination.chmod(0o755)
-                else:
-                    shutil.copy2(binary, destination)
+            if translocated_bundle:
+                contents = root / "AppTranslocation/session/Meerkat.app/Contents"
+                macos_dir = contents / "MacOS"
+                services_dir = contents / "Library/LaunchServices"
+                agents_dir = contents / "Library/LaunchAgents"
+                resources_bin = contents / "Resources/bin"
+                for folder in (macos_dir, services_dir, agents_dir, resources_bin):
+                    folder.mkdir(parents=True)
+                shutil.copy2(binaries["meerkat-desktop"], macos_dir / "Meerkat")
+                shutil.copy2(binaries["meerkatd"], services_dir / "meerkatd")
+                shutil.copy2(binaries["meerkat-machine"], services_dir / "meerkat-machine")
+                shutil.copy2(binaries["meerkat"], resources_bin / "meerkat")
+                for plist_name in ("com.meerkat.daemon.plist", "com.meerkat.machine.plist"):
+                    shutil.copy2(macos_plists / plist_name, agents_dir / plist_name)
+                desktop_executable = macos_dir / "Meerkat"
+            else:
+                bundle = root / "bin"
+                bundle.mkdir()
+                for name, binary in binaries.items():
+                    destination = bundle / name
+                    if failed_helper == f"missing:{name}":
+                        continue
+                    if name == failed_helper:
+                        destination.write_text("#!/bin/sh\nprintf 'PATH=%s\\n' \"$PATH\" >&2\nprintf 'injected helper startup failure\\n' >&2\nexit 42\n")
+                        destination.chmod(0o755)
+                    else:
+                        shutil.copy2(binary, destination)
+                desktop_executable = bundle / "meerkat-desktop"
             output = artifact_dir / f"{scenario}.json"
             env = {**os.environ, "HOME": str(root)}
             env.pop("MEERKAT_HOME", None)
@@ -150,7 +170,7 @@ def run(binary_dir, artifact_dir):
             env.pop("MEERKAT_RUNTIME_RUN", None)
             with (artifact_dir / f"{scenario}.log").open("w") as log:
                 process = subprocess.Popen(
-                    [str(bundle / "meerkat-desktop"), "--local-bootstrap-smoke", "--result", str(output)],
+                    [str(desktop_executable), "--local-bootstrap-smoke", "--result", str(output)],
                     env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
                 )
                 try:
@@ -176,6 +196,8 @@ def run(binary_dir, artifact_dir):
                         assert payload["local_machine_id"] == credentials["machine_id"], "Desktop waited for another Machine"
                         for name in ("meerkatd", "meerkat-machine"):
                             assert (home / "logs" / f"{name}.log").is_file(), "Desktop did not start its helper"
+                        if translocated_bundle:
+                            assert not (root / "Library/LaunchAgents").exists(), "ephemeral bundle registered LaunchAgents"
                     else:
                         assert code != 0 and payload["status"] == "failed", payload
                         assert not payload["machine_connected"], payload
@@ -204,7 +226,7 @@ def run(binary_dir, artifact_dir):
                     if logs.exists():
                         shutil.copytree(logs, artifact_dir / f"{scenario}-services", dirs_exist_ok=True)
                     (artifact_dir / "result.json").write_text(json.dumps({
-                        "status": "passed" if len(scenarios) == 7 and all(item["status"] == "passed" for item in scenarios) else "failed",
+                        "status": "passed" if len(scenarios) == 8 and all(item["status"] == "passed" for item in scenarios) else "failed",
                         "classification": "real-process-startup-with-external-faults",
                         "binaries": {name: {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()} for name, path in binaries.items()},
                         "scenarios": scenarios,

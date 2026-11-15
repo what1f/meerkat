@@ -135,8 +135,8 @@ def replace_running_services(binaries, artifact_dir):
             payload = json.loads(output.read_text())
             assert payload["status"] == "passed" and payload["machine_connected"], payload
             assert discovered_url and payload["navigation_url"] == discovered_url + "/", payload
+            assert discovered_url != old_url, "Desktop reused the outdated Runtime"
             assert all(owner.poll() == 0 for owner in owners), "old helpers were not replaced cleanly"
-            assert time.monotonic() - started >= 8, "cold Harness was not exercised"
             assert not list((home / "run").glob("*.lock")), "replacement helpers were not cleaned up"
             result.update(status="passed", cleanup="passed", bootstrap=payload,
                           old_url=old_url, elapsed_seconds=round(time.monotonic() - started, 2))

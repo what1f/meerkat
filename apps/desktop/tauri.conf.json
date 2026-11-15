@@ -1,6 +1,6 @@
 {
   "productName": "Meerkat",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.meerkat.desktop",
   "build": { "frontendDist": "boot" },
   "app": { "withGlobalTauri": false, "macOSPrivateApi": true, "windows": [] },

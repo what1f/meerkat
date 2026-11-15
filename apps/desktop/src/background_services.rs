@@ -35,7 +35,10 @@ enum Adapter {
         machine: Option<Child>,
     },
     #[cfg(target_os = "macos")]
-    ModernLaunchAgents,
+    ModernLaunchAgents {
+        re_register_runtime: bool,
+        re_register_machine: bool,
+    },
     #[cfg(target_os = "macos")]
     AdHocLaunchAgents,
 }
@@ -43,13 +46,16 @@ enum Adapter {
 impl BackgroundServices {
     pub(crate) fn new(persistent: bool) -> Self {
         #[cfg(target_os = "macos")]
-        if persistent && bundled_launch_agents_available() {
+        if persistent && bundled_launch_agents_available() && !bundle_is_ephemeral() {
             return Self {
                 stopping: false,
                 adapter: if ad_hoc_background_services() {
                     Adapter::AdHocLaunchAgents
                 } else {
-                    Adapter::ModernLaunchAgents
+                    Adapter::ModernLaunchAgents {
+                        re_register_runtime: false,
+                        re_register_machine: false,
+                    }
                 },
             };
         }
@@ -65,18 +71,52 @@ impl BackgroundServices {
 
     pub(crate) fn prepare(&mut self, home: &Path) -> Result<(), ClientError> {
         #[cfg(target_os = "macos")]
-        match self.adapter {
-            Adapter::ModernLaunchAgents => {
-                prepare_launch_agent(home, "runtime.lock", "meerkatd", RUNTIME_AGENT_PLIST)?;
-                prepare_launch_agent(home, "machine.lock", "meerkat-machine", MACHINE_AGENT_PLIST)?;
+        match &mut self.adapter {
+            Adapter::ModernLaunchAgents {
+                re_register_runtime,
+                re_register_machine,
+            } => {
+                if cleanup_legacy_ad_hoc_launch_agent(
+                    home,
+                    MACHINE_AGENT_LABEL,
+                    MACHINE_AGENT_PLIST,
+                    "machine.lock",
+                ) {
+                    *re_register_machine = true;
+                }
+                if cleanup_legacy_ad_hoc_launch_agent(
+                    home,
+                    RUNTIME_AGENT_LABEL,
+                    RUNTIME_AGENT_PLIST,
+                    "runtime.lock",
+                ) {
+                    *re_register_runtime = true;
+                }
+                if prepare_launch_agent(home, "runtime.lock", "meerkatd", RUNTIME_AGENT_PLIST)? {
+                    *re_register_runtime = true;
+                }
+                if prepare_launch_agent(
+                    home,
+                    "machine.lock",
+                    "meerkat-machine",
+                    MACHINE_AGENT_PLIST,
+                )? {
+                    *re_register_machine = true;
+                }
                 return Ok(());
             }
             Adapter::AdHocLaunchAgents => {
                 if !ad_hoc_launch_agent_is_loaded(RUNTIME_AGENT_LABEL)
                     && !ad_hoc_launch_agent_is_loaded(MACHINE_AGENT_LABEL)
                 {
-                    unregister_modern_launch_agent(RUNTIME_AGENT_PLIST);
-                    unregister_modern_launch_agent(MACHINE_AGENT_PLIST);
+                    unregister_modern_launch_agent(
+                        RUNTIME_AGENT_PLIST,
+                        &home.join("run/runtime.lock"),
+                    );
+                    unregister_modern_launch_agent(
+                        MACHINE_AGENT_PLIST,
+                        &home.join("run/machine.lock"),
+                    );
                 }
                 install_ad_hoc_launch_agent(home, RUNTIME_AGENT_LABEL, "meerkatd", "runtime.lock")?;
                 install_ad_hoc_launch_agent(
@@ -99,14 +139,53 @@ impl BackgroundServices {
         #[cfg(unix)]
         {
             let mut stopped = false;
-            for (lock, executable) in [
-                ("run/machine.lock", "meerkat-machine"),
-                ("run/runtime.lock", "meerkatd"),
+            #[cfg(target_os = "macos")]
+            if let Adapter::ModernLaunchAgents {
+                re_register_runtime,
+                re_register_machine,
+            } = &mut self.adapter
+            {
+                if cleanup_legacy_ad_hoc_launch_agent(
+                    home,
+                    MACHINE_AGENT_LABEL,
+                    MACHINE_AGENT_PLIST,
+                    "machine.lock",
+                ) {
+                    *re_register_machine = true;
+                    stopped = true;
+                }
+                if cleanup_legacy_ad_hoc_launch_agent(
+                    home,
+                    RUNTIME_AGENT_LABEL,
+                    RUNTIME_AGENT_PLIST,
+                    "runtime.lock",
+                ) {
+                    *re_register_runtime = true;
+                    stopped = true;
+                }
+            }
+            for (lock, executable, is_runtime) in [
+                ("run/machine.lock", "meerkat-machine", false),
+                ("run/runtime.lock", "meerkatd", true),
             ] {
                 if let Some(instance) =
                     local_service(&home.join(lock), &helper_executable(executable)?, true)?
                 {
                     stop_local_service(instance)?;
+                    #[cfg(target_os = "macos")]
+                    if let Adapter::ModernLaunchAgents {
+                        re_register_runtime,
+                        re_register_machine,
+                    } = &mut self.adapter
+                    {
+                        if is_runtime {
+                            *re_register_runtime = true;
+                        } else {
+                            *re_register_machine = true;
+                        }
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    let _ = is_runtime;
                     stopped = true;
                 }
             }
@@ -132,7 +211,15 @@ impl BackgroundServices {
                 Ok(())
             }
             #[cfg(target_os = "macos")]
-            Adapter::ModernLaunchAgents => ensure_launch_agent(RUNTIME_AGENT_PLIST),
+            Adapter::ModernLaunchAgents {
+                re_register_runtime,
+                ..
+            } => ensure_launch_agent(
+                RUNTIME_AGENT_PLIST,
+                home,
+                "runtime.lock",
+                re_register_runtime,
+            ),
             #[cfg(target_os = "macos")]
             Adapter::AdHocLaunchAgents => ensure_ad_hoc_launch_agent(RUNTIME_AGENT_LABEL),
         }
@@ -151,9 +238,34 @@ impl BackgroundServices {
                 Ok(())
             }
             #[cfg(target_os = "macos")]
-            Adapter::ModernLaunchAgents => ensure_launch_agent(MACHINE_AGENT_PLIST),
+            Adapter::ModernLaunchAgents {
+                re_register_machine,
+                ..
+            } => ensure_launch_agent(
+                MACHINE_AGENT_PLIST,
+                home,
+                "machine.lock",
+                re_register_machine,
+            ),
             #[cfg(target_os = "macos")]
             Adapter::AdHocLaunchAgents => ensure_ad_hoc_launch_agent(MACHINE_AGENT_LABEL),
+        }
+    }
+
+    pub(crate) fn runtime_exited(&mut self) -> Result<Option<String>, ClientError> {
+        match &mut self.adapter {
+            Adapter::Transient { runtime, .. } => runtime
+                .as_mut()
+                .map(|child| {
+                    child
+                        .try_wait()
+                        .map(|status| status.map(|status| status.to_string()))
+                        .map_err(|error| ClientError::Unavailable(error.to_string()))
+                })
+                .transpose()
+                .map(Option::flatten),
+            #[cfg(target_os = "macos")]
+            Adapter::ModernLaunchAgents { .. } | Adapter::AdHocLaunchAgents => Ok(None),
         }
     }
 
@@ -170,7 +282,7 @@ impl BackgroundServices {
                 .transpose()
                 .map(Option::flatten),
             #[cfg(target_os = "macos")]
-            Adapter::ModernLaunchAgents | Adapter::AdHocLaunchAgents => Ok(None),
+            Adapter::ModernLaunchAgents { .. } | Adapter::AdHocLaunchAgents => Ok(None),
         }
     }
 
@@ -183,7 +295,7 @@ impl BackgroundServices {
                 }
             }
             #[cfg(target_os = "macos")]
-            Adapter::ModernLaunchAgents | Adapter::AdHocLaunchAgents => {}
+            Adapter::ModernLaunchAgents { .. } | Adapter::AdHocLaunchAgents => {}
         }
     }
 }
@@ -217,6 +329,23 @@ fn bundle_contents() -> Option<PathBuf> {
 }
 
 #[cfg(target_os = "macos")]
+fn bundle_is_ephemeral() -> bool {
+    let Some(bundle) =
+        bundle_contents().and_then(|contents| contents.parent().map(Path::to_path_buf))
+    else {
+        return false;
+    };
+    let translocated = bundle
+        .components()
+        .any(|component| component.as_os_str() == "AppTranslocation");
+    let mounted_dmg = bundle.starts_with("/Volumes")
+        && bundle
+            .parent()
+            .is_some_and(|volume| volume.join("Applications").is_symlink());
+    translocated || mounted_dmg
+}
+
+#[cfg(target_os = "macos")]
 fn ad_hoc_background_services() -> bool {
     bundle_contents().is_some_and(|contents| {
         contents
@@ -233,43 +362,170 @@ fn launch_agent(plist_name: &str) -> objc2::rc::Retained<SMAppService> {
 }
 
 #[cfg(target_os = "macos")]
-fn ensure_launch_agent(plist_name: &str) -> Result<(), ClientError> {
+fn ensure_launch_agent(
+    plist_name: &str,
+    home: &Path,
+    lock_name: &str,
+    force_re_register: &mut bool,
+) -> Result<(), ClientError> {
+    let re_register = std::mem::replace(force_re_register, false);
+    let label = plist_name.trim_end_matches(".plist");
+    let lock_path = home.join("run").join(lock_name);
     let service = launch_agent(plist_name);
     match unsafe { service.status() } {
-        SMAppServiceStatus::Enabled => {
-            return start_launch_agent(plist_name.trim_end_matches(".plist"));
-        }
         SMAppServiceStatus::RequiresApproval => return Err(background_permission_error()),
-        SMAppServiceStatus::NotFound => return Err(background_installation_error()),
-        SMAppServiceStatus::NotRegistered => {}
+        SMAppServiceStatus::Enabled => {
+            if !re_register
+                && modern_launch_agent_matches_bundle(label)
+                && start_launch_agent(label).is_ok()
+            {
+                return Ok(());
+            }
+            unregister_modern_launch_agent(plist_name, &lock_path);
+        }
+        // Before a LaunchAgent is first recorded in BackgroundTaskManagement,
+        // macOS 14+ reports SMAppServiceStatus::NotFound rather than NotRegistered.
+        SMAppServiceStatus::NotRegistered | SMAppServiceStatus::NotFound => {
+            if ad_hoc_launch_agent_is_loaded(label) {
+                bootout_ad_hoc_launch_agent(label);
+                wait_for_lock_release(&lock_path);
+            }
+        }
         _ => return Err(background_installation_error()),
     }
 
     if let Err(error) = unsafe { service.registerAndReturnError() } {
         eprintln!("meerkat-desktop: could not register {plist_name}: {error}");
         return match unsafe { service.status() } {
-            SMAppServiceStatus::Enabled => Ok(()),
+            SMAppServiceStatus::Enabled => start_launch_agent(label),
             SMAppServiceStatus::RequiresApproval => Err(background_permission_error()),
             _ => Err(background_installation_error()),
         };
     }
 
     match unsafe { service.status() } {
-        SMAppServiceStatus::Enabled => Ok(()),
         SMAppServiceStatus::RequiresApproval => Err(background_permission_error()),
+        SMAppServiceStatus::Enabled => {
+            if ad_hoc_launch_agent_is_loaded(label) {
+                let _ = start_launch_agent(label);
+            }
+            Ok(())
+        }
+        SMAppServiceStatus::NotRegistered | SMAppServiceStatus::NotFound
+            if ad_hoc_launch_agent_is_loaded(label) =>
+        {
+            let _ = start_launch_agent(label);
+            Ok(())
+        }
         _ => Err(background_installation_error()),
     }
 }
 
 #[cfg(target_os = "macos")]
-fn unregister_modern_launch_agent(plist_name: &str) {
+fn unregister_modern_launch_agent(plist_name: &str, lock_path: &Path) {
+    let label = plist_name.trim_end_matches(".plist");
     let service = launch_agent(plist_name);
-    if unsafe { service.status() } == SMAppServiceStatus::NotRegistered {
-        return;
+    if unsafe { service.status() } != SMAppServiceStatus::NotRegistered {
+        if let Err(error) = unsafe { service.unregisterAndReturnError() } {
+            eprintln!("meerkat-desktop: could not unregister {plist_name}: {error}");
+        }
+        for _ in 0..100 {
+            if !ad_hoc_launch_agent_is_loaded(label) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        wait_for_lock_release(lock_path);
     }
-    if let Err(error) = unsafe { service.unregisterAndReturnError() } {
-        eprintln!("meerkat-desktop: could not unregister {plist_name}: {error}");
+}
+
+#[cfg(target_os = "macos")]
+fn modern_launch_agent_matches_bundle(label: &str) -> bool {
+    let Some(services) = bundle_contents().map(|contents| contents.join("Library/LaunchServices"))
+    else {
+        return false;
+    };
+    let Ok(domain) = launch_agent_domain() else {
+        return false;
+    };
+    let Ok(output) = Command::new("/bin/launchctl")
+        .args(["print", &format!("{domain}/{label}")])
+        .stderr(Stdio::null())
+        .output()
+    else {
+        return false;
+    };
+    if !output.status.success() {
+        return false;
     }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let matches_program = stdout.lines().any(|line| {
+        line.trim()
+            .strip_prefix("program = ")
+            .is_some_and(|program| Path::new(program.trim()).starts_with(&services))
+    });
+    matches_program && !launchctl_output_uses_legacy_plist(&stdout, label)
+}
+
+#[cfg(target_os = "macos")]
+fn legacy_ad_hoc_plist_path(label: &str) -> Option<PathBuf> {
+    std::env::var_os("HOME").map(PathBuf::from).map(|home| {
+        home.join("Library/LaunchAgents")
+            .join(format!("{label}.plist"))
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn launchctl_output_uses_legacy_plist(stdout: &str, label: &str) -> bool {
+    let Some(legacy_path) = legacy_ad_hoc_plist_path(label) else {
+        return false;
+    };
+    stdout.lines().any(|line| {
+        line.trim()
+            .strip_prefix("path = ")
+            .is_some_and(|path| Path::new(path.trim()) == legacy_path)
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn launchd_service_uses_legacy_plist(label: &str) -> bool {
+    let Ok(domain) = launch_agent_domain() else {
+        return false;
+    };
+    let Ok(output) = Command::new("/bin/launchctl")
+        .args(["print", &format!("{domain}/{label}")])
+        .stderr(Stdio::null())
+        .output()
+    else {
+        return false;
+    };
+    output.status.success()
+        && launchctl_output_uses_legacy_plist(&String::from_utf8_lossy(&output.stdout), label)
+}
+
+#[cfg(target_os = "macos")]
+fn cleanup_legacy_ad_hoc_launch_agent(
+    home: &Path,
+    label: &str,
+    plist_name: &str,
+    lock_name: &str,
+) -> bool {
+    let legacy_path = legacy_ad_hoc_plist_path(label);
+    let plist_exists = legacy_path
+        .as_deref()
+        .is_some_and(|path| fs::symlink_metadata(path).is_ok());
+    let loaded_from_legacy = launchd_service_uses_legacy_plist(label);
+    if !plist_exists && !loaded_from_legacy {
+        return false;
+    }
+    let lock_path = home.join("run").join(lock_name);
+    bootout_ad_hoc_launch_agent(label);
+    if let Some(path) = legacy_path {
+        let _ = fs::remove_file(path);
+    }
+    unregister_modern_launch_agent(plist_name, &lock_path);
+    wait_for_lock_release(&lock_path);
+    true
 }
 
 #[cfg(target_os = "macos")]
@@ -521,7 +777,7 @@ fn prepare_launch_agent(
     lock_name: &str,
     executable_name: &str,
     plist_name: &str,
-) -> Result<(), ClientError> {
+) -> Result<bool, ClientError> {
     let status = unsafe { launch_agent(plist_name).status() };
     let only_if_outdated = status == SMAppServiceStatus::Enabled;
     if let Some(instance) = local_service(
@@ -530,8 +786,9 @@ fn prepare_launch_agent(
         only_if_outdated,
     )? {
         stop_local_service(instance)?;
+        return Ok(true);
     }
-    Ok(())
+    Ok(false)
 }
 
 fn stop_helper(mut child: Child) {
@@ -693,6 +950,22 @@ fn local_process_is_alive(pid: u32) -> Result<bool, ClientError> {
     Ok(status.success())
 }
 
+#[cfg(unix)]
+fn wait_for_lock_release(lock_path: &Path) {
+    for _ in 0..100 {
+        let Ok(contents) = fs::read_to_string(lock_path) else {
+            return;
+        };
+        let Some(pid) = local_service_lock_pid(&contents) else {
+            return;
+        };
+        if !local_process_is_alive(pid).unwrap_or(false) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 fn local_service_lock_pid(contents: &str) -> Option<u32> {
     let fields = contents.split_whitespace().collect::<Vec<_>>();
     if fields.len() != 2 {
@@ -713,11 +986,22 @@ fn local_service_lock_pid(contents: &str) -> Option<u32> {
 }
 
 fn helper_command_matches(command: &str, executable: &Path) -> bool {
-    let expected = executable.to_string_lossy();
-    command == expected
-        || command
-            .strip_prefix(expected.as_ref())
-            .is_some_and(|rest| rest.chars().next().is_some_and(char::is_whitespace))
+    let matches = |expected: &str| {
+        command == expected
+            || command
+                .strip_prefix(expected)
+                .is_some_and(|rest| rest.chars().next().is_some_and(char::is_whitespace))
+    };
+    if matches(&executable.to_string_lossy()) {
+        return true;
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(name) = executable.file_name().and_then(|name| name.to_str())
+        && executable.ends_with(Path::new("Contents/Library/LaunchServices").join(name))
+    {
+        return matches(&format!("Contents/Library/LaunchServices/{name}"));
+    }
+    false
 }
 
 fn helper_executable(name: &str) -> Result<PathBuf, ClientError> {
