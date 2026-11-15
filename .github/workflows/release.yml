@@ -92,7 +92,7 @@ jobs:
             target/release/meerkat-machine target/release/meerkat target/release/meerkat-agent \
             target/release/build-provenance.json \
             target/builtin-agent/src/LICENSE target/builtin-agent/src/THIRD_PARTY_NOTICES.md
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           overwrite: true
           name: build-macos-${{ matrix.arch }}
@@ -179,7 +179,7 @@ jobs:
           cp target/release/package-provenance.json "target/distribution/$base.package.json"
           cp target/release/desktop-verification.json "target/distribution/$base.verification.json"
           cp target/machine-packages/* target/distribution/
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           overwrite: true
           name: release-macos-${{ matrix.arch }}
@@ -188,7 +188,7 @@ jobs:
           retention-days: 14
       - name: Retain signing and package diagnostics
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: diagnostics-macos-${{ matrix.arch }}
           path: |
@@ -239,7 +239,7 @@ jobs:
         run: ./scripts/package-machine "$RUST_TARGET"
       - name: Verify the native Machine installer
         run: ./scripts/verify-machine-package "target/machine-packages/meerkat-machine-$VERSION-linux-$ARCH.tar.gz"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           overwrite: true
           name: release-linux-${{ matrix.arch }}
@@ -272,7 +272,7 @@ jobs:
         run: |
           mkdir -p target/source
           git archive --format=tar.gz --prefix="Meerkat-$VERSION/" HEAD > "target/source/Meerkat-$VERSION-source.tar.gz"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           overwrite: true
           name: release-source
