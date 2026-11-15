@@ -141,7 +141,7 @@ jobs:
             [[ -n "${!name}" ]] || { echo "Missing release configuration: $name" >&2; exit 1; }
           done
       - uses: ./.github/actions/setup
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: build-macos-${{ matrix.arch }}
           path: target/build-input
@@ -294,7 +294,7 @@ jobs:
         with:
           ref: ${{ needs.preflight.outputs.commit }}
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: release-*
           path: target/release-inputs
