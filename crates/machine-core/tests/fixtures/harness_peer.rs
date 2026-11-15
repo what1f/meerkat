@@ -230,7 +230,8 @@ fn record(operation: &str) {
         return;
     };
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(file, "{operation}\t{}", std::process::id());
+        let line = format!("{operation}\t{}\n", std::process::id());
+        let _ = file.write_all(line.as_bytes());
     }
 }
 

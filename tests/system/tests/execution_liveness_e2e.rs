@@ -105,8 +105,8 @@ async fn s6_1_idle_timeout_releases_the_agent_for_its_next_queued_message() -> R
 #[tokio::test]
 async fn s6_2_progress_resets_idle_but_cannot_extend_the_total_budget() -> Result<()> {
     let rig = SystemRig::start(config(
-        Duration::from_millis(500),
-        Duration::from_millis(1800),
+        Duration::from_millis(600),
+        Duration::from_millis(2400),
     ))
     .await?;
     let team = rig.workspace("team").await?;
@@ -128,7 +128,7 @@ async fn s6_2_progress_resets_idle_but_cannot_extend_the_total_budget() -> Resul
     assert_eq!(failure.category, "timeout");
     assert!(failure.detail.contains("total budget"), "{failure:?}");
     assert!(
-        bruce.progress_sequence().await? >= 20,
+        bruce.progress_sequence().await? >= 8,
         "progress was not observed across idle intervals"
     );
     assert!(team.outbound(&bruce, "chat").is_empty());

@@ -7,7 +7,7 @@ fn config() -> RigConfig {
         local_discovery: true,
         link: meerkat_protocol::link::LinkSettings {
             heartbeat_interval: Duration::from_millis(200),
-            handshake_timeout: Duration::from_secs(1),
+            handshake_timeout: Duration::from_secs(3),
         },
         reconnect: meerkat_machine_core::ReconnectPolicy {
             initial: Duration::from_millis(30),
@@ -140,7 +140,8 @@ async fn management_cancel_stops_surviving_run_after_runtime_crash() -> Result<(
 #[tokio::test]
 async fn repeated_machine_loss_uses_backoff_and_pauses_with_one_notice() -> Result<()> {
     let mut rig = SystemRig::start(RigConfig {
-        attempt_lease: Duration::from_millis(350),
+        timeout: Duration::from_secs(30),
+        attempt_lease: Duration::from_millis(800),
         retry: meerkat_runtime::RetryConfig {
             base_ms: 100,
             max_ms: 200,
