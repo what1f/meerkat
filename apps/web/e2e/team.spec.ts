@@ -19,7 +19,9 @@ async function openTeam(page: Page, workspace: string) {
 // The wall shows a small pad; the full clipboard opens over it.
 const board = (page: Page) => page.getByTestId('tasklist-board');
 async function openList(page: Page) {
-  await page.getByTestId('tasklist').click();
+  const pad = page.getByTestId('tasklist');
+  await expect(pad).toHaveAttribute('aria-haspopup', 'dialog');
+  await pad.click();
   await expect(board(page)).toBeVisible();
   return board(page);
 }
