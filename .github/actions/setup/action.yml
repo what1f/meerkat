@@ -1,5 +1,14 @@
 name: Build tools
 description: Install the pinned Meerkat build toolchain.
+inputs:
+  with-zig:
+    description: Install the pinned Zig compiler.
+    required: false
+    default: 'true'
+  with-uv:
+    description: Install the pinned uv tool.
+    required: false
+    default: 'true'
 runs:
   using: composite
   steps:
@@ -17,12 +26,15 @@ runs:
         cache-dependency-path: |
           apps/web/pnpm-lock.yaml
           site/pnpm-lock.yaml
-    - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+    - if: inputs.with-zig == 'true'
+      uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
       with:
         version: 0.17.0
-    - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+    - if: inputs.with-uv == 'true'
+      uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       with:
         version: 0.9.5
+        enable-cache: 'false'
     - uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2
       with:
         tool: just@1.43.1
