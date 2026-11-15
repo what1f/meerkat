@@ -1193,6 +1193,7 @@ impl MachineBroker {
                     connection.reconciled = true;
                     connection.reconciling = false;
                 }
+                self.database()?.wake();
             }
             machine_frame::Frame::ResourceTransferResult(_) => {}
             machine_frame::Frame::AgentFilesResult(result) => {
