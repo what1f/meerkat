@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Stage a complete draft, verify downloaded assets, then make it public."""
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -28,9 +29,17 @@ def gh(*arguments, **kwargs):
 for path in files:
     if path.name in manifest["assets"] and hashlib.sha256(path.read_bytes()).hexdigest() != manifest["assets"][path.name]["sha256"]:
         raise SystemExit(f"release input changed: {path.name}")
+
+
+def verify_attestation(path):
     gh("attestation", "verify", str(path), "--repo", repository,
        "--signer-workflow", f"{repository}/.github/workflows/release.yml", "--source-digest", commit,
        stdout=subprocess.DEVNULL)
+
+
+with ThreadPoolExecutor(max_workers=6) as pool:
+    for _ in pool.map(verify_attestation, files):
+        pass
 
 view = subprocess.run(["gh", "release", "view", tag, "--repo", repository, "--json", "isDraft,assets"], capture_output=True, text=True)
 if view.returncode == 0:

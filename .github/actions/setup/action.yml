@@ -9,6 +9,10 @@ inputs:
     description: Install the pinned uv tool.
     required: false
     default: 'true'
+  with-node:
+    description: Install the pinned Node.js and pnpm toolchain.
+    required: false
+    default: 'true'
   cache-node:
     description: Cache the pnpm store via actions/setup-node.
     required: false
@@ -17,6 +21,14 @@ inputs:
     description: Cache Cargo registry and third-party build artifacts.
     required: false
     default: 'true'
+  cache-builtin-agent:
+    description: Cache the pinned Built-in Agent binary by revision, patches and target.
+    required: false
+    default: 'true'
+  rust-targets:
+    description: Optional Rust target triples to install alongside the host toolchain.
+    required: false
+    default: ''
   rust-cache-key:
     description: Optional extra key to isolate Rust build caches across targets.
     required: false
@@ -28,14 +40,16 @@ runs:
       with:
         toolchain: 1.96.0
         components: rustfmt
+        targets: ${{ inputs.rust-targets }}
     - if: inputs.cache-rust == 'true'
       uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         key: ${{ inputs.rust-cache-key }}
-    - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+    - if: inputs.with-node == 'true'
+      uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       with:
         package_json_file: apps/web/package.json
-    - if: inputs.cache-node == 'true'
+    - if: inputs.with-node == 'true' && inputs.cache-node == 'true'
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: 24.11.1
@@ -43,7 +57,7 @@ runs:
         cache-dependency-path: |
           apps/web/pnpm-lock.yaml
           site/pnpm-lock.yaml
-    - if: inputs.cache-node != 'true'
+    - if: inputs.with-node == 'true' && inputs.cache-node != 'true'
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: 24.11.1
@@ -51,6 +65,29 @@ runs:
       uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
       with:
         version: 0.17.0
+    - if: inputs.with-zig == 'true' && inputs.cache-builtin-agent == 'true'
+      id: builtin-agent-cache-meta
+      env:
+        INPUT_TARGETS: ${{ inputs.rust-targets }}
+      shell: bash
+      run: |
+        target="${INPUT_TARGETS%%[, ]*}"
+        if [[ -z "$target" ]]; then
+          case "$(uname -s)-$(uname -m)" in
+            Darwin-arm64) target=aarch64-apple-darwin ;;
+            Darwin-x86_64) target=x86_64-apple-darwin ;;
+            Linux-x86_64) target=x86_64-unknown-linux-gnu ;;
+            Linux-aarch64|Linux-arm64) target=aarch64-unknown-linux-gnu ;;
+            *) target="${RUNNER_OS}-${RUNNER_ARCH}" ;;
+          esac
+        fi
+        echo "target=$target" >> "$GITHUB_OUTPUT"
+        echo "MEERKAT_BUILTIN_AGENT_CACHE=$HOME/.cache/meerkat-builtin-agent" >> "$GITHUB_ENV"
+    - if: inputs.with-zig == 'true' && inputs.cache-builtin-agent == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/meerkat-builtin-agent/${{ steps.builtin-agent-cache-meta.outputs.target }}
+        key: builtin-agent-v1-${{ steps.builtin-agent-cache-meta.outputs.target }}-${{ hashFiles('tools/builtin-agent/REVISION', 'tools/builtin-agent/patches/**', 'tools/builtin-agent/build') }}
     - if: inputs.with-uv == 'true'
       uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       with:

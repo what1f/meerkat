@@ -38,6 +38,16 @@ jobs:
           MEERKAT_BUILTIN_AGENT: ${{ github.workspace }}/target/debug/meerkat-agent
           MEERKAT_HERMETIC_SKIP_WEB: '1'
         run: just test
+      - name: Warm Intel macOS Built-in Agent cache for releases
+        if: github.event_name == 'push'
+        id: intel-agent-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/meerkat-builtin-agent/x86_64-apple-darwin
+          key: builtin-agent-v1-x86_64-apple-darwin-${{ hashFiles('tools/builtin-agent/REVISION', 'tools/builtin-agent/patches/**', 'tools/builtin-agent/build') }}
+      - name: Build Intel macOS Built-in Agent on cache miss
+        if: github.event_name == 'push' && steps.intel-agent-cache.outputs.cache-hit != 'true'
+        run: ./tools/builtin-agent/build release x86_64-apple-darwin
       - name: Retain failure evidence
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -83,6 +93,16 @@ jobs:
           pnpm -C apps/web build
           cargo build --locked -p meerkat-system-e2e --bins
           pnpm -C apps/web e2e
+      - name: Warm ARM64 Linux Built-in Agent cache for releases
+        if: github.event_name == 'push'
+        id: arm64-linux-agent-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/meerkat-builtin-agent/aarch64-unknown-linux-gnu
+          key: builtin-agent-v1-aarch64-unknown-linux-gnu-${{ hashFiles('tools/builtin-agent/REVISION', 'tools/builtin-agent/patches/**', 'tools/builtin-agent/build') }}
+      - name: Build ARM64 Linux Built-in Agent on cache miss
+        if: github.event_name == 'push' && steps.arm64-linux-agent-cache.outputs.cache-hit != 'true'
+        run: ./tools/builtin-agent/build release aarch64-unknown-linux-gnu
       - name: Retain failure evidence
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

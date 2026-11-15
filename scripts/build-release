@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if (( $# > 1 )); then
+  printf 'usage: ./scripts/build-release [RUST_TARGET]\n' >&2
+  exit 2
+fi
+RUST_TARGET="${1:-}"
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 ./scripts/verify-production-boundary
-BUILD_DIR="${CARGO_TARGET_DIR:-$ROOT_DIR/target}/release"
+TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT_DIR/target}"
+BUILD_DIR="$TARGET_DIR/${RUST_TARGET:+$RUST_TARGET/}release"
 mkdir -p "$BUILD_DIR"
 SNAPSHOT="$(mktemp "$BUILD_DIR/source-before-build.XXXXXX")"
 trap 'rm -f "$SNAPSHOT"' EXIT
 ./scripts/release-provenance snapshot --output "$SNAPSHOT"
 pnpm -C apps/web install --frozen-lockfile
 pnpm -C apps/web build
-cargo build --release --locked --features meerkat-desktop/custom-protocol --bin meerkat-desktop --bin meerkatd --bin meerkat-machine --bin meerkat
-./tools/builtin-agent/build release
+cargo build --release --locked ${RUST_TARGET:+--target "$RUST_TARGET"} --features meerkat-desktop/custom-protocol --bin meerkat-desktop --bin meerkatd --bin meerkat-machine --bin meerkat
+./tools/builtin-agent/build release ${RUST_TARGET:+"$RUST_TARGET"}
 ./scripts/release-provenance record --binary-dir "$BUILD_DIR" --source-snapshot "$SNAPSHOT" --output "$BUILD_DIR/build-provenance.json"
 printf 'Release build and source receipt: %s\n' "$BUILD_DIR/build-provenance.json"

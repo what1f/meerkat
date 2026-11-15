@@ -49,16 +49,16 @@ jobs:
       ref: ${{ needs.preflight.outputs.commit }}
 
   macos-build:
-    needs: [preflight, verify]
+    needs: preflight
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15
-            arch: arm64
-          - runner: macos-15-intel
-            arch: x86_64
-    runs-on: ${{ matrix.runner }}
+          - arch: arm64
+            target: aarch64-apple-darwin
+          - arch: x86_64
+            target: x86_64-apple-darwin
+    runs-on: macos-15
     timeout-minutes: 60
     env:
       MEERKAT_INSTALL_SCRIPT_URL: https://github.com/${{ github.repository }}/releases/download/${{ needs.preflight.outputs.tag }}/install.sh
@@ -70,25 +70,32 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         with:
-          rust-cache-key: release-${{ matrix.arch }}
+          with-uv: 'false'
+          rust-targets: ${{ matrix.target }}
+          rust-cache-key: release-${{ matrix.target }}
       - uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2
         with:
           tool: cargo-deny@0.20.2
       - name: Audit the exact desktop target before building
         env:
-          ARCH: ${{ matrix.arch }}
-        run: |
-          case "$ARCH" in
-            arm64) target=aarch64-apple-darwin ;;
-            x86_64) target=x86_64-apple-darwin ;;
-            *) exit 1 ;;
-          esac
-          ./scripts/verify-dependency-advisories "$target" desktop
+          TARGET: ${{ matrix.target }}
+        run: ./scripts/verify-dependency-advisories "$TARGET" desktop
       - name: Build the release binaries once
-        run: ./scripts/build-release
+        env:
+          TARGET: ${{ matrix.target }}
+        run: ./scripts/build-release "$TARGET"
       - name: Preserve executable modes and build provenance
+        env:
+          ARCH: ${{ matrix.arch }}
+          TARGET: ${{ matrix.target }}
         run: |
-          mkdir -p target/build-output
+          mkdir -p target/release target/build-output
+          for binary in meerkat-desktop meerkatd meerkat-machine meerkat meerkat-agent; do
+            lipo "target/$TARGET/release/$binary" -verify_arch "$ARCH"
+            install -m 0755 "target/$TARGET/release/$binary" "target/release/$binary"
+          done
+          cp "target/$TARGET/release/build-provenance.json" target/release/build-provenance.json
+          ./scripts/release-provenance verify --binary-dir target/release --output target/release/build-provenance.json
           COPYFILE_DISABLE=1 tar -cf target/build-output/build.tar \
             target/release/meerkat-desktop target/release/meerkatd \
             target/release/meerkat-machine target/release/meerkat target/release/meerkat-agent \
@@ -103,7 +110,7 @@ jobs:
           retention-days: 14
 
   macos-sign:
-    needs: [preflight, macos-build]
+    needs: [preflight, verify, macos-build]
     strategy:
       fail-fast: false
       matrix:
@@ -142,11 +149,10 @@ jobs:
           for name in CERTIFICATE CERTIFICATE_PASSWORD NOTARY_KEY MEERKAT_CODESIGN_IDENTITY MEERKAT_APPLE_TEAM_ID MEERKAT_NOTARY_KEY_ID MEERKAT_NOTARY_ISSUER; do
             [[ -n "${!name}" ]] || { echo "Missing release configuration: $name" >&2; exit 1; }
           done
-      - uses: ./.github/actions/setup
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
-          with-zig: 'false'
-          cache-node: 'false'
-          cache-rust: 'false'
+          version: 0.9.5
+          enable-cache: 'false'
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: build-macos-${{ matrix.arch }}
@@ -209,7 +215,7 @@ jobs:
         shell: bash
 
   linux:
-    needs: [preflight, verify]
+    needs: preflight
     strategy:
       fail-fast: false
       matrix:
@@ -234,7 +240,8 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           with-uv: 'false'
-          cache-node: 'false'
+          with-node: 'false'
+          rust-targets: ${{ matrix.target }}
           rust-cache-key: release-${{ matrix.target }}
       - uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2
         with:
@@ -258,7 +265,7 @@ jobs:
           retention-days: 14
 
   source:
-    needs: [preflight, verify]
+    needs: preflight
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -291,7 +298,7 @@ jobs:
           retention-days: 14
 
   publish:
-    needs: [preflight, macos-sign, linux, source]
+    needs: [preflight, verify, macos-sign, linux, source]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: release
