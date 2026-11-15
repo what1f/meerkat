@@ -11,7 +11,7 @@
     "fonts": "uv run scripts/fonts.py"
   },
   "dependencies": {
-    "astro": "7.4.2",
+    "astro": "7.4.11",
     "qrcode": "1.5.4",
     "sharp": "0.35.5"
   },
