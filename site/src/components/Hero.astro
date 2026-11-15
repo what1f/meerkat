@@ -37,20 +37,15 @@ const sceneSizes = '(max-width: 722px) 128vw, (max-width: 860px) 925px, max(100v
     </h1>
     <p class="sub">{t.hero.lede}</p>
     <div class="actions">
-      <a class="btn btn-primary btn-lg" href={download} data-hero-download>
+      <a class="btn btn-primary btn-lg" href={download}>
         <Icon name="download" />
-        <span data-hero-download-label>{t.hero.download}</span>
+        {t.hero.download}
       </a>
       <a class="btn btn-default btn-lg" href={repo} rel="noopener">
         <Icon name="github" />
         {t.hero.github}
       </a>
     </div>
-    <p class="hero-meta" data-hero-meta hidden>
-      <span data-hero-meta-text></span>
-      <button type="button" class="hero-link" data-hero-switch hidden></button>
-      <a class="hero-link" href={download} data-hero-all>{t.downloadSection.allDownloads} ↓</a>
-    </p>
   </div>
 </section>
 
@@ -147,38 +142,6 @@ const sceneSizes = '(max-width: 722px) 128vw, (max-width: 860px) 925px, max(100v
     margin-top: 40px;
   }
 
-  .hero-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 12px;
-    align-items: center;
-    margin: 14px 0 0;
-    font-size: var(--fs-small);
-    line-height: 1.5;
-    color: var(--ink-2);
-  }
-
-  .hero-meta[hidden],
-  .hero-link[hidden] {
-    display: none;
-  }
-
-  .hero-link {
-    padding: 0;
-    font: inherit;
-    font-weight: 500;
-    color: var(--ink);
-    cursor: pointer;
-    background: none;
-    border: none;
-    border-bottom: 1px solid var(--line-strong);
-    transition: border-color var(--d-fast) var(--ease), opacity var(--d-fast) var(--ease);
-  }
-
-  .hero-link:hover {
-    border-color: var(--ink);
-  }
-
   .copy > * {
     animation: rise 0.9s var(--ease) both;
     animation-delay: 0.25s;
@@ -252,10 +215,6 @@ const sceneSizes = '(max-width: 722px) 128vw, (max-width: 860px) 925px, max(100v
     .actions {
       justify-content: center;
       margin-top: 28px;
-    }
-
-    .hero-meta {
-      justify-content: center;
     }
   }
 </style>
