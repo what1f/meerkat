@@ -9,6 +9,10 @@ inputs:
     description: Install the pinned uv tool.
     required: false
     default: 'true'
+  cache-node:
+    description: Cache the pnpm store via actions/setup-node.
+    required: false
+    default: 'true'
 runs:
   using: composite
   steps:
@@ -19,13 +23,18 @@ runs:
     - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       with:
         package_json_file: apps/web/package.json
-    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+    - if: inputs.cache-node == 'true'
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: 24.11.1
         cache: pnpm
         cache-dependency-path: |
           apps/web/pnpm-lock.yaml
           site/pnpm-lock.yaml
+    - if: inputs.cache-node != 'true'
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with:
+        node-version: 24.11.1
     - if: inputs.with-zig == 'true'
       uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
       with:

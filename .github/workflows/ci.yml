@@ -89,6 +89,7 @@ jobs:
         with:
           with-zig: 'false'
           with-uv: 'false'
+          cache-node: 'false'
       - uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2
         with:
           tool: cargo-audit@0.22.2,cargo-deny@0.20.2
