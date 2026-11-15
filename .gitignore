@@ -19,12 +19,10 @@ __pycache__/
 .idea/
 .vscode/
 
-# Generated image previews
+# Generated image previews and scratch files
 output/
+tmp/
 
 # Web build outputs
 apps/web/node_modules/
 apps/web/dist/
-
-# Design prototype build output (node docs/design/preview/build.mjs)
-docs/design/prototype.html

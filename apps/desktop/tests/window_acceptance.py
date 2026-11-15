@@ -47,7 +47,7 @@ def inputs(paths):
     return {
         "sources": provenance["source_snapshot"](),
         "binaries": {name: digest(path) for name, path in paths.items()},
-        "baselines": {str(path.relative_to(ROOT)): digest(path) for path in sorted((ROOT / "docs/assets/refactor-ui").glob("*.png"))},
+        "baselines": {str(path.relative_to(ROOT)): digest(path) for path in sorted((ROOT / "apps/desktop/tests/assets/refactor-ui").glob("*.png"))},
     }
 
 

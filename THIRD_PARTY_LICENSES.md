@@ -11,7 +11,7 @@ respective integrations. The Feishu reaction artwork under
 `apps/web/src/assets/reactions/` is retained for accurate message rendering.
 
 These names, logos, and reaction assets remain the property of their respective
-owners. They are not covered by Meerkat's MIT license. Redistributors are
+owners. They are not covered by Meerkat's Apache 2.0 license. Redistributors are
 responsible for following the applicable brand and platform terms.
 
 ## JetBrains Mono
