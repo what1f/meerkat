@@ -19,7 +19,7 @@ const t = dicts[lang].open;
   <div class="wrap inner" data-reveal>
     <Image class="icon" src={icon} alt="" width={224} height={224} />
     <h2 class="display section-title">{t.title}</h2>
-    <p class="lede">{t.lede}</p>
+    {t.lede && <p class="lede">{t.lede}</p>}
     <div class="actions">
       <a class="btn btn-primary btn-lg" href={repo} rel="noopener">
         <Icon name="github" />

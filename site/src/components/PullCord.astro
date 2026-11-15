@@ -123,15 +123,7 @@ const { label } = Astro.props;
       cord.setAttribute('data-snap', '');
     };
 
-    cord.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
-      start = e.clientY;
-      pulled = 0;
-      dragged = false;
-      cord.setPointerCapture(e.pointerId);
-    });
-
-    cord.addEventListener('pointermove', (e) => {
+    const move = (e: PointerEvent) => {
       if (start < 0) return;
       const dy = Math.max(0, e.clientY - start);
       if (dy > 3 && !dragged) {
@@ -142,27 +134,41 @@ const { label } = Astro.props;
       // The cord stretches freely at first, then resists.
       pulled = dy < 40 ? dy : 40 + (dy - 40) * 0.25;
       cord.style.setProperty('--pull', `${pulled}px`);
-    });
-
-    const release = () => {
-      if (start < 0) return;
-      start = -1;
-      cord.removeAttribute('data-drag');
-      cord.style.setProperty('--pull', '0px');
-      if (dragged && pulled >= reach) flip();
     };
 
+    // Listen on the window so a lost capture can't strand the cord mid-pull.
+    const release = (e: Event) => {
+      if (start < 0) return;
+      start = -1;
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', release);
+      removeEventListener('pointercancel', release);
+      cord.removeEventListener('lostpointercapture', release);
+      cord.removeAttribute('data-drag');
+      cord.style.setProperty('--pull', '0px');
+      // A tap flips too; a drag flips only if pulled far enough.
+      if (dragged ? pulled >= reach : e.type === 'pointerup') flip();
+    };
+
+    cord.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || start >= 0) return;
+      e.preventDefault();
+      start = e.clientY;
+      pulled = 0;
+      dragged = false;
+      addEventListener('pointermove', move);
+      addEventListener('pointerup', release);
+      addEventListener('pointercancel', release);
+      try {
+        cord.setPointerCapture(e.pointerId);
+        cord.addEventListener('lostpointercapture', release);
+      } catch {}
+    });
+
     cord.addEventListener('animationend', () => cord.removeAttribute('data-snap'));
-    cord.addEventListener('pointerup', release);
-    cord.addEventListener('pointercancel', release);
     cord.addEventListener('click', (e) => {
-      // A drag already decided; only a tap or the keyboard flips here.
-      if (dragged) {
-        dragged = false;
-        e.preventDefault();
-        return;
-      }
-      flip();
+      // Pointer taps are handled on release; only the keyboard flips here.
+      if (e.detail === 0) flip();
     });
   }
 </script>
