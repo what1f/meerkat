@@ -4,12 +4,13 @@ import icon from '../assets/brand/app-icon.png';
 import dusk from '../assets/hero/dusk.jpg';
 import morning from '../assets/hero/morning.jpg';
 import Icon from './Icon.astro';
-import { dicts, type Lang } from '../i18n';
-import { repo, download } from '../site';
+import { dicts, pathFor, type Lang } from '../i18n';
+import { repo } from '../site';
 
 interface Props { lang: Lang }
 const { lang } = Astro.props;
 const t = dicts[lang].open;
+const download = pathFor(lang, 'download');
 ---
 <section class="open">
   <div class="sky" aria-hidden="true">

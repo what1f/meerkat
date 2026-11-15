@@ -34,11 +34,10 @@
 /* A desert at both ends, warm paper in between: daylight in the light theme,
    night in the dark theme. */
 :root {
-  /* System sans for reading; serif for headings; mono only for code and file names. */
-  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', 'PingFang SC', 'Meerkat SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif;
-  --font-display: var(--font);
-  --font-serif: 'Meerkat Serif', 'Songti SC', 'Noto Serif CJK SC', 'Source Han Serif SC', serif;
-  --font-mono: ui-monospace, 'SF Mono', 'Meerkat Mono', Menlo, monospace;
+  /* Apple SF Pro + system CJK sans; Geist Mono for code, tags, and file names. */
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Segoe UI', system-ui, 'Meerkat SC', sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Segoe UI', system-ui, 'Meerkat SC', sans-serif;
+  --font-mono: 'Meerkat Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   /* Four sizes only. */
   --fs-display: clamp(36px, 4.6vw, 60px);
@@ -265,15 +264,15 @@ button {
 }
 
 :lang(en) .display {
-  letter-spacing: -0.015em;
+  letter-spacing: -0.025em;
 }
 
 .display {
   margin: 0;
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: 0.01em;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
   text-wrap: balance;
   word-break: keep-all;
 }

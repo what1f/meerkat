@@ -3,13 +3,14 @@ import { Image } from 'astro:assets';
 import icon from '../assets/brand/app-icon.png';
 import Icon from './Icon.astro';
 import PullCord from './PullCord.astro';
-import { dicts, pathFor, type Lang } from '../i18n';
-import { repo, download } from '../site';
+import { dicts, pathFor, type Lang, type PageRoute } from '../i18n';
+import { repo } from '../site';
 
-interface Props { lang: Lang }
-const { lang } = Astro.props;
+interface Props { lang: Lang; page?: PageRoute }
+const { lang, page = 'home' } = Astro.props;
 const t = dicts[lang].nav;
 const other: Lang = lang === 'zh' ? 'en' : 'zh';
+const downloadUrl = pathFor(lang, 'download');
 ---
 <header class="nav" data-nav>
   <div class="wrap bar">
@@ -18,14 +19,16 @@ const other: Lang = lang === 'zh' ? 'en' : 'zh';
       <span>Meerkat</span>
     </a>
     <nav class="links">
-      <a class="link" href={pathFor(other)} hreflang={dicts[other].htmlLang} lang={dicts[other].htmlLang} title={t.switchTo}>
+      <a class="link" href={pathFor(other, page)} hreflang={dicts[other].htmlLang} lang={dicts[other].htmlLang} title={t.switchTo}>
         {t.switchShort}
       </a>
       <a class="link" href={repo} rel="noopener">
         <Icon name="github" size={18} />
         <span class="hide-sm">{t.github}</span>
       </a>
-      <a class="btn btn-primary btn-sm" href={download}>{t.download}</a>
+      {page !== 'download' && (
+        <a class="btn btn-primary btn-sm" href={downloadUrl}>{t.download}</a>
+      )}
     </nav>
   </div>
 </header>

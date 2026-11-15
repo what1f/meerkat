@@ -1,4 +1,5 @@
 export type Lang = 'zh' | 'en';
+export type PageRoute = 'home' | 'download';
 
 const zh = {
   htmlLang: 'zh-CN',
@@ -19,6 +20,7 @@ const zh = {
     title: ['把 AI Agent', '变成你的团队成员'],
     lede: '无需改变工作习惯。在你每天使用的飞书和 Telegram 里，一键唤醒随时待命的 AI 协作团队。',
     download: '下载',
+    downloadMac: '下载 macOS 版',
     github: 'GitHub',
   },
   team: {
@@ -77,6 +79,18 @@ const zh = {
     star: '在 GitHub 上 Star',
     download: '下载',
   },
+  downloadPage: {
+    title: '下载 Meerkat',
+    metaTitle: '下载 Meerkat',
+    subDefault: 'macOS 13 及以上',
+    subWindows: '当前仅支持 macOS 13 及以上，Windows 敬请期待',
+    cta: '下载',
+    osMac: 'macOS',
+    archArm: 'Apple Silicon',
+    archIntel: 'Intel',
+    choosePlatform: '选择下载架构',
+    releasesLink: 'GitHub Releases',
+  },
   footer: {
     license: 'Apache 2.0 协议',
     copyright: '© 2026 Meerkat contributors',
@@ -104,6 +118,7 @@ const en: Dict = {
     title: ['Bring AI agents', 'into your team'],
     lede: 'No new tools to learn. Run top AI agents inside your daily chat app, collaborating like real teammates.',
     download: 'Download',
+    downloadMac: 'Download for macOS',
     github: 'GitHub',
   },
   team: {
@@ -162,6 +177,18 @@ const en: Dict = {
     star: 'Star on GitHub',
     download: 'Download',
   },
+  downloadPage: {
+    title: 'Download Meerkat',
+    metaTitle: 'Download Meerkat',
+    subDefault: 'macOS 13 or later',
+    subWindows: 'Requires macOS 13 or later — Windows support is coming soon',
+    cta: 'Download',
+    osMac: 'macOS',
+    archArm: 'Apple Silicon',
+    archIntel: 'Intel',
+    choosePlatform: 'Select architecture',
+    releasesLink: 'GitHub Releases',
+  },
   footer: {
     license: 'Apache-2.0 License',
     copyright: '© 2026 Meerkat contributors',
@@ -169,4 +196,7 @@ const en: Dict = {
 };
 
 export const dicts: Record<Lang, Dict> = { zh, en };
-export const pathFor = (lang: Lang) => (lang === 'zh' ? '/' : '/en/');
+export const pathFor = (lang: Lang, page: PageRoute = 'home') => {
+  if (page === 'download') return lang === 'zh' ? '/download/' : '/en/download/';
+  return lang === 'zh' ? '/' : '/en/';
+};

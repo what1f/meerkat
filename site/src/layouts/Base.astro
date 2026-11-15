@@ -1,25 +1,26 @@
 ---
 import '../styles/global.css';
-import { dicts, pathFor, type Lang } from '../i18n';
+import { dicts, pathFor, type Lang, type PageRoute } from '../i18n';
 import icon from '../assets/brand/app-icon-square.png';
 import { getImage } from 'astro:assets';
 
-interface Props { lang: Lang }
-const { lang } = Astro.props;
+interface Props { lang: Lang; page?: PageRoute; title?: string }
+const { lang, page = 'home', title } = Astro.props;
 const t = dicts[lang];
 const touch = await getImage({ src: icon, width: 180, height: 180, format: 'png' });
 const other: Lang = lang === 'zh' ? 'en' : 'zh';
-const canonical = new URL(pathFor(lang), Astro.site);
+const canonical = new URL(pathFor(lang, page), Astro.site);
+const pageTitle = title ? `${title} · Meerkat` : t.meta.title;
 ---
 <!doctype html>
 <html lang={t.htmlLang}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{t.meta.title}</title>
+    <title>{pageTitle}</title>
     <meta name="description" content={t.meta.description} />
     <link rel="canonical" href={canonical} />
-    <link rel="alternate" hreflang={dicts[other].htmlLang} href={new URL(pathFor(other), Astro.site)} />
+    <link rel="alternate" hreflang={dicts[other].htmlLang} href={new URL(pathFor(other, page), Astro.site)} />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href={touch.src} />
     <meta name="theme-color" content="#121229" />

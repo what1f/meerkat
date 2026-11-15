@@ -2,15 +2,15 @@
 import { Image } from 'astro:assets';
 import icon from '../assets/brand/app-icon.png';
 import Icon from './Icon.astro';
-import { dicts, pathFor, type Lang } from '../i18n';
+import { dicts, pathFor, type Lang, type PageRoute } from '../i18n';
 import { repo } from '../site';
 
-interface Props { lang: Lang }
-const { lang } = Astro.props;
+interface Props { lang: Lang; page?: PageRoute; flat?: boolean }
+const { lang, page = 'home', flat = false } = Astro.props;
 const t = dicts[lang];
 const other: Lang = lang === 'zh' ? 'en' : 'zh';
 ---
-<footer class="foot">
+<footer class:list={['foot', flat && 'foot-flat']}>
   <div class="wrap row">
     <div class="brand">
       <Image src={icon} alt="" width={48} height={48} class="icon" />
@@ -19,7 +19,7 @@ const other: Lang = lang === 'zh' ? 'en' : 'zh';
     <nav class="links">
       <a href={`${repo}/blob/main/LICENSE`} rel="noopener">{t.footer.license}</a>
       <a href={repo} rel="noopener" aria-label="GitHub"><Icon name="github" size={16} /></a>
-      <a href={pathFor(other)} hreflang={dicts[other].htmlLang} lang={dicts[other].htmlLang}>{t.nav.switchTo}</a>
+      <a href={pathFor(other, page)} hreflang={dicts[other].htmlLang} lang={dicts[other].htmlLang}>{t.nav.switchTo}</a>
     </nav>
   </div>
 </footer>
@@ -30,6 +30,13 @@ const other: Lang = lang === 'zh' ? 'en' : 'zh';
     margin-top: -1px;
     padding: 9px 0 40px;
     background: var(--dune);
+  }
+
+  .foot-flat {
+    margin-top: auto;
+    padding: 24px 0 40px;
+    background: transparent;
+    border-top: var(--hairline) solid var(--line);
   }
 
   .row {

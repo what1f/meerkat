@@ -3,12 +3,13 @@ import { Picture } from 'astro:assets';
 import Icon from './Icon.astro';
 import day from '../assets/hero/day-restored.png';
 import night from '../assets/hero/night-restored.png';
-import { dicts, type Lang } from '../i18n';
-import { repo, download } from '../site';
+import { dicts, pathFor, type Lang } from '../i18n';
+import { repo } from '../site';
 
 interface Props { lang: Lang }
 const { lang } = Astro.props;
 const t = dicts[lang];
+const download = pathFor(lang, 'download');
 // Account for the full image width behind the object-fit crop, not just the viewport.
 const sceneSizes = '(max-width: 722px) 128vw, (max-width: 860px) 925px, max(100vw, clamp(933px, 146svh, 1429px))';
 ---
@@ -37,9 +38,14 @@ const sceneSizes = '(max-width: 722px) 128vw, (max-width: 860px) 925px, max(100v
     </h1>
     <p class="sub">{t.hero.lede}</p>
     <div class="actions">
-      <a class="btn btn-primary btn-lg" href={download}>
+      <a
+        class="btn btn-primary btn-lg"
+        href={download}
+        data-hero-download
+        data-mac-label={t.hero.downloadMac}
+      >
         <Icon name="download" />
-        {t.hero.download}
+        <span data-hero-label>{t.hero.download}</span>
       </a>
       <a class="btn btn-default btn-lg" href={repo} rel="noopener">
         <Icon name="github" />
@@ -48,6 +54,20 @@ const sceneSizes = '(max-width: 722px) 128vw, (max-width: 860px) 925px, max(100v
     </div>
   </div>
 </section>
+
+<script>
+  import { detectPlatform } from '../lib/platform';
+
+  const anchor = document.querySelector<HTMLAnchorElement>('[data-hero-download]');
+  const label = anchor?.querySelector<HTMLElement>('[data-hero-label]');
+  if (anchor && label) {
+    detectPlatform().then((platform) => {
+      if ((platform === 'macos-arm64' || platform === 'macos-x86_64') && anchor.dataset.macLabel) {
+        label.textContent = anchor.dataset.macLabel;
+      }
+    });
+  }
+</script>
 
 <style>
   .hero {
