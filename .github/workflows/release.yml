@@ -234,7 +234,9 @@ jobs:
       - name: Audit the exact Machine target before building
         run: ./scripts/verify-dependency-advisories "$RUST_TARGET" machine
       - name: Native portable business scenarios
-        run: cargo test --locked -p meerkat-protocol -p meerkat-daemon-runtime -p meerkat-machine --tests
+        run: |
+          cargo build --locked -p meerkat-machine --example machine_daemon_e2e
+          cargo test --locked -p meerkat-protocol -p meerkat-daemon-runtime -p meerkat-machine --tests
       - name: Build and package against glibc 2.28
         run: ./scripts/package-machine "$RUST_TARGET"
       - name: Verify the native Machine installer
