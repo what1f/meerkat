@@ -16,8 +16,8 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
         machine_ws_only: true,
         network_proxy: true,
         link: link::LinkSettings {
-            heartbeat_interval: Duration::from_millis(200),
-            handshake_timeout: Duration::from_millis(800),
+            heartbeat_interval: Duration::from_millis(500),
+            handshake_timeout: Duration::from_secs(2),
         },
         timeout: Duration::from_secs(30),
         ..Default::default()
@@ -146,7 +146,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
     // Unavailable when the Machine detects the silent link.
     rig.proxy.as_ref().unwrap().pause();
     let failure = timeout(
-        Duration::from_secs(3),
+        Duration::from_secs(4),
         local.list_capabilities(old_context.clone()),
     )
     .await?

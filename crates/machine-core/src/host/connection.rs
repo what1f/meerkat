@@ -215,7 +215,7 @@ async fn pump_link<
                 _ = incoming.closed() => return Ok(()),
                 frame = outgoing.recv() => {
                     let Some(frame) = frame else { return Ok(()) };
-                    tokio::time::timeout(interval, link.send(frame)).await.map_err(|_| LinkError::Closed(CloseReason::Timeout))??;
+                    tokio::time::timeout(interval * 3, link.send(frame)).await.map_err(|_| LinkError::Closed(CloseReason::Timeout))??;
                 }
                 frame = link.receive() => {
                     let Some(frame) = frame? else { return Ok(()) };

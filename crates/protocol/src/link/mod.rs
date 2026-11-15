@@ -339,7 +339,7 @@ async fn accept_link<
         tokio::select! {
             _ = &mut deadline => return Err(LinkError::Closed(CloseReason::Timeout)),
             _ = heartbeat.tick(), if !first => {
-                tokio::time::timeout(interval, link.send(RuntimeFrame { protocol_version: config.protocol_version, frame: Some(RuntimePayload::Heartbeat) }))
+                tokio::time::timeout(interval * 3, link.send(RuntimeFrame { protocol_version: config.protocol_version, frame: Some(RuntimePayload::Heartbeat) }))
                     .await.map_err(|_| LinkError::Closed(CloseReason::Timeout))??;
             }
             frame = link.receive() => {
@@ -375,7 +375,7 @@ async fn accept_link<
                     deadline.as_mut().reset(tokio::time::Instant::now() + interval * 3);
                 }
                 first = false;
-                tokio::time::timeout(interval, link.send(frame)).await.map_err(|_| LinkError::Closed(CloseReason::Timeout))??;
+                tokio::time::timeout(interval * 3, link.send(frame)).await.map_err(|_| LinkError::Closed(CloseReason::Timeout))??;
             }
         }
     }
