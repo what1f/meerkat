@@ -892,6 +892,9 @@ pub(crate) mod base64_bytes {
 pub struct RemoteAccess {
     pub address: Option<String>,
     pub cert_sha256: Option<String>,
+    /// Installs the matching Machine on another computer. Only published
+    /// releases have one.
+    pub install_script_url: Option<String>,
 }
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -112,7 +112,7 @@ async fn s15_cli_capabilities_and_attachments_use_attempt_proxy_without_runtime_
         }),
         execution_token: env["MEERKAT_EXECUTION_TOKEN"].as_str().unwrap().into(),
     };
-    let mut local = connect_uds(&socket, DEFAULT_MAX_MESSAGE_BYTES).await?;
+    let mut local = connect_local(&socket, DEFAULT_MAX_MESSAGE_BYTES).await?;
     let mut second = local.clone();
     let (capabilities, profile) = tokio::join!(
         local.list_capabilities(old_context.clone()),

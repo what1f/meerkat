@@ -10,7 +10,9 @@ use std::process::{Command, Stdio};
 #[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 
+#[cfg(unix)]
 const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
+#[cfg(unix)]
 const PRIVATE_FILE_MODE: u32 = 0o600;
 
 #[derive(Debug)]
@@ -51,6 +53,31 @@ pub fn create_private_directory(path: &Path) -> Result<(), DaemonRuntimeError> {
     fs::create_dir_all(path)?;
     #[cfg(unix)]
     fs::set_permissions(path, fs::Permissions::from_mode(PRIVATE_DIRECTORY_MODE))?;
+    #[cfg(windows)]
+    restrict_to_current_user(path)?;
+    Ok(())
+}
+
+/// Replaces the whole access list with the current user and SYSTEM, so a home
+/// placed in a shared folder does not expose credentials to other users.
+#[cfg(windows)]
+fn restrict_to_current_user(path: &Path) -> Result<(), DaemonRuntimeError> {
+    // Only the access section is written, so ownership is left untouched.
+    const SCRIPT: &str = "$ErrorActionPreference = 'Stop'; \
+        $user = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value; \
+        $acl = New-Object Security.AccessControl.DirectorySecurity; \
+        $acl.SetSecurityDescriptorSddlForm('D:P(A;OICI;FA;;;' + $user + ')(A;OICI;FA;;;SY)', 'Access'); \
+        (Get-Item -Force -LiteralPath $env:MEERKAT_PRIVATE_DIRECTORY).SetAccessControl($acl)";
+    let restricted = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
+        .env("MEERKAT_PRIVATE_DIRECTORY", path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+    if !restricted.success() {
+        return Err(DaemonRuntimeError::UnsafeDirectory);
+    }
     Ok(())
 }
 
@@ -109,9 +136,11 @@ fn reclaim_stale_instance_lock(
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(true),
         Err(error) => return Err(error.into()),
     };
+    if !metadata.file_type().is_file() {
+        return Err(DaemonRuntimeError::UnsafeInstanceLock);
+    }
     #[cfg(unix)]
-    if !metadata.file_type().is_file()
-        || metadata.uid() != fs::metadata(run_directory)?.uid()
+    if metadata.uid() != fs::metadata(run_directory)?.uid()
         || metadata.permissions().mode() & 0o777 != PRIVATE_FILE_MODE
     {
         return Err(DaemonRuntimeError::UnsafeInstanceLock);
@@ -134,6 +163,11 @@ fn reclaim_stale_instance_lock(
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(true),
         Err(error) => Err(error.into()),
     }
+}
+
+/// The process recorded in an instance lock, if the lock is present and valid.
+pub fn instance_owner(lock_path: &Path) -> Option<u32> {
+    instance_lock_pid(&fs::read_to_string(lock_path).ok()?).ok()
 }
 
 fn instance_lock_pid(contents: &str) -> Result<u32, DaemonRuntimeError> {
@@ -180,7 +214,20 @@ fn instance_process_is_alive(pid: u32) -> Result<Option<bool>, DaemonRuntimeErro
     })
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn instance_process_is_alive(pid: u32) -> Result<Option<bool>, DaemonRuntimeError> {
+    let output = Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+        .stderr(Stdio::null())
+        .output()?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let listed = String::from_utf8_lossy(&output.stdout).contains(&format!("\"{pid}\""));
+    Ok(Some(listed))
+}
+
+#[cfg(not(any(unix, windows)))]
 fn instance_process_is_alive(_pid: u32) -> Result<Option<bool>, DaemonRuntimeError> {
     Ok(None)
 }

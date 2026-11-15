@@ -359,56 +359,9 @@ fn install(archive: &Path, home: &Path) -> Result<(), MachineError> {
 
 fn unpack(archive: &Path, target: &Path) -> Result<(), MachineError> {
     let mut archive = zip::ZipArchive::new(File::open(archive)?).map_err(zip_error)?;
-    for index in 0..archive.len() {
-        let mut entry = archive.by_index(index).map_err(zip_error)?;
-        let relative = entry
-            .enclosed_name()
-            .ok_or_else(|| MachineError::InvalidAssignment("archive_path_outside_home".into()))?;
-        let path = target.join(&relative);
-        if entry.is_dir() {
-            fs::create_dir_all(&path)?;
-            set_permissions(&path, entry.unix_mode())?;
-            continue;
-        }
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        if entry.is_symlink() {
-            let mut link = String::new();
-            entry.read_to_string(&mut link)?;
-            if stays_inside(&relative, Path::new(&link)) {
-                symlink(Path::new(&link), &path)?;
-            }
-            continue;
-        }
-        io::copy(&mut entry, &mut File::create(&path)?)?;
-        set_permissions(&path, entry.unix_mode())?;
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-fn set_permissions(path: &Path, mode: Option<u32>) -> io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    match mode {
-        Some(mode) => fs::set_permissions(path, fs::Permissions::from_mode(mode & 0o777)),
-        None => Ok(()),
-    }
-}
-
-#[cfg(not(unix))]
-fn set_permissions(_: &Path, _: Option<u32>) -> io::Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
-fn symlink(target: &Path, link: &Path) -> io::Result<()> {
-    std::os::unix::fs::symlink(target, link)
-}
-
-#[cfg(not(unix))]
-fn symlink(_: &Path, _: &Path) -> io::Result<()> {
-    Ok(())
+    // The library resolves recursive symlinks inside the destination and strips
+    // privileged mode bits. Lexical checks alone cannot confine chained links.
+    archive.extract(target).map_err(zip_error)
 }
 
 fn zip_error(error: zip::result::ZipError) -> MachineError {

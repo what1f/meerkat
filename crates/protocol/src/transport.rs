@@ -1,5 +1,9 @@
 //! Owner-local, length-prefixed JSON transport for Agent capabilities.
-use crate::{agent, *};
+use crate::{
+    agent,
+    local::{self, LocalListener, LocalStream},
+    *,
+};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{
     fmt,
@@ -9,10 +13,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{UnixListener, UnixStream},
-};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_stream::{Stream, StreamExt};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -54,7 +55,7 @@ fn io_status(error: std::io::Error) -> Status {
     Status::unavailable(error.to_string())
 }
 async fn read_json<T: DeserializeOwned>(
-    stream: &mut UnixStream,
+    stream: &mut LocalStream,
     limit: usize,
 ) -> Result<T, Status> {
     let length = stream.read_u32().await.map_err(io_status)? as usize;
@@ -66,7 +67,7 @@ async fn read_json<T: DeserializeOwned>(
     serde_json::from_slice(&bytes).map_err(|_| Status::invalid_argument("invalid_agent_json"))
 }
 async fn write_json<T: Serialize>(
-    stream: &mut UnixStream,
+    stream: &mut LocalStream,
     value: &T,
     limit: usize,
 ) -> Result<(), Status> {
@@ -80,9 +81,9 @@ async fn write_json<T: Serialize>(
         .map_err(io_status)?;
     stream.write_all(&bytes).await.map_err(io_status)
 }
-/// Serve an already bound, private attempt socket. Dropping this future closes all calls.
+/// Serve an already bound, private attempt endpoint. Dropping this future closes all calls.
 pub async fn serve_agent_listener<P, F>(
-    listener: UnixListener,
+    listener: LocalListener,
     peer: P,
     config: TransportConfig,
     shutdown: F,
@@ -100,7 +101,7 @@ where
             _ = &mut shutdown => break,
             Some(_) = tasks.join_next(), if !tasks.is_empty() => {},
             accepted = listener.accept() => {
-                let (mut stream, _) = accepted?;
+                let mut stream = accepted?;
                 let Ok(permit) = slots.clone().try_acquire_owned() else { continue };
                 let peer = peer.clone();
                 tasks.spawn(async move {
@@ -134,7 +135,7 @@ where
     while tasks.join_next().await.is_some() {}
     Ok(())
 }
-pub async fn serve_uds<P, F>(
+pub async fn serve_local<P, F>(
     path: impl AsRef<Path>,
     peer: P,
     config: TransportConfig,
@@ -144,17 +145,10 @@ where
     P: RuntimePeer,
     F: Future<Output = ()> + Send + 'static,
 {
-    use std::os::unix::fs::PermissionsExt;
     let path = path.as_ref();
-    let parent = path
-        .parent()
-        .ok_or_else(|| std::io::Error::other("socket_path_has_no_parent"))?;
-    std::fs::create_dir_all(parent)?;
-    std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
-    let listener = UnixListener::bind(path)?;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    let listener = LocalListener::bind(path)?;
     let result = serve_agent_listener(listener, peer, config, shutdown).await;
-    let _ = std::fs::remove_file(path);
+    local::remove(path);
     result
 }
 #[derive(Clone, Debug)]
@@ -162,15 +156,15 @@ pub struct AgentClient {
     path: PathBuf,
     limit: usize,
 }
-pub async fn connect_uds(
+pub async fn connect_local(
     path: impl AsRef<Path>,
     limit: usize,
 ) -> Result<AgentClient, TransportError> {
     let path = path.as_ref().to_owned();
-    let _ = UnixStream::connect(&path).await?;
+    let _ = local::connect(&path).await?;
     Ok(AgentClient { path, limit })
 }
-pub fn connect_uds_lazy(path: impl AsRef<Path>, limit: usize) -> AgentClient {
+pub fn connect_local_lazy(path: impl AsRef<Path>, limit: usize) -> AgentClient {
     AgentClient {
         path: path.as_ref().to_owned(),
         limit,
@@ -195,7 +189,7 @@ impl AgentClient {
                 context,
                 payload,
             };
-            let mut stream = UnixStream::connect(&self.path).await.map_err(io_status)?;
+            let mut stream = local::connect(&self.path).await.map_err(io_status)?;
             write_json(&mut stream, &call, agent::MAX_CALL_BYTES).await?;
             let reply: Reply = read_json(&mut stream, agent::MAX_CALL_BYTES).await?;
             let value = reply?;

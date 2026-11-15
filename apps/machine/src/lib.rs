@@ -14,7 +14,6 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-#[cfg(unix)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MachineDaemonPaths {
     pub home: PathBuf,
@@ -40,8 +39,7 @@ impl MachineDaemonPaths {
     }
 
     pub fn local_default() -> Result<Self, AppError> {
-        let user_home = std::env::var_os("HOME").ok_or(AppError::MissingHome)?;
-        Self::for_home(PathBuf::from(user_home).join(".meerkat"))
+        Self::for_home(user_home()?.join(".meerkat"))
     }
 
     pub fn prepare(&self) -> Result<(), AppError> {
@@ -50,6 +48,15 @@ impl MachineDaemonPaths {
         }
         Ok(())
     }
+}
+
+/// The signed-in user's home directory.
+pub fn user_home() -> Result<PathBuf, AppError> {
+    let variable = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    std::env::var_os(variable)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .ok_or(AppError::MissingHome)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -509,6 +516,9 @@ pub fn read_credentials(home: &std::path::Path) -> Result<Option<DeviceCredentia
     }
 }
 
+pub const ALREADY_LOCAL: &str =
+    "This computer already runs Meerkat, so it is in the workspace already.";
+
 pub async fn pair(
     paths: &MachineDaemonPaths,
     runtime_url: &str,
@@ -525,8 +535,9 @@ pub async fn pair_with_pin(
 ) -> Result<DeviceCredentials, AppError> {
     paths.prepare()?;
     let _guard = InstanceGuard::acquire(&paths.run, &paths.instance_lock, &unique_run_id())?;
-    if read_credentials(&paths.home)?.is_some() {
-        return Err(AppError::InvalidArgument("machine_already_paired"));
+    // A new code replaces an earlier pairing, but never the Desktop's own Machine.
+    if read_credentials(&paths.home)?.is_some_and(|existing| existing.local_discovery) {
+        return Err(AppError::InvalidArgument(ALREADY_LOCAL));
     }
     pair_inner(paths, runtime_url, code, false, pin).await
 }
@@ -539,7 +550,6 @@ async fn pair_inner(
     pin: Option<&str>,
 ) -> Result<DeviceCredentials, AppError> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     let runtime_url = runtime_url
         .trim_end_matches('/')
         .replacen("http://", "ws://", 1)
@@ -599,14 +609,15 @@ async fn pair_inner(
         .home
         .join(format!(".machine-credentials-{}", unique_run_id()));
     let result = (|| -> Result<(), AppError> {
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&temporary)?;
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let mut file = options.open(&temporary)?;
         file.write_all(&serde_json::to_vec(&credentials)?)?;
         file.sync_all()?;
         std::fs::rename(&temporary, paths.home.join("machine-credentials.json"))?;
+        #[cfg(unix)]
         std::fs::File::open(&paths.home)?.sync_all()?;
         Ok(())
     })();

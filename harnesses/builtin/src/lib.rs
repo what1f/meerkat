@@ -3,7 +3,7 @@
 //! Built-in Agent: the bundled `meerkat-agent` binary driven over ACP by the
 //! embedded JavaScript adapter. Unlike the other Harnesses it keeps its own
 //! account, so this crate also owns the Machine-shared home where that
-//! account lives (see `docs/builtin-agent.md`).
+//! account lives.
 
 use base64::Engine;
 use meerkat_harness::{

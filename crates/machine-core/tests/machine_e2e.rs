@@ -2220,3 +2220,125 @@ fn now_nanos() -> u128 {
         .expect("clock")
         .as_nanos()
 }
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn moving_an_agent_rejects_chained_symlink_escapes_and_preserves_its_home() {
+    use std::io::{Cursor, Write};
+    use std::os::unix::fs::PermissionsExt;
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("workspaces");
+    let socket = temporary.path().join("run");
+    let (incoming, mut frames) = mpsc::unbounded_channel();
+    let peer = Peer::new(incoming);
+    let (server_stop, stopped) = oneshot::channel();
+    let server = tokio::spawn(ws::serve_local(
+        socket.clone(),
+        peer.clone(),
+        TransportConfig::default(),
+        async {
+            let _ = stopped.await;
+        },
+    ));
+    wait_for(|| meerkat_protocol::link::discover(&socket).is_ok()).await;
+    let machine = Machine::new(MachineConfig {
+        machine_id: "archive-target".into(),
+        instance_id: "archive-target-instance".into(),
+        workspace_root: root.display().to_string(),
+        reconnect: Default::default(),
+    })
+    .with_device_credential(meerkat_protocol::link::discover(&socket).unwrap().1);
+    let (machine_stop, stopped) = oneshot::channel();
+    let host = tokio::spawn(machine.run(socket, async {
+        let _ = stopped.await;
+    }));
+    let agent = AgentRef {
+        workspace_id: "archive_team".into(),
+        agent_id: "worker".into(),
+    };
+    let home = agent_directory(&root, &agent.workspace_id, &agent.agent_id).unwrap();
+    fs::create_dir_all(&home).unwrap();
+    fs::write(home.join("original.txt"), "original home").unwrap();
+    let outside = home.parent().unwrap().join("outside");
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(outside.join("protected.txt"), "outside file").unwrap();
+    for malicious in [true, false] {
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default().unix_permissions(0o755);
+        if malicious {
+            archive.add_symlink("alias", ".", options).unwrap();
+            archive
+                .add_symlink("jump", "alias/../outside", options)
+                .unwrap();
+            archive.start_file("jump/protected.txt", options).unwrap();
+            archive.write_all(b"escaped").unwrap();
+        } else {
+            archive.start_file("docs/run.sh", options).unwrap();
+            archive.write_all(b"#!/bin/sh\nexit 0\n").unwrap();
+            archive.add_symlink("run", "docs/run.sh", options).unwrap();
+        }
+        let bytes = archive.finish().unwrap().into_inner();
+        let request_id = if malicious {
+            "reject-escape"
+        } else {
+            "restore-safe-home"
+        };
+        peer.send(RuntimeFrame {
+            protocol_version: meerkat_protocol::PROTOCOL_VERSION,
+            frame: Some(runtime_frame::Frame::WriteAgentFiles(
+                meerkat_protocol::WriteAgentFiles {
+                    request_id: request_id.into(),
+                    agent: Some(agent.clone()),
+                    offset: 0,
+                    size: bytes.len() as u64,
+                    sha256: hex(&Sha256::digest(&bytes)),
+                    bytes,
+                    eof: true,
+                },
+            )),
+        })
+        .await;
+        let result = timeout(STEP, async {
+            loop {
+                let frame = frames.recv().await.unwrap();
+                if let Some(machine_frame::Frame::AgentFilesResult(result)) = frame.frame
+                    && result.request_id == request_id
+                {
+                    break result;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(outside.join("protected.txt")).unwrap(),
+            "outside file"
+        );
+        if malicious {
+            assert!(!result.success, "unsafe archive was accepted");
+            assert_eq!(
+                fs::read_to_string(home.join("original.txt")).unwrap(),
+                "original home"
+            );
+        } else {
+            assert!(
+                result.success,
+                "safe archive failed: {}",
+                result.error_message
+            );
+            assert_eq!(fs::read(home.join("run")).unwrap(), b"#!/bin/sh\nexit 0\n");
+            assert_eq!(
+                fs::metadata(home.join("docs/run.sh"))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o755
+            );
+        }
+    }
+    machine_stop.send(()).unwrap();
+    host.await.unwrap().unwrap();
+    server_stop.send(()).unwrap();
+    server.await.unwrap().unwrap();
+}

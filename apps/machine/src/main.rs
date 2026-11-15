@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-#[cfg(target_os = "macos")]
 mod background;
 
 use meerkat_machine::{AppError, DaemonConfig};
@@ -23,6 +22,7 @@ async fn main() {
         let message = match &error {
             AppError::Io(error) => error.to_string(),
             AppError::InvalidArgument(message) => message.to_string(),
+            AppError::AlreadyRunning => "Meerkat Machine is already running here.".into(),
             _ => format!("Could not start this machine: {error}"),
         };
         if log::log_enabled!(log::Level::Error) {
@@ -113,13 +113,11 @@ async fn execute() -> Result<(), AppError> {
     }
     let mut config = DaemonConfig::for_home(paths.home)?;
     if let Some((url, code)) = pairing {
-        meerkat_machine::pair_with_pin(&config.paths, &url, &code, cert_sha256.as_deref()).await?;
-        #[cfg(target_os = "macos")]
-        if !foreground {
-            return background::install(&config.paths).await;
+        pair(&config.paths, &url, &code, cert_sha256.as_deref()).await?;
+        if !foreground && background::install(&config.paths).await? {
+            return Ok(());
         }
     }
-    let _ = foreground;
     config.runtime_url = runtime_url;
     config.link_secret_file = link_secret_file;
     if let Some(path) = user_executable_path() {
@@ -129,6 +127,45 @@ async fn execute() -> Result<(), AppError> {
         config.instance_id = instance_id;
     }
     meerkat_machine::run(config).await
+}
+
+/// Pairs with a new code. An earlier pairing, for example of a computer that
+/// was removed from the workspace, is replaced: a background Machine still
+/// running it is stopped first and started again if the new pairing fails.
+async fn pair(
+    paths: &meerkat_machine::MachineDaemonPaths,
+    url: &str,
+    code: &str,
+    pin: Option<&str>,
+) -> Result<(), AppError> {
+    let existing = meerkat_machine::read_credentials(&paths.home)?;
+    if existing
+        .as_ref()
+        .is_some_and(|existing| existing.local_discovery)
+    {
+        return Err(AppError::InvalidArgument(meerkat_machine::ALREADY_LOCAL));
+    }
+    match meerkat_machine::pair_with_pin(paths, url, code, pin).await {
+        Err(AppError::AlreadyRunning) => {}
+        result => return result.map(drop),
+    }
+    if !background::stop(paths) {
+        return Err(AppError::AlreadyRunning);
+    }
+    // The stopped Machine releases its instance lock shortly after it exits.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let result = loop {
+        match meerkat_machine::pair_with_pin(paths, url, code, pin).await {
+            Err(AppError::AlreadyRunning) if Instant::now() < deadline => {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+            result => break result.map(drop),
+        }
+    };
+    if result.is_err() {
+        background::resume(paths);
+    }
+    result
 }
 
 fn is_revoked(error: &AppError) -> bool {

@@ -132,7 +132,7 @@ pub async fn execute(
     let Some(command) = args.first().map(String::as_str) else {
         return Err(CliError::Usage(help()));
     };
-    let mut client = wire::connect_uds(&config.socket, wire::DEFAULT_MAX_MESSAGE_BYTES)
+    let mut client = wire::connect_local(&config.socket, wire::DEFAULT_MAX_MESSAGE_BYTES)
         .await
         .map_err(|error| CliError::Transport(error.to_string()))?;
     match command {
@@ -332,7 +332,7 @@ pub async fn prepare_exec_from_environment(args: &[String]) -> Result<ExecOutcom
         return Err(usage());
     }
     let config = RunConfig::from_environment()?;
-    let mut client = wire::connect_uds(&config.socket, wire::DEFAULT_MAX_MESSAGE_BYTES)
+    let mut client = wire::connect_local(&config.socket, wire::DEFAULT_MAX_MESSAGE_BYTES)
         .await
         .map_err(|error| CliError::Transport(error.to_string()))?;
     let result = client

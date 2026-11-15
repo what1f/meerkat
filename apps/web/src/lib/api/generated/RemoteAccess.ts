@@ -3,4 +3,9 @@
 /**
  * Remote Machine entry point. Management always remains on loopback.
  */
-export type RemoteAccess = { address: string | null, cert_sha256: string | null, };
+export type RemoteAccess = { address: string | null, cert_sha256: string | null, 
+/**
+ * Installs the matching Machine on another computer. Only published
+ * releases have one.
+ */
+install_script_url: string | null, };

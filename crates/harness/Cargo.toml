@@ -20,7 +20,7 @@ tempfile.workspace = true
 toml = "0.8.23"
 
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "1.1.4", features = ["process"] }
+rustix = { version = "1.1.6", features = ["process"] }
 
 [package.metadata.meerkat.e2e]
 command = "cargo test -p meerkat-harness --features test-support --test e2e harness_e2e::"

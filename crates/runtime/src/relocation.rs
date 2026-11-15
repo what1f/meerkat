@@ -1,4 +1,4 @@
-//! Moves an Agent's home between Machines; see `docs/agent-relocation.md`.
+//! Moves an Agent's home between Machines.
 //!
 //! One driver runs per relocating Agent. It stops whenever a Machine it needs
 //! is offline and starts again when that Machine reconnects.

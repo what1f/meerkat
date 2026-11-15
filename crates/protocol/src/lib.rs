@@ -4,12 +4,13 @@
 //!
 //! Machine links use JSON/WebSocket through [`link::MachineLink`]. Machine
 //! resources and management use HTTP on the same listener; management events use
-//! one WebSocket. Agent capabilities use private length-prefixed JSON sockets through [`RuntimePeer`].
+//! one WebSocket. Agent capabilities use private length-prefixed JSON local endpoints through [`RuntimePeer`].
 
 mod error;
 pub use error::{Code, Request, Response, Status};
 pub mod agent;
 pub mod link;
+pub mod local;
 mod peer;
 pub mod resources;
 mod service;
@@ -32,8 +33,8 @@ pub use peer::{
 };
 pub use service::ValidatedRuntimeService;
 pub use transport::{
-    AgentClient, TransportConfig, TransportError, connect_uds, connect_uds_lazy,
-    serve_agent_listener, serve_uds,
+    AgentClient, TransportConfig, TransportError, connect_local, connect_local_lazy,
+    serve_agent_listener, serve_local,
 };
 pub use validation::{validate_machine_hello, validate_runtime_frame};
 

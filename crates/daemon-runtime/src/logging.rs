@@ -1,4 +1,6 @@
-use super::{PRIVATE_FILE_MODE, create_private_directory};
+#[cfg(unix)]
+use super::PRIVATE_FILE_MODE;
+use super::create_private_directory;
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::{

@@ -26,12 +26,16 @@ futures-util.workspace = true
 tokio-tungstenite.workspace = true
 uuid.workspace = true
 hyper-util.workspace = true
+interprocess.workspace = true
 meerkat-core = { path = "../core" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+widestring = "1.2"
 
 [dev-dependencies]
 meerkat-client = { path = "../client" }

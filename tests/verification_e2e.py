@@ -133,7 +133,7 @@ def run():
         shutil.copy2(ROOT / "scripts/release-provenance", scripts / "release-provenance")
         (root / "Cargo.toml").write_text('[workspace]\nmembers = []\n')
         (root / "Cargo.lock").write_text('version = 4\n')
-        for name in ("LICENSE", "THIRD_PARTY_LICENSES.md"):
+        for name in ("LICENSE", "THIRD_PARTY_LICENSES.md", "rust-toolchain.toml"):
             shutil.copy2(ROOT / name, root / name)
         binary_dir = root / "release"
         binary_dir.mkdir()

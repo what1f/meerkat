@@ -42,7 +42,7 @@ where
         },
     ));
     let result =
-        meerkat_protocol::serve_uds(socket.join("agent.sock"), peer, config, shutdown).await;
+        meerkat_protocol::serve_local(socket.join("agent.sock"), peer, config, shutdown).await;
     let _ = stop.send(());
     let _ = ws.await;
     result

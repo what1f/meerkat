@@ -395,7 +395,6 @@ pub fn discover(run: &Path) -> Result<(String, String), std::io::Error> {
 }
 pub fn publish(run: &Path, url: &str) -> Result<String, std::io::Error> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     std::fs::create_dir_all(run)?;
     let secret = format!(
         "{}{}",
@@ -409,11 +408,11 @@ pub fn publish(run: &Path, url: &str) -> Result<String, std::io::Error> {
         // Replace the entry instead of following an existing symlink.
         let path = run.join(name);
         let temporary = run.join(format!(".{name}-{}", uuid::Uuid::new_v4()));
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&temporary)?;
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let mut file = options.open(&temporary)?;
         file.write_all(value.as_bytes())?;
         file.sync_all()?;
         std::fs::rename(temporary, path)?;

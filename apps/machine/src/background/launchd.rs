@@ -1,56 +1,70 @@
-//! Keeps a paired remote Machine running as a per-user LaunchAgent on macOS.
+//! Per-user LaunchAgent written to ~/Library/LaunchAgents.
 
-use meerkat_machine::{AppError, MachineDaemonPaths, connected_marker, machine_name};
+use meerkat_machine::{AppError, MachineDaemonPaths, user_home};
 use std::{
-    path::{Path, PathBuf},
+    path::Path,
     process::{Command, Stdio},
-    time::{Duration, Instant},
 };
 
 const LABEL: &str = "com.meerkat.machine.remote";
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(45);
 
-pub async fn install(paths: &MachineDaemonPaths) -> Result<(), AppError> {
-    let executable = std::env::current_exe()?.canonicalize()?;
-    let user_home = std::env::var_os("HOME").ok_or(AppError::MissingHome)?;
-    let agents = PathBuf::from(user_home).join("Library/LaunchAgents");
-    std::fs::create_dir_all(&agents)?;
-    let plist = agents.join(format!("{LABEL}.plist"));
-    std::fs::write(&plist, launch_agent_plist(&executable, &paths.home))?;
+pub fn start(executable: &Path, home: &Path) -> Result<bool, AppError> {
+    let plist = plist_path()?;
+    std::fs::create_dir_all(plist.parent().expect("LaunchAgents directory"))?;
+    std::fs::write(&plist, launch_agent_plist(executable, home))?;
+    if load(&plist)? {
+        return Ok(true);
+    }
+    Err(AppError::InvalidArgument(super::NOT_STARTED))
+}
 
-    let marker = connected_marker(paths);
-    let _ = std::fs::remove_file(&marker);
+pub fn stop(paths: &MachineDaemonPaths) -> bool {
+    let (Ok(plist), Ok(uid)) = (plist_path(), user_id()) else {
+        return false;
+    };
+    if !super::serves(&plist, &paths.home) {
+        return false;
+    }
+    for domain in [format!("gui/{uid}"), format!("user/{uid}")] {
+        launchctl(&["bootout", &format!("{domain}/{LABEL}")]);
+    }
+    true
+}
+
+pub fn resume(_executable: &Path, _paths: &MachineDaemonPaths) {
+    if let Ok(plist) = plist_path()
+        && plist.is_file()
+    {
+        let _ = load(&plist);
+    }
+}
+
+fn plist_path() -> Result<std::path::PathBuf, AppError> {
+    Ok(user_home()?
+        .join("Library/LaunchAgents")
+        .join(format!("{LABEL}.plist")))
+}
+
+fn load(plist: &Path) -> Result<bool, AppError> {
     let uid = user_id()?;
-    let mut loaded = false;
     for domain in [format!("gui/{uid}"), format!("user/{uid}")] {
         launchctl(&["bootout", &format!("{domain}/{LABEL}")]);
         if launchctl(&["bootstrap", &domain, &plist.to_string_lossy()]) {
-            loaded = true;
-            break;
+            return Ok(true);
         }
     }
-    if !loaded {
-        return Err(AppError::InvalidArgument(
-            "Paired, but could not start in the background. Run meerkat-machine to stay connected.",
-        ));
-    }
+    Ok(false)
+}
 
-    let deadline = Instant::now() + CONNECT_TIMEOUT;
-    while Instant::now() < deadline {
-        if marker.exists() {
-            println!("Connected as {}", machine_name());
-            println!("Runs in the background and starts at login.");
-            return Ok(());
-        }
-        tokio::time::sleep(Duration::from_millis(250)).await;
+pub fn after_connected() {}
+
+pub fn not_connected(home: &Path) -> &'static str {
+    // The link fails with EHOSTUNREACH while macOS withholds Local Network access.
+    if super::log_mentions(home, "os error 65") {
+        "Allow meerkat-machine in System Settings > Privacy & Security > Local Network. It connects as soon as access is allowed."
+    } else {
+        super::NOT_CONNECTED
     }
-    Err(AppError::InvalidArgument(
-        if local_network_blocked(&paths.home) {
-            "Allow meerkat-machine in System Settings > Privacy & Security > Local Network. It connects as soon as access is allowed."
-        } else {
-            "Paired, but not connected yet. It keeps retrying in the background; see ~/.meerkat/logs/meerkat-machine.log."
-        },
-    ))
 }
 
 fn launchctl(arguments: &[&str]) -> bool {
@@ -69,16 +83,6 @@ fn user_id() -> Result<String, AppError> {
         return Err(AppError::Invariant("user id unavailable"));
     }
     Ok(uid)
-}
-
-/// The link fails with EHOSTUNREACH while macOS withholds Local Network access.
-fn local_network_blocked(home: &Path) -> bool {
-    std::fs::read_to_string(home.join("logs/meerkat-machine.log")).is_ok_and(|log| {
-        log.lines()
-            .rev()
-            .take(5)
-            .any(|line| line.contains("os error 65"))
-    })
 }
 
 fn launch_agent_plist(executable: &Path, home: &Path) -> String {

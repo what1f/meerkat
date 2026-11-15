@@ -2,6 +2,7 @@ use super::{Inner, MachineError};
 use meerkat_protocol::Status;
 use meerkat_protocol::{
     agent::{self, AgentProxy, CapabilityTransport},
+    local::LocalListener,
     *,
 };
 use std::{
@@ -185,24 +186,13 @@ impl AttemptProxy {
         context: AgentRunContext,
         agent_home: PathBuf,
     ) -> Result<Self, MachineError> {
-        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
         let execution = context
             .execution
             .as_ref()
             .ok_or_else(|| MachineError::InvalidAssignment("missing_execution".into()))?;
         let path = attempt_socket(&inner, execution);
-        let directory = path.parent().expect("attempt directory");
-        std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&directory)?;
-        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))?;
-        // A stale socket can only belong to this exact attempt in our private run directory.
-        if path.exists() {
-            std::fs::remove_file(&path)?;
-        }
-        let listener = tokio::net::UnixListener::bind(&path)?;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+        // A stale endpoint can only belong to this exact attempt in our private run directory.
+        let listener = LocalListener::bind(&path)?;
         let (stopped, rx) = watch::channel(false);
         let context_path = agent_home.join(".meerkat/run-context.json");
         std::fs::create_dir_all(context_path.parent().unwrap())?;
@@ -249,7 +239,7 @@ impl Drop for AttemptProxy {
     fn drop(&mut self) {
         self.stopped.send_replace(true);
         self.task.abort();
-        let _ = std::fs::remove_file(&self.path);
+        meerkat_protocol::local::remove(&self.path);
         let _ = std::fs::remove_file(&self.context_path);
     }
 }
@@ -313,7 +303,7 @@ pub(super) async fn harness_call(
     let path = attempt_socket(&inner, &execution);
     tokio::spawn(async move {
         let result = tokio::time::timeout(agent::CALL_TIMEOUT, async {
-            let mut client = connect_uds(path, DEFAULT_MAX_MESSAGE_BYTES)
+            let mut client = connect_local(path, DEFAULT_MAX_MESSAGE_BYTES)
                 .await
                 .map_err(|_| Status::unavailable("agent_socket_unavailable"))?;
             Ok::<_, Status>(

@@ -27,7 +27,7 @@ fn unpack(bytes: Vec<u8>) -> Result<(Manifest, Vec<Vec<u8>>), RuntimeError> {
     let mut total = 0;
     for index in 0..archive.len() {
         let entry = archive.by_index(index).map_err(|_| invalid_pack())?;
-        let name = entry.name().replace('\\', "/");
+        let name = entry.name().map_err(|_| invalid_pack())?.replace('\\', "/");
         if name.starts_with('/')
             || name.split('/').any(|part| part == "..")
             || name.as_bytes().get(1) == Some(&b':')

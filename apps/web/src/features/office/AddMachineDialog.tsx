@@ -86,10 +86,16 @@ export function AddMachineDialog({ pairing, connected }: { pairing: Pairing; con
   const edited = address.trim() !== '' && address.trim() !== saved;
   // Without a detected address there is nothing to pair against until one is entered.
   const unreachable = !!access && !access.address;
-  const command =
+  const pair =
     access?.address && access.cert_sha256 && code
-      ? `meerkat-machine pair wss://${access.address} ${code.code} --cert-sha256 ${access.cert_sha256}`
+      ? `pair wss://${access.address} ${code.code} --cert-sha256 ${access.cert_sha256}`
       : null;
+  // Releases install the matching Machine first; development builds run the local one.
+  const command =
+    pair &&
+    (access?.install_script_url
+      ? `curl -fsSL ${access.install_script_url} | sh -s -- ${pair}`
+      : `meerkat-machine ${pair}`);
   const apply = () => {
     if (edited && !pairing.pending) void pairing.apply(address.trim());
   };

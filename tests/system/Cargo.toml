@@ -13,7 +13,7 @@ meerkat-provider-telegram = { path = "../../providers/telegram" }
 log.workspace = true
 base64 = "0.23.1"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
-zip = { version = "2.6.1", default-features = false, features = ["deflate"] }
+zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
 meerkat-daemon-runtime = { path = "../../crates/daemon-runtime" }
 reqwest.workspace = true
 sha2.workspace = true

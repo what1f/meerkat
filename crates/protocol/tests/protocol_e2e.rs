@@ -747,7 +747,7 @@ async fn exchange_resource_chunks(path: &std::path::Path) -> ResourceRef {
             descriptor: None,
         },
     ];
-    let mut client = connect_uds(path.join("agent.sock"), CLIENT_LIMIT)
+    let mut client = connect_local(path.join("agent.sock"), CLIENT_LIMIT)
         .await
         .expect("resource client");
     let uploaded = client
@@ -788,7 +788,7 @@ async fn exchange_attachment_only_message(
     peer: &TestPeer,
     attachment: ResourceRef,
 ) {
-    let mut client = connect_uds(path.join("agent.sock"), CLIENT_LIMIT)
+    let mut client = connect_local(path.join("agent.sock"), CLIENT_LIMIT)
         .await
         .expect("attachment-only message client");
     let sent = client
@@ -820,7 +820,7 @@ async fn exchange_attachment_only_message(
 }
 
 async fn reject_empty_message(path: &std::path::Path) {
-    let mut client = connect_uds(path.join("agent.sock"), CLIENT_LIMIT)
+    let mut client = connect_local(path.join("agent.sock"), CLIENT_LIMIT)
         .await
         .expect("empty message client");
     let error = client
@@ -992,7 +992,7 @@ async fn exchange_management_and_cli(path: &std::path::Path) {
     assert_eq!(listed.request_id, "list_1");
     assert_eq!(listed.workspaces, vec![resumed]);
 
-    let mut cli = connect_uds(path.join("agent.sock"), CLIENT_LIMIT)
+    let mut cli = connect_local(path.join("agent.sock"), CLIENT_LIMIT)
         .await
         .expect("Agent client");
     let allowed = cli
@@ -1080,7 +1080,7 @@ async fn reject_out_of_order_resource_offset(path: &std::path::Path) {
             descriptor: None,
         },
     ];
-    let mut client = connect_uds(path.join("agent.sock"), CLIENT_LIMIT)
+    let mut client = connect_local(path.join("agent.sock"), CLIENT_LIMIT)
         .await
         .expect("offset test client");
     let error = client
@@ -1154,7 +1154,7 @@ async fn wait_for_socket(path: &std::path::Path) {
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             // A socket pathname can exist before the listener is ready.
-            if connect_uds(path.join("agent.sock"), CLIENT_LIMIT)
+            if connect_local(path.join("agent.sock"), CLIENT_LIMIT)
                 .await
                 .is_ok()
             {

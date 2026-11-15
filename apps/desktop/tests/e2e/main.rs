@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 #[path = "../../src/backend.rs"]
 mod backend;
 #[path = "../../src/background_services.rs"]

@@ -54,7 +54,10 @@ impl RemoteMachines {
             settings,
             default_port,
             state: Mutex::new(State {
-                access: RemoteAccess::default(),
+                access: RemoteAccess {
+                    install_script_url: install_script_url(),
+                    ..RemoteAccess::default()
+                },
                 listener: None,
             }),
         });
@@ -136,6 +139,7 @@ impl RemoteMachines {
         let mut next = RemoteAccess {
             address: address.clone(),
             cert_sha256: None,
+            install_script_url: install_script_url(),
         };
         let prepared = if let Some(port) = port {
             let identity = self.identity()?;
@@ -216,6 +220,11 @@ impl RemoteMachines {
         Ok(next)
     }
 }
+/// Set by the release build to this release's install script.
+fn install_script_url() -> Option<String> {
+    option_env!("MEERKAT_INSTALL_SCRIPT_URL").map(str::to_owned)
+}
+
 fn validate_address(address: &str) -> Result<u16, Status> {
     let invalid = || Status::invalid_argument("Enter an address such as 192.168.1.20:7443.");
     let (host, port) = address.rsplit_once(':').ok_or_else(invalid)?;
