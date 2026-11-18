@@ -25,9 +25,10 @@ const assignees = [pixel!, nova!, echo!];
 const swatches = ['#14163a', '#1d2046', '#f0a85a', '#f3eadc'];
 ---
 <section class="story" id="story">
-  <div class="wrap head" data-reveal>
+  <header class="wrap head" data-reveal>
     <h2 class="display section-title">{s.title}</h2>
-  </div>
+    <p class="lede">{s.lede}</p>
+  </header>
 
   <div class="wrap layout" data-story>
         <ol class="captions">
@@ -242,7 +243,12 @@ const swatches = ['#14163a', '#1d2046', '#f0a85a', '#f3eadc'];
   }
 
   .head {
+    max-width: calc(740px + var(--gutter) * 2);
     text-align: center;
+  }
+
+  .head .lede {
+    margin-top: 14px;
   }
 
   .layout {

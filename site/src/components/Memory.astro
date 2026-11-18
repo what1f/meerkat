@@ -1,0 +1,472 @@
+---
+import { Image } from 'astro:assets';
+import Icon from './Icon.astro';
+import claude from '../assets/brand/claude-code.svg?raw';
+import getR from '../assets/reactions/Get.png';
+import { dicts, type Lang } from '../i18n';
+import { byId } from '../data/team';
+
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const t = dicts[lang];
+const m = t.memory;
+const nova = byId.nova!;
+const alpha = byId.alpha!;
+const you = lang === 'zh' ? '你' : 'Y';
+const roleRd = t.team.roles.rd;
+
+const wires = [
+  { d: 'M159 64 C159 24, 500 40, 500 0', reverse: false },
+  { d: 'M500 0 L500 64', reverse: false },
+  { d: 'M500 0 C500 40, 841 24, 841 64', reverse: false },
+];
+---
+<section class="memory">
+  <div class="wrap">
+    <header class="head" data-reveal>
+      <h2 class="display section-title">{m.title}</h2>
+      <p class="lede">{m.lede}</p>
+    </header>
+
+    <div class="stage" data-reveal aria-hidden="true">
+      <div class="identity">
+        <div class="id-avatar">
+          <Image src={nova.avatar} alt="" width={88} height={88} />
+          <i class="dot"></i>
+        </div>
+        <div class="id-meta">
+          <div class="id-top">
+            <b>{nova.name}</b>
+            <span class="tag">{roleRd}</span>
+          </div>
+          <div class="id-foot mono">
+            <span class="mark" set:html={claude} />
+            <span>Claude Code</span>
+          </div>
+        </div>
+      </div>
+
+      <svg class="wires" viewBox="0 0 1000 64" preserveAspectRatio="none">
+        {wires.map((w, i) => (
+          <>
+            <path id={`mem-wire-${lang}-${i}`} d={w.d} class="wire" vector-effect="non-scaling-stroke" />
+            <circle r="3" class:list={['pulse', { warm: i > 0 }]}>
+              <animateMotion
+                dur="2.8s"
+                repeatCount="indefinite"
+                begin={`${i === 0 ? '0s' : `${0.9 + (i - 1) * 0.35}s`}`}
+                keyPoints="0;1"
+                keyTimes="0;1"
+                calcMode="linear"
+              >
+                <mpath href={`#mem-wire-${lang}-${i}`} />
+              </animateMotion>
+            </circle>
+          </>
+        ))}
+      </svg>
+
+      <div class="windows">
+        <div class="win">
+          <header class="win-head">
+            <Image class="win-avatar" src={nova.avatar} alt="" width={48} height={48} />
+            <b>{nova.name}</b>
+            <span class="kind">{m.dmKind}</span>
+          </header>
+          <div class="win-body">
+            <div class="row mine">
+              <div class="msg-col end">
+                <div class="bubble me">{m.dmMsg}</div>
+                <span class="react">
+                  <img src={getR.src} alt="" width="20" height="20" />
+                  {nova.name}
+                </span>
+              </div>
+              <span class="avatar you">{you}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="win">
+          <header class="win-head">
+            <span class="head-icon"><Icon name="chat" size={15} /></span>
+            <b>{m.groupName}</b>
+            <span class="stack">
+              <span class="mini you">{you}</span>
+              <Image class="mini" src={alpha.avatar} alt="" width={40} height={40} />
+              <Image class="mini" src={nova.avatar} alt="" width={40} height={40} />
+            </span>
+          </header>
+          <div class="win-body">
+            <div class="row">
+              <Image class="avatar" src={alpha.avatar} alt="" width={56} height={56} />
+              <div class="msg-col">
+                <div class="bubble">{m.groupAsk}</div>
+              </div>
+            </div>
+            <div class="row">
+              <Image class="avatar" src={nova.avatar} alt="" width={56} height={56} />
+              <div class="msg-col">
+                <div class="who">{nova.name} <span class="tag">{roleRd}</span></div>
+                <div class="bubble">{m.groupReply}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="win">
+          <header class="win-head">
+            <span class="head-icon"><Icon name="doc" size={15} /></span>
+            <b>{m.taskKind}</b>
+          </header>
+          <div class="win-body">
+            <div class="task-card">
+              <div class="task-title">{m.taskTitle}</div>
+              {m.tasks.map((task) => (
+                <div class="task-row">
+                  <span class="box"><Icon name="check" size={11} /></span>
+                  <span class="task-name">{task}</span>
+                  <Image class="assignee" src={nova.avatar} alt="" width={40} height={40} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .memory {
+    padding: clamp(120px, 16vh, 180px) 0 0;
+  }
+
+  .head {
+    max-width: 740px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .head .lede {
+    margin-top: 14px;
+  }
+
+  .stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 1040px;
+    margin: clamp(40px, 6vh, 68px) auto 0;
+  }
+
+  .identity {
+    display: inline-flex;
+    gap: 12px;
+    align-items: center;
+    padding: 9px 20px 9px 10px;
+    background: var(--surface);
+    border-radius: 999px;
+    box-shadow: var(--shadow-2);
+  }
+
+  .id-avatar {
+    position: relative;
+    flex: none;
+    width: 44px;
+    height: 44px;
+  }
+
+  .id-avatar :global(img) {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+  }
+
+  .dot {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 11px;
+    height: 11px;
+    background: var(--ok);
+    border-radius: 50%;
+    box-shadow: 0 0 0 2.5px var(--surface);
+  }
+
+  .id-meta {
+    display: grid;
+    gap: 2px;
+  }
+
+  .id-top {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-size: var(--fs-body);
+    line-height: 1.25;
+  }
+
+  .id-top b {
+    font-weight: 600;
+  }
+
+  .id-foot {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    font-size: var(--fs-small);
+    color: var(--ink-3);
+  }
+
+  .mark :global(svg) {
+    width: 13px;
+    height: 13px;
+  }
+
+  .wires {
+    width: 100%;
+    height: 64px;
+    overflow: visible;
+  }
+
+  .wire {
+    fill: none;
+    stroke: var(--line-strong);
+    stroke-width: 1;
+  }
+
+  .pulse {
+    fill: var(--accent);
+  }
+
+  .pulse.warm {
+    fill: var(--ochre);
+  }
+
+  .windows {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 24px;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .win {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-size: var(--fs-small);
+    line-height: 1.5;
+    background: color-mix(in srgb, var(--well) 55%, var(--surface));
+    border-radius: 20px;
+    box-shadow: var(--shadow-2);
+  }
+
+  .win-head {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    height: 46px;
+    padding: 0 16px;
+    background: var(--surface);
+    box-shadow: inset 0 -0.5px 0 var(--line);
+  }
+
+  .win-head b {
+    font-size: var(--fs-small);
+    font-weight: 600;
+  }
+
+  .win-head :global(.win-avatar) {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+  }
+
+  .head-icon {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 7px;
+  }
+
+  .kind {
+    margin-left: auto;
+    color: var(--ink-3);
+  }
+
+  .stack {
+    display: flex;
+    margin-left: auto;
+  }
+
+  .stack :global(.mini),
+  .stack .mini {
+    width: 20px;
+    height: 20px;
+    margin-left: -5px;
+    font-size: 11px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--surface);
+  }
+
+  .win-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 12px;
+    justify-content: center;
+    padding: 18px 16px;
+  }
+
+  .row {
+    display: flex;
+    gap: 9px;
+    align-items: flex-start;
+  }
+
+  .row.mine {
+    justify-content: flex-end;
+  }
+
+  .row :global(.avatar),
+  .avatar {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+  }
+
+  .you {
+    display: grid;
+    place-items: center;
+    font-family: var(--font-display);
+    font-size: 11px;
+    font-weight: 600;
+    color: #fff;
+    background: var(--accent);
+  }
+
+  .msg-col {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    align-items: flex-start;
+    max-width: 84%;
+  }
+
+  .msg-col.end {
+    align-items: flex-end;
+  }
+
+  .who {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    color: var(--ink-2);
+  }
+
+  .tag {
+    padding: 0 6px;
+    font-size: 12px;
+    line-height: 17px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 5px;
+  }
+
+  .bubble {
+    padding: 8px 11px;
+    background: var(--surface);
+    border-radius: 4px 12px 12px;
+    box-shadow: 0 0 0 0.5px var(--edge), 0 1px 2px rgb(var(--shade) / 4%);
+  }
+
+  .bubble.me {
+    background: var(--bubble-me);
+    border-radius: 12px 4px 12px 12px;
+    box-shadow: none;
+  }
+
+  .react {
+    display: inline-flex;
+    gap: 5px;
+    align-items: center;
+    height: 26px;
+    padding: 0 9px 0 4px;
+    color: var(--ink-2);
+    background: var(--surface);
+    border-radius: 999px;
+    box-shadow: 0 0 0 0.5px var(--line-strong);
+  }
+
+  .react img {
+    width: 20px;
+    height: 20px;
+  }
+
+  .task-card {
+    padding: 12px 14px;
+    background: var(--surface);
+    border-radius: 12px;
+    box-shadow: 0 0 0 0.5px var(--edge), 0 6px 16px -10px rgb(var(--shade) / 30%);
+  }
+
+  .task-title {
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+    font-weight: 600;
+    box-shadow: inset 0 -0.5px 0 var(--line);
+  }
+
+  .task-row {
+    display: flex;
+    gap: 9px;
+    align-items: center;
+    height: 32px;
+  }
+
+  .box {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    color: #fff;
+    background: var(--ok);
+    border-radius: 5px;
+  }
+
+  .task-name {
+    flex: 1;
+    color: var(--ink-2);
+  }
+
+  .task-row :global(.assignee) {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+  }
+
+  @media (max-width: 880px) {
+    .wires {
+      height: 28px;
+    }
+
+    .wire:not(:nth-of-type(2)),
+    .pulse:not(:nth-of-type(2)) {
+      display: none;
+    }
+
+    .windows {
+      grid-template-columns: 1fr;
+      gap: 16px;
+      max-width: 420px;
+    }
+  }
+</style>

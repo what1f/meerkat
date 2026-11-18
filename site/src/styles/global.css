@@ -286,7 +286,7 @@ button {
   font-size: var(--fs-lede);
   line-height: 1.65;
   color: var(--ink-2);
-  text-wrap: pretty;
+  text-wrap: balance;
 }
 
 .mono {

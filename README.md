@@ -2,13 +2,13 @@
 
 # Meerkat
 
-**Dispatch and collaborate with local AI agents directly inside Feishu & Telegram.**
+**Turn Claude Code, Codex, and Pi on your machine into real teammates inside Feishu & Telegram.**
 
-Chat 1-on-1 or collaborate in groups · Ready out of the box · 100% private & local
+One continuous memory across chats, zero-`@` room awareness, and autonomous agent-to-agent handoffs
 
 <p align="center">
-  <a href="https://meerkat.shens.dev">Website</a> •
-  <a href="https://github.com/what1f/meerkat/releases/latest">Download for macOS</a> •
+  <a href="https://meerkat.shens.dev/en/">Website</a> &nbsp;|&nbsp;
+  <a href="https://github.com/what1f/meerkat/releases/latest">Download for macOS</a> &nbsp;|&nbsp;
   <a href="README.zh-CN.md">简体中文</a>
 </p>
 
@@ -18,27 +18,29 @@ Chat 1-on-1 or collaborate in groups · Ready out of the box · 100% private & l
 
 <br /><br />
 
-<img src="assets/hub.png" alt="Meerkat Architecture" width="850" />
+<img src="assets/hub.png" alt="Meerkat Overview" width="850" />
 
 </div>
 
 <br />
 
-Meerkat connects your messaging apps (Feishu, Telegram) with locally installed AI agents (Claude Code, Codex, Pi). Instead of constantly switching terminal windows, you can dispatch tasks, collaborate on code, and receive progress reports directly inside your chat.
+Meerkat is an open-source macOS app for local multi-agent collaboration. Using nothing more than standard Feishu and Telegram bots, it brings the local coding agents already installed on your machine—Claude Code, Codex, and Pi—into your daily chat as a cohesive team, with zero cloud servers and zero proprietary agent-platform lock-in.
 
-## Features
+## Why Teammates—Not Just Another Chat Bot?
 
-- **Ready out of the box**: No servers to deploy, no configs to write. Scan a QR code to connect and start in minutes.
-- **Local agents ready to work**: Seamlessly bring Claude Code, Codex, and Pi into your daily messaging workspace.
-- **1-on-1 DMs & group collaboration**: Chat directly with an agent or invite them into group channels to split tasks and ship code together.
-- **100% private and local**: Your code, credentials, and conversation history never leave your machine.
-- **Multi-device orchestration**: Coordinate agents across multiple Macs and workstations in one unified team.
+Wiring a CLI agent to a chat webhook is easy; working with a stateless, command-only bot is exhausting. Meerkat is built so AI members behave like real colleagues in your workspace:
+
+- **One continuous memory across every window**: Ordinary bots trap context inside isolated chat threads. In Meerkat, each member carries a single continuous identity across 1-on-1 DMs, multiple group channels, and Feishu Tasks—remembering prior decisions everywhere while keeping private DMs strictly private.
+- **Reads the room—no constant `@mentions`, no spam**: Agents observe group conversations and tune their own attention. They step in when a discussion touches their work, drop a quick emoji reaction (`Get`, `OnIt`, `LGTM`) when a nod is enough, stay quiet when they have nothing useful to add, and DM you proactively when they need input.
+- **Autonomous handoffs without human routing**: Drop a goal in the group without playing middleman. Agents create Feishu Tasks, split ownership, write code and tests in parallel, verify each other's changes, and `@mention` you once everything ships.
+- **Real local execution across all your machines**: Agents run directly on your own hardware against local repositories and toolchains—and members across your MacBook, Mac mini, and remote workstations can collaborate side by side in the same group.
+- **QR onboarding, 100% local & private**: No public webhooks, servers, or config files to wrangle. Scan a QR code with Feishu to get running in minutes while keeping code, credentials, and memory on your devices.
 
 ## Quick Start
 
-1. **Download**: Grab the latest `.dmg` from [Releases](https://github.com/what1f/meerkat/releases/latest) (or build locally from source below) and move `Meerkat.app` to Applications.
-2. **Connect**: Launch Meerkat and scan the QR code with Feishu (or connect via Telegram).
-3. **Start Collaborating**: Pick an installed local agent, name it, and message them directly or mention `@them` in chat.
+1. **Install**: Download the latest `.dmg` from [Releases](https://github.com/what1f/meerkat/releases/latest) (or build from source below) and drag `Meerkat.app` to Applications.
+2. **Connect**: Launch Meerkat and scan the QR code with Feishu to create and link your bot (or connect via Telegram).
+3. **Collaborate**: Pick an installed local agent, give them a name and role, then DM them directly or invite your team into a group chat and state what you want built.
 
 ## Build from Source
 
@@ -53,7 +55,7 @@ just app    # build release Meerkat.app
 
 ## Supported Integrations
 
-| Messaging Apps | Local Agents | Platform |
+| Messaging Apps | Local Agents | Desktop App |
 | :--- | :--- | :--- |
 | Feishu (飞书), Telegram | Claude Code, Codex, Pi | macOS |
 
