@@ -28,18 +28,41 @@ class ReleaseScenarios(unittest.TestCase):
             for name in ASSETS["expected_assets"](version):
                 (source / name).write_text(name)
             (source / "install.sh").write_text('VERSION="0.1.0"\n')
+            (source / "install.ps1").write_text('$Version = "0.1.0"\n')
             (source / "sbom.spdx.json").write_text(json.dumps({"spdxVersion": "SPDX-2.3"}))
             for path in source.glob("*.sha256"):
                 base = path.name.removesuffix(".sha256")
-                names = [base] if base.endswith(".tar.gz") else [base + ".zip", base + ".dmg"]
+                if base.endswith((".tar.gz", ".zip")):
+                    names = [base]
+                elif "-macos-" in base:
+                    names = [base + ".zip", base + ".dmg"]
+                elif "-windows-" in base:
+                    names = [base + ".zip", base + "-setup.exe"]
+                elif "-linux-" in base:
+                    names = [base + ".tar.gz"]
+                else:
+                    raise AssertionError(f"unexpected sha256 fixture: {path.name}")
                 path.write_text("".join(f"{ASSETS['digest'](source / name)}  {name}\n" for name in names))
             for path in source.glob("*.verification.json"):
                 base = path.name.removesuffix(".verification.json")
-                archive = base if base.endswith(".tar.gz") else base + ".zip"
+                is_machine = base.startswith("meerkat-machine-")
+                if is_machine:
+                    archive = base
+                elif "-linux-" in base:
+                    archive = base + ".tar.gz"
+                else:
+                    archive = base + ".zip"
                 result = {"status": "passed", "version": version, "archive_sha256": ASSETS["digest"](source / archive),
                     "distribution_signing": "developer-id-notarized" if "-macos-" in path.name else "none"}
-                if not base.endswith(".tar.gz"):
-                    result.update(cleanup="passed", dmg_sha256=ASSETS["digest"](source / (base + ".dmg")))
+                if not is_machine:
+                    result["cleanup"] = "passed"
+                    if "-macos-" in base:
+                        result["dmg_sha256"] = ASSETS["digest"](source / (base + ".dmg"))
+                    else:
+                        result["build_sha256"] = ASSETS["digest"](source / (base + ".build.json"))
+                    if "-windows-" in base:
+                        result["installer_sha256"] = ASSETS["digest"](source / (base + "-setup.exe"))
+                        result["installer_verified"] = True
                 path.write_text(json.dumps(result))
             for path in source.glob("*.package.json"):
                 base = path.name.removesuffix(".package.json")

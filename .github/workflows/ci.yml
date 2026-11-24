@@ -113,6 +113,59 @@ jobs:
             apps/web/test-results/
           retention-days: 7
 
+  linux-desktop:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          with-uv: 'false'
+          with-zig: 'false'
+          rust-cache-key: ci-linux-desktop
+      - name: Install Linux desktop system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev pkg-config
+      - name: Build web assets and verify Linux workspace compilation
+        run: |
+          pnpm -C apps/web install --frozen-lockfile
+          pnpm -C apps/web build
+          cargo check --workspace --all-targets --locked
+      - name: Native Linux portable business scenarios
+        run: |
+          cargo build --locked -p meerkat-machine --example machine_daemon_e2e
+          cargo test --locked -p meerkat-protocol -p meerkat-daemon-runtime -p meerkat-machine --tests
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          with-uv: 'false'
+          with-zig: 'false'
+          rust-targets: x86_64-pc-windows-msvc
+          rust-cache-key: ci-windows-x86_64
+      - name: Build web assets and verify Windows product binaries
+        run: |
+          pnpm -C apps/web install --frozen-lockfile
+          pnpm -C apps/web build
+          cargo check --locked --target x86_64-pc-windows-msvc --features meerkat-desktop/custom-protocol --bin meerkat-desktop --bin meerkatd --bin meerkat-machine --bin meerkat
+      - name: Native Windows portable scenarios
+        run: |
+          cargo test --locked --target x86_64-pc-windows-msvc -p meerkat-daemon-runtime --tests
+
   site:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

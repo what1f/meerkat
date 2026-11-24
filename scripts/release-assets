@@ -13,14 +13,21 @@ def digest(path):
 
 
 def expected_assets(version):
-    names = {"install.sh", "sbom.spdx.json"}
+    names = {"install.sh", "install.ps1", "sbom.spdx.json"}
     for arch in ("arm64", "x86_64"):
         base = f"Meerkat-{version}-macos-{arch}"
         names.update(base + extension for extension in (".zip", ".dmg", ".sha256", ".build.json", ".package.json", ".verification.json"))
+    for arch in ("x86_64", "arm64"):
+        base = f"Meerkat-{version}-linux-{arch}"
+        names.update(base + extension for extension in (".tar.gz", ".sha256", ".build.json", ".verification.json"))
+    win_base = f"Meerkat-{version}-windows-x86_64"
+    names.update(win_base + extension for extension in (".zip", "-setup.exe", ".sha256", ".build.json", ".verification.json"))
     names.add(f"Meerkat-{version}-source.tar.gz")
     for platform in ("macos-arm64", "macos-x86_64", "linux-x86_64", "linux-arm64"):
         base = f"meerkat-machine-{version}-{platform}.tar.gz"
         names.update((base, base + ".sha256", base + ".verification.json"))
+    win_machine = f"meerkat-machine-{version}-windows-x86_64.zip"
+    names.update((win_machine, win_machine + ".sha256", win_machine + ".verification.json"))
     return names
 
 
@@ -43,13 +50,24 @@ def assemble(source, output, version, commit):
         found[path.name] = path
     if expected != found.keys():
         raise ValueError(f"missing release assets: {', '.join(sorted(expected - found.keys()))}")
-    if not json.loads(found["sbom.spdx.json"].read_text()).get("spdxVersion", "").startswith("SPDX-"):
+    if not json.loads(found["sbom.spdx.json"].read_text(encoding="utf-8")).get("spdxVersion", "").startswith("SPDX-"):
         raise ValueError("source SBOM is not an SPDX document")
     for name, path in found.items():
         if name.endswith(".sha256"):
-            entries = path.read_text().splitlines()
-            required = {name.removesuffix(".sha256")} if name.endswith(".tar.gz.sha256") else {
-                name.removesuffix(".sha256") + ".zip", name.removesuffix(".sha256") + ".dmg"}
+            entries = path.read_text(encoding="utf-8").splitlines()
+            if name.endswith((".tar.gz.sha256", ".zip.sha256")):
+                required = {name.removesuffix(".sha256")}
+            elif "-macos-" in name:
+                stem = name.removesuffix(".sha256")
+                required = {stem + ".zip", stem + ".dmg"}
+            elif "-windows-" in name:
+                stem = name.removesuffix(".sha256")
+                required = {stem + ".zip", stem + "-setup.exe"}
+            elif "-linux-" in name:
+                stem = name.removesuffix(".sha256")
+                required = {stem + ".tar.gz"}
+            else:
+                raise ValueError(f"unexpected checksum file: {name}")
             checked = set()
             for line in entries:
                 checksum, asset = line.split(maxsplit=1)
@@ -59,25 +77,42 @@ def assemble(source, output, version, commit):
             if checked != required:
                 raise ValueError(f"incomplete release checksums: {name}")
         if name.endswith(".verification.json"):
-            evidence = json.loads(path.read_text())
+            evidence = json.loads(path.read_text(encoding="utf-8"))
             base = name.removesuffix(".verification.json")
-            archive = base if base.endswith(".tar.gz") else base + ".zip"
+            is_machine = base.startswith("meerkat-machine-")
+            if is_machine:
+                archive = base
+            elif "-linux-" in base:
+                archive = base + ".tar.gz"
+            else:
+                archive = base + ".zip"
             if (evidence.get("status") != "passed" or evidence.get("version") != version
                     or evidence.get("archive_sha256") != digest(found[archive])):
                 raise ValueError(f"unverified release archive: {archive}")
             if "-macos-" in name and evidence.get("distribution_signing") != "developer-id-notarized":
                 raise ValueError(f"formal macOS distribution verification required: {archive}")
-            if not base.endswith(".tar.gz") and (
-                    evidence.get("cleanup") != "passed" or evidence.get("dmg_sha256") != digest(found[base + ".dmg"])):
-                raise ValueError(f"unverified desktop archive: {archive}")
+            if not is_machine:
+                if evidence.get("cleanup") != "passed":
+                    raise ValueError(f"unverified desktop cleanup: {archive}")
+                if "-macos-" in base and evidence.get("dmg_sha256") != digest(found[base + ".dmg"]):
+                    raise ValueError(f"unverified macOS DMG: {archive}")
+                if "-windows-" in base:
+                    if evidence.get("installer_sha256") != digest(found[base + "-setup.exe"]):
+                        raise ValueError(f"unverified Windows installer: {archive}")
+                    if evidence.get("installer_verified") is not True:
+                        raise ValueError(f"Windows installer behavior was not verified: {archive}")
+                if "-macos-" not in base and evidence.get("build_sha256") != digest(found[base + ".build.json"]):
+                    raise ValueError(f"desktop verification does not match build provenance: {archive}")
         if name.endswith(".package.json"):
-            evidence = json.loads(path.read_text())
+            evidence = json.loads(path.read_text(encoding="utf-8"))
             archive = name.removesuffix(".package.json") + ".zip"
             build = name.removesuffix(".package.json") + ".build.json"
             if evidence.get("archive_sha256") != digest(found[archive]) or evidence.get("build_sha256") != digest(found[build]):
                 raise ValueError(f"package receipt does not match: {name}")
-    if f'VERSION="{version}"' not in found["install.sh"].read_text():
-        raise ValueError("installer version does not match release")
+    if f'VERSION="{version}"' not in found["install.sh"].read_text(encoding="utf-8"):
+        raise ValueError("install.sh version does not match release")
+    if f'$Version = "{version}"' not in found["install.ps1"].read_text(encoding="utf-8"):
+        raise ValueError("install.ps1 version does not match release")
     if output.exists() and any(output.iterdir()):
         raise ValueError("release output must be empty")
     output.mkdir(parents=True, exist_ok=True)

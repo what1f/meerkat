@@ -6,6 +6,7 @@ import {
   Dialog,
   LinkButton,
   Reveal,
+  Segmented,
   Skeleton,
   StatusDot,
   TextInput,
@@ -76,11 +77,20 @@ export function usePairing() {
   };
 }
 
+type PairPlatform = 'unix' | 'windows';
+
+function defaultPairPlatform(): PairPlatform {
+  return /Windows|Win32|Win64/i.test(`${navigator.userAgent} ${navigator.platform}`)
+    ? 'windows'
+    : 'unix';
+}
+
 export function AddMachineDialog({ pairing, connected }: { pairing: Pairing; connected?: string }) {
   const t = useT();
   const { access, code } = pairing;
   const [network, setNetwork] = useState(false);
   const [draft, setDraft] = useState<string | null>(null);
+  const [platform, setPlatform] = useState<PairPlatform>(defaultPairPlatform);
   const saved = access?.address ?? '';
   const address = draft ?? saved;
   const edited = address.trim() !== '' && address.trim() !== saved;
@@ -90,11 +100,14 @@ export function AddMachineDialog({ pairing, connected }: { pairing: Pairing; con
     access?.address && access.cert_sha256 && code
       ? `pair wss://${access.address} ${code.code} --cert-sha256 ${access.cert_sha256}`
       : null;
+  const windowsScriptUrl = access?.install_script_url?.replace(/\/install\.sh$/, '/install.ps1');
   // Releases install the matching Machine first; development builds run the local one.
   const command =
     pair &&
     (access?.install_script_url
-      ? `curl -fsSL ${access.install_script_url} | sh -s -- ${pair}`
+      ? platform === 'windows' && windowsScriptUrl
+        ? `& ([scriptblock]::Create((irm ${windowsScriptUrl}))) ${pair}`
+        : `curl -fsSL ${access.install_script_url} | sh -s -- ${pair}`
       : `meerkat-machine ${pair}`);
   const apply = () => {
     if (edited && !pairing.pending) void pairing.apply(address.trim());
@@ -117,7 +130,25 @@ export function AddMachineDialog({ pairing, connected }: { pairing: Pairing; con
     >
       {!unreachable && (
         <div className={css.body}>
-          <p className={css.hint}>{t('office.runHint')}</p>
+          <p className={css.hint}>
+            {t(
+              platform === 'windows' && access?.install_script_url
+                ? 'office.runHintWindows'
+                : 'office.runHint',
+            )}
+          </p>
+          {access?.install_script_url && (
+            <Segmented
+              size="sm"
+              aria-label={t('office.platform')}
+              value={platform}
+              onChange={setPlatform}
+              options={[
+                { value: 'unix' as const, label: t('office.platformUnix') },
+                { value: 'windows' as const, label: t('office.platformWindows') },
+              ]}
+            />
+          )}
           {command ? (
             <Command
               data-testid="pair-command"

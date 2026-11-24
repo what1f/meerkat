@@ -77,7 +77,6 @@ use std::{
     collections::BTreeMap,
     fmt,
     future::Future,
-    io::Read,
     marker::PhantomData,
     pin::Pin,
     sync::{

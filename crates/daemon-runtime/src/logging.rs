@@ -15,7 +15,7 @@ const MAX_BYTES: u64 = 4 * 1024 * 1024;
 
 struct DaemonLog {
     path: PathBuf,
-    writer: Mutex<File>,
+    writer: Mutex<Option<File>>,
 }
 
 fn open_log(path: &Path) -> io::Result<File> {
@@ -41,7 +41,7 @@ pub fn init_logging(home: &Path, daemon: &str) -> io::Result<()> {
     let directory = home.join("logs");
     create_private_directory(&directory).map_err(io::Error::other)?;
     let path = directory.join(format!("{daemon}.log"));
-    let writer = Mutex::new(open_log(&path)?);
+    let writer = Mutex::new(Some(open_log(&path)?));
     log::set_boxed_logger(Box::new(DaemonLog { path, writer })).map_err(io::Error::other)?;
     log::set_max_level(log::LevelFilter::Info);
     Ok(())
@@ -74,11 +74,26 @@ impl log::Log for DaemonLog {
                     record.level()
                 );
                 eprint!("{line}");
-                if writer.metadata()?.len() + line.len() as u64 > MAX_BYTES {
-                    fs::rename(&self.path, self.path.with_extension("log.1"))?;
-                    *writer = open_log(&self.path)?;
+                if writer.is_none() {
+                    *writer = Some(open_log(&self.path)?);
                 }
-                writer.write_all(line.as_bytes())?;
+                let current_len = writer
+                    .as_ref()
+                    .ok_or_else(|| io::Error::other("daemon log closed"))?
+                    .metadata()?
+                    .len();
+                if current_len + line.len() as u64 > MAX_BYTES {
+                    // Close before renaming so Windows permits rotating the open log file.
+                    writer.take();
+                    let backup = self.path.with_extension("log.1");
+                    #[cfg(windows)]
+                    let _ = fs::remove_file(&backup);
+                    fs::rename(&self.path, &backup)?;
+                    *writer = Some(open_log(&self.path)?);
+                }
+                if let Some(file) = writer.as_mut() {
+                    file.write_all(line.as_bytes())?;
+                }
             }
             Ok(())
         })();
@@ -88,8 +103,10 @@ impl log::Log for DaemonLog {
     }
 
     fn flush(&self) {
-        if let Ok(mut writer) = self.writer.lock() {
-            let _ = writer.flush();
+        if let Ok(mut writer) = self.writer.lock()
+            && let Some(file) = writer.as_mut()
+        {
+            let _ = file.flush();
         }
     }
 }

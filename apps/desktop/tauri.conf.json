@@ -4,5 +4,5 @@
   "identifier": "com.meerkat.desktop",
   "build": { "frontendDist": "boot" },
   "app": { "withGlobalTauri": false, "macOSPrivateApi": true, "windows": [] },
-  "bundle": { "active": false, "icon": ["assets/app-icon.png"] }
+  "bundle": { "active": false, "icon": ["assets/app-icon.png", "assets/app-icon.ico"] }
 }

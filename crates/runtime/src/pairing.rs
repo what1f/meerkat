@@ -19,8 +19,7 @@ impl RuntimeApplication {
     pub async fn create_pairing_code(&self) -> Result<meerkat_protocol::PairingCode, RuntimeError> {
         use base64::Engine as _;
         let mut bytes = [0u8; 32];
-        std::fs::File::open("/dev/urandom")
-            .and_then(|mut file| file.read_exact(&mut bytes))
+        getrandom::fill(&mut bytes)
             .map_err(|error| RuntimeError::Application(error.to_string()))?;
         let code = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
         let issued_at = application::now_millis();
@@ -142,9 +141,7 @@ fn credential_hash(value: &str) -> String {
 }
 fn random_secret() -> Result<String, RuntimeError> {
     let mut bytes = [0u8; 32];
-    std::fs::File::open("/dev/urandom")
-        .and_then(|mut file| file.read_exact(&mut bytes))
-        .map_err(|error| RuntimeError::Application(error.to_string()))?;
+    getrandom::fill(&mut bytes).map_err(|error| RuntimeError::Application(error.to_string()))?;
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 

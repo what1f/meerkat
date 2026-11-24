@@ -1,9 +1,14 @@
-export type AssetKey = 'macos-arm64' | 'macos-x86_64';
+export type AssetKey =
+  | 'macos-arm64'
+  | 'macos-x86_64'
+  | 'windows-x86_64'
+  | 'linux-x86_64'
+  | 'linux-arm64';
 
 export interface ReleaseInfo {
   tag: string;
   htmlUrl: string;
-  assets: Record<AssetKey, string>;
+  assets: Partial<Record<AssetKey, string>>;
 }
 
 const REPO = 'https://github.com/what1f/meerkat';
@@ -12,6 +17,8 @@ export const FALLBACK_VERSION = '0.1.1';
 export function buildFallbackRelease(version = FALLBACK_VERSION): ReleaseInfo {
   const tag = version.startsWith('v') ? version : `v${version}`;
   const clean = tag.slice(1);
+  // Only include assets verified to exist in FALLBACK_VERSION; newer releases populate
+  // Windows and Linux downloads directly from GitHub release metadata.
   return {
     tag,
     htmlUrl: `${REPO}/releases/tag/${tag}`,
@@ -28,8 +35,7 @@ export function parseGitHubRelease(payload: unknown): ReleaseInfo | null {
   if (typeof data.tag_name !== 'string' || !data.tag_name.trim() || !Array.isArray(data.assets)) return null;
 
   const tag = data.tag_name.trim();
-  const base = buildFallbackRelease(tag);
-  const assets: Record<AssetKey, string> = { ...base.assets };
+  const assets: Partial<Record<AssetKey, string>> = {};
   let matched = 0;
 
   for (const item of data.assets) {
@@ -41,6 +47,15 @@ export function parseGitHubRelease(payload: unknown): ReleaseInfo | null {
       matched += 1;
     } else if (/^Meerkat-.*-macos-x86_64\.dmg$/.test(name)) {
       assets['macos-x86_64'] = browser_download_url;
+      matched += 1;
+    } else if (/^Meerkat-.*-windows-x86_64-setup\.exe$/.test(name)) {
+      assets['windows-x86_64'] = browser_download_url;
+      matched += 1;
+    } else if (/^Meerkat-.*-linux-x86_64\.tar\.gz$/.test(name)) {
+      assets['linux-x86_64'] = browser_download_url;
+      matched += 1;
+    } else if (/^Meerkat-.*-linux-arm64\.tar\.gz$/.test(name)) {
+      assets['linux-arm64'] = browser_download_url;
       matched += 1;
     }
   }

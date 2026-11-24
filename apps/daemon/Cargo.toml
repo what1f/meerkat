@@ -12,7 +12,6 @@ publish.workspace = true
 meerkat-web-assets = { path = "../../crates/web-assets" }
 log.workspace = true
 socket2 = "0.6"
-nix = { version = "0.29", features = ["net"] }
 rustls.workspace = true
 tokio-rustls.workspace = true
 rcgen.workspace = true
@@ -30,6 +29,15 @@ meerkat-storage = { path = "../../crates/storage" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["signal"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.29", features = ["net"] }
+
+[target.'cfg(windows)'.dependencies]
+if-addrs = "0.13"
+
+[build-dependencies]
+static_vcruntime = "3"
 
 [dev-dependencies]
 meerkat-testkit = { path = "../../crates/testkit" }

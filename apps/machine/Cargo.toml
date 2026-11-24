@@ -42,6 +42,9 @@ classification = "hermetic"
 unattended = "yes"
 status = "implemented"
 
+[build-dependencies]
+static_vcruntime = "3"
+
 [dev-dependencies]
 meerkat-client = { path = "../../crates/client" }
 meerkat-runtime = { path = "../../crates/runtime" }

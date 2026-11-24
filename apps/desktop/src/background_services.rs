@@ -45,6 +45,8 @@ enum Adapter {
 
 impl BackgroundServices {
     pub(crate) fn new(persistent: bool) -> Self {
+        #[cfg(not(target_os = "macos"))]
+        let _ = persistent;
         #[cfg(target_os = "macos")]
         if persistent && bundled_launch_agents_available() && !bundle_is_ephemeral() {
             return Self {
@@ -191,7 +193,11 @@ impl BackgroundServices {
             }
             Ok(stopped)
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        {
+            replace_outdated_windows_services(home)
+        }
+        #[cfg(not(any(unix, windows)))]
         {
             let _ = home;
             Ok(false)
@@ -795,19 +801,36 @@ fn stop_helper(mut child: Child) {
     if child.try_wait().ok().flatten().is_some() {
         return;
     }
-    let pid = child.id().to_string();
-    let _ = Command::new("kill").args(["-TERM", &pid]).status();
-    std::thread::scope(|scope| {
-        let (done, exited) = std::sync::mpsc::sync_channel(1);
-        let waiter = scope.spawn(move || {
-            let _ = child.wait();
-            let _ = done.send(());
+    #[cfg(unix)]
+    {
+        let pid = child.id().to_string();
+        let _ = Command::new("kill").args(["-TERM", &pid]).status();
+        std::thread::scope(|scope| {
+            let (done, exited) = std::sync::mpsc::sync_channel(1);
+            let waiter = scope.spawn(move || {
+                let _ = child.wait();
+                let _ = done.send(());
+            });
+            if exited.recv_timeout(Duration::from_secs(1)).is_err() {
+                let _ = Command::new("kill").args(["-KILL", &pid]).status();
+            }
+            let _ = waiter.join();
         });
-        if exited.recv_timeout(Duration::from_secs(1)).is_err() {
-            let _ = Command::new("kill").args(["-KILL", &pid]).status();
+    }
+    #[cfg(not(unix))]
+    {
+        // Closing piped stdin signals `--shutdown-on-stdin-eof` helpers to exit gracefully.
+        drop(child.stdin.take());
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while std::time::Instant::now() < deadline {
+            if child.try_wait().ok().flatten().is_some() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(25));
         }
-        let _ = waiter.join();
-    });
+        let _ = child.kill();
+        let _ = child.wait();
+    }
 }
 
 #[cfg(unix)]
@@ -832,7 +855,103 @@ fn replace_outdated_local_services(home: &Path) -> Result<(), ClientError> {
     Ok(())
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn replace_outdated_local_services(home: &Path) -> Result<(), ClientError> {
+    let _ = replace_outdated_windows_services(home)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn replace_outdated_windows_services(home: &Path) -> Result<bool, ClientError> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    let mut stopped = false;
+    for (lock, executable_name) in [
+        ("run/machine.lock", "meerkat-machine"),
+        ("run/runtime.lock", "meerkatd"),
+    ] {
+        let lock_path = home.join(lock);
+        let Ok(lock_metadata) = fs::symlink_metadata(&lock_path) else {
+            continue;
+        };
+        if !lock_metadata.file_type().is_file() {
+            continue;
+        }
+        let executable = helper_executable(executable_name)?;
+        let Ok(executable_modified) = fs::metadata(&executable).and_then(|meta| meta.modified())
+        else {
+            continue;
+        };
+        let Ok(lock_modified) = lock_metadata.modified() else {
+            continue;
+        };
+        if executable_modified <= lock_modified {
+            continue;
+        }
+        let Ok(lock_contents) = fs::read_to_string(&lock_path) else {
+            continue;
+        };
+        let Some(pid) = local_service_lock_pid(&lock_contents) else {
+            continue;
+        };
+        match windows_process_is_alive(pid) {
+            Some(true) => {}
+            Some(false) => continue,
+            None => return Err(background_update_error()),
+        }
+        let image = format!("{executable_name}{}", std::env::consts::EXE_SUFFIX);
+        let status = Command::new("taskkill")
+            .args(["/F", "/FI", &format!("PID eq {pid}")])
+            .args(["/FI", &format!("IMAGENAME eq {image}")])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+            .map_err(|error| ClientError::Unavailable(error.to_string()))?;
+        if !status.success() {
+            return Err(background_update_error());
+        }
+        let mut exited = false;
+        for _ in 0..100 {
+            match windows_process_is_alive(pid) {
+                Some(false) => {
+                    exited = true;
+                    break;
+                }
+                Some(true) => std::thread::sleep(Duration::from_millis(20)),
+                None => return Err(background_update_error()),
+            }
+        }
+        if !exited {
+            return Err(background_update_error());
+        }
+        // Leave stale lock reclamation to the newly spawned service's InstanceGuard::acquire
+        // so a concurrent startup cannot lose its newly created lock file.
+        stopped = true;
+    }
+    Ok(stopped)
+}
+
+#[cfg(windows)]
+fn windows_process_is_alive(pid: u32) -> Option<bool> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let output = Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).contains(&format!("\"{pid}\"")))
+}
+
+#[cfg(not(any(unix, windows)))]
 fn replace_outdated_local_services(_home: &Path) -> Result<(), ClientError> {
     Ok(())
 }
@@ -935,7 +1054,7 @@ fn stop_local_service(instance: LocalService) -> Result<(), ClientError> {
     Err(background_update_error())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn background_update_error() -> ClientError {
     ClientError::Unavailable("Meerkat 尚未完成更新，请退出并重新打开。".into())
 }
@@ -966,6 +1085,7 @@ fn wait_for_lock_release(lock_path: &Path) {
     }
 }
 
+#[cfg(any(unix, windows))]
 fn local_service_lock_pid(contents: &str) -> Option<u32> {
     let fields = contents.split_whitespace().collect::<Vec<_>>();
     if fields.len() != 2 {
@@ -985,6 +1105,7 @@ fn local_service_lock_pid(contents: &str) -> Option<u32> {
     run_id.and(pid)
 }
 
+#[cfg(unix)]
 fn helper_command_matches(command: &str, executable: &Path) -> bool {
     let matches = |expected: &str| {
         command == expected
@@ -1005,16 +1126,23 @@ fn helper_command_matches(command: &str, executable: &Path) -> bool {
 }
 
 fn helper_executable(name: &str) -> Result<PathBuf, ClientError> {
+    let binary = format!("{name}{}", std::env::consts::EXE_SUFFIX);
     let current =
         std::env::current_exe().map_err(|error| ClientError::Unavailable(error.to_string()))?;
     let bundled = current
         .parent()
         .and_then(Path::parent)
-        .map(|contents| contents.join("Library/LaunchServices").join(name));
+        .map(|contents| contents.join("Library/LaunchServices").join(&binary));
     if let Some(path) = bundled.filter(|path| path.is_file()) {
         return Ok(path);
     }
-    let sibling = current.with_file_name(name);
+    let nested = current
+        .parent()
+        .map(|directory| directory.join("bin").join(&binary));
+    if let Some(path) = nested.filter(|path| path.is_file()) {
+        return Ok(path);
+    }
+    let sibling = current.with_file_name(&binary);
     if sibling.is_file() {
         return Ok(sibling);
     }
@@ -1024,12 +1152,24 @@ fn helper_executable(name: &str) -> Result<PathBuf, ClientError> {
 }
 
 fn spawn_helper(executable: &Path, home: &Path) -> Result<Child, ClientError> {
-    Command::new(executable)
+    let mut command = Command::new(executable);
+    command
         .arg("--home")
         .arg(home)
-        .stdin(Stdio::null())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command
+            .arg("--shutdown-on-stdin-eof")
+            .stdin(Stdio::piped())
+            .creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    command.stdin(Stdio::null());
+    command
         .spawn()
         .map_err(|error| ClientError::Unavailable(error.to_string()))
 }

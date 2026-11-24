@@ -2,13 +2,16 @@ import { readFile } from 'node:fs/promises';
 import { expect, type Browser, type Page } from '@playwright/test';
 import { test, rig } from './rig';
 
-// The Runtime and all business data are real; only the host User-Agent differs.
-for (const desktop of [false, true]) {
-  test(`${desktop ? 'Desktop' : 'Browser'}: dock navigation, title clearance and last-row access`, async ({
+// The Runtime and all business data are real; only the host platform metadata differs.
+for (const host of ['browser', 'macos-desktop', 'windows-desktop'] as const) {
+  const macDesktop = host === 'macos-desktop';
+  const label =
+    host === 'browser' ? 'Browser' : macDesktop ? 'Desktop (macOS)' : 'Desktop (Windows)';
+  test(`${label}: dock navigation, title clearance and last-row access`, async ({
     browser,
     baseURL,
   }) => {
-    const workspace = desktop ? 'desktop_dock' : 'browser_dock';
+    const workspace = `${host.replace('-', '_')}_dock`;
     await rig({ op: 'create_workspace', workspace });
     for (let i = 0; i < 11; i++) {
       await rig({ op: 'create_agent', workspace, agent: `desk${i}` });
@@ -16,13 +19,25 @@ for (const desktop of [false, true]) {
     const context = await browser.newContext({
       baseURL,
       reducedMotion: 'reduce',
-      ...(desktop ? { userAgent: 'Mozilla/5.0 MeerkatDesktop/0.1.0' } : {}),
+      ...(macDesktop
+        ? { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X) MeerkatDesktop/0.1.0' }
+        : {}),
     });
     const page = await context.newPage();
     try {
       await page.addInitScript(
-        (id) => localStorage.setItem('meerkat.workspace', JSON.stringify(id)),
-        workspace,
+        ({ id, os }) => {
+          localStorage.setItem('meerkat.workspace', JSON.stringify(id));
+          if (os) {
+            (
+              window as unknown as { __MEERKAT_DESKTOP__?: { version: string; os: string } }
+            ).__MEERKAT_DESKTOP__ = {
+              version: '0.1.0',
+              os,
+            };
+          }
+        },
+        { id: workspace, os: host === 'browser' ? null : macDesktop ? 'macos' : 'windows' },
       );
       for (const viewport of [
         { width: 1240, height: 820 },
@@ -33,7 +48,7 @@ for (const desktop of [false, true]) {
         const bar = page.locator('header').filter({ has: page.locator('h1') });
         await expect(bar.locator('h1')).toBeVisible();
         expect((await bar.boundingBox())!.height).toBe(48);
-        expect((await bar.locator('h1').boundingBox())!.x).toBe(desktop ? 92 : 24);
+        expect((await bar.locator('h1').boundingBox())!.x).toBe(macDesktop ? 92 : 24);
         const centeredDock = async () => {
           const dock = (await page.getByTestId('dock').boundingBox())!;
           const size = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
@@ -53,7 +68,7 @@ for (const desktop of [false, true]) {
         await page.evaluate(() => document.exitFullscreen());
         await expect
           .poll(async () => (await bar.locator('h1').boundingBox())!.x)
-          .toBe(desktop ? 92 : 24);
+          .toBe(macDesktop ? 92 : 24);
         for (const name of ['team', 'office', 'members']) {
           await page.getByTestId(`nav-${name}`).click();
           await expect(page).toHaveURL(new RegExp(`#/${name}$`));
@@ -75,7 +90,7 @@ for (const desktop of [false, true]) {
         await page.keyboard.press('Escape');
         await expect(page).toHaveURL(/#\/members$/);
         await expect(page.getByTestId('member-name')).toBeHidden();
-        if (desktop) {
+        if (macDesktop) {
           const drag = await page.locator('header[data-tauri-drag-region]').evaluate((header) => {
             const r = header.getBoundingClientRect();
             return document.elementFromPoint(r.right - 80, r.y + r.height / 2) === header;
@@ -209,13 +224,19 @@ for (const viewport of [
     await rig({ op: 'create_agent', ...member });
     const context = await browser.newContext({
       baseURL,
-      userAgent: 'Mozilla/5.0 MeerkatDesktop/0.1.0',
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X) MeerkatDesktop/0.1.0',
       viewport,
     });
     const page = await context.newPage();
     try {
       await page.addInitScript((id) => {
         localStorage.setItem('meerkat.workspace', JSON.stringify(id));
+        (
+          window as unknown as { __MEERKAT_DESKTOP__?: { version: string; os: string } }
+        ).__MEERKAT_DESKTOP__ = {
+          version: '0.1.0',
+          os: 'macos',
+        };
       }, member.workspace);
       await page.goto(`/#/member/${member.agent}`);
       await page.getByRole('button', { name: /高级|Advanced/ }).click();

@@ -33,6 +33,8 @@ debug = "line-tables-only"
 debug = false
 
 [profile.release]
+lto = "thin"
+codegen-units = 1
 strip = "symbols"
 
 [workspace.package]

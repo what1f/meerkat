@@ -5,12 +5,16 @@
 //! restarted right after the swap so they never outlive the old app.
 
 use serde::Deserialize;
+#[cfg(target_os = "macos")]
 use sha2::{Digest, Sha256};
+#[cfg(target_os = "macos")]
 use std::{
     fs,
     io::Write as _,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+};
+use std::{
     sync::{
         Mutex,
         atomic::{AtomicBool, Ordering},
@@ -23,8 +27,11 @@ pub(crate) const MENU_ID: &str = "check-update";
 const LATEST_RELEASE: &str = "https://api.github.com/repos/what1f/meerkat/releases/latest";
 /// Points the updater at another release feed, e.g. a staging mirror.
 const FEED_ENV: &str = "MEERKAT_UPDATE_FEED";
+#[cfg(target_os = "macos")]
 const BUNDLE_ID: &str = "com.meerkat.desktop";
+#[cfg(target_os = "macos")]
 const STAGING_DIR: &str = ".Meerkat-update";
+#[cfg(target_os = "macos")]
 const PREVIOUS_BUNDLE: &str = ".Meerkat-previous.app";
 const FIRST_CHECK_DELAY: Duration = Duration::from_secs(20);
 const CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
@@ -41,21 +48,32 @@ enum Phase {
     Idle,
     /// A newer release this copy cannot replace in place.
     Available {
+        #[cfg(target_os = "macos")]
         version: String,
         page: String,
+        #[cfg(target_os = "macos")]
         prompted: bool,
     },
+    #[cfg(target_os = "macos")]
     Ready {
         version: String,
         staged: PathBuf,
         prompted: bool,
     },
+    #[cfg(target_os = "macos")]
     Applied,
 }
 
 enum Found {
-    Page { version: String, page: String },
-    Staged { version: String, staged: PathBuf },
+    Page {
+        version: String,
+        page: String,
+    },
+    #[cfg(target_os = "macos")]
+    Staged {
+        version: String,
+        staged: PathBuf,
+    },
 }
 
 impl Updater {
@@ -76,6 +94,7 @@ impl Updater {
         }
     }
 
+    #[cfg(target_os = "macos")]
     fn text(&self, zh: &'static str, en: &'static str) -> &'static str {
         if self.chinese { zh } else { en }
     }
@@ -89,17 +108,35 @@ impl Updater {
         let _ = self.item.set_enabled(false);
     }
 
+    #[cfg(target_os = "macos")]
     fn show_ready(&self) {
         let _ = self
             .item
             .set_text(self.text("重启以完成更新", "Restart to Update"));
         let _ = self.item.set_enabled(true);
     }
+
+    #[cfg(not(target_os = "macos"))]
+    fn show_available(&self, version: &str) {
+        let label = if self.chinese {
+            format!("下载 Meerkat {version}…")
+        } else {
+            format!("Download Meerkat {version}…")
+        };
+        let _ = self.item.set_text(label);
+        let _ = self.item.set_enabled(true);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn show_transient_status(&self, zh: &'static str, en: &'static str) {
+        let _ = self.item.set_text(if self.chinese { zh } else { en });
+        let _ = self.item.set_enabled(true);
+    }
 }
 
 /// Starts periodic checks for an installed bundle; development runs stay quiet.
 pub(crate) fn start(app: &AppHandle) {
-    if current_bundle().is_none() {
+    if !should_check_updates() {
         return;
     }
     let app = app.clone();
@@ -116,13 +153,29 @@ pub(crate) fn start(app: &AppHandle) {
 }
 
 pub(crate) fn menu_clicked(app: &AppHandle) {
-    let ready = matches!(
-        *app.state::<Updater>().phase.lock().unwrap(),
-        Phase::Ready { .. }
-    );
-    if ready {
-        restart(app);
-        return;
+    #[cfg(target_os = "macos")]
+    {
+        let ready = matches!(
+            *app.state::<Updater>().phase.lock().unwrap(),
+            Phase::Ready { .. }
+        );
+        if ready {
+            restart(app);
+            return;
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let page = match &*app.state::<Updater>().phase.lock().unwrap() {
+            Phase::Available { page, .. } => Some(page.clone()),
+            _ => None,
+        };
+        if let Some(page) = page
+            && let Ok(url) = Url::parse(&page)
+        {
+            crate::open_external(app, &url);
+            return;
+        }
     }
     let app = app.clone();
     std::thread::spawn(move || check(&app, true));
@@ -130,29 +183,40 @@ pub(crate) fn menu_clicked(app: &AppHandle) {
 
 /// Offers a found update once the user is back in the window.
 pub(crate) fn window_focused(app: &AppHandle) {
-    let pending = match &*app.state::<Updater>().phase.lock().unwrap() {
-        Phase::Ready { prompted, .. } | Phase::Available { prompted, .. } => !prompted,
-        _ => false,
-    };
-    if pending {
-        offer(app);
+    #[cfg(target_os = "macos")]
+    {
+        let pending = match &*app.state::<Updater>().phase.lock().unwrap() {
+            Phase::Ready { prompted, .. } | Phase::Available { prompted, .. } => !prompted,
+            _ => false,
+        };
+        if pending {
+            offer(app);
+        }
     }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
 }
 
 /// Installs a downloaded update when the user quits without restarting.
 pub(crate) fn install_on_exit(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
     if let Err(error) = install(app) {
         eprintln!("meerkat-desktop: could not install update: {error}");
     }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
 }
 
 fn check(app: &AppHandle, manual: bool) {
     let updater = app.state::<Updater>();
-    if matches!(
+    #[cfg(target_os = "macos")]
+    let already_done = matches!(
         *updater.phase.lock().unwrap(),
         Phase::Ready { .. } | Phase::Applied
-    ) || updater.busy.swap(true, Ordering::SeqCst)
-    {
+    );
+    #[cfg(not(target_os = "macos"))]
+    let already_done = false;
+    if already_done || updater.busy.swap(true, Ordering::SeqCst) {
         return;
     }
     updater.show_busy();
@@ -165,15 +229,34 @@ fn check(app: &AppHandle, manual: bool) {
 
     match outcome {
         Ok(None) => {
-            updater.show_idle();
+            *updater.phase.lock().unwrap() = Phase::Idle;
+            #[cfg(target_os = "macos")]
+            {
+                updater.show_idle();
+                if manual {
+                    let title = updater.text("Meerkat 已是最新版本", "Meerkat is up to date");
+                    let ok = updater.text("好", "OK");
+                    on_main(app, move |_| {
+                        alert(title, None, &[ok]);
+                    });
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
             if manual {
-                let title = updater.text("Meerkat 已是最新版本", "Meerkat is up to date");
-                let ok = updater.text("好", "OK");
-                on_main(app, move |_| {
-                    alert(title, None, &[ok]);
+                updater.show_transient_status("已是最新版本", "Up to date");
+                let app = app.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_secs(4));
+                    let updater = app.state::<Updater>();
+                    if matches!(*updater.phase.lock().unwrap(), Phase::Idle) {
+                        updater.show_idle();
+                    }
                 });
+            } else {
+                updater.show_idle();
             }
         }
+        #[cfg(target_os = "macos")]
         Ok(Some(Found::Staged { version, staged })) => {
             *updater.phase.lock().unwrap() = Phase::Ready {
                 version,
@@ -186,33 +269,62 @@ fn check(app: &AppHandle, manual: bool) {
             }
         }
         Ok(Some(Found::Page { version, page })) => {
-            updater.show_idle();
-            let mut phase = updater.phase.lock().unwrap();
-            let seen = matches!(&*phase, Phase::Available { version: known, prompted: true, .. } if *known == version);
-            *phase = Phase::Available {
-                version,
-                page,
-                prompted: seen && !manual,
-            };
-            drop(phase);
-            if manual || (!seen && window_is_focused(app)) {
-                offer(app);
+            #[cfg(target_os = "macos")]
+            {
+                updater.show_idle();
+                let mut phase = updater.phase.lock().unwrap();
+                let seen = matches!(&*phase, Phase::Available { version: known, prompted: true, .. } if *known == version);
+                *phase = Phase::Available {
+                    version,
+                    page,
+                    prompted: seen && !manual,
+                };
+                drop(phase);
+                if manual || (!seen && window_is_focused(app)) {
+                    offer(app);
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                updater.show_available(&version);
+                *updater.phase.lock().unwrap() = Phase::Available { page: page.clone() };
+                if manual && let Ok(url) = Url::parse(&page) {
+                    crate::open_external(app, &url);
+                }
             }
         }
         Err(error) => {
             eprintln!("meerkat-desktop: update check failed: {error}");
-            updater.show_idle();
+            #[cfg(target_os = "macos")]
+            {
+                updater.show_idle();
+                if manual {
+                    let title = updater.text("暂时无法检查更新", "Couldn't check for updates");
+                    let ok = updater.text("好", "OK");
+                    on_main(app, move |_| {
+                        alert(title, None, &[ok]);
+                    });
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
             if manual {
-                let title = updater.text("暂时无法检查更新", "Couldn't check for updates");
-                let ok = updater.text("好", "OK");
-                on_main(app, move |_| {
-                    alert(title, None, &[ok]);
+                updater.show_transient_status("暂时无法检查更新", "Couldn't check for updates");
+                let app = app.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_secs(4));
+                    let updater = app.state::<Updater>();
+                    if matches!(*updater.phase.lock().unwrap(), Phase::Idle) {
+                        updater.show_idle();
+                    }
                 });
+            } else {
+                updater.show_idle();
             }
         }
     }
 }
 
+#[cfg(target_os = "macos")]
 fn offer(app: &AppHandle) {
     on_main(app, |app| {
         let updater = app.state::<Updater>();
@@ -273,6 +385,7 @@ fn offer(app: &AppHandle) {
     });
 }
 
+#[cfg(target_os = "macos")]
 fn restart(app: &AppHandle) {
     match install(app) {
         Ok(Some(bundle)) => {
@@ -294,6 +407,7 @@ fn restart(app: &AppHandle) {
 }
 
 /// Swaps the staged bundle in and restarts both helpers from it.
+#[cfg(target_os = "macos")]
 fn install(app: &AppHandle) -> Result<Option<PathBuf>, String> {
     let updater = app.state::<Updater>();
     let staged = {
@@ -322,6 +436,7 @@ fn install(app: &AppHandle) -> Result<Option<PathBuf>, String> {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn swap(staged: &Path) -> Result<PathBuf, String> {
     let bundle = current_bundle().ok_or("not running from an installed bundle")?;
     let parent = bundle.parent().ok_or("bundle has no parent")?;
@@ -337,6 +452,7 @@ fn swap(staged: &Path) -> Result<PathBuf, String> {
 }
 
 /// Opens the new bundle once this process has exited.
+#[cfg(target_os = "macos")]
 fn relaunch(bundle: &Path) {
     use std::os::unix::process::CommandExt as _;
     let script =
@@ -402,48 +518,72 @@ async fn find_and_stage() -> Result<Option<Found>, String> {
         return Ok(None);
     }
 
-    let page = Found::Page {
-        version: version.clone(),
-        page: release.html_url.clone(),
-    };
     let architecture = match std::env::consts::ARCH {
         "aarch64" => "arm64",
         other => other,
     };
-    let archive_name = format!("Meerkat-{version}-macos-{architecture}.zip");
-    let checksum_name = format!("Meerkat-{version}-macos-{architecture}.sha256");
-    let (Some(archive_url), Some(checksum_url), Some(bundle)) = (
-        release.asset(&archive_name),
-        release.asset(&checksum_name),
-        current_bundle(),
-    ) else {
-        return Ok(Some(page));
-    };
-    // Staging beside the bundle proves it is writable and keeps the swap a rename.
-    let Some(staging) = bundle.parent().map(|parent| parent.join(STAGING_DIR)) else {
-        return Ok(Some(page));
-    };
-    let _ = fs::remove_dir_all(&staging);
-    if fs::create_dir(&staging).is_err() {
-        return Ok(Some(page));
-    }
-
-    let staged = stage(
-        &client,
-        archive_url,
-        &archive_name,
-        checksum_url,
-        &staging,
-        &version,
-        &bundle,
-    )
-    .await;
-    if staged.is_err() {
+    #[cfg(target_os = "macos")]
+    {
+        let page = Found::Page {
+            version: version.clone(),
+            page: release.html_url.clone(),
+        };
+        let archive_name = format!("Meerkat-{version}-macos-{architecture}.zip");
+        let checksum_name = format!("Meerkat-{version}-macos-{architecture}.sha256");
+        let (Some(archive_url), Some(checksum_url), Some(bundle)) = (
+            release.asset(&archive_name),
+            release.asset(&checksum_name),
+            current_bundle(),
+        ) else {
+            return Ok(Some(page));
+        };
+        // Staging beside the bundle proves it is writable and keeps the swap a rename.
+        let Some(staging) = bundle.parent().map(|parent| parent.join(STAGING_DIR)) else {
+            return Ok(Some(page));
+        };
         let _ = fs::remove_dir_all(&staging);
+        if fs::create_dir(&staging).is_err() {
+            return Ok(Some(page));
+        }
+
+        let staged = stage(
+            &client,
+            archive_url,
+            &archive_name,
+            checksum_url,
+            &staging,
+            &version,
+            &bundle,
+        )
+        .await;
+        if staged.is_err() {
+            let _ = fs::remove_dir_all(&staging);
+        }
+        staged.map(|staged| Some(Found::Staged { version, staged }))
     }
-    staged.map(|staged| Some(Found::Staged { version, staged }))
+    #[cfg(not(target_os = "macos"))]
+    {
+        let download_url = match std::env::consts::OS {
+            "windows" => release
+                .asset(&format!(
+                    "Meerkat-{version}-windows-{architecture}-setup.exe"
+                ))
+                .or_else(|| {
+                    release.asset(&format!("Meerkat-{version}-windows-{architecture}.zip"))
+                }),
+            "linux" => release.asset(&format!("Meerkat-{version}-linux-{architecture}.tar.gz")),
+            _ => None,
+        }
+        .map(str::to_owned)
+        .unwrap_or_else(|| release.html_url.clone());
+        Ok(Some(Found::Page {
+            version,
+            page: download_url,
+        }))
+    }
 }
 
+#[cfg(target_os = "macos")]
 async fn stage(
     client: &reqwest::Client,
     archive_url: &str,
@@ -504,6 +644,7 @@ async fn stage(
     Ok(staged)
 }
 
+#[cfg(target_os = "macos")]
 fn verify(staged: &Path, version: &str, current: &Path) -> Result<(), String> {
     run(Command::new("/usr/bin/codesign")
         .args(["--verify", "--deep", "--strict"])
@@ -523,6 +664,7 @@ fn verify(staged: &Path, version: &str, current: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 fn plist_value(plist: &Path, key: &str) -> Result<String, String> {
     let output = Command::new("/usr/bin/plutil")
         .args(["-extract", key, "raw", "-o", "-"])
@@ -535,6 +677,7 @@ fn plist_value(plist: &Path, key: &str) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
+#[cfg(target_os = "macos")]
 fn signing_team(bundle: &Path) -> Option<String> {
     let output = Command::new("/usr/bin/codesign")
         .args(["-dv", "--verbose=2"])
@@ -549,6 +692,7 @@ fn signing_team(bundle: &Path) -> Option<String> {
         .map(str::to_owned)
 }
 
+#[cfg(target_os = "macos")]
 fn run(command: &mut Command) -> Result<(), String> {
     let output = command.output().map_err(|error| error.to_string())?;
     if output.status.success() {
@@ -572,7 +716,26 @@ fn is_newer(candidate: &str, current: &str) -> bool {
     }
 }
 
+fn should_check_updates() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        current_bundle().is_some()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        if std::env::var_os(FEED_ENV).is_some() {
+            return true;
+        }
+        std::env::current_exe().ok().is_some_and(|path| {
+            !path
+                .components()
+                .any(|component| component.as_os_str() == "target")
+        })
+    }
+}
+
 /// The installed `.app` this process runs from, if it can be replaced.
+#[cfg(target_os = "macos")]
 fn current_bundle() -> Option<PathBuf> {
     let executable = std::env::current_exe().ok()?;
     let bundle = executable.parent()?.parent()?.parent()?;
@@ -586,12 +749,14 @@ fn current_bundle() -> Option<PathBuf> {
     (is_bundle && !translocated).then(|| bundle.to_path_buf())
 }
 
+#[cfg(target_os = "macos")]
 fn window_is_focused(app: &AppHandle) -> bool {
     app.get_webview_window("main")
         .and_then(|window| window.is_focused().ok())
         .unwrap_or(false)
 }
 
+#[cfg(target_os = "macos")]
 fn on_main(app: &AppHandle, task: impl FnOnce(&AppHandle) + Send + 'static) {
     let handle = app.clone();
     if let Err(error) = app.run_on_main_thread(move || task(&handle)) {
@@ -600,6 +765,7 @@ fn on_main(app: &AppHandle, task: impl FnOnce(&AppHandle) + Send + 'static) {
 }
 
 /// Shows an app-modal alert and returns the index of the chosen button.
+#[cfg(target_os = "macos")]
 fn alert(title: &str, detail: Option<&str>, buttons: &[&str]) -> usize {
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSAlert, NSAlertFirstButtonReturn};

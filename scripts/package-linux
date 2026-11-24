@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# Packages the Linux Desktop archive from a verified release build:
+# Meerkat-<version>-linux-<arch>.tar.gz + .sha256.
+set -euo pipefail
+export PYTHONUTF8=1
+
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+python3 "$ROOT_DIR/scripts/verify-production-boundary"
+
+TARGET="${1:-}"
+if [[ -z "$TARGET" ]]; then
+  case "$(uname -m)" in
+    x86_64|amd64) TARGET="x86_64-unknown-linux-gnu" ;;
+    aarch64|arm64) TARGET="aarch64-unknown-linux-gnu" ;;
+    *) echo "Unsupported Linux architecture: $(uname -m)" >&2; exit 2 ;;
+  esac
+fi
+
+case "$TARGET" in
+  x86_64-unknown-linux-gnu) ARCH="x86_64" ;;
+  aarch64-unknown-linux-gnu) ARCH="arm64" ;;
+  *) echo "usage: ./scripts/package-linux [x86_64-unknown-linux-gnu|aarch64-unknown-linux-gnu]" >&2; exit 2 ;;
+esac
+
+TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT_DIR/target}"
+RELEASE_DIR="${MEERKAT_RELEASE_BIN_DIR:-$TARGET_DIR/$TARGET/release}"
+if [[ ! -d "$RELEASE_DIR" && -d "$TARGET_DIR/release" ]]; then
+  RELEASE_DIR="$TARGET_DIR/release"
+fi
+OUTPUT_DIR="${MEERKAT_PACKAGE_OUTPUT_DIR:-$RELEASE_DIR}"
+PROVENANCE="${MEERKAT_RELEASE_PROVENANCE:-$RELEASE_DIR/build-provenance.json}"
+
+python3 "$ROOT_DIR/scripts/release-provenance" verify --binary-dir "$RELEASE_DIR" --output "$PROVENANCE"
+
+VERSION="$(sed -nE 's/^version = "([^"]+)"/\1/p' "$ROOT_DIR/apps/desktop/Cargo.toml" | head -n 1)"
+NAME="Meerkat-$VERSION-linux-$ARCH"
+BINARIES=(meerkat-desktop meerkatd meerkat-machine meerkat meerkat-agent)
+
+for binary in "${BINARIES[@]}"; do
+  [[ -x "$RELEASE_DIR/$binary" ]] || {
+    echo "release binary is missing: $RELEASE_DIR/$binary" >&2
+    exit 4
+  }
+done
+
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+BUNDLE="$STAGE/$NAME"
+mkdir -p "$BUNDLE"
+
+for binary in "${BINARIES[@]}"; do
+  install -m 0755 "$RELEASE_DIR/$binary" "$BUNDLE/$binary"
+done
+
+cp "$ROOT_DIR/apps/desktop/assets/app-icon.png" "$BUNDLE/meerkat.png"
+cat > "$BUNDLE/install-desktop.sh" <<'EOF'
+#!/usr/bin/env sh
+# Registers a desktop launcher pointing to this extracted Meerkat directory.
+set -eu
+DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+APP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+mkdir -p "$APP_DIR"
+cat > "$APP_DIR/meerkat.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Meerkat
+Comment=Local multi-agent collaboration desktop app
+Exec="$DIR/meerkat-desktop"
+Icon=$DIR/meerkat.png
+Categories=Development;Utility;
+Terminal=false
+StartupWMClass=meerkat-desktop
+DESKTOP
+printf 'Installed launcher: %s/meerkat.desktop\n' "$APP_DIR"
+EOF
+chmod 0755 "$BUNDLE/install-desktop.sh"
+
+cp "$ROOT_DIR/LICENSE" "$ROOT_DIR/THIRD_PARTY_LICENSES.md" "$BUNDLE/"
+cp -R "$ROOT_DIR/licenses" "$BUNDLE/licenses"
+AGENT_SOURCE="$TARGET_DIR/builtin-agent/src"
+mkdir -p "$BUNDLE/licenses/builtin-agent"
+cp "$AGENT_SOURCE/LICENSE" "$AGENT_SOURCE/THIRD_PARTY_NOTICES.md" \
+  "$BUNDLE/licenses/builtin-agent/"
+
+mkdir -p "$OUTPUT_DIR"
+ARCHIVE="$OUTPUT_DIR/$NAME.tar.gz"
+tar -czf "$ARCHIVE" -C "$STAGE" "$NAME"
+python3 -c '
+import hashlib, pathlib, sys
+archive = pathlib.Path(sys.argv[1])
+checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
+archive.with_name(sys.argv[2]).write_text(f"{checksum}  {archive.name}\n", encoding="utf-8")
+' "$ARCHIVE" "$NAME.sha256"
+
+echo "Package ready: $ARCHIVE"

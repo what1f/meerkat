@@ -90,11 +90,15 @@ fn name(path: &Path) -> io::Result<Name<'static>> {
 
 #[cfg(windows)]
 fn current_user_sid() -> io::Result<&'static str> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     static SID: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
     SID.get_or_init(|| {
         let output = std::process::Command::new("whoami")
             .args(["/user", "/fo", "csv", "/nh"])
+            .stdin(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .ok()?;
         let listing = String::from_utf8_lossy(&output.stdout);

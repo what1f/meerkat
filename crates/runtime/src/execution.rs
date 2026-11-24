@@ -1167,8 +1167,7 @@ fn execution_id_from_request_key(request_key: &str) -> Result<i64, RuntimeError>
 
 fn generate_execution_token() -> Result<String, RuntimeError> {
     let mut bytes = [0_u8; 32];
-    std::fs::File::open("/dev/urandom")
-        .and_then(|mut file| file.read_exact(&mut bytes))
+    getrandom::fill(&mut bytes)
         .map_err(|error| RuntimeError::Application(format!("execution token: {error}")))?;
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }

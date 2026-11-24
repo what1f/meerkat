@@ -32,7 +32,7 @@ def verify_reaction_assets(errors):
         if not required.is_file():
             errors.append(f"{required.relative_to(ROOT)}: required production asset definition is missing")
             return
-    catalog = json.loads(catalog_path.read_text())
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
     expected_count = 279
 
     if len(catalog) != expected_count:
@@ -74,7 +74,7 @@ def main():
     known_test_images = {hashlib.sha256(path.read_bytes()).hexdigest() for path in fixture_assets.glob("*") if path.is_file()}
     for group in ("apps", "crates", "providers", "harnesses", "tools"):
         for manifest in sorted((ROOT / group).glob("*/Cargo.toml")):
-            package = tomllib.loads(manifest.read_text())
+            package = tomllib.loads(manifest.read_text(encoding="utf-8"))
             name = package["package"]["name"]
             if name in TEST_ONLY:
                 continue
@@ -97,7 +97,7 @@ def main():
             for source in sorted((manifest.parent / "src").rglob("*.rs")):
                 if source.stem in {"e2e", "tests", "scripted_harness"}:
                     errors.append(f"{source.relative_to(ROOT)}: move test code out of production src")
-                content = source.read_text()
+                content = source.read_text(encoding="utf-8")
                 # Covers direct include_* paths and local embedding macros alike.
                 if re.search(r'"[^"\n]*(?:/tests/|/fixtures/|/demo/)[^"\n]*"', content):
                     errors.append(f"{source.relative_to(ROOT)}: production source references isolated test data")

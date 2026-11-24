@@ -42,16 +42,17 @@ const API_KEY_LEVELS: [&str; 6] = ["disable", "low", "medium", "high", "xhigh", 
 /// Locate the binary: next to this executable, then the app bundle's
 /// `Resources/bin`, then PATH (same order as the Machine's capability CLI).
 pub fn discover() -> Option<PathBuf> {
+    let name = format!("{EXECUTABLE}{}", std::env::consts::EXE_SUFFIX);
     let executable = std::env::current_exe().ok()?;
-    let mut candidates = vec![executable.with_file_name(EXECUTABLE)];
+    let mut candidates = vec![executable.with_file_name(&name)];
     if let Some(contents) = executable
         .ancestors()
         .find(|path| path.file_name().is_some_and(|name| name == "Contents"))
     {
-        candidates.push(contents.join("Resources/bin").join(EXECUTABLE));
+        candidates.push(contents.join("Resources/bin").join(&name));
     }
     if let Some(path) = std::env::var_os("PATH") {
-        candidates.extend(std::env::split_paths(&path).map(|directory| directory.join(EXECUTABLE)));
+        candidates.extend(std::env::split_paths(&path).map(|directory| directory.join(&name)));
     }
     candidates.into_iter().find(|path| executable_file(path))
 }
@@ -593,6 +594,7 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<(), HarnessError> {
         let mut file = options.open(&temporary)?;
         file.write_all(bytes)?;
         file.sync_all()?;
+        drop(file);
         fs::rename(&temporary, path)
     })();
     if result.is_err() {

@@ -76,8 +76,11 @@ impl PersistedState {
                 .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?,
         )?;
         file.sync_all()?;
+        drop(file);
         fs::rename(temporary, path)?;
-        fs::File::open(parent)?.sync_all()
+        #[cfg(unix)]
+        fs::File::open(parent)?.sync_all()?;
+        Ok(())
     }
 }
 

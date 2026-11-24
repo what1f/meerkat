@@ -45,8 +45,7 @@ impl RuntimePaths {
     }
 
     pub fn local_default() -> Result<Self, AppError> {
-        let user_home = std::env::var_os("HOME").ok_or(AppError::MissingHome)?;
-        Self::for_home(PathBuf::from(user_home).join(".meerkat"))
+        Self::for_home(user_home()?.join(".meerkat"))
     }
 
     pub fn prepare(&self) -> Result<(), AppError> {
@@ -67,6 +66,14 @@ impl RuntimePaths {
         }
         Ok(self.workspaces.join(workspace_id))
     }
+}
+
+fn user_home() -> Result<PathBuf, AppError> {
+    let variable = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    std::env::var_os(variable)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .ok_or(AppError::MissingHome)
 }
 
 #[derive(Clone, Debug, Serialize)]

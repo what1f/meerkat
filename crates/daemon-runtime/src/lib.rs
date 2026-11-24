@@ -9,11 +9,15 @@ use std::process::{Command, Stdio};
 
 #[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 #[cfg(unix)]
 const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
 #[cfg(unix)]
 const PRIVATE_FILE_MODE: u32 = 0o600;
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Debug)]
 pub enum DaemonRuntimeError {
@@ -74,6 +78,7 @@ fn restrict_to_current_user(path: &Path) -> Result<(), DaemonRuntimeError> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
         .status()?;
     if !restricted.success() {
         return Err(DaemonRuntimeError::UnsafeDirectory);
@@ -85,7 +90,7 @@ fn restrict_to_current_user(path: &Path) -> Result<(), DaemonRuntimeError> {
 pub struct InstanceGuard {
     path: PathBuf,
     token: String,
-    _file: File,
+    _file: Option<File>,
 }
 
 impl InstanceGuard {
@@ -103,6 +108,14 @@ impl InstanceGuard {
         options.write(true).create_new(true);
         #[cfg(unix)]
         options.mode(PRIVATE_FILE_MODE);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            // Allow other processes to read the lock token while preventing concurrent
+            // deletion or overwrite until the owning process drops the handle or exits.
+            const FILE_SHARE_READ: u32 = 0x0000_0001;
+            options.share_mode(FILE_SHARE_READ);
+        }
         let mut file = loop {
             match options.open(lock_path) {
                 Ok(file) => break file,
@@ -119,7 +132,7 @@ impl InstanceGuard {
         Ok(Self {
             path: lock_path.to_path_buf(),
             token,
-            _file: file,
+            _file: Some(file),
         })
     }
 }
@@ -161,6 +174,8 @@ fn reclaim_stale_instance_lock(
     match fs::remove_file(lock_path) {
         Ok(()) => Ok(true),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(true),
+        #[cfg(windows)]
+        Err(error) if error.raw_os_error() == Some(32) => Ok(false),
         Err(error) => Err(error.into()),
     }
 }
@@ -218,7 +233,9 @@ fn instance_process_is_alive(pid: u32) -> Result<Option<bool>, DaemonRuntimeErro
 fn instance_process_is_alive(pid: u32) -> Result<Option<bool>, DaemonRuntimeError> {
     let output = Command::new("tasklist")
         .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+        .stdin(Stdio::null())
         .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
         .output()?;
     if !output.status.success() {
         return Ok(None);
@@ -234,6 +251,8 @@ fn instance_process_is_alive(_pid: u32) -> Result<Option<bool>, DaemonRuntimeErr
 
 impl Drop for InstanceGuard {
     fn drop(&mut self) {
+        // Close the lock file handle before deleting so Windows does not refuse removal.
+        self._file.take();
         if fs::read_to_string(&self.path).is_ok_and(|contents| contents == self.token) {
             let _ = fs::remove_file(&self.path);
         }

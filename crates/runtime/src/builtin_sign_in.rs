@@ -75,7 +75,8 @@ impl BuiltinSignIns {
                 let guard = self.login.clone().lock_owned().await;
                 let home =
                     TempHome::create().map_err(|_| Status::internal("Sign-in could not start"))?;
-                let mut child = Command::new(executable)
+                let mut command = Command::new(executable);
+                command
                     .args(["login", "codex"])
                     .env("FX_HOME", home.path())
                     .env("FX_AUTO_UPGRADE", "0")
@@ -86,7 +87,13 @@ impl BuiltinSignIns {
                     .stdin(Stdio::null())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
-                    .kill_on_drop(true)
+                    .kill_on_drop(true);
+                #[cfg(windows)]
+                {
+                    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+                    command.creation_flags(CREATE_NO_WINDOW);
+                }
+                let mut child = command
                     .spawn()
                     .map_err(|_| Status::unavailable("Sign-in could not start"))?;
                 let stdout = child.stdout.take().expect("piped stdout");
@@ -284,16 +291,17 @@ fn read_auth(home: &Path) -> Option<String> {
 /// Same lookup order as the Machine: next to this executable, then the app
 /// bundle's `Resources/bin`, then PATH.
 pub(crate) fn discover() -> Option<PathBuf> {
+    let name = format!("{EXECUTABLE}{}", std::env::consts::EXE_SUFFIX);
     let executable = std::env::current_exe().ok()?;
-    let mut candidates = vec![executable.with_file_name(EXECUTABLE)];
+    let mut candidates = vec![executable.with_file_name(&name)];
     if let Some(contents) = executable
         .ancestors()
         .find(|path| path.file_name().is_some_and(|name| name == "Contents"))
     {
-        candidates.push(contents.join("Resources/bin").join(EXECUTABLE));
+        candidates.push(contents.join("Resources/bin").join(&name));
     }
     if let Some(path) = std::env::var_os("PATH") {
-        candidates.extend(std::env::split_paths(&path).map(|directory| directory.join(EXECUTABLE)));
+        candidates.extend(std::env::split_paths(&path).map(|directory| directory.join(&name)));
     }
     candidates.into_iter().find(|path| executable_file(path))
 }
@@ -324,6 +332,7 @@ impl TempHome {
     fn create() -> std::io::Result<Self> {
         let path =
             std::env::temp_dir().join(format!("meerkat-sign-in-{}", uuid::Uuid::new_v4().simple()));
+        #[cfg_attr(not(unix), allow(unused_mut))]
         let mut builder = std::fs::DirBuilder::new();
         #[cfg(unix)]
         {

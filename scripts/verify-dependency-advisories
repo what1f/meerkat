@@ -9,7 +9,7 @@ audit() {
   local target="$1" product="$2" manifest
   local roots=(apps/machine/Cargo.toml apps/meerkat-cli/Cargo.toml)
   case "$target" in
-    aarch64-apple-darwin|x86_64-apple-darwin|aarch64-unknown-linux-gnu|x86_64-unknown-linux-gnu) ;;
+    aarch64-apple-darwin|x86_64-apple-darwin|aarch64-unknown-linux-gnu|x86_64-unknown-linux-gnu|x86_64-pc-windows-msvc) ;;
     *) echo "Unsupported advisory target: $target" >&2; return 2 ;;
   esac
   case "$product" in
@@ -27,8 +27,9 @@ audit() {
 if [[ $# == 0 ]]; then
   audit aarch64-apple-darwin desktop
   audit x86_64-apple-darwin desktop
-  audit x86_64-unknown-linux-gnu machine
-  audit aarch64-unknown-linux-gnu machine
+  audit x86_64-unknown-linux-gnu desktop
+  audit aarch64-unknown-linux-gnu desktop
+  audit x86_64-pc-windows-msvc desktop
 elif [[ $# == 2 ]]; then
   audit "$1" "$2"
 else

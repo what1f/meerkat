@@ -1,8 +1,9 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod backend;
 mod background_services;
 #[cfg(target_os = "macos")]
 mod traffic_lights;
-#[cfg(target_os = "macos")]
 mod updater;
 
 use backend::DesktopBackend;
@@ -161,6 +162,7 @@ fn allow_navigation(app: &tauri::AppHandle, url: &Url) -> bool {
                 }
                 start_services(app);
             }
+            #[cfg(target_os = "macos")]
             Some("settings") => open_external(
                 app,
                 &Url::parse("x-apple.systempreferences:com.apple.LoginItems-Settings.extension")
@@ -200,8 +202,21 @@ fn main() {
             let chinese = objc2_foundation::NSLocale::preferredLanguages()
                 .firstObject()
                 .is_some_and(|language| language.to_string().starts_with("zh"));
-            #[cfg(not(target_os = "macos"))]
-            let chinese = std::env::var("LANG").unwrap_or_default().starts_with("zh");
+            #[cfg(windows)]
+            let chinese = sys_locale::get_locale()
+                .or_else(|| std::env::var("LC_ALL").ok().filter(|v| !v.is_empty()))
+                .or_else(|| std::env::var("LANG").ok())
+                .unwrap_or_default()
+                .to_ascii_lowercase()
+                .starts_with("zh");
+            #[cfg(not(any(target_os = "macos", windows)))]
+            let chinese = std::env::var("LC_ALL")
+                .ok()
+                .filter(|value| !value.is_empty())
+                .or_else(|| std::env::var("LANG").ok())
+                .unwrap_or_default()
+                .to_ascii_lowercase()
+                .starts_with("zh");
             let open = MenuItem::with_id(
                 app,
                 "open-browser",
@@ -234,7 +249,6 @@ fn main() {
                     ..Default::default()
                 }),
             )?;
-            #[cfg(target_os = "macos")]
             let check_update = MenuItem::with_id(
                 app,
                 updater::MENU_ID,
@@ -242,7 +256,6 @@ fn main() {
                 true,
                 None::<&str>,
             )?;
-            #[cfg(target_os = "macos")]
             app.manage(updater::Updater::new(chinese, check_update.clone()));
             let quit = MenuItem::with_id(
                 app,
@@ -265,7 +278,6 @@ fn main() {
                         true,
                         &[
                             &about,
-                            #[cfg(target_os = "macos")]
                             &check_update,
                             &PredefinedMenuItem::separator(app)?,
                             &settings,
@@ -325,7 +337,12 @@ fn main() {
                     .title("Meerkat")
                     .inner_size(1240.0, 820.0)
                     .min_inner_size(960.0, 660.0)
-                    .transparent(true)
+                    .transparent(cfg!(target_os = "macos"))
+                    .initialization_script(format!(
+                        "window.__MEERKAT_DESKTOP__ = {{ version: {:?}, os: {:?} }};",
+                        env!("CARGO_PKG_VERSION"),
+                        std::env::consts::OS,
+                    ))
                     .on_page_load(|window, payload| {
                         if payload.event() == tauri::webview::PageLoadEvent::Finished {
                             sync_window_fullscreen(&window);
@@ -372,7 +389,10 @@ fn main() {
                     .title_bar_style(tauri::TitleBarStyle::Overlay)
                     .hidden_title(true)
             };
+            #[cfg(target_os = "macos")]
             let window = builder.build()?;
+            #[cfg(not(target_os = "macos"))]
+            let _window = builder.build()?;
             #[cfg(target_os = "macos")]
             window_vibrancy::apply_vibrancy(
                 &window,
@@ -383,12 +403,10 @@ fn main() {
             #[cfg(target_os = "macos")]
             traffic_lights::install(&window)?;
             start_services(&handle);
-            #[cfg(target_os = "macos")]
             updater::start(&handle);
             Ok(())
         })
         .on_window_event(|window, event| {
-            #[cfg(target_os = "macos")]
             if matches!(event, tauri::WindowEvent::Focused(true)) {
                 updater::window_focused(window.app_handle());
             }
@@ -402,7 +420,6 @@ fn main() {
         })
         .on_menu_event(|app, event| match event.id().as_ref() {
             "quit" => app.exit(0),
-            #[cfg(target_os = "macos")]
             updater::MENU_ID => updater::menu_clicked(app),
             "settings" => {
                 if app
@@ -434,7 +451,6 @@ fn main() {
         .expect("failed to build Meerkat")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
-                #[cfg(target_os = "macos")]
                 updater::install_on_exit(app);
                 if let Some(backend) = app.state::<ShellState>().backend.lock().unwrap().as_ref() {
                     backend.stop_local_services();

@@ -44,8 +44,10 @@ const payload = {
               aria-expanded="false"
               aria-label={d.choosePlatform}
             >
-              <Icon name="apple" size={15} class="os-icon" />
-              <span class="os">{d.osMac}</span>
+              <span class="os-icon" data-selected-icon="apple"><Icon name="apple" size={15} /></span>
+              <span class="os-icon" data-selected-icon="windows" hidden><Icon name="windows" size={14} /></span>
+              <span class="os-icon" data-selected-icon="linux" hidden><Icon name="linux" size={15} /></span>
+              <span class="os" data-selected-os>{d.osMac}</span>
               <span class="arch" data-selected-arch>{d.archArm}</span>
               <Icon name="chevron-down" size={14} class="chev" />
             </button>
@@ -92,12 +94,67 @@ const payload = {
                   <Icon name="check" size={14} />
                 </span>
               </button>
+
+              <button
+                type="button"
+                class="platform-opt"
+                role="option"
+                aria-selected="false"
+                data-platform-option="windows-x86_64"
+              >
+                <span class="opt-icon" aria-hidden="true">
+                  <Icon name="windows" size={14} />
+                </span>
+                <span class="opt-label">
+                  <span class="os">{d.osWindows}</span>
+                  <span class="arch">{d.archX64}</span>
+                </span>
+                <span class="opt-check" aria-hidden="true">
+                  <Icon name="check" size={14} />
+                </span>
+              </button>
+
+              <button
+                type="button"
+                class="platform-opt"
+                role="option"
+                aria-selected="false"
+                data-platform-option="linux-x86_64"
+              >
+                <span class="opt-icon" aria-hidden="true">
+                  <Icon name="linux" size={15} />
+                </span>
+                <span class="opt-label">
+                  <span class="os">{d.osLinux}</span>
+                  <span class="arch">{d.archX64}</span>
+                </span>
+                <span class="opt-check" aria-hidden="true">
+                  <Icon name="check" size={14} />
+                </span>
+              </button>
+
+              <button
+                type="button"
+                class="platform-opt"
+                role="option"
+                aria-selected="false"
+                data-platform-option="linux-arm64"
+              >
+                <span class="opt-icon" aria-hidden="true"></span>
+                <span class="opt-label">
+                  <span class="os">{d.osLinux}</span>
+                  <span class="arch">{d.archArm64}</span>
+                </span>
+                <span class="opt-check" aria-hidden="true">
+                  <Icon name="check" size={14} />
+                </span>
+              </button>
             </div>
           </div>
 
           <a
             class="btn btn-primary btn-lg download-cta"
-            href={release.assets['macos-arm64']}
+            href={release.assets['macos-arm64'] ?? release.htmlUrl}
             data-primary-download
           >
             <span>{d.cta}</span>
@@ -128,12 +185,26 @@ const payload = {
     copy: {
       subDefault: string;
       subWindows: string;
+      subLinux: string;
+      osMac: string;
+      osWindows: string;
+      osLinux: string;
       archArm: string;
       archIntel: string;
+      archX64: string;
+      archArm64: string;
     };
   }
 
-  const CACHE_KEY = 'meerkat-latest-release-v1';
+  const ASSET_KEYS: AssetKey[] = [
+    'macos-arm64',
+    'macos-x86_64',
+    'windows-x86_64',
+    'linux-x86_64',
+    'linux-arm64',
+  ];
+
+  const CACHE_KEY = 'meerkat-latest-release-v2';
   const CACHE_TTL_MS = 15 * 60 * 1000;
 
   const root = document.querySelector<HTMLElement>('[data-dl-page]');
@@ -145,28 +216,57 @@ const payload = {
     const { copy } = payload;
 
     let selected: AssetKey = 'macos-arm64';
+    let detected: DetectedPlatform = 'other';
     let userPicked = false;
     let menuOpen = false;
 
     const sub = root.querySelector<HTMLElement>('[data-dl-sub]');
     const trigger = root.querySelector<HTMLButtonElement>('[data-platform-trigger]');
+    const selectedOsEl = root.querySelector<HTMLElement>('[data-selected-os]');
     const selectedArchEl = root.querySelector<HTMLElement>('[data-selected-arch]');
+    const selectedIcons = Array.from(root.querySelectorAll<HTMLElement>('[data-selected-icon]'));
     const menu = root.querySelector<HTMLElement>('[data-platform-menu]');
     const options = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-platform-option]'));
     const primaryLink = root.querySelector<HTMLAnchorElement>('[data-primary-download]');
 
-    function archLabel(key: AssetKey): string {
-      return key === 'macos-x86_64' ? copy.archIntel : copy.archArm;
+    function metaFor(key: AssetKey): { os: string; arch: string; icon: string; sub: string } {
+      switch (key) {
+        case 'macos-x86_64':
+          return { os: copy.osMac, arch: copy.archIntel, icon: 'apple', sub: copy.subDefault };
+        case 'windows-x86_64':
+          return { os: copy.osWindows, arch: copy.archX64, icon: 'windows', sub: copy.subWindows };
+        case 'linux-x86_64':
+          return { os: copy.osLinux, arch: copy.archX64, icon: 'linux', sub: copy.subLinux };
+        case 'linux-arm64':
+          return { os: copy.osLinux, arch: copy.archArm64, icon: 'linux', sub: copy.subLinux };
+        default:
+          return { os: copy.osMac, arch: copy.archArm, icon: 'apple', sub: copy.subDefault };
+      }
+    }
+
+    function availableKeys(): AssetKey[] {
+      return ASSET_KEYS.filter((key) => Boolean(release.assets[key]));
     }
 
     function applySelection() {
-      if (selectedArchEl) {
-        selectedArchEl.textContent = archLabel(selected);
+      const available = availableKeys();
+      if (available.length > 0 && !release.assets[selected]) {
+        selected = available[0];
       }
+      const meta = metaFor(selected);
+      if (selectedOsEl) selectedOsEl.textContent = meta.os;
+      if (selectedArchEl) selectedArchEl.textContent = meta.arch;
+      if (sub) sub.textContent = meta.sub;
+      selectedIcons.forEach((el) => {
+        el.hidden = el.dataset.selectedIcon !== meta.icon;
+      });
       if (primaryLink) {
-        primaryLink.href = release.assets[selected];
+        primaryLink.href = release.assets[selected] ?? release.htmlUrl;
       }
       options.forEach((opt) => {
+        const key = opt.dataset.platformOption as AssetKey | undefined;
+        const hasAsset = Boolean(key && release.assets[key]);
+        opt.hidden = !hasAsset;
         const isCurrent = opt.dataset.platformOption === selected;
         opt.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
       });
@@ -179,6 +279,9 @@ const payload = {
       root!.querySelectorAll<HTMLAnchorElement>('[data-release-page]').forEach((el) => {
         el.href = release.htmlUrl;
       });
+      if (!userPicked && detected !== 'other' && release.assets[detected]) {
+        selected = detected;
+      }
       applySelection();
     }
 
@@ -191,11 +294,9 @@ const payload = {
     }
 
     function applyPlatform(platform: DetectedPlatform) {
-      if (sub) {
-        sub.textContent = platform === 'windows' ? copy.subWindows : copy.subDefault;
-      }
-      if (!userPicked && platform === 'macos-x86_64') {
-        selected = 'macos-x86_64';
+      detected = platform;
+      if (!userPicked && platform !== 'other' && release.assets[platform]) {
+        selected = platform;
         applySelection();
       }
     }
@@ -204,15 +305,16 @@ const payload = {
       event.stopPropagation();
       setMenuOpen(!menuOpen);
       if (menuOpen) {
-        const activeOption = options.find((opt) => opt.dataset.platformOption === selected) ?? options[0];
+        const visible = options.filter((opt) => !opt.hidden);
+        const activeOption = visible.find((opt) => opt.dataset.platformOption === selected) ?? visible[0];
         activeOption?.focus();
       }
     });
 
-    options.forEach((opt, idx) => {
+    options.forEach((opt) => {
       opt.addEventListener('click', () => {
         const key = opt.dataset.platformOption as AssetKey | undefined;
-        if (key === 'macos-arm64' || key === 'macos-x86_64') {
+        if (key && ASSET_KEYS.includes(key) && release.assets[key]) {
           selected = key;
           userPicked = true;
           applySelection();
@@ -222,12 +324,15 @@ const payload = {
       });
 
       opt.addEventListener('keydown', (event) => {
+        const visible = options.filter((item) => !item.hidden);
+        const idx = visible.indexOf(opt);
+        if (idx < 0) return;
         if (event.key === 'ArrowDown') {
           event.preventDefault();
-          options[(idx + 1) % options.length]?.focus();
+          visible[(idx + 1) % visible.length]?.focus();
         } else if (event.key === 'ArrowUp') {
           event.preventDefault();
-          options[(idx - 1 + options.length) % options.length]?.focus();
+          visible[(idx - 1 + visible.length) % visible.length]?.focus();
         } else if (event.key === 'Escape') {
           event.preventDefault();
           setMenuOpen(false);
@@ -435,6 +540,11 @@ const payload = {
     border: 0;
     border-radius: 10px;
     transition: background-color var(--d-fast) var(--ease);
+  }
+
+  .platform-opt[hidden],
+  .os-icon[hidden] {
+    display: none;
   }
 
   .platform-opt:hover,

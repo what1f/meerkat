@@ -7,9 +7,15 @@ function prepare(request) {
     resources: ["extensions", "skills", "prompts", "SYSTEM.md"],
     pathKeys: ["extensions", "skills", "prompts", "themes"],
   });
-  // A user shell prefix may rewrite PATH; keep Meerkat's commands in front.
+  // A user POSIX shell prefix may rewrite PATH; keep Meerkat's commands in front.
   const settingsPath = paths.directory + "/settings.json";
-  if (request.config.environment.MEERKAT_PATH && ctx.exists(settingsPath)) {
+  const meerkatPath = request.config.environment.MEERKAT_PATH;
+  if (
+    meerkatPath &&
+    !/^[A-Za-z]:[\\/]/.test(meerkatPath) &&
+    !meerkatPath.includes(";") &&
+    ctx.exists(settingsPath)
+  ) {
     const settings = JSON.parse(ctx.read(settingsPath));
     if (settings.shellCommandPrefix) {
       settings.shellCommandPrefix += '\nexport PATH="$MEERKAT_PATH:$PATH"';

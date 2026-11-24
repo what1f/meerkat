@@ -43,6 +43,8 @@ const sceneSizes = '(max-width: 722px) 128vw, (max-width: 860px) 925px, max(100v
         href={download}
         data-hero-download
         data-mac-label={t.hero.downloadMac}
+        data-windows-label={t.hero.downloadWindows}
+        data-linux-label={t.hero.downloadLinux}
       >
         <Icon name="download" />
         <span data-hero-label>{t.hero.download}</span>
@@ -64,6 +66,10 @@ const sceneSizes = '(max-width: 722px) 128vw, (max-width: 860px) 925px, max(100v
     detectPlatform().then((platform) => {
       if ((platform === 'macos-arm64' || platform === 'macos-x86_64') && anchor.dataset.macLabel) {
         label.textContent = anchor.dataset.macLabel;
+      } else if (platform === 'windows-x86_64' && anchor.dataset.windowsLabel) {
+        label.textContent = anchor.dataset.windowsLabel;
+      } else if ((platform === 'linux-x86_64' || platform === 'linux-arm64') && anchor.dataset.linuxLabel) {
+        label.textContent = anchor.dataset.linuxLabel;
       }
     });
   }

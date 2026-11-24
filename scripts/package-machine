@@ -8,6 +8,7 @@
 # ad-hoc). With MEERKAT_NOTARY_KEY, MEERKAT_NOTARY_KEY_ID and
 # MEERKAT_NOTARY_ISSUER set, the signed binaries are also notarized.
 set -euo pipefail
+export PYTHONUTF8=1
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
@@ -17,19 +18,64 @@ case "$TARGET" in
   x86_64-apple-darwin) PLATFORM=macos-x86_64 ;;
   x86_64-unknown-linux-gnu) PLATFORM=linux-x86_64 ;;
   aarch64-unknown-linux-gnu) PLATFORM=linux-arm64 ;;
+  x86_64-pc-windows-msvc) PLATFORM=windows-x86_64 ;;
   *)
-    echo "usage: scripts/package-machine aarch64-apple-darwin|x86_64-apple-darwin|x86_64-unknown-linux-gnu|aarch64-unknown-linux-gnu" >&2
+    echo "usage: scripts/package-machine aarch64-apple-darwin|x86_64-apple-darwin|x86_64-unknown-linux-gnu|aarch64-unknown-linux-gnu|x86_64-pc-windows-msvc" >&2
     exit 2
     ;;
 esac
 
-./scripts/verify-production-boundary
+if python3 --version >/dev/null 2>&1; then
+  PYTHON=python3
+else
+  PYTHON=python
+fi
+"$PYTHON" ./scripts/verify-production-boundary
 VERSION="$(sed -nE '/^\[workspace\.package\]/,/^\[/ s/^version = "([^"]+)"/\1/p' Cargo.toml)"
 TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT_DIR/target}"
 BUILD_DIR="$TARGET_DIR/$TARGET/release"
 BUILD_DIR="${MEERKAT_MACHINE_BIN_DIR:-$BUILD_DIR}"
 OUTPUT_DIR="${MEERKAT_PACKAGE_OUTPUT_DIR:-$TARGET_DIR/machine-packages}"
 NAME="meerkat-machine-$VERSION-$PLATFORM"
+
+if [[ "$TARGET" == *-windows-* ]]; then
+  BINARIES=(meerkat-machine.exe meerkat.exe)
+  if [[ -z "${MEERKAT_MACHINE_BIN_DIR:-}" ]]; then
+    cargo build --release --locked --target "$TARGET" --bin meerkat-machine --bin meerkat
+  fi
+  STAGE="$(mktemp -d)"
+  trap 'rm -rf "$STAGE"' EXIT
+  mkdir "$STAGE/$NAME"
+  for binary in "${BINARIES[@]}"; do
+    cp "$BUILD_DIR/$binary" "$STAGE/$NAME/$binary"
+  done
+  if [[ -f "$BUILD_DIR/meerkat-agent.exe" ]]; then
+    cp "$BUILD_DIR/meerkat-agent.exe" "$STAGE/$NAME/meerkat-agent.exe"
+  fi
+  cp LICENSE THIRD_PARTY_LICENSES.md "$STAGE/$NAME/"
+  cp -R licenses "$STAGE/$NAME/licenses"
+  mkdir -p "$OUTPUT_DIR"
+  ARCHIVE="$OUTPUT_DIR/$NAME.zip"
+  "$PYTHON" -c '
+import hashlib, pathlib, sys, zipfile
+stage = pathlib.Path(sys.argv[1])
+name = sys.argv[2]
+archive = pathlib.Path(sys.argv[3])
+pkg = stage / name
+if archive.exists():
+    archive.unlink()
+with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+    for p in sorted(pkg.rglob("*")):
+        if p.is_file():
+            zf.write(p, (pathlib.Path(name) / p.relative_to(pkg)).as_posix())
+checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
+archive.with_name(f"{archive.name}.sha256").write_text(f"{checksum}  {archive.name}\n")
+' "$STAGE" "$NAME" "$ARCHIVE"
+  sed "s/@VERSION@/$VERSION/" apps/machine/install.ps1 > "$OUTPUT_DIR/install.ps1"
+  echo "Package ready: $ARCHIVE"
+  exit 0
+fi
+
 BINARIES=(meerkat-machine meerkat meerkat-agent)
 
 if [[ -z "${MEERKAT_MACHINE_BIN_DIR:-}" ]]; then

@@ -1,5 +1,5 @@
 import { PullCord } from '../scene';
-import { isDesktopShell } from '../lib/desktopShell';
+import { isMacDesktopShell } from '../lib/desktopShell';
 import { setTheme } from '../lib/theme';
 import { useT } from '../lib/i18n';
 import type { ReactNode } from 'react';
@@ -21,7 +21,7 @@ export function AppShell({ dock, topBar, children, board, sheet, ...rest }: AppS
       {...rest}
       className={css.root}
       data-board={board}
-      data-desktop={isDesktopShell()}
+      data-desktop={isMacDesktopShell()}
       data-sheet={sheet ? '' : undefined}
     >
       {topBar}

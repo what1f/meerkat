@@ -288,7 +288,13 @@ pub fn run_local_bootstrap_smoke() -> i32 {
 
 fn meerkat_home() -> PathBuf {
     env::var_os(HOME_ENV).map(PathBuf::from).unwrap_or_else(|| {
-        env::var_os("HOME")
+        let user_home = if cfg!(windows) {
+            env::var_os("USERPROFILE").or_else(|| env::var_os("HOME"))
+        } else {
+            env::var_os("HOME")
+        };
+        user_home
+            .filter(|value| !value.is_empty())
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."))
             .join(".meerkat")

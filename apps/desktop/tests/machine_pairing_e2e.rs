@@ -5,6 +5,12 @@ use std::time::{Duration, Instant};
 /// a time keeps the timing of the other Desktop scenarios intact.
 static HELPER_LIFECYCLE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+fn link_or_copy(source: &std::path::Path, destination: &std::path::Path) {
+    if std::fs::hard_link(source, destination).is_err() {
+        std::fs::copy(source, destination).unwrap();
+    }
+}
+
 /// Run the public Desktop bootstrap and service cleanup with real helpers.
 /// A subprocess provides private environment variables without mutating this test process.
 #[test]
@@ -25,9 +31,9 @@ fn owned_helpers_stop_on_cleanup_while_reused_helpers_stay_running() {
         let current = std::env::current_exe().unwrap();
         let binaries = current.parent().unwrap().parent().unwrap();
         let executable = directory.path().join("quit-e2e");
-        std::fs::hard_link(&current, &executable).unwrap();
+        link_or_copy(&current, &executable);
         for name in ["meerkatd", "meerkat-machine"] {
-            std::fs::hard_link(binaries.join(name), directory.path().join(name)).unwrap();
+            link_or_copy(&binaries.join(name), &directory.path().join(name));
         }
         let home = directory.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
@@ -114,9 +120,9 @@ fn reopening_after_an_update_replaces_outdated_helpers() {
         let current = std::env::current_exe().unwrap();
         let binaries = current.parent().unwrap().parent().unwrap();
         let executable = directory.path().join("update-e2e");
-        std::fs::hard_link(&current, &executable).unwrap();
+        link_or_copy(&current, &executable);
         for name in ["meerkatd", "meerkat-machine"] {
-            std::fs::hard_link(binaries.join(name), directory.path().join(name)).unwrap();
+            link_or_copy(&binaries.join(name), &directory.path().join(name));
         }
         let home = directory.path().join("home");
         std::fs::create_dir_all(&home).unwrap();
@@ -245,9 +251,9 @@ fn reopening_bundled_app_replaces_bundle_program_helpers() {
         std::fs::create_dir_all(&macos_dir).unwrap();
         std::fs::create_dir_all(&services_dir).unwrap();
         let executable = macos_dir.join("bundle-update-e2e");
-        std::fs::hard_link(&current, &executable).unwrap();
+        link_or_copy(&current, &executable);
         for name in ["meerkatd", "meerkat-machine"] {
-            std::fs::hard_link(binaries.join(name), services_dir.join(name)).unwrap();
+            link_or_copy(&binaries.join(name), &services_dir.join(name));
         }
         let home = directory.path().join("home");
         std::fs::create_dir_all(&home).unwrap();

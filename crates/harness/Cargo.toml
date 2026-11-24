@@ -22,6 +22,10 @@ toml = "0.8.23"
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1.1.6", features = ["process"] }
 
+[target.'cfg(windows)'.dependencies]
+junction = "1.4"
+sha2.workspace = true
+
 [package.metadata.meerkat.e2e]
 command = "cargo test -p meerkat-harness --features test-support --test e2e harness_e2e::"
 scenario = "Start, resume, execute, steer, inject an idempotent Tool Result, cancel, and close one Agent execution through a real child-process Harness contract. Carry structured Harness failures through the public execution contract. Expose isolated native process group ownership for Machine cancellation. Use the default shared full-access permission policy in session requests. Carry a distinct retryable ownership conflict category. A4a permits an empty thinking level and carries independent launch arguments; scripted process argv acceptance is in system-member-fields. A4c cleans isolated native process groups including descendants on close and startup failure; acceptance is in system-harness-test."

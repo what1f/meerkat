@@ -227,11 +227,12 @@ jobs:
             arch: arm64
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       VERSION: ${{ needs.preflight.outputs.version }}
       RUST_TARGET: ${{ matrix.target }}
       ARCH: ${{ matrix.arch }}
+      MEERKAT_INSTALL_SCRIPT_URL: https://github.com/${{ github.repository }}/releases/download/${{ needs.preflight.outputs.tag }}/install.sh
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -240,27 +241,123 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           with-uv: 'false'
-          with-node: 'false'
           rust-targets: ${{ matrix.target }}
           rust-cache-key: release-${{ matrix.target }}
       - uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2
         with:
           tool: cargo-zigbuild@0.20.1,cargo-deny@0.20.2
-      - name: Audit the exact Machine target before building
-        run: ./scripts/verify-dependency-advisories "$RUST_TARGET" machine
+      - name: Install Linux desktop system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev pkg-config
+      - name: Audit the exact Linux target before building
+        run: ./scripts/verify-dependency-advisories "$RUST_TARGET" desktop
       - name: Native portable business scenarios
         run: |
           cargo build --locked -p meerkat-machine --example machine_daemon_e2e
           cargo test --locked -p meerkat-protocol -p meerkat-daemon-runtime -p meerkat-machine --tests
-      - name: Build and package against glibc 2.28
+      - name: Build and package Linux Desktop
+        run: |
+          ./scripts/build-release "$RUST_TARGET"
+          ./scripts/package-linux "$RUST_TARGET"
+      - name: Verify the native Linux Desktop package
+        run: |
+          python3 ./scripts/verify-desktop-package.py \
+            "target/$RUST_TARGET/release/Meerkat-$VERSION-linux-$ARCH.tar.gz" \
+            --build-provenance "target/$RUST_TARGET/release/build-provenance.json" \
+            --output "target/$RUST_TARGET/release/desktop-verification.json"
+      - name: Build and package Linux Machine against glibc 2.28
         run: ./scripts/package-machine "$RUST_TARGET"
       - name: Verify the native Machine installer
         run: ./scripts/verify-machine-package "target/machine-packages/meerkat-machine-$VERSION-linux-$ARCH.tar.gz"
+      - name: Collect verified Linux distribution files
+        run: |
+          mkdir -p target/distribution
+          base="Meerkat-$VERSION-linux-$ARCH"
+          cp "target/$RUST_TARGET/release/$base.tar.gz" "target/$RUST_TARGET/release/$base.sha256" target/distribution/
+          cp "target/$RUST_TARGET/release/build-provenance.json" "target/distribution/$base.build.json"
+          cp "target/$RUST_TARGET/release/desktop-verification.json" "target/distribution/$base.verification.json"
+          cp target/machine-packages/* target/distribution/
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           overwrite: true
           name: release-linux-${{ matrix.arch }}
-          path: target/machine-packages/
+          path: target/distribution/
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    needs: preflight
+    runs-on: windows-latest
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.preflight.outputs.version }}
+      RUST_TARGET: x86_64-pc-windows-msvc
+      ARCH: x86_64
+      MEERKAT_INSTALL_SCRIPT_URL: https://github.com/${{ github.repository }}/releases/download/${{ needs.preflight.outputs.tag }}/install.sh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          with-uv: 'false'
+          with-zig: 'false'
+          rust-targets: x86_64-pc-windows-msvc
+          rust-cache-key: release-x86_64-pc-windows-msvc
+      - uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2
+        with:
+          tool: cargo-deny@0.20.2
+      - name: Install NSIS for Windows installer packaging
+        run: |
+          if ! command -v makensis >/dev/null 2>&1 && [[ ! -f "/c/Program Files (x86)/NSIS/makensis.exe" ]] && [[ ! -f "/c/Program Files/NSIS/makensis.exe" ]]; then
+            choco install nsis --version=3.11 -y --no-progress
+          fi
+          if command -v makensis >/dev/null 2>&1; then
+            makensis -VERSION
+          elif [[ -f "/c/Program Files (x86)/NSIS/makensis.exe" ]]; then
+            "/c/Program Files (x86)/NSIS/makensis.exe" -VERSION
+          else
+            "/c/Program Files/NSIS/makensis.exe" -VERSION
+          fi
+      - name: Audit the exact Windows target before building
+        run: ./scripts/verify-dependency-advisories "$RUST_TARGET" desktop
+      - name: Native Windows portable scenarios
+        run: cargo test --locked --target "$RUST_TARGET" -p meerkat-daemon-runtime --tests
+      - name: Build and package Windows Desktop
+        run: |
+          ./scripts/build-release "$RUST_TARGET"
+          python ./scripts/package-windows.py "$RUST_TARGET"
+      - name: Verify the native Windows Desktop package and installer
+        run: |
+          python ./scripts/verify-desktop-package.py \
+            "target/$RUST_TARGET/release/Meerkat-$VERSION-windows-$ARCH.zip" \
+            --build-provenance "target/$RUST_TARGET/release/build-provenance.json" \
+            --output "target/$RUST_TARGET/release/desktop-verification.json" \
+            --verify-installer
+      - name: Package the Windows Machine from the same binaries
+        env:
+          MEERKAT_MACHINE_BIN_DIR: target/x86_64-pc-windows-msvc/release
+        run: ./scripts/package-machine "$RUST_TARGET"
+      - name: Verify the native Windows Machine installer
+        run: python ./scripts/verify-machine-package "target/machine-packages/meerkat-machine-$VERSION-windows-$ARCH.zip"
+      - name: Collect verified Windows distribution files
+        run: |
+          mkdir -p target/distribution
+          base="Meerkat-$VERSION-windows-$ARCH"
+          cp "target/$RUST_TARGET/release/$base.zip" "target/$RUST_TARGET/release/$base-setup.exe" "target/$RUST_TARGET/release/$base.sha256" target/distribution/
+          cp "target/$RUST_TARGET/release/build-provenance.json" "target/distribution/$base.build.json"
+          cp "target/$RUST_TARGET/release/desktop-verification.json" "target/distribution/$base.verification.json"
+          cp target/machine-packages/* target/distribution/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          overwrite: true
+          name: release-windows-x86_64
+          path: target/distribution/
           if-no-files-found: error
           retention-days: 14
 
@@ -298,7 +395,7 @@ jobs:
           retention-days: 14
 
   publish:
-    needs: [preflight, verify, macos-sign, linux, source]
+    needs: [preflight, verify, macos-sign, linux, windows, source]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: release

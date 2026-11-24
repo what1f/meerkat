@@ -4,16 +4,17 @@ use meerkat_protocol::CliCommand;
 use std::path::{Path, PathBuf};
 
 pub(crate) fn discover() -> Option<PathBuf> {
+    let name = format!("meerkat{}", std::env::consts::EXE_SUFFIX);
     let executable = std::env::current_exe().ok()?;
-    let mut candidates = vec![executable.with_file_name("meerkat")];
+    let mut candidates = vec![executable.with_file_name(&name)];
     if let Some(contents) = executable
         .ancestors()
         .find(|path| path.file_name().is_some_and(|name| name == "Contents"))
     {
-        candidates.push(contents.join("Resources/bin/meerkat"));
+        candidates.push(contents.join("Resources/bin").join(&name));
     }
     if let Some(path) = std::env::var_os("PATH") {
-        candidates.extend(std::env::split_paths(&path).map(|directory| directory.join("meerkat")));
+        candidates.extend(std::env::split_paths(&path).map(|directory| directory.join(&name)));
     }
     candidates.into_iter().find(|path| executable_file(path))
 }
@@ -144,13 +145,46 @@ pub(crate) fn inject(
 }
 
 fn find_program(name: &str, paths: &[PathBuf]) -> Option<PathBuf> {
-    if name.is_empty() || name.contains('/') {
+    if name.is_empty() || name.contains('/') || name.contains('\\') {
         return None;
     }
-    paths
-        .iter()
-        .map(|directory| directory.join(name))
-        .find(|path| executable_file(path))
+    #[cfg(windows)]
+    {
+        let has_extension = Path::new(name).extension().is_some();
+        let extensions: Vec<String> = if has_extension {
+            vec![String::new()]
+        } else {
+            let pathext =
+                std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_owned());
+            let list: Vec<String> = pathext
+                .split(';')
+                .map(str::trim)
+                .filter(|ext| !ext.is_empty())
+                .map(str::to_owned)
+                .collect();
+            if list.is_empty() {
+                vec![".EXE".into(), ".CMD".into(), ".BAT".into(), ".COM".into()]
+            } else {
+                list
+            }
+        };
+        for directory in paths {
+            for ext in &extensions {
+                let candidate = directory.join(format!("{name}{ext}"));
+                if executable_file(&candidate) {
+                    return Some(candidate);
+                }
+            }
+        }
+        None
+    }
+    #[cfg(not(windows))]
+    {
+        paths
+            .iter()
+            .map(|directory| directory.join(name))
+            .find(|path| executable_file(path))
+    }
 }
 
 /// The shim only routes the call through `meerkat exec`; credentials are
@@ -161,13 +195,26 @@ fn write_shim(
     command: &CliCommand,
     target: &Path,
 ) -> Result<(), MachineError> {
-    let content = format!(
-        "#!/bin/sh\nexec {} exec {} -- {} \"$@\"\n",
-        shell_quote(&executable.to_string_lossy()),
-        shell_quote(&format!("exec: {}", command.name)),
-        shell_quote(&target.to_string_lossy()),
+    #[cfg(unix)]
+    let (content, path) = (
+        format!(
+            "#!/bin/sh\nexec {} exec {} -- {} \"$@\"\n",
+            shell_quote(&executable.to_string_lossy()),
+            shell_quote(&format!("exec: {}", command.name)),
+            shell_quote(&target.to_string_lossy()),
+        ),
+        directory.join(&command.wraps),
     );
-    let path = directory.join(&command.wraps);
+    #[cfg(windows)]
+    let (content, path) = (
+        format!(
+            "@echo off\r\nsetlocal\r\nchcp 65001 >nul\r\n{} exec {} -- {} %*\r\n",
+            cmd_quote(&executable.to_string_lossy()),
+            cmd_quote(&format!("exec: {}", command.name)),
+            cmd_quote(&target.to_string_lossy()),
+        ),
+        directory.join(format!("{}.cmd", command.wraps)),
+    );
     if std::fs::read_to_string(&path).is_ok_and(|current| current == content) {
         return Ok(());
     }
@@ -184,6 +231,12 @@ fn write_shim(
     Ok(())
 }
 
+#[cfg(unix)]
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+#[cfg(windows)]
+fn cmd_quote(value: &str) -> String {
+    format!("\"{}\"", value.replace('%', "%%").replace('"', "\"\""))
 }

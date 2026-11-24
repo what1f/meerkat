@@ -4,61 +4,100 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
 import time
 import tomllib
+import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 archive = Path(sys.argv[1]).resolve()
+is_windows = archive.suffix == ".zip"
 checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
-if archive.with_suffix(".gz.sha256").read_text().strip() != f"{checksum}  {archive.name}":
+checksum_file = archive.with_name(f"{archive.name}.sha256")
+if checksum_file.read_text(encoding="utf-8").strip() != f"{checksum}  {archive.name}":
     raise SystemExit("Machine checksum does not match")
-version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
+version = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"]
+formal = os.environ.get("MEERKAT_RELEASE_SIGNING") == "1"
 with tempfile.TemporaryDirectory(prefix="meerkat-machine-package-") as temporary:
     home = Path(temporary)
-    with tarfile.open(archive) as package:
-        for item in package.getmembers():
-            if not (item.isfile() or item.isdir()):
-                raise SystemExit("Machine archive contains a link or special file")
-        package.extractall(home / "extracted", filter="data")
-    package_root = home / "extracted" / archive.name.removesuffix(".tar.gz")
-    for name in ("LICENSE", "THIRD_PARTY_LICENSES.md", "licenses/builtin-agent/LICENSE", "licenses/builtin-agent/THIRD_PARTY_NOTICES.md"):
-        if not (package_root / name).is_file():
-            raise SystemExit(f"Machine package missing {name}")
-    formal = os.environ.get("MEERKAT_RELEASE_SIGNING") == "1"
-    if formal:
-        subprocess.run([str(ROOT / "scripts/verify-macos-signature"),
-            *(str(package_root / name) for name in ("meerkat-machine", "meerkat", "meerkat-agent"))], check=True)
-        # Bare executables cannot carry stapled tickets. Check Apple's online
-        # ticket after allowing a bounded propagation window.
+    if is_windows:
+        with zipfile.ZipFile(archive) as package:
+            for info in package.infolist():
+                if info.filename.startswith("/") or ".." in Path(info.filename).parts:
+                    raise SystemExit("Machine archive contains an unsafe path")
+            package.extractall(home / "extracted")
+        package_root = home / "extracted" / archive.name.removesuffix(".zip")
+        for name in ("LICENSE", "THIRD_PARTY_LICENSES.md"):
+            if not (package_root / name).is_file():
+                raise SystemExit(f"Machine package missing {name}")
+        env = {key: value for key, value in os.environ.items() if not key.startswith(("MEERKAT_", "FX_"))}
+        env.update(
+            USERPROFILE=str(home),
+            MEERKAT_INSTALL_DIR=str(home / "bin"),
+            MEERKAT_DOWNLOAD_BASE=archive.parent.as_uri(),
+        )
+        shell = shutil.which("pwsh") or shutil.which("powershell") or "powershell"
+        subprocess.run(
+            [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(archive.parent / "install.ps1"), "--version"],
+            env=env,
+            check=True,
+            timeout=60,
+        )
+        for name in ("meerkat-machine.exe", "meerkat.exe"):
+            if (home / "bin" / name).read_bytes() != (package_root / name).read_bytes():
+                raise SystemExit(f"installer changed {name}")
+        observed = subprocess.check_output(
+            [str(home / "bin/meerkat-machine.exe"), "--version"], env=env, text=True, timeout=15
+        ).strip()
+        if observed != f"meerkat-machine {version}":
+            raise SystemExit("installed Machine version does not match")
+        cli = subprocess.run([str(home / "bin/meerkat.exe"), "--help"], env=env, capture_output=True, timeout=15)
+        if cli.returncode != 2:
+            raise SystemExit("capability CLI did not refuse an absent execution context")
+    else:
+        with tarfile.open(archive) as package:
+            for item in package.getmembers():
+                if not (item.isfile() or item.isdir()):
+                    raise SystemExit("Machine archive contains a link or special file")
+            package.extractall(home / "extracted", filter="data")
+        package_root = home / "extracted" / archive.name.removesuffix(".tar.gz")
+        for name in ("LICENSE", "THIRD_PARTY_LICENSES.md", "licenses/builtin-agent/LICENSE", "licenses/builtin-agent/THIRD_PARTY_NOTICES.md"):
+            if not (package_root / name).is_file():
+                raise SystemExit(f"Machine package missing {name}")
+        if formal:
+            subprocess.run([str(ROOT / "scripts/verify-macos-signature"),
+                *(str(package_root / name) for name in ("meerkat-machine", "meerkat", "meerkat-agent"))], check=True)
+            # Bare executables cannot carry stapled tickets. Check Apple's online
+            # ticket after allowing a bounded propagation window.
+            for name in ("meerkat-machine", "meerkat", "meerkat-agent"):
+                for attempt in range(6):
+                    checked = subprocess.run(["codesign", "--verify", "--strict", "--check-notarization", str(package_root / name)])
+                    if checked.returncode == 0:
+                        break
+                    if attempt == 5:
+                        raise SystemExit(f"online notarization verification failed: {name}")
+                    time.sleep(5)
+        env = {key: value for key, value in os.environ.items() if not key.startswith(("MEERKAT_", "FX_"))}
+        env.update(HOME=str(home), MEERKAT_INSTALL_DIR=str(home / "bin"), MEERKAT_DOWNLOAD_BASE=archive.parent.as_uri())
+        # An explicit command avoids the installer's normal background restart.
+        subprocess.run(["sh", str(archive.parent / "install.sh"), "--version"], env=env, check=True, timeout=60)
         for name in ("meerkat-machine", "meerkat", "meerkat-agent"):
-            for attempt in range(6):
-                checked = subprocess.run(["codesign", "--verify", "--strict", "--check-notarization", str(package_root / name)])
-                if checked.returncode == 0:
-                    break
-                if attempt == 5:
-                    raise SystemExit(f"online notarization verification failed: {name}")
-                time.sleep(5)
-    env = {key: value for key, value in os.environ.items() if not key.startswith(("MEERKAT_", "FX_"))}
-    env.update(HOME=str(home), MEERKAT_INSTALL_DIR=str(home / "bin"), MEERKAT_DOWNLOAD_BASE=archive.parent.as_uri())
-    # An explicit command avoids the installer's normal background restart.
-    subprocess.run(["sh", str(archive.parent / "install.sh"), "--version"], env=env, check=True, timeout=60)
-    for name in ("meerkat-machine", "meerkat", "meerkat-agent"):
-        if (home / "bin" / name).read_bytes() != (package_root / name).read_bytes():
-            raise SystemExit(f"installer changed {name}")
-    observed = subprocess.check_output([str(home / "bin/meerkat-machine"), "--version"], env=env, text=True, timeout=15).strip()
-    if observed != f"meerkat-machine {version}":
-        raise SystemExit("installed Machine version does not match")
-    subprocess.run([str(home / "bin/meerkat-agent"), "--version"], env=env, check=True, timeout=15)
-    # The capability CLI requires execution context; absence must be refused.
-    cli = subprocess.run([str(home / "bin/meerkat"), "--help"], env=env, capture_output=True, timeout=15)
-    if cli.returncode != 2:
-        raise SystemExit("capability CLI did not refuse an absent execution context")
+            if (home / "bin" / name).read_bytes() != (package_root / name).read_bytes():
+                raise SystemExit(f"installer changed {name}")
+        observed = subprocess.check_output([str(home / "bin/meerkat-machine"), "--version"], env=env, text=True, timeout=15).strip()
+        if observed != f"meerkat-machine {version}":
+            raise SystemExit("installed Machine version does not match")
+        subprocess.run([str(home / "bin/meerkat-agent"), "--version"], env=env, check=True, timeout=15)
+        # The capability CLI requires execution context; absence must be refused.
+        cli = subprocess.run([str(home / "bin/meerkat"), "--help"], env=env, capture_output=True, timeout=15)
+        if cli.returncode != 2:
+            raise SystemExit("capability CLI did not refuse an absent execution context")
 evidence = {"status": "passed", "version": version, "archive_sha256": checksum,
             "classification": "native-extracted-machine-install", "background_registration": "not-exercised",
             "distribution_signing": "developer-id-notarized" if formal else "none"}
-Path(str(archive) + ".verification.json").write_text(json.dumps(evidence, indent=2) + "\n")
+Path(str(archive) + ".verification.json").write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
 print("[machine-package] PASS: native install, executable startup and isolated cleanup")

@@ -8,12 +8,12 @@
 
 <p align="center">
   <a href="https://meerkat.shens.dev">官网</a> &nbsp;|&nbsp;
-  <a href="https://github.com/what1f/meerkat/releases/latest">下载 macOS 版</a> &nbsp;|&nbsp;
+  <a href="https://github.com/what1f/meerkat/releases/latest">下载</a> &nbsp;|&nbsp;
   <a href="README.md">English</a>
 </p>
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS-black?style=flat-square&logo=apple)](https://github.com/what1f/meerkat/releases)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-black?style=flat-square)](https://github.com/what1f/meerkat/releases)
 [![Release](https://img.shields.io/github/v/release/what1f/meerkat?style=flat-square&color=orange)](https://github.com/what1f/meerkat/releases)
 
 <br /><br />
@@ -24,7 +24,7 @@
 
 <br />
 
-Meerkat 是一款面向 macOS 的开源本地多 Agent 协作应用。它只借用飞书与 Telegram 原生机器人的消息和任务能力，把你电脑里真正能读写代码、操作开发环境的本地智能体（Claude Code、Codex、Pi）组织成一支随时待命的团队——无需云服务器，也不绑定任何云端智能体平台。
+Meerkat 是一款支持 macOS、Windows 与 Linux 的开源本地多 Agent 协作应用。它只借用飞书与 Telegram 原生机器人的消息和任务能力，把你电脑里真正能读写代码、操作开发环境的本地智能体（Claude Code、Codex、Pi）组织成一支随时待命的团队——无需云服务器，也不绑定任何云端智能体平台。
 
 ## 为什么像真同事，而不是普通聊天机器人？
 
@@ -38,26 +38,34 @@ Meerkat 是一款面向 macOS 的开源本地多 Agent 协作应用。它只借�
 
 ## 快速上手
 
-1. **下载安装**：前往 [Releases](https://github.com/what1f/meerkat/releases/latest) 下载最新的 `.dmg` 安装包（或按下方说明从源码构建），将 `Meerkat.app` 拖入应用程序目录。
+1. **下载安装**：前往 [Releases](https://github.com/what1f/meerkat/releases/latest) 下载对应系统的安装包（macOS `.dmg`、Windows `-setup.exe` / `.zip`、Linux `.tar.gz`），或按下方说明从源码构建。
 2. **扫码连接**：启动 Meerkat，使用飞书扫码一键创建并连接机器人（或接入 Telegram 机器人）。
 3. **拉群开工**：选择本机已安装的 Agent，赋予名字与角色。直接私聊交代事项，或拉进群聊丢出目标让团队自己配合完成。
 
 ## 从源码构建
 
-macOS 本地构建需要：`rust-toolchain.toml` 指定的 Rust（`1.96.0`）、[just](https://github.com/casey/just)、[pnpm](https://pnpm.io/)，以及 [Zig](https://ziglang.org/download/)（`0.17`，用于编译内置的 `meerkat-agent`）。
+本地构建需要：`rust-toolchain.toml` 指定的 Rust（`1.96.0`）、[just](https://github.com/casey/just)、[pnpm](https://pnpm.io/)，以及 [Zig](https://ziglang.org/download/)（`0.17`，用于 macOS 与 Linux 编译内置的 `meerkat-agent`）。Linux 下还需安装 `libwebkit2gtk-4.1-dev`、`libayatana-appindicator3-dev` 与 `librsvg2-dev`。
 
 ```bash
+# macOS / Linux（使用 just）
 just dev    # 编译本地后台服务与内置 Agent，并启动桌面应用
 just check  # 运行格式、编译、前端检查与开源/边界校验
 just test   # 运行 hermetic 模块级业务 E2E 测试
-just app    # 构建 Release 版 Meerkat.app
+just app    # 在 macOS 上构建 Release 版 Meerkat.app
+```
+
+```powershell
+# Windows（PowerShell）
+pnpm -C apps/web install --frozen-lockfile; pnpm -C apps/web build
+cargo build --locked --bin meerkatd --bin meerkat-machine --bin meerkat
+cargo run --locked -p meerkat-desktop
 ```
 
 ## 支持生态
 
-| 聊天软件 | 本地 Agent | 桌面端平台 |
+| 聊天软件 | 本地 Agent | 桌面端与节点平台 |
 | :--- | :--- | :--- |
-| 飞书 (Feishu)、Telegram | Claude Code、Codex、Pi | macOS |
+| 飞书 (Feishu)、Telegram | Claude Code、Codex、Pi | macOS (Apple Silicon / Intel)、Windows (x64)、Linux (x64 / ARM64) |
 
 ## 参与贡献
 

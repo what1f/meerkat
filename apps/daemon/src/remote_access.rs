@@ -4,10 +4,11 @@ use meerkat_protocol::{
 };
 use meerkat_runtime::RuntimePeerAdapter;
 use serde::{Deserialize, Serialize};
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 use std::{
     fs,
     io::{self, Write},
-    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -268,16 +269,19 @@ fn private_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
         .unwrap_or_default()
         .as_nanos();
     let temporary = path.with_extension(format!("tmp-{}-{nonce}", std::process::id()));
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&temporary)?;
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(&temporary)?;
     let result = (|| {
         file.write_all(bytes)?;
         file.sync_all()?;
+        drop(file);
         fs::rename(&temporary, path)?;
-        fs::File::open(path.parent().expect("home"))?.sync_all()
+        #[cfg(unix)]
+        fs::File::open(path.parent().expect("home"))?.sync_all()?;
+        Ok(())
     })();
     if result.is_err() {
         let _ = fs::remove_file(temporary);
@@ -311,37 +315,80 @@ fn primary_lan_ipv4() -> Option<std::net::Ipv4Addr> {
                 _ => None,
             }
         });
-    let addresses: Vec<_> = nix::ifaddrs::getifaddrs()
-        .ok()?
-        .filter(|interface| {
-            !["utun", "tun", "tap"]
-                .iter()
-                .any(|prefix| interface.interface_name.starts_with(prefix))
-                && interface
-                    .flags
-                    .contains(nix::net::if_::InterfaceFlags::IFF_UP)
-                && !interface.flags.intersects(
-                    nix::net::if_::InterfaceFlags::IFF_LOOPBACK
-                        | nix::net::if_::InterfaceFlags::IFF_POINTOPOINT,
-                )
-        })
-        .filter_map(|interface| {
-            interface
-                .address?
-                .as_sockaddr_in()
-                .map(|address| address.ip())
-        })
-        .filter(|ip| {
-            let octets = ip.octets();
-            !ip.is_loopback()
-                && !ip.is_unspecified()
-                && !ip.is_link_local()
-                && !(octets[0] == 198 && matches!(octets[1], 18 | 19))
-        })
-        .collect();
+    let addresses = lan_ipv4_addresses()?;
     preferred
         .filter(|ip| ip.is_private() && addresses.contains(ip))
         .or_else(|| addresses.iter().copied().find(|ip| ip.is_private()))
         .or_else(|| preferred.filter(|ip| addresses.contains(ip)))
         .or_else(|| addresses.first().copied())
+}
+
+fn usable_lan_ipv4(ip: std::net::Ipv4Addr) -> bool {
+    let octets = ip.octets();
+    !ip.is_loopback()
+        && !ip.is_unspecified()
+        && !ip.is_link_local()
+        && !(octets[0] == 198 && matches!(octets[1], 18 | 19))
+}
+
+#[cfg(unix)]
+fn lan_ipv4_addresses() -> Option<Vec<std::net::Ipv4Addr>> {
+    Some(
+        nix::ifaddrs::getifaddrs()
+            .ok()?
+            .filter(|interface| {
+                !["utun", "tun", "tap"]
+                    .iter()
+                    .any(|prefix| interface.interface_name.starts_with(prefix))
+                    && interface
+                        .flags
+                        .contains(nix::net::if_::InterfaceFlags::IFF_UP)
+                    && !interface.flags.intersects(
+                        nix::net::if_::InterfaceFlags::IFF_LOOPBACK
+                            | nix::net::if_::InterfaceFlags::IFF_POINTOPOINT,
+                    )
+            })
+            .filter_map(|interface| {
+                interface
+                    .address?
+                    .as_sockaddr_in()
+                    .map(|address| address.ip())
+            })
+            .filter(|ip| usable_lan_ipv4(*ip))
+            .collect(),
+    )
+}
+
+#[cfg(windows)]
+fn lan_ipv4_addresses() -> Option<Vec<std::net::Ipv4Addr>> {
+    Some(
+        if_addrs::get_if_addrs()
+            .ok()?
+            .into_iter()
+            .filter(|interface| {
+                let lower = interface.name.to_ascii_lowercase();
+                !interface.is_loopback()
+                    && ![
+                        "utun",
+                        "tun",
+                        "tap",
+                        "wintun",
+                        "tailscale",
+                        "wireguard",
+                        "zerotier",
+                    ]
+                    .iter()
+                    .any(|token| lower.contains(token))
+            })
+            .filter_map(|interface| match interface.ip() {
+                std::net::IpAddr::V4(ip) if usable_lan_ipv4(ip) => Some(ip),
+                _ => None,
+            })
+            .collect(),
+    )
+}
+
+#[cfg(not(any(unix, windows)))]
+fn lan_ipv4_addresses() -> Option<Vec<std::net::Ipv4Addr>> {
+    Some(Vec::new())
 }

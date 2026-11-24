@@ -1,4 +1,10 @@
-export type DetectedPlatform = 'macos-arm64' | 'macos-x86_64' | 'windows' | 'other';
+export type DetectedPlatform =
+  | 'macos-arm64'
+  | 'macos-x86_64'
+  | 'windows-x86_64'
+  | 'linux-x86_64'
+  | 'linux-arm64'
+  | 'other';
 
 interface NavigatorUAData {
   platform?: string;
@@ -6,7 +12,14 @@ interface NavigatorUAData {
   getHighEntropyValues?: (hints: string[]) => Promise<{ architecture?: string; platform?: string }>;
 }
 
-const VALID: DetectedPlatform[] = ['macos-arm64', 'macos-x86_64', 'windows', 'other'];
+const VALID: DetectedPlatform[] = [
+  'macos-arm64',
+  'macos-x86_64',
+  'windows-x86_64',
+  'linux-x86_64',
+  'linux-arm64',
+  'other',
+];
 
 function macGpuArch(): 'arm64' | 'x86_64' | null {
   try {
@@ -50,7 +63,7 @@ export async function detectPlatform(): Promise<DetectedPlatform> {
   }
 
   if (/^Windows/i.test(hintPlatform) || /Windows|Win32|Win64/i.test(`${ua} ${platformStr}`)) {
-    return 'windows';
+    return 'windows-x86_64';
   }
 
   if (/^macOS$/i.test(hintPlatform) || /Mac/i.test(`${ua} ${platformStr}`)) {
@@ -59,6 +72,13 @@ export async function detectPlatform(): Promise<DetectedPlatform> {
     }
     if (hintArch.includes('x86')) return 'macos-x86_64';
     return macGpuArch() === 'x86_64' ? 'macos-x86_64' : 'macos-arm64';
+  }
+
+  if (/^Linux/i.test(hintPlatform) || /Linux|X11/i.test(`${ua} ${platformStr}`)) {
+    if (hintArch.includes('arm') || hintArch.includes('aarch64') || /\b(arm64|aarch64)\b/i.test(`${ua} ${platformStr}`)) {
+      return 'linux-arm64';
+    }
+    return 'linux-x86_64';
   }
 
   return 'other';

@@ -545,9 +545,17 @@ fn redact_diagnostic(value: &str, config: &NativeHarnessConfig) -> String {
 }
 
 fn expanded_root(value: &str) -> Result<PathBuf, MachineError> {
-    if let Some(rest) = value.strip_prefix("~/") {
-        let home = std::env::var_os("HOME")
-            .ok_or_else(|| MachineError::InvalidAssignment("home_directory_unavailable".into()))?;
+    let rest = value
+        .strip_prefix("~/")
+        .or_else(|| cfg!(windows).then(|| value.strip_prefix("~\\")).flatten());
+    if let Some(rest) = rest {
+        let home = if cfg!(windows) {
+            std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))
+        } else {
+            std::env::var_os("HOME")
+        }
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| MachineError::InvalidAssignment("home_directory_unavailable".into()))?;
         Ok(PathBuf::from(home).join(rest))
     } else {
         Ok(PathBuf::from(value))

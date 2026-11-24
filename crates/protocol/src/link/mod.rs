@@ -415,6 +415,7 @@ pub fn publish(run: &Path, url: &str) -> Result<String, std::io::Error> {
         let mut file = options.open(&temporary)?;
         file.write_all(value.as_bytes())?;
         file.sync_all()?;
+        drop(file);
         std::fs::rename(temporary, path)?;
     }
     Ok(secret)

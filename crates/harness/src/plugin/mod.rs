@@ -788,14 +788,19 @@ impl Host {
                     .or_else(|| std::env::var(variable).ok())
                     .map(PathBuf::from)
                     .or_else(|| {
-                        overrides
+                        let home = overrides
                             .get("HOME")
                             .cloned()
                             .or_else(|| self.environment.get("HOME").cloned())
-                            .or_else(|| std::env::var("HOME").ok())
-                            .map(|home| {
-                                PathBuf::from(home).join(v["sourceRelative"].as_str().unwrap_or(""))
-                            })
+                            .or_else(|| std::env::var("HOME").ok());
+                        #[cfg(windows)]
+                        let home = home
+                            .or_else(|| overrides.get("USERPROFILE").cloned())
+                            .or_else(|| self.environment.get("USERPROFILE").cloned())
+                            .or_else(|| std::env::var("USERPROFILE").ok());
+                        home.map(|home| {
+                            PathBuf::from(home).join(v["sourceRelative"].as_str().unwrap_or(""))
+                        })
                     });
                 let files = v["files"]
                     .as_array()
@@ -1000,6 +1005,12 @@ impl Host {
         {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
         }
         let mut child = command.spawn().map_err(|e| {
             let mut error = HarnessError::new(

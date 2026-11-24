@@ -11,6 +11,7 @@ const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 const ENTRY: &str = "Meerkat Machine";
 const DETACHED_PROCESS: u32 = 0x0000_0008;
 const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 pub fn start(executable: &Path, home: &Path) -> Result<bool, AppError> {
     let command = format!(
@@ -25,6 +26,7 @@ pub fn start(executable: &Path, home: &Path) -> Result<bool, AppError> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
         .status()
         .is_ok_and(|status| status.success());
     if !registered {
@@ -46,6 +48,7 @@ pub fn stop(paths: &MachineDaemonPaths) -> bool {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
         .status()
         .is_ok_and(|status| status.success())
 }
@@ -62,7 +65,7 @@ fn spawn(executable: &Path, home: &Path) -> std::io::Result<()> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
+        .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW)
         .spawn()
         .map(drop)
 }

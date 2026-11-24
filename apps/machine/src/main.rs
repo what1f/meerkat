@@ -43,6 +43,7 @@ async fn execute() -> Result<(), AppError> {
     let mut pairing = None;
     let mut cert_sha256 = None;
     let mut foreground = false;
+    let mut shutdown_on_stdin_eof = false;
     while let Some(argument) = arguments.next() {
         if argument == "pair" {
             let url = arguments
@@ -66,6 +67,8 @@ async fn execute() -> Result<(), AppError> {
             );
         } else if argument == "--foreground" {
             foreground = true;
+        } else if argument == "--shutdown-on-stdin-eof" {
+            shutdown_on_stdin_eof = true;
         } else if argument == "--version" {
             println!("meerkat-machine {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
@@ -120,6 +123,7 @@ async fn execute() -> Result<(), AppError> {
     }
     config.runtime_url = runtime_url;
     config.link_secret_file = link_secret_file;
+    config.shutdown_on_stdin_eof = shutdown_on_stdin_eof;
     if let Some(path) = user_executable_path() {
         config.set_executable_path(path.to_string_lossy().into_owned());
     }
@@ -186,6 +190,9 @@ fn user_executable_path() -> Option<OsString> {
 }
 
 fn login_shell_path() -> Option<OsString> {
+    if cfg!(windows) {
+        return None;
+    }
     const START: &str = "__MEERKAT_PATH_START__";
     const END: &str = "__MEERKAT_PATH_END__";
     const COMMAND_LINE: &str =

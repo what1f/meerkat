@@ -70,6 +70,7 @@ pub struct DaemonConfig {
     pub pi_cli: PathBuf,
     pub codex_cli: PathBuf,
     pub claude_code_cli: PathBuf,
+    pub shutdown_on_stdin_eof: bool,
     environment: BTreeMap<String, String>,
 }
 
@@ -87,6 +88,7 @@ impl DaemonConfig {
             pi_cli: PathBuf::from("pi"),
             codex_cli: PathBuf::from("codex"),
             claude_code_cli: PathBuf::from("claude"),
+            shutdown_on_stdin_eof: false,
             environment: BTreeMap::new(),
         })
     }
@@ -103,6 +105,7 @@ impl DaemonConfig {
             pi_cli: PathBuf::from("pi"),
             codex_cli: PathBuf::from("codex"),
             claude_code_cli: PathBuf::from("claude"),
+            shutdown_on_stdin_eof: false,
             environment: BTreeMap::new(),
         })
     }
@@ -147,14 +150,50 @@ fn read_reconnect(home: &std::path::Path) -> Result<ReconnectPolicy, AppError> {
 }
 
 fn builtin_agent_cli() -> PathBuf {
-    meerkat_harness_builtin::discover()
-        .unwrap_or_else(|| PathBuf::from(meerkat_harness_builtin::EXECUTABLE))
+    meerkat_harness_builtin::discover().unwrap_or_else(|| {
+        PathBuf::from(format!(
+            "{}{}",
+            meerkat_harness_builtin::EXECUTABLE,
+            std::env::consts::EXE_SUFFIX
+        ))
+    })
 }
 
 fn resolve_executable(executable: &std::path::Path, path: &str) -> PathBuf {
     if executable.is_absolute() {
         return executable.to_owned();
     }
+    #[cfg(windows)]
+    {
+        let extensions: Vec<String> = if executable.extension().is_some() {
+            vec![String::new()]
+        } else {
+            let pathext =
+                std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_owned());
+            let list: Vec<String> = pathext
+                .split(';')
+                .map(str::trim)
+                .filter(|ext| !ext.is_empty())
+                .map(str::to_owned)
+                .collect();
+            if list.is_empty() {
+                vec![".EXE".into(), ".CMD".into(), ".BAT".into(), ".COM".into()]
+            } else {
+                list
+            }
+        };
+        let name = executable.to_string_lossy();
+        for directory in std::env::split_paths(path) {
+            for ext in &extensions {
+                let candidate = directory.join(format!("{name}{ext}"));
+                if candidate.is_file() {
+                    return candidate;
+                }
+            }
+        }
+        executable.to_owned()
+    }
+    #[cfg(not(windows))]
     std::env::split_paths(path)
         .map(|directory| directory.join(executable))
         .find(|candidate| candidate.is_file())
@@ -185,6 +224,24 @@ pub async fn wait_for_shutdown() -> Result<ShutdownReason, AppError> {
     {
         tokio::signal::ctrl_c().await?;
         Ok(ShutdownReason::Sigint)
+    }
+}
+
+async fn machine_shutdown(shutdown_on_stdin_eof: bool) -> Result<ShutdownReason, AppError> {
+    if !shutdown_on_stdin_eof {
+        return wait_for_shutdown().await;
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        use std::io::Read as _;
+        let mut stdin = std::io::stdin().lock();
+        let mut buffer = [0u8; 64];
+        while matches!(stdin.read(&mut buffer), Ok(n) if n > 0) {}
+        let _ = tx.send(());
+    });
+    tokio::select! {
+        result = wait_for_shutdown() => result,
+        _ = rx => Ok(ShutdownReason::Sigterm),
     }
 }
 
@@ -268,7 +325,7 @@ pub async fn run_with_harnesses(
         .map_err(AppError::Machine)?;
     let connected_marker = connected_marker(&config.paths);
     let _ = std::fs::remove_file(&connected_marker);
-    let shutdown = wait_for_shutdown();
+    let shutdown = machine_shutdown(config.shutdown_on_stdin_eof);
     tokio::pin!(shutdown);
     let mut announced = false;
     loop {
@@ -616,6 +673,7 @@ async fn pair_inner(
         let mut file = options.open(&temporary)?;
         file.write_all(&serde_json::to_vec(&credentials)?)?;
         file.sync_all()?;
+        drop(file);
         std::fs::rename(&temporary, paths.home.join("machine-credentials.json"))?;
         #[cfg(unix)]
         std::fs::File::open(&paths.home)?.sync_all()?;
@@ -639,10 +697,14 @@ pub fn machine_name() -> String {
     command_name("hostname", &[]).unwrap_or_else(|| "Machine".into())
 }
 fn command_name(command: &str, args: &[&str]) -> Option<String> {
-    let output = std::process::Command::new(command)
-        .args(args)
-        .output()
-        .ok()?;
+    let mut cmd = std::process::Command::new(command);
+    cmd.args(args);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let output = cmd.output().ok()?;
     let name = String::from_utf8(output.stdout).ok()?.trim().to_owned();
     (output.status.success() && !name.is_empty()).then_some(name)
 }

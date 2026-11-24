@@ -67,7 +67,22 @@ fn link_directory(source: &Path, destination: &Path) -> io::Result<()> {
     }
     #[cfg(windows)]
     {
-        std::os::windows::fs::symlink_dir(source, destination)
+        match std::os::windows::fs::symlink_dir(source, destination) {
+            Ok(()) => Ok(()),
+            Err(_) => {
+                let raw = source.to_string_lossy();
+                if raw.starts_with(r"\\?\UNC\")
+                    || (raw.starts_with(r"\\") && !raw.starts_with(r"\\?\"))
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Unsupported,
+                        "directory junction does not support remote UNC paths",
+                    ));
+                }
+                let target = raw.strip_prefix(r"\\?\").map(Path::new).unwrap_or(source);
+                junction::create(target, destination)
+            }
+        }
     }
 }
 
@@ -130,6 +145,7 @@ pub(crate) fn refresh_config_overlay(
                 let mut file = options.open(&temporary)?;
                 file.write_all(&fs::read(&origin)?)?;
                 file.sync_all()?;
+                drop(file);
                 fs::rename(temporary, &target)?;
             }
             Ok(true)
@@ -150,17 +166,53 @@ pub(crate) fn refresh_config_overlay(
 }
 
 pub(crate) fn link_native_resource(source: &Path, destination: &Path) -> Result<(), HarnessError> {
+    #[cfg(windows)]
+    let is_junction = junction::exists(destination).unwrap_or(false);
+    #[cfg(not(windows))]
+    let is_junction = false;
+
     if let Ok(metadata) = fs::symlink_metadata(destination) {
-        if !metadata.file_type().is_symlink() {
+        let is_link = metadata.file_type().is_symlink() || is_junction;
+        if !is_link {
+            #[cfg(windows)]
+            return sync_copied_windows_resource(source, destination);
+            #[cfg(not(windows))]
             return Ok(());
         }
         let target = source.canonicalize().ok();
-        if target.is_some() && fs::read_link(destination).ok() == target {
+        let current = if is_junction {
+            #[cfg(windows)]
+            {
+                junction::get_target(destination)
+                    .ok()
+                    .and_then(|path| path.canonicalize().ok())
+            }
+            #[cfg(not(windows))]
+            {
+                None
+            }
+        } else {
+            fs::read_link(destination).ok()
+        };
+        if target.is_some() && current == target {
             return Ok(());
         }
-        fs::remove_file(destination).map_err(|e| HarnessError::invalid_config(e.to_string()))?;
+        #[cfg(windows)]
+        let remove = {
+            use std::os::windows::fs::FileTypeExt;
+            if is_junction || metadata.file_type().is_symlink_dir() {
+                fs::remove_dir(destination)
+            } else {
+                fs::remove_file(destination)
+            }
+        };
+        #[cfg(not(windows))]
+        let remove = fs::remove_file(destination);
+        remove.map_err(|e| HarnessError::invalid_config(e.to_string()))?;
     }
     if !source.exists() {
+        #[cfg(windows)]
+        let _ = remove_copied_windows_record(destination);
         return Ok(());
     }
     #[cfg(unix)]
@@ -176,12 +228,120 @@ pub(crate) fn link_native_resource(source: &Path, destination: &Path) -> Result<
     #[cfg(windows)]
     {
         if source.is_dir() {
-            std::os::windows::fs::symlink_dir(source, destination)
+            link_directory(source, destination)
                 .map_err(|e| HarnessError::invalid_config(e.to_string()))?;
-        } else {
-            std::os::windows::fs::symlink_file(source, destination)
-                .map_err(|e| HarnessError::invalid_config(e.to_string()))?;
+        } else if std::os::windows::fs::symlink_file(source, destination).is_err() {
+            copy_tracked_windows_resource(source, destination)?;
         }
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn copied_manifest_path(destination: &Path) -> Option<std::path::PathBuf> {
+    destination
+        .parent()
+        .map(|parent| parent.join(".meerkat-copied-resources.json"))
+}
+
+#[cfg(windows)]
+fn file_sha256(path: &Path) -> io::Result<String> {
+    use sha2::{Digest, Sha256};
+    let bytes = fs::read(path)?;
+    Ok(Sha256::digest(&bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
+}
+
+#[cfg(windows)]
+fn read_copied_manifest(path: &Path) -> std::collections::BTreeMap<String, String> {
+    fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+#[cfg(windows)]
+fn write_copied_manifest(
+    path: &Path,
+    entries: &std::collections::BTreeMap<String, String>,
+) -> io::Result<()> {
+    let temporary = path.with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
+    let mut file = fs::File::create(&temporary)?;
+    file.write_all(&serde_json::to_vec(entries).expect("copied resource manifest"))?;
+    file.sync_all()?;
+    drop(file);
+    fs::rename(temporary, path)
+}
+
+#[cfg(windows)]
+fn copy_tracked_windows_resource(source: &Path, destination: &Path) -> Result<(), HarnessError> {
+    fs::copy(source, destination).map_err(|e| HarnessError::invalid_config(e.to_string()))?;
+    if let (Some(manifest_path), Some(name)) = (
+        copied_manifest_path(destination),
+        destination.file_name().and_then(|value| value.to_str()),
+    ) {
+        let hash =
+            file_sha256(destination).map_err(|e| HarnessError::invalid_config(e.to_string()))?;
+        let mut entries = read_copied_manifest(&manifest_path);
+        entries.insert(name.to_owned(), hash);
+        write_copied_manifest(&manifest_path, &entries)
+            .map_err(|e| HarnessError::invalid_config(e.to_string()))?;
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn remove_copied_windows_record(destination: &Path) -> io::Result<()> {
+    if let (Some(manifest_path), Some(name)) = (
+        copied_manifest_path(destination),
+        destination.file_name().and_then(|value| value.to_str()),
+    ) {
+        let mut entries = read_copied_manifest(&manifest_path);
+        if entries.remove(name).is_some() {
+            write_copied_manifest(&manifest_path, &entries)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn sync_copied_windows_resource(source: &Path, destination: &Path) -> Result<(), HarnessError> {
+    let (Some(manifest_path), Some(name)) = (
+        copied_manifest_path(destination),
+        destination.file_name().and_then(|value| value.to_str()),
+    ) else {
+        return Ok(());
+    };
+    let mut entries = read_copied_manifest(&manifest_path);
+    let Some(recorded_hash) = entries.get(name).cloned() else {
+        // User-created file: never overwrite or delete.
+        return Ok(());
+    };
+    let current_hash = match file_sha256(destination) {
+        Ok(hash) => hash,
+        Err(_) => return Ok(()),
+    };
+    if current_hash != recorded_hash {
+        // User modified the copy: preserve local edits.
+        return Ok(());
+    }
+    if !source.exists() {
+        match fs::remove_file(destination) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(_) => return Ok(()),
+        }
+        entries.remove(name);
+        write_copied_manifest(&manifest_path, &entries)
+            .map_err(|e| HarnessError::invalid_config(e.to_string()))?;
+        return Ok(());
+    }
+    let source_hash =
+        file_sha256(source).map_err(|e| HarnessError::invalid_config(e.to_string()))?;
+    if source_hash != recorded_hash {
+        copy_tracked_windows_resource(source, destination)?;
     }
     Ok(())
 }
