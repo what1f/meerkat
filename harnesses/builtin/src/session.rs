@@ -14,8 +14,8 @@ use jimu_ai::{
 };
 use jimu_http::ReqwestTransport;
 use jimu_kit::{
-    InstructionDiscoveryConfig, KitError, KitEvent, KitSession, KitSessionConfig, KitToolSpec,
-    SkillDiscoveryConfig, WalkBoundary,
+    CALL_TOOL_NAME, InstructionDiscoveryConfig, KitError, KitEvent, KitSession, KitSessionConfig,
+    KitToolSpec, SkillDiscoveryConfig, TOOL_SEARCH_NAME, WalkBoundary,
 };
 use jimu_session::{CompactionConfig, JsonlSessionStore, SessionError};
 use jimu_tools::{
@@ -29,10 +29,10 @@ use meerkat_harness::{
     prepare_native_skills,
 };
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 type EventSender = mpsc::UnboundedSender<Result<AgentEvent, HarnessError>>;
@@ -40,13 +40,43 @@ type EventSender = mpsc::UnboundedSender<Result<AgentEvent, HarnessError>>;
 struct ActiveTurn {
     sender: EventSender,
     sequence: u64,
+    cancel_reason: Option<String>,
+    pending_steers: VecDeque<(String, String)>,
+    done_tx: watch::Sender<bool>,
+    done_rx: watch::Receiver<bool>,
+}
+
+impl ActiveTurn {
+    fn new(sender: EventSender) -> Self {
+        let (done_tx, done_rx) = watch::channel(false);
+        Self {
+            sender,
+            sequence: 0,
+            cancel_reason: None,
+            pending_steers: VecDeque::new(),
+            done_tx,
+            done_rx,
+        }
+    }
+
+    fn send(&mut self, kind: AgentEventKind) {
+        self.sequence += 1;
+        let _ = self.sender.send(Ok(AgentEvent {
+            sequence: self.sequence,
+            kind,
+        }));
+    }
+}
+
+struct SessionInner {
+    health: SessionHealth,
+    closing: bool,
+    active: Option<ActiveTurn>,
 }
 
 struct SessionState {
     entry: SessionEntry,
-    health: Mutex<SessionHealth>,
-    active: Mutex<Option<ActiveTurn>>,
-    cancel_reason: Mutex<Option<String>>,
+    inner: Mutex<SessionInner>,
     pending_tools: Mutex<HashMap<String, oneshot::Sender<ToolResultRequest>>>,
     applied_tool_results: Mutex<HashMap<String, Value>>,
 }
@@ -60,34 +90,45 @@ impl SessionState {
                 config_fingerprint,
                 health: SessionHealth::Healthy,
             },
-            health: Mutex::new(SessionHealth::Healthy),
-            active: Mutex::new(None),
-            cancel_reason: Mutex::new(None),
+            inner: Mutex::new(SessionInner {
+                health: SessionHealth::Healthy,
+                closing: false,
+                active: None,
+            }),
             pending_tools: Mutex::new(HashMap::new()),
             applied_tool_results: Mutex::new(HashMap::new()),
         }
     }
 
     fn current_health(&self) -> SessionHealth {
-        *self.health.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    fn set_health(&self, next: SessionHealth) {
-        let mut health = self.health.lock().unwrap_or_else(|e| e.into_inner());
-        if *health != SessionHealth::Closed || next == SessionHealth::Closed {
-            *health = next;
-        }
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).health
     }
 
     fn emit(&self, kind: AgentEventKind) {
-        let mut active = self.active.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(turn) = active.as_mut() {
-            turn.sequence += 1;
-            let _ = turn.sender.send(Ok(AgentEvent {
-                sequence: turn.sequence,
-                kind,
-            }));
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(turn) = inner.active.as_mut() {
+            turn.send(kind);
         }
+    }
+
+    fn mark_steer_consumed(&self, delivery_id: &str) {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(turn) = inner.active.as_mut()
+            && let Some(pos) = turn
+                .pending_steers
+                .iter()
+                .position(|(id, _)| id == delivery_id)
+        {
+            turn.pending_steers.remove(pos);
+        }
+    }
+
+    fn has_cancel_reason(&self) -> bool {
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner
+            .active
+            .as_ref()
+            .is_some_and(|turn| turn.cancel_reason.is_some())
     }
 
     fn finish_turn(&self, kind: AgentEventKind) {
@@ -96,20 +137,26 @@ impl SessionState {
             AgentEventKind::Cancelled { .. } => SessionHealth::Cancelled,
             _ => SessionHealth::Healthy,
         };
-        let mut active = self.active.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(turn) = active.as_mut() {
-            turn.sequence += 1;
-            let _ = turn.sender.send(Ok(AgentEvent {
-                sequence: turn.sequence,
-                kind,
-            }));
-        }
-        active.take();
+        let done_tx = {
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            let done_tx = if let Some(mut turn) = inner.active.take() {
+                turn.send(kind);
+                Some(turn.done_tx)
+            } else {
+                None
+            };
+            if inner.health != SessionHealth::Closed && !inner.closing {
+                inner.health = next_health;
+            }
+            done_tx
+        };
         self.pending_tools
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clear();
-        self.set_health(next_health);
+        if let Some(done_tx) = done_tx {
+            let _ = done_tx.send(true);
+        }
     }
 }
 
@@ -219,6 +266,42 @@ fn tool_result_to_agent_result(mut req: ToolResultRequest) -> AgentToolResult {
     }
 }
 
+fn build_deferred_host_tools(
+    host_tools: Vec<ToolDefinition>,
+    resident_names: &HashSet<String>,
+    state: &Arc<SessionState>,
+) -> Vec<Arc<dyn AgentTool>> {
+    // Deduplicate by name (last definition wins) while preserving deterministic order
+    // and never conflicting with fixed resident workspace or gateway tools.
+    let mut order: Vec<String> = Vec::new();
+    let mut by_name: HashMap<String, ToolDefinition> = HashMap::new();
+    for tool_def in host_tools {
+        if resident_names.contains(&tool_def.name) {
+            continue;
+        }
+        if !by_name.contains_key(&tool_def.name) {
+            order.push(tool_def.name.clone());
+        }
+        by_name.insert(tool_def.name.clone(), tool_def);
+    }
+    order
+        .into_iter()
+        .filter_map(|name| by_name.remove(&name))
+        .map(|tool_def| {
+            Arc::new(HostToolBridge::new(tool_def, Arc::clone(state))) as Arc<dyn AgentTool>
+        })
+        .collect()
+}
+
+fn same_model_route(active: &Model, expected: &Model) -> bool {
+    active.id == expected.id
+        && active.provider == expected.provider
+        && active.api == expected.api
+        && active.base_url == expected.base_url
+        && active.context_window == expected.context_window
+        && active.max_output_tokens == expected.max_output_tokens
+}
+
 fn parse_thinking_level(raw: &str) -> Result<ThinkingLevel, HarnessError> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "" | "off" => Ok(ThinkingLevel::Off),
@@ -271,8 +354,8 @@ pub(crate) async fn open_session(
         return Err(HarnessError::invalid_config("config_fingerprint is empty"));
     }
 
-    let connection = harness.active_connection()?;
-    let opened_auth_revision = harness.auth_revision();
+    let snapshot = harness.active_connection_snapshot()?;
+    let opened_auth_revision = snapshot.auth_revision;
     harness.describe_model(&request.config.model.model_id)?;
 
     let native_session_id = if resume {
@@ -302,7 +385,7 @@ pub(crate) async fn open_session(
     let transport_dyn: Arc<dyn HttpTransport> = Arc::clone(&transport) as Arc<dyn HttpTransport>;
     let provider = Arc::new(Client::new(Arc::clone(&transport_dyn)));
 
-    let (model, api_key, get_api_key, max_tokens, headers) = match connection {
+    let (expected_model, api_key, get_api_key, max_tokens, headers) = match snapshot.connection {
         ActiveConnection::ApiKey { base_url, api_key } => {
             let mut model = Model::new(
                 request.config.model.model_id.clone(),
@@ -383,17 +466,9 @@ pub(crate) async fn open_session(
         Box::pin(async move { snapshot })
     });
 
-    let mut registered_names = HashSet::new();
-    let mut tools: Vec<KitToolSpec> = Vec::new();
-    for tool_def in request.tools {
-        registered_names.insert(tool_def.name.clone());
-        let bridge: Arc<dyn AgentTool> =
-            Arc::new(HostToolBridge::new(tool_def, Arc::clone(&state)));
-        tools.push(KitToolSpec::resident(bridge));
-    }
-
-    // Build deterministic built-in workspace tools: file/patch/search tools,
-    // managed interactive shell (`exec_command` + `write_stdin`), and `web_fetch`.
+    // Fixed built-in workspace tools stay resident (preserving prompt-cache prefix bytes).
+    // Dynamic Meerkat host tools go through the deferred gateway (`tool_search` / `call_tool`)
+    // so resume and rebind can add, remove, or update host tool schemas freely.
     let static_tool_set = BuiltinToolSet::all().without(BuiltinToolKind::ExecCommand);
     let ws_config = WorkspaceToolsConfig::new(&request.working_directory)
         .with_enabled_tools(static_tool_set)
@@ -408,10 +483,17 @@ pub(crate) async fn open_session(
         WebFetchConfig::default(),
     )));
 
+    let mut resident_names =
+        HashSet::from([TOOL_SEARCH_NAME.to_owned(), CALL_TOOL_NAME.to_owned()]);
+    let mut tools: Vec<KitToolSpec> = Vec::new();
     for ws_tool in builtin_tools {
-        if registered_names.insert(ws_tool.definition().name) {
+        let name = ws_tool.definition().name;
+        if resident_names.insert(name) {
             tools.push(KitToolSpec::resident(ws_tool));
         }
+    }
+    for host_tool in build_deferred_host_tools(request.tools, &resident_names, &state) {
+        tools.push(KitToolSpec::deferred(host_tool));
     }
 
     let store_path = session_file_path(&request.working_directory, &native_session_id);
@@ -435,7 +517,7 @@ pub(crate) async fn open_session(
     };
 
     let requested_system_prompt = request.system_prompt;
-    let mut kit_config = KitSessionConfig::new(model)
+    let mut kit_config = KitSessionConfig::new(expected_model.clone())
         .with_system_prompt(requested_system_prompt.clone())
         .with_skill_discovery(skill_discovery)
         .with_auto_reload_skills(true)
@@ -446,7 +528,7 @@ pub(crate) async fn open_session(
             compaction_reserve_tokens: Some(COMPACTION_RESERVE),
             ..CompactionConfig::default()
         });
-    kit_config.enable_deferred_gateway = false;
+    kit_config.enable_deferred_gateway = true;
     kit_config.thinking_level = thinking_level;
     kit_config.tools = tools;
     kit_config.cwd = Some(request.working_directory.display().to_string());
@@ -465,6 +547,15 @@ pub(crate) async fn open_session(
             format!("Could not start Meerkat session: {other}"),
         ),
     })?;
+
+    // Never allow a resumed session log's persisted `base_url` / `api` / `provider` to
+    // override the active Machine connection and send current credentials to a stale host.
+    if !same_model_route(&kit.model(), &expected_model) {
+        kit.set_model(expected_model).map_err(|error| {
+            HarnessError::new(HarnessErrorCode::InvalidState, error.to_string())
+        })?;
+    }
+
     if resume {
         if !requested_system_prompt.is_empty() && kit.system_prompt() != requested_system_prompt {
             kit.set_system_prompt(requested_system_prompt)
@@ -484,10 +575,12 @@ pub(crate) async fn open_session(
         harness,
         kit: Arc::new(kit),
         processes,
+        resident_names,
         state,
         opened_auth_revision,
         environment,
         tool_lock: tokio::sync::Mutex::new(()),
+        close_lock: tokio::sync::Mutex::new(()),
     }))
 }
 
@@ -495,10 +588,12 @@ pub(crate) struct BuiltinSession {
     harness: BuiltinHarness,
     kit: Arc<KitSession>,
     processes: ProcessSessionManager,
+    resident_names: HashSet<String>,
     state: Arc<SessionState>,
     opened_auth_revision: u64,
     environment: Arc<Mutex<BTreeMap<String, String>>>,
     tool_lock: tokio::sync::Mutex<()>,
+    close_lock: tokio::sync::Mutex<()>,
 }
 
 impl HarnessSession for BuiltinSession {
@@ -514,21 +609,19 @@ impl HarnessSession for BuiltinSession {
 
     fn rebind<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, ()> {
         Box::pin(async move {
-            let active = self
-                .state
-                .active
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .is_some();
-            if self.state.current_health() != SessionHealth::Healthy
-                || active
-                || self.kit.is_running()
-                || self.harness.auth_revision() != self.opened_auth_revision
             {
-                return Err(HarnessError::new(
-                    HarnessErrorCode::InvalidState,
-                    "Session is not reusable",
-                ));
+                let inner = self.state.inner.lock().unwrap_or_else(|e| e.into_inner());
+                if inner.health != SessionHealth::Healthy
+                    || inner.closing
+                    || inner.active.is_some()
+                    || self.kit.is_running()
+                    || self.harness.auth_revision() != self.opened_auth_revision
+                {
+                    return Err(HarnessError::new(
+                        HarnessErrorCode::InvalidState,
+                        "Session is not reusable",
+                    ));
+                }
             }
             *self.environment.lock().unwrap_or_else(|e| e.into_inner()) =
                 request.config.environment;
@@ -540,6 +633,33 @@ impl HarnessSession for BuiltinSession {
             self.kit.reload_instructions();
             self.harness
                 .describe_model(&request.config.model.model_id)?;
+
+            // Sync deferred host tools so rebind picks up added, removed, or schema-updated tools.
+            let next_deferred =
+                build_deferred_host_tools(request.tools, &self.resident_names, &self.state);
+            let next_names: HashSet<String> = next_deferred
+                .iter()
+                .map(|tool| tool.definition().name)
+                .collect();
+            let removed: Vec<String> = self
+                .kit
+                .deferred_tools()
+                .into_iter()
+                .map(|def| def.name)
+                .filter(|name| !next_names.contains(name))
+                .collect();
+            if !removed.is_empty() {
+                let removed_refs: Vec<&str> = removed.iter().map(String::as_str).collect();
+                self.kit.remove_tools(&removed_refs).map_err(|error| {
+                    HarnessError::new(HarnessErrorCode::InvalidState, error.to_string())
+                })?;
+            }
+            if !next_deferred.is_empty() {
+                self.kit.upsert_tools(next_deferred).map_err(|error| {
+                    HarnessError::new(HarnessErrorCode::InvalidState, error.to_string())
+                })?;
+            }
+
             if !request.system_prompt.is_empty()
                 && self.kit.system_prompt() != request.system_prompt
             {
@@ -565,26 +685,21 @@ impl HarnessSession for BuiltinSession {
 
     fn execute<'a>(&'a self, request: ExecuteRequest) -> HarnessFuture<'a, AgentEventStream> {
         Box::pin(async move {
-            if self.state.current_health() == SessionHealth::Closed {
-                return Err(HarnessError::new(
-                    HarnessErrorCode::InvalidState,
-                    "Session is closed",
-                ));
-            }
             let (tx, rx) = mpsc::unbounded_channel();
             {
-                let mut active = self.state.active.lock().unwrap_or_else(|e| e.into_inner());
-                if active.is_some() || self.kit.is_running() {
+                let mut inner = self.state.inner.lock().unwrap_or_else(|e| e.into_inner());
+                if inner.health == SessionHealth::Closed || inner.closing {
+                    return Err(HarnessError::new(
+                        HarnessErrorCode::InvalidState,
+                        "Session is closed",
+                    ));
+                }
+                if inner.active.is_some() || self.kit.is_running() {
                     return Err(HarnessError::new(
                         HarnessErrorCode::InvalidState,
                         "Execution already active",
                     ));
                 }
-                self.state
-                    .cancel_reason
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .take();
                 self.state
                     .pending_tools
                     .lock()
@@ -596,16 +711,13 @@ impl HarnessSession for BuiltinSession {
                     .unwrap_or_else(|e| e.into_inner())
                     .clear();
                 self.kit.drain_steering();
-                *active = Some(ActiveTurn {
-                    sender: tx,
-                    sequence: 0,
+                let mut turn = ActiveTurn::new(tx);
+                turn.send(AgentEventKind::Started);
+                turn.send(AgentEventKind::NativeSessionBound {
+                    native_session_id: self.state.entry.native_session_id.clone(),
                 });
+                inner.active = Some(turn);
             }
-
-            self.state.emit(AgentEventKind::Started);
-            self.state.emit(AgentEventKind::NativeSessionBound {
-                native_session_id: self.state.entry.native_session_id.clone(),
-            });
 
             let kit = Arc::clone(&self.kit);
             let state = Arc::clone(&self.state);
@@ -621,17 +733,31 @@ impl HarnessSession for BuiltinSession {
 
     fn steer<'a>(&'a self, delivery_id: String, input: String) -> HarnessFuture<'a, SteerReceipt> {
         Box::pin(async move {
-            let active_guard = self.state.active.lock().unwrap_or_else(|e| e.into_inner());
-            if active_guard.is_none() {
+            let mut inner = self.state.inner.lock().unwrap_or_else(|e| e.into_inner());
+            if inner.closing || inner.health == SessionHealth::Closed {
+                return Err(HarnessError::new(
+                    HarnessErrorCode::InvalidState,
+                    "Session is closed",
+                ));
+            }
+            let Some(turn) = inner.active.as_mut() else {
                 return Err(HarnessError::new(
                     HarnessErrorCode::InvalidState,
                     "No turn is running",
                 ));
+            };
+            if turn.cancel_reason.is_some() {
+                return Err(HarnessError::new(
+                    HarnessErrorCode::InvalidState,
+                    "Turn is cancelling",
+                ));
             }
-            // Enqueue while holding `active_guard` so `drive_turn` cannot settle the turn
-            // without either consuming or draining this delivery.
+            // Record under the same turn lock that governs turn settlement so an accepted steer
+            // can never be lost if `jimu-agent` already passed its last steering check.
+            turn.pending_steers
+                .push_back((delivery_id.clone(), input.clone()));
             self.kit.steer(delivery_id.clone(), input);
-            drop(active_guard);
+            drop(inner);
             Ok(SteerReceipt {
                 delivery_id,
                 accepted: true,
@@ -647,9 +773,10 @@ impl HarnessSession for BuiltinSession {
             let _guard = self.tool_lock.lock().await;
             if self
                 .state
-                .active
+                .inner
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
+                .active
                 .is_none()
             {
                 return Err(HarnessError::new(
@@ -713,76 +840,81 @@ impl HarnessSession for BuiltinSession {
 
     fn cancel<'a>(&'a self, reason: String) -> HarnessFuture<'a, CancelReceipt> {
         Box::pin(async move {
-            {
-                let mut cancel_reason = self
-                    .state
-                    .cancel_reason
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner());
-                if cancel_reason.is_none() {
-                    *cancel_reason = Some(reason);
+            let accepted = {
+                let mut inner = self.state.inner.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(turn) = inner.active.as_mut() {
+                    if turn.cancel_reason.is_none() {
+                        turn.cancel_reason = Some(reason);
+                    }
+                    true
+                } else {
+                    false
                 }
+            };
+            if accepted {
+                self.kit.abort().await;
             }
-            self.kit.abort().await;
-            self.state.set_health(SessionHealth::Cancelled);
-            Ok(CancelReceipt { accepted: true })
+            Ok(CancelReceipt { accepted })
         })
     }
 
     fn close<'a>(&'a self) -> HarnessFuture<'a, CloseReceipt> {
         Box::pin(async move {
-            let closed = self.state.current_health() == SessionHealth::Closed;
-            if !closed {
-                let was_active = self
-                    .state
-                    .active
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .is_some();
-                if was_active {
-                    {
-                        let mut cancel_reason = self
-                            .state
-                            .cancel_reason
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner());
-                        if cancel_reason.is_none() {
-                            *cancel_reason = Some("Session closed".into());
-                        }
-                    }
-                    self.kit.abort().await;
+            let _close_guard = self.close_lock.lock().await;
+            let wait_done = {
+                let mut inner = self.state.inner.lock().unwrap_or_else(|e| e.into_inner());
+                if inner.health == SessionHealth::Closed && !inner.closing {
+                    return Ok(CloseReceipt {
+                        already_closed: true,
+                    });
                 }
-                self.processes.shutdown().await;
+                inner.closing = true;
+                if let Some(turn) = inner.active.as_mut() {
+                    if turn.cancel_reason.is_none() {
+                        turn.cancel_reason = Some("Session closed".into());
+                    }
+                    Some(turn.done_rx.clone())
+                } else {
+                    None
+                }
+            };
+
+            if let Some(mut done_rx) = wait_done {
+                self.kit.abort().await;
                 self.state
                     .pending_tools
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .clear();
-                self.state.set_health(SessionHealth::Closed);
+                let _ = done_rx.wait_for(|done| *done).await;
             }
+
+            self.processes.shutdown().await;
+
+            {
+                let mut inner = self.state.inner.lock().unwrap_or_else(|e| e.into_inner());
+                inner.closing = false;
+                inner.health = SessionHealth::Closed;
+            }
+            self.state
+                .pending_tools
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clear();
+
             Ok(CloseReceipt {
-                already_closed: closed,
+                already_closed: false,
             })
         })
     }
 }
 
-fn extract_steering_text(items: Vec<(String, Vec<ContentPart>)>) -> String {
-    items
-        .into_iter()
-        .filter_map(|(_, parts)| {
-            let text: String = parts
-                .into_iter()
-                .filter_map(|p| match p {
-                    ContentPart::Text(t) => Some(t.text),
-                    ContentPart::Image(_) => None,
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            (!text.is_empty()).then_some(text)
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n")
+fn take_cancel_reason(state: &SessionState) -> Option<String> {
+    let mut inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
+    inner
+        .active
+        .as_mut()
+        .and_then(|turn| turn.cancel_reason.take())
 }
 
 async fn drive_turn(kit: Arc<KitSession>, state: Arc<SessionState>, initial_input: String) {
@@ -790,12 +922,7 @@ async fn drive_turn(kit: Arc<KitSession>, state: Arc<SessionState>, initial_inpu
     let mut last_assistant: Option<AssistantMessage> = None;
 
     loop {
-        if let Some(reason) = state
-            .cancel_reason
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-        {
+        if let Some(reason) = take_cancel_reason(&state) {
             kit.drain_steering();
             state.finish_turn(AgentEventKind::Cancelled { reason });
             return;
@@ -805,25 +932,24 @@ async fn drive_turn(kit: Arc<KitSession>, state: Arc<SessionState>, initial_inpu
             Ok(stream) => stream,
             Err(error) => {
                 kit.drain_steering();
-                let message = error.to_string();
-                let failure = classify_agent_failure("agent_error", &message);
-                state.finish_turn(AgentEventKind::Failed {
-                    code: "agent_error".into(),
-                    message,
-                    failure: Some(failure),
-                });
+                if let Some(reason) = take_cancel_reason(&state) {
+                    state.finish_turn(AgentEventKind::Cancelled { reason });
+                } else {
+                    let message = error.to_string();
+                    let failure = classify_agent_failure("agent_error", &message);
+                    state.finish_turn(AgentEventKind::Failed {
+                        code: "agent_error".into(),
+                        message,
+                        failure: Some(failure),
+                    });
+                }
                 return;
             }
         };
 
-        // Close the registration race: if `cancel()` or `close()` arrived right before `prompt_stream`
-        // registered `active_run`, abort immediately now that `active_run` is live.
-        if state
-            .cancel_reason
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .is_some()
-        {
+        // Close the registration race: if `cancel()` or `close()` arrived right before
+        // `prompt_stream` registered `active_run`, abort immediately now that it is live.
+        if state.has_cancel_reason() {
             kit.abort().await;
         }
 
@@ -849,6 +975,9 @@ async fn drive_turn(kit: Arc<KitSession>, state: Arc<SessionState>, initial_inpu
                         }
                         _ => {}
                     },
+                    JimuAgentEvent::Steered { id, .. } => {
+                        state.mark_steer_consumed(&id);
+                    }
                     JimuAgentEvent::RequestUsage { usage, .. } => {
                         let input_tokens = usage
                             .input
@@ -873,13 +1002,7 @@ async fn drive_turn(kit: Arc<KitSession>, state: Arc<SessionState>, initial_inpu
             }
         }
 
-        let cancel_reason = state
-            .cancel_reason
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take();
-
-        if let Some(reason) = cancel_reason {
+        if let Some(reason) = take_cancel_reason(&state) {
             kit.drain_steering();
             state.finish_turn(AgentEventKind::Cancelled { reason });
             return;
@@ -935,34 +1058,62 @@ async fn drive_turn(kit: Arc<KitSession>, state: Arc<SessionState>, initial_inpu
             }
         }
 
-        // Atomically check under `state.active` if any `steer()` arrived after `jimu-agent`'s
-        // final steering check. If so, run another prompt iteration in the same active turn;
-        // otherwise settle the turn while still holding `state.active` so no `steer()` is ever dropped.
-        let maybe_followup_steer = {
-            let mut active = state.active.lock().unwrap_or_else(|e| e.into_inner());
-            let late_steers = kit.drain_steering();
-            let combined = extract_steering_text(late_steers);
-            if !combined.is_empty() {
-                Some(combined)
-            } else {
-                let final_output = last_assistant
-                    .as_ref()
-                    .map(AssistantMessage::text_output)
-                    .unwrap_or_default();
-                let terminal = AgentEventKind::Completed { final_output };
-                if let Some(turn) = active.as_mut() {
-                    turn.sequence += 1;
-                    let _ = turn.sender.send(Ok(AgentEvent {
-                        sequence: turn.sequence,
-                        kind: terminal,
-                    }));
+        // Settle the turn atomically under `state.inner`:
+        // - If `cancel()` / `close()` won the lock, emit `Cancelled` (never `Completed`).
+        // - If any accepted `steer()` has not yet triggered `AgentEvent::Steered`, drain
+        //   Jimu's internal queue and run another prompt iteration in the same active turn.
+        // - Otherwise emit `Completed` and clear `active` before releasing the lock.
+        let (followup_steer, done_tx) = {
+            let mut inner = state.inner.lock().unwrap_or_else(|e| e.into_inner());
+            kit.drain_steering();
+            if let Some(turn) = inner.active.as_mut() {
+                if let Some(reason) = turn.cancel_reason.take() {
+                    let mut turn = inner.active.take().expect("active turn");
+                    turn.send(AgentEventKind::Cancelled { reason });
+                    if inner.health != SessionHealth::Closed && !inner.closing {
+                        inner.health = SessionHealth::Cancelled;
+                    }
+                    (None, Some(turn.done_tx))
+                } else if !turn.pending_steers.is_empty() {
+                    let combined = turn
+                        .pending_steers
+                        .drain(..)
+                        .map(|(_, text)| text)
+                        .filter(|text| !text.is_empty())
+                        .collect::<Vec<_>>()
+                        .join("\n\n");
+                    if !combined.is_empty() {
+                        (Some(combined), None)
+                    } else {
+                        let final_output = last_assistant
+                            .as_ref()
+                            .map(AssistantMessage::text_output)
+                            .unwrap_or_default();
+                        let mut turn = inner.active.take().expect("active turn");
+                        turn.send(AgentEventKind::Completed { final_output });
+                        if inner.health != SessionHealth::Closed && !inner.closing {
+                            inner.health = SessionHealth::Healthy;
+                        }
+                        (None, Some(turn.done_tx))
+                    }
+                } else {
+                    let final_output = last_assistant
+                        .as_ref()
+                        .map(AssistantMessage::text_output)
+                        .unwrap_or_default();
+                    let mut turn = inner.active.take().expect("active turn");
+                    turn.send(AgentEventKind::Completed { final_output });
+                    if inner.health != SessionHealth::Closed && !inner.closing {
+                        inner.health = SessionHealth::Healthy;
+                    }
+                    (None, Some(turn.done_tx))
                 }
-                active.take();
-                None
+            } else {
+                (None, None)
             }
         };
 
-        if let Some(steered_input) = maybe_followup_steer {
+        if let Some(steered_input) = followup_steer {
             next_input = steered_input;
             continue;
         }
@@ -972,7 +1123,9 @@ async fn drive_turn(kit: Arc<KitSession>, state: Arc<SessionState>, initial_inpu
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clear();
-        state.set_health(SessionHealth::Healthy);
+        if let Some(done_tx) = done_tx {
+            let _ = done_tx.send(true);
+        }
         return;
     }
 }

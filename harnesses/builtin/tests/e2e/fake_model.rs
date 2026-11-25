@@ -110,25 +110,69 @@ fn handle(stream: TcpStream, key: &str, recorded: &Mutex<Vec<Recorded>>) -> std:
             .iter()
             .any(|message| message["role"] == "user" && text(message).contains(needle))
     };
+    let trailing_tool_text = messages
+        .iter()
+        .rev()
+        .take_while(|message| message["role"] == "tool")
+        .map(text)
+        .collect::<Vec<_>>()
+        .join("\n");
+
     let mut deltas = Vec::new();
     let mut finish = "stop";
     if last["role"] == "tool" {
-        deltas.push(json!({"role":"assistant","content":"tool said: "}));
-        deltas.push(json!({"content": text(&last)}));
-    } else if user.contains("TOOL") {
-        let tool = body["tools"]
-            .as_array()
-            .and_then(|tools| {
-                tools.iter().find_map(|tool| {
-                    tool["function"]["name"]
-                        .as_str()
-                        .filter(|name| name.contains("report"))
+        if user.contains("DEFERRED_UPDATE") {
+            if trailing_tool_text.contains("reported-ok") && trailing_tool_text.contains("audit-ok")
+            {
+                deltas.push(json!({"role":"assistant","content":"deferred-updated-ok"}));
+            } else if trailing_tool_text.contains("tag") && trailing_tool_text.contains("audit") {
+                let call_report = json!({
+                    "name": "report",
+                    "arguments": {"value": "v2", "tag": "updated"}
                 })
+                .to_string();
+                let call_audit = json!({
+                    "name": "audit",
+                    "arguments": {"note": "checked"}
+                })
+                .to_string();
+                deltas.push(json!({"role":"assistant","tool_calls":[
+                    {"index":0,"id":"call_report_v2","type":"function","function":{"name":"call_tool","arguments":call_report}},
+                    {"index":1,"id":"call_audit_v1","type":"function","function":{"name":"call_tool","arguments":call_audit}}
+                ]}));
+                finish = "tool_calls";
+            } else {
+                deltas
+                    .push(json!({"role":"assistant","content":"missing updated deferred schema"}));
+            }
+        } else if trailing_tool_text.contains("reported-ok") {
+            deltas.push(json!({"role":"assistant","content":"tool said: "}));
+            deltas.push(json!({"content": text(&last)}));
+        } else if user.contains("TOOL") && trailing_tool_text.contains("report") {
+            let call_report = json!({
+                "name": "report",
+                "arguments": {"value": "roundtrip"}
             })
-            .unwrap_or("report")
-            .to_owned();
-        deltas.push(json!({"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":tool,"arguments":""}}]}));
-        deltas.push(json!({"tool_calls":[{"index":0,"function":{"arguments":"{\"value\":\"roundtrip\"}"}}]}));
+            .to_string();
+            deltas.push(json!({"role":"assistant","tool_calls":[
+                {"index":0,"id":"call_report_1","type":"function","function":{"name":"call_tool","arguments":call_report}}
+            ]}));
+            finish = "tool_calls";
+        } else {
+            deltas.push(json!({"role":"assistant","content":"tool said: "}));
+            deltas.push(json!({"content": text(&last)}));
+        }
+    } else if user.contains("DEFERRED_UPDATE") {
+        let search_args = json!({"query": "select:report,audit"}).to_string();
+        deltas.push(json!({"role":"assistant","tool_calls":[
+            {"index":0,"id":"call_search_2","type":"function","function":{"name":"tool_search","arguments":search_args}}
+        ]}));
+        finish = "tool_calls";
+    } else if user.contains("TOOL") {
+        let search_args = json!({"query": "select:report"}).to_string();
+        deltas.push(json!({"role":"assistant","tool_calls":[
+            {"index":0,"id":"call_search_1","type":"function","function":{"name":"tool_search","arguments":search_args}}
+        ]}));
         finish = "tool_calls";
     } else if user.contains("RECALL") {
         let word = if any_user("kiwi") { "kiwi" } else { "unknown" };

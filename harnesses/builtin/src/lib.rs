@@ -51,6 +51,11 @@ pub(crate) enum ActiveConnection {
     Chatgpt { credentials: CodexCredentials },
 }
 
+pub(crate) struct ConnectionSnapshot {
+    pub connection: ActiveConnection,
+    pub auth_revision: u64,
+}
+
 #[derive(Clone, Debug)]
 pub struct BuiltinHarness {
     info: HarnessInfo,
@@ -83,11 +88,6 @@ impl BuiltinHarness {
         if tokens > 0 {
             self.context_window = tokens;
         }
-        self
-    }
-
-    /// Retained for builder compatibility; the built-in Agent runs in-process.
-    pub fn with_pid_journal(self, _path: impl Into<PathBuf>) -> Self {
         self
     }
 
@@ -127,8 +127,20 @@ impl BuiltinHarness {
     }
 
     pub(crate) fn active_connection(&self) -> Result<ActiveConnection, HarnessError> {
+        self.active_connection_snapshot()
+            .map(|snapshot| snapshot.connection)
+    }
+
+    /// Atomically snapshot active connection settings, credentials, and `auth_revision`
+    /// under `writes` so concurrent credential updates cannot mix an old `base_url` with a new key.
+    pub(crate) fn active_connection_snapshot(&self) -> Result<ConnectionSnapshot, HarnessError> {
+        let _guard = self
+            .writes
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let auth_revision = self.auth_revision();
         let settings = self.settings();
-        match settings.get("provider").and_then(Value::as_str) {
+        let connection = match settings.get("provider").and_then(Value::as_str) {
             Some(API_KEY_PROVIDER) => {
                 let api_key = self.api_key().ok_or_else(signed_out)?;
                 let base_url = settings
@@ -138,14 +150,18 @@ impl BuiltinHarness {
                     .and_then(Value::as_str)
                     .map(str::to_owned)
                     .ok_or_else(signed_out)?;
-                Ok(ActiveConnection::ApiKey { base_url, api_key })
+                ActiveConnection::ApiKey { base_url, api_key }
             }
             Some(CHATGPT_PROVIDER) => {
                 let credentials = self.load_codex_credentials()?;
-                Ok(ActiveConnection::Chatgpt { credentials })
+                ActiveConnection::Chatgpt { credentials }
             }
-            _ => Err(signed_out()),
-        }
+            _ => return Err(signed_out()),
+        };
+        Ok(ConnectionSnapshot {
+            connection,
+            auth_revision,
+        })
     }
 
     pub(crate) fn load_codex_credentials(&self) -> Result<CodexCredentials, HarnessError> {
@@ -291,7 +307,6 @@ impl BuiltinHarness {
             return Ok(());
         }
         write_settings(&self.home, settings)?;
-        self.auth_revision.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 

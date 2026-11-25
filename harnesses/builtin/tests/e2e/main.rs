@@ -16,6 +16,7 @@ use tokio_stream::StreamExt;
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 const API_KEY: &str = "sk-e2e-secret";
+const API_KEY_B: &str = "sk-e2e-secret-second";
 
 fn request(agent: &Path, native_session_id: Option<String>) -> SessionRequest {
     SessionRequest {
@@ -35,14 +36,14 @@ fn request(agent: &Path, native_session_id: Option<String>) -> SessionRequest {
         tools: vec![ToolDefinition {
             name: "report".into(),
             description: "Report a value".into(),
-            input_schema: json!({"type":"object","properties":{"value":{"type":"string"}}}),
+            input_schema: json!({"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}),
             output_schema: json!({"type":"object"}),
         }],
         native_session_id,
     }
 }
 
-/// Collect events until the terminal one, answering tool calls on the way.
+/// Collect events until the terminal one, answering host tool calls on the way.
 async fn run(
     session: &dyn HarnessSession,
     mut events: AgentEventStream,
@@ -51,12 +52,21 @@ async fn run(
     tokio::time::timeout(Duration::from_secs(60), async {
         while let Some(event) = events.next().await {
             let event = event?;
-            if let AgentEventKind::ToolStarted { tool_call_id, .. } = &event.kind {
+            if let AgentEventKind::ToolStarted {
+                tool_call_id,
+                tool_name,
+                ..
+            } = &event.kind
+            {
+                let content_markdown = match tool_name.as_str() {
+                    "audit" => "audit-ok".into(),
+                    _ => "reported-ok".into(),
+                };
                 session
                     .tool_result(ToolResultRequest {
                         tool_call_id: tool_call_id.clone(),
                         success: true,
-                        content_markdown: "reported-ok".into(),
+                        content_markdown,
                         structured_content: json!({}),
                         resources: Vec::new(),
                         error: None,
@@ -85,6 +95,7 @@ fn final_output(events: &[AgentEventKind]) -> Option<&str> {
 #[tokio::test]
 async fn builtin_agent_api_key_session_scenario() -> Result {
     let model = fake_model::FakeModel::start(API_KEY)?;
+    let model_b = fake_model::FakeModel::start(API_KEY_B)?;
     let root = tempfile::tempdir()?;
     let home = root.path().join("machine/.machine/builtin-agent");
     let agent = root.path().join("agent");
@@ -214,6 +225,10 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
             .iter()
             .any(|e| matches!(e, AgentEventKind::Usage { input_tokens, .. } if *input_tokens > 0))
     );
+    // Cancel after terminal state must not claim acceptance.
+    let late_cancel = session.cancel("too late".into()).await?;
+    assert!(!late_cancel.accepted);
+
     let first = model.requests().pop().ok_or("model was called")?;
     assert_eq!(first.body["model"], "fake-model");
     assert!(
@@ -238,7 +253,6 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
         .filter_map(|tool| tool["function"]["name"].as_str())
         .collect();
     for expected in [
-        "report",
         "read",
         "write",
         "edit",
@@ -248,12 +262,22 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
         "exec_command",
         "write_stdin",
         "web_fetch",
+        "tool_search",
+        "call_tool",
     ] {
         assert!(
             tool_names.contains(&expected),
-            "missing tool `{expected}` in {tool_names:?}"
+            "missing resident tool `{expected}` in {tool_names:?}"
         );
     }
+    assert!(
+        !tool_names.contains(&"report"),
+        "dynamic host tools should live behind the deferred gateway, not top-level tools"
+    );
+    assert!(
+        first_body.contains("report"),
+        "deferred host tool catalog should list `report`: {first_body}"
+    );
 
     // Add a skill dynamically after session start; auto_reload_skills picks it up before next turn.
     let skill_dir = agent.join("skills/hot-skill");
@@ -263,7 +287,7 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
         "---\nname: hot-skill\ndescription: Dynamically added skill\n---\nUse hot-skill.\n",
     )?;
 
-    // One Meerkat host tool call.
+    // One Meerkat host tool call via deferred gateway (`tool_search` -> `call_tool`).
     let events = run(
         session.as_ref(),
         session
@@ -317,11 +341,12 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
 
     session.close().await?;
 
-    // A member with a thinking level, on another model, sends that effort.
+    // A member with a thinking level, on a non-default model, sends that effort and
+    // stays reusable across `rebind` (`describe_model` must not bump `auth_revision`).
     let mut thinking = request(&agent, None);
     thinking.config.model = ModelRef::new("fake-mini", "fake-mini");
     thinking.config.thinking_level = "xhigh".into();
-    let session = factory.start(thinking).await?;
+    let session = factory.start(thinking.clone()).await?;
     let events = run(
         session.as_ref(),
         session
@@ -341,6 +366,7 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
         settings["providers"]["custom"]["model_metadata"]["fake-mini"]["context_window"],
         200_000
     );
+    session.rebind(thinking).await?;
     session.close().await?;
 
     // A member with thinking turned off asks the model for no reasoning.
@@ -362,12 +388,85 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
     assert_eq!(sent.body["max_tokens"], 128_000);
     session.close().await?;
 
-    // Resume after a restart keeps the conversation.
+    // Resume after a restart with a modified host tool schema and a newly added host tool.
+    // Both must be searchable and executable through the deferred gateway.
     let restarted = BuiltinHarness::new(&home);
+    let mut resume_with_updated_tools = request(&agent, Some(native_id.clone()));
+    resume_with_updated_tools.tools = vec![
+        ToolDefinition {
+            name: "report".into(),
+            description: "Report a value with a tag".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "value": {"type": "string"},
+                    "tag": {"type": "string"}
+                },
+                "required": ["value", "tag"]
+            }),
+            output_schema: json!({"type": "object"}),
+        },
+        ToolDefinition {
+            name: "audit".into(),
+            description: "Record an audit note".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {"note": {"type": "string"}},
+                "required": ["note"]
+            }),
+            output_schema: json!({"type": "object"}),
+        },
+    ];
+    let session = restarted.resume(resume_with_updated_tools).await?;
+    assert_eq!(session.entry().native_session_id, native_id);
+    let events = run(
+        session.as_ref(),
+        session
+            .execute(ExecuteRequest {
+                input: "DEFERRED_UPDATE: inspect and invoke both tools".into(),
+            })
+            .await?,
+    )
+    .await?;
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            AgentEventKind::ToolStarted { tool_name, arguments, .. }
+                if tool_name == "report"
+                    && arguments["value"] == "v2"
+                    && arguments["tag"] == "updated"
+        )),
+        "{events:?}"
+    );
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            AgentEventKind::ToolStarted { tool_name, arguments, .. }
+                if tool_name == "audit" && arguments["note"] == "checked"
+        )),
+        "{events:?}"
+    );
+    assert_eq!(
+        final_output(&events),
+        Some("deferred-updated-ok"),
+        "{events:?}"
+    );
+    session.close().await?;
+
+    // Switch Machine connection to a second endpoint (`model_b`, new API key, same model ID)
+    // and resume the exact same persisted session. The resumed session must route exclusively
+    // to `model_b` and never leak `API_KEY_B` to the old `model` endpoint.
+    let model_a_requests_before_switch = model.requests().len();
+    restarted
+        .set_credential(Some(HarnessCredential::ApiKey {
+            base_url: format!("{}/v1", model_b.url()),
+            api_key: API_KEY_B.into(),
+            model: None,
+        }))
+        .await?;
     let session = restarted
         .resume(request(&agent, Some(native_id.clone())))
         .await?;
-    assert_eq!(session.entry().native_session_id, native_id);
     let events = run(
         session.as_ref(),
         session
@@ -378,6 +477,19 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
     )
     .await?;
     assert_eq!(final_output(&events), Some("kiwi"), "{events:?}");
+    assert_eq!(
+        model.requests().len(),
+        model_a_requests_before_switch,
+        "resumed session must never send requests or new credentials to the old base_url"
+    );
+    let switched_req = model_b
+        .requests()
+        .pop()
+        .ok_or("second endpoint must receive the resumed request")?;
+    assert_eq!(
+        switched_req.authorization.as_deref(),
+        Some(&*format!("Bearer {API_KEY_B}"))
+    );
 
     // Cancel a running turn.
     let mut stream = session
@@ -386,7 +498,8 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
         })
         .await?;
     stream.next().await.ok_or("started")??;
-    session.cancel("user stopped".into()).await?;
+    let cancel = session.cancel("user stopped".into()).await?;
+    assert!(cancel.accepted);
     let events = run(session.as_ref(), stream).await?;
     assert!(
         matches!(events.last(), Some(AgentEventKind::Cancelled { .. })),

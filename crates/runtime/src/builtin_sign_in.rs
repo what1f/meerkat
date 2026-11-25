@@ -61,7 +61,15 @@ pub(crate) struct BuiltinSignIns {
     login: Arc<tokio::sync::Mutex<()>>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SignInPhase {
+    Pending,
+    Committing,
+    Done,
+}
+
 struct Entry {
+    phase: SignInPhase,
     status: BuiltinAgentSignInStatus,
     cancel: Option<oneshot::Sender<()>>,
     finished: Option<Instant>,
@@ -89,7 +97,7 @@ impl BuiltinSignIns {
                     Ok(()) => finished(BuiltinAgentSignInState::Succeeded, None),
                     Err(reason) => finished(BuiltinAgentSignInState::Failed, Some(reason)),
                 };
-                self.insert(&sign_in_id, status, None, true);
+                self.insert(&sign_in_id, SignInPhase::Done, status, None);
                 Ok(BuiltinAgentSignInResponse {
                     sign_in_id,
                     authorize_url: None,
@@ -108,9 +116,9 @@ impl BuiltinSignIns {
                 let (cancel, cancelled) = oneshot::channel();
                 self.insert(
                     &sign_in_id,
+                    SignInPhase::Pending,
                     BuiltinAgentSignInStatus::default(),
                     Some(cancel),
-                    false,
                 );
                 let this = self.clone();
                 let id = sign_in_id.clone();
@@ -152,13 +160,12 @@ impl BuiltinSignIns {
                         }
                     };
 
-                    let status = match outcome {
+                    match outcome {
                         Outcome::Ready(auth_json) => {
-                            // Confirm this sign-in is still Pending BEFORE committing credentials to Machine.
-                            if !this.is_pending(&id) {
-                                finished(BuiltinAgentSignInState::Failed, Some("cancelled"))
-                            } else {
-                                match broker
+                            // Atomically transition Pending -> Committing under the state lock.
+                            // If a concurrent cancel already won, skip writing to the Machine.
+                            if this.begin_commit(&id) {
+                                let status = match broker
                                     .set_harness_credential(
                                         &machine_id,
                                         HARNESS_ID,
@@ -170,18 +177,26 @@ impl BuiltinSignIns {
                                     Err(reason) => {
                                         finished(BuiltinAgentSignInState::Failed, Some(reason))
                                     }
-                                }
+                                };
+                                this.complete_commit(&id, status);
                             }
                         }
                         Outcome::Failed => {
-                            finished(BuiltinAgentSignInState::Failed, Some("sign_in_failed"))
+                            this.finish(
+                                &id,
+                                finished(BuiltinAgentSignInState::Failed, Some("sign_in_failed")),
+                            );
                         }
-                        Outcome::Expired => finished(BuiltinAgentSignInState::Expired, None),
+                        Outcome::Expired => {
+                            this.finish(&id, finished(BuiltinAgentSignInState::Expired, None));
+                        }
                         Outcome::Cancelled => {
-                            finished(BuiltinAgentSignInState::Failed, Some("cancelled"))
+                            this.finish(
+                                &id,
+                                finished(BuiltinAgentSignInState::Failed, Some("cancelled")),
+                            );
                         }
-                    };
-                    this.finish(&id, status);
+                    }
                     drop(guard);
                 });
                 Ok(BuiltinAgentSignInResponse {
@@ -204,11 +219,12 @@ impl BuiltinSignIns {
     pub(crate) fn cancel(&self, sign_in_id: &str) -> BuiltinAgentSignInStatus {
         if let Ok(mut entries) = self.entries.lock()
             && let Some(entry) = entries.get_mut(sign_in_id)
-            && entry.status.state == BuiltinAgentSignInState::Pending
+            && entry.phase == SignInPhase::Pending
         {
             if let Some(cancel) = entry.cancel.take() {
                 let _ = cancel.send(());
             }
+            entry.phase = SignInPhase::Done;
             entry.status = finished(BuiltinAgentSignInState::Failed, Some("cancelled"));
             entry.finished = Some(Instant::now());
         }
@@ -220,10 +236,11 @@ impl BuiltinSignIns {
             return;
         };
         for entry in entries.values_mut() {
-            if entry.status.state == BuiltinAgentSignInState::Pending {
+            if entry.phase == SignInPhase::Pending {
                 if let Some(cancel) = entry.cancel.take() {
                     let _ = cancel.send(());
                 }
+                entry.phase = SignInPhase::Done;
                 entry.status = finished(BuiltinAgentSignInState::Failed, Some("cancelled"));
                 entry.finished = Some(Instant::now());
             }
@@ -233,35 +250,55 @@ impl BuiltinSignIns {
     fn insert(
         &self,
         sign_in_id: &str,
+        phase: SignInPhase,
         status: BuiltinAgentSignInStatus,
         cancel: Option<oneshot::Sender<()>>,
-        done: bool,
     ) {
         if let Ok(mut entries) = self.entries.lock() {
             entries.insert(
                 sign_in_id.to_owned(),
                 Entry {
+                    phase,
                     status,
                     cancel,
-                    finished: done.then(Instant::now),
+                    finished: (phase == SignInPhase::Done).then(Instant::now),
                 },
             );
         }
     }
 
-    fn is_pending(&self, sign_in_id: &str) -> bool {
-        self.entries.lock().ok().is_some_and(|entries| {
-            entries
-                .get(sign_in_id)
-                .is_some_and(|e| e.status.state == BuiltinAgentSignInState::Pending)
-        })
+    fn begin_commit(&self, sign_in_id: &str) -> bool {
+        let Ok(mut entries) = self.entries.lock() else {
+            return false;
+        };
+        let Some(entry) = entries.get_mut(sign_in_id) else {
+            return false;
+        };
+        if entry.phase != SignInPhase::Pending {
+            return false;
+        }
+        entry.phase = SignInPhase::Committing;
+        entry.cancel = None;
+        true
+    }
+
+    fn complete_commit(&self, sign_in_id: &str, status: BuiltinAgentSignInStatus) {
+        if let Ok(mut entries) = self.entries.lock()
+            && let Some(entry) = entries.get_mut(sign_in_id)
+            && entry.phase == SignInPhase::Committing
+        {
+            entry.phase = SignInPhase::Done;
+            entry.status = status;
+            entry.finished = Some(Instant::now());
+        }
     }
 
     fn finish(&self, sign_in_id: &str, status: BuiltinAgentSignInStatus) {
         if let Ok(mut entries) = self.entries.lock()
             && let Some(entry) = entries.get_mut(sign_in_id)
-            && entry.status.state == BuiltinAgentSignInState::Pending
+            && entry.phase == SignInPhase::Pending
         {
+            entry.phase = SignInPhase::Done;
             entry.status = status;
             entry.cancel = None;
             entry.finished = Some(Instant::now());
