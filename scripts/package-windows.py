@@ -92,7 +92,6 @@ def main() -> None:
             str(release_dir),
             "--output",
             str(provenance),
-            "--allow-missing-builtin-agent",
         ],
         check=True,
     )
@@ -133,20 +132,9 @@ def main() -> None:
         for name in required_binaries:
             shutil.copy2(release_dir / name, stage / name)
 
-        optional_agent = release_dir / "meerkat-agent.exe"
-        if optional_agent.is_file():
-            shutil.copy2(optional_agent, stage / "meerkat-agent.exe")
-
         shutil.copy2(ROOT / "LICENSE", stage / "LICENSE")
         shutil.copy2(ROOT / "THIRD_PARTY_LICENSES.md", stage / "THIRD_PARTY_LICENSES.md")
         shutil.copytree(ROOT / "licenses", stage / "licenses")
-
-        agent_source = target_dir / "builtin-agent/src"
-        if optional_agent.is_file() and (agent_source / "LICENSE").is_file():
-            builtin_licenses = stage / "licenses/builtin-agent"
-            builtin_licenses.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(agent_source / "LICENSE", builtin_licenses / "LICENSE")
-            shutil.copy2(agent_source / "THIRD_PARTY_NOTICES.md", builtin_licenses / "THIRD_PARTY_NOTICES.md")
 
         zip_directory(stage, base, archive)
 
@@ -155,8 +143,6 @@ def main() -> None:
         write_nsis_manifests(stage, install_list, uninstall_list)
 
         stop_binaries = list(required_binaries)
-        if optional_agent.is_file():
-            stop_binaries.append("meerkat-agent.exe")
 
         if installer.exists():
             installer.unlink()

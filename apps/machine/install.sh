@@ -12,7 +12,7 @@ set -eu
 VERSION="@VERSION@"
 BASE="${MEERKAT_DOWNLOAD_BASE:-https://github.com/what1f/meerkat/releases/download/v$VERSION}"
 DIR="${MEERKAT_INSTALL_DIR:-$HOME/.meerkat/bin}"
-BINARIES="meerkat-machine meerkat meerkat-agent"
+BINARIES="meerkat-machine meerkat"
 
 fail() {
 	printf '%s\n' "$*" >&2

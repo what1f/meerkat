@@ -38,7 +38,7 @@ if (( APP_ONLY == 0 )); then
   command -v uv >/dev/null || { print -u2 'Install uv to build the DMG'; exit 2; }
 fi
 
-for binary in meerkat-desktop meerkatd meerkat-machine meerkat meerkat-agent; do
+for binary in meerkat-desktop meerkatd meerkat-machine meerkat; do
   [[ -x "$RELEASE_DIR/$binary" ]] || {
     print -u2 "release binary is missing: $RELEASE_DIR/$binary"
     exit 4
@@ -61,16 +61,11 @@ cp "$RELEASE_DIR/meerkat-desktop" "$CONTENTS/MacOS/Meerkat"
 cp "$RELEASE_DIR/meerkatd" "$CONTENTS/Library/LaunchServices/meerkatd"
 cp "$RELEASE_DIR/meerkat-machine" "$CONTENTS/Library/LaunchServices/meerkat-machine"
 cp "$RELEASE_DIR/meerkat" "$CONTENTS/Resources/bin/meerkat"
-cp "$RELEASE_DIR/meerkat-agent" "$CONTENTS/Resources/bin/meerkat-agent"
 cp "$ROOT_DIR/apps/desktop/macos/com.meerkat.daemon.plist" "$CONTENTS/Library/LaunchAgents/com.meerkat.daemon.plist"
 cp "$ROOT_DIR/apps/desktop/macos/com.meerkat.machine.plist" "$CONTENTS/Library/LaunchAgents/com.meerkat.machine.plist"
 cp "$ROOT_DIR/apps/desktop/Info.plist" "$CONTENTS/Info.plist"
 cp "$ROOT_DIR/LICENSE" "$ROOT_DIR/THIRD_PARTY_LICENSES.md" "$CONTENTS/Resources/"
 cp -R "$ROOT_DIR/licenses" "$CONTENTS/Resources/licenses"
-AGENT_SOURCE="${CARGO_TARGET_DIR:-$ROOT_DIR/target}/builtin-agent/src"
-mkdir -p "$CONTENTS/Resources/licenses/builtin-agent"
-cp "$AGENT_SOURCE/LICENSE" "$AGENT_SOURCE/THIRD_PARTY_NOTICES.md" \
-  "$CONTENTS/Resources/licenses/builtin-agent/"
 if [[ "$SIGNING_IDENTITY" == "-" ]]; then
   touch "$CONTENTS/Resources/AdHocBackgroundServices"
 fi
@@ -102,8 +97,7 @@ chmod 755 \
   "$CONTENTS/MacOS/Meerkat" \
   "$CONTENTS/Library/LaunchServices/meerkatd" \
   "$CONTENTS/Library/LaunchServices/meerkat-machine" \
-  "$CONTENTS/Resources/bin/meerkat" \
-  "$CONTENTS/Resources/bin/meerkat-agent"
+  "$CONTENTS/Resources/bin/meerkat"
 xattr -cr "$APP_DIR"
 "$ROOT_DIR/scripts/package-provenance" stage --binary-dir "$RELEASE_DIR" \
   --build-provenance "$PROVENANCE" --bundle "$APP_DIR" --output "$ICON_TEMP/stage.json"
@@ -113,7 +107,6 @@ for helper in \
   "$CONTENTS/Library/LaunchServices/meerkatd" \
   "$CONTENTS/Library/LaunchServices/meerkat-machine" \
   "$CONTENTS/Resources/bin/meerkat" \
-  "$CONTENTS/Resources/bin/meerkat-agent" \
   "$CONTENTS/MacOS/Meerkat"; do
   codesign --force "${SIGNING_OPTIONS[@]}" --sign "$SIGNING_IDENTITY" "$helper"
 done
@@ -123,7 +116,7 @@ if [[ "${MEERKAT_RELEASE_SIGNING:-0}" == 1 ]]; then
   "$ROOT_DIR/scripts/verify-macos-signature" "$APP_DIR" \
     "$CONTENTS/Library/LaunchServices/meerkatd" \
     "$CONTENTS/Library/LaunchServices/meerkat-machine" \
-    "$CONTENTS/Resources/bin/meerkat" "$CONTENTS/Resources/bin/meerkat-agent"
+    "$CONTENTS/Resources/bin/meerkat"
   "$ROOT_DIR/scripts/notarize-macos" "$APP_DIR"
   spctl --assess --type execute --verbose=2 "$APP_DIR"
 fi

@@ -1,26 +1,31 @@
 #![forbid(unsafe_code)]
 
-//! Built-in Agent: the bundled `meerkat-agent` binary driven over ACP by the
-//! embedded JavaScript adapter. Unlike the other Harnesses it keeps its own
-//! account, so this crate also owns the Machine-shared home where that
-//! account lives.
+//! Built-in Agent: in-process Rust execution powered by `jimu-*` crates.
+//! Unlike the external CLI Harnesses it keeps its own account, so this crate
+//! also owns the Machine-shared home where that account lives.
+
+mod session;
 
 use base64::Engine;
+use jimu_ai::oauth::{CodexCredentials, fetch_codex_models, refresh_codex_credentials};
+use jimu_ai::{CancelToken, TransportError};
+use jimu_http::ReqwestTransport;
 use meerkat_harness::{
     FailureCategory, HarnessAccount, HarnessAccountMethod, HarnessCapability, HarnessConfig,
     HarnessCredential, HarnessDefaults, HarnessError, HarnessErrorCode, HarnessFactory,
-    HarnessFailure, HarnessFuture, HarnessInfo, HarnessSession, HarnessTestPlan, JsHarnessFactory,
-    NativeModel, ProbeResult, SessionRequest,
+    HarnessFailure, HarnessFuture, HarnessInfo, HarnessSession, HarnessTestPlan, NativeModel,
+    ProbeResult, SessionRequest,
 };
 use serde_json::{Map, Value, json};
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const HARNESS_ID: &str = "builtin";
-pub const EXECUTABLE: &str = "meerkat-agent";
 /// Default model after a ChatGPT sign-in.
 pub const CHATGPT_MODEL: &str = "gpt-6-luna";
 
@@ -33,66 +38,44 @@ const API_KEY_PROVIDER: &str = "custom";
 /// Context window assumed for every model; the Machine may override it.
 pub const DEFAULT_CONTEXT_WINDOW: u32 = 200_000;
 /// Output room declared for API-key models.
-const MAX_OUTPUT_TOKENS: u32 = 128_000;
+pub(crate) const MAX_OUTPUT_TOKENS: u32 = 128_000;
 /// Room kept below the window when compaction starts.
-const COMPACTION_RESERVE: u32 = 33_000;
+pub(crate) const COMPACTION_RESERVE: u32 = 33_000;
+/// Refresh OAuth access tokens when within 60 seconds of expiry.
+const REFRESH_MARGIN_MS: u64 = 60_000;
 /// Thinking levels offered on API-key connections; "disable" is sent as "none".
 const API_KEY_LEVELS: [&str; 6] = ["disable", "low", "medium", "high", "xhigh", "max"];
 
-/// Locate the binary: next to this executable, then the app bundle's
-/// `Resources/bin`, then PATH (same order as the Machine's capability CLI).
-pub fn discover() -> Option<PathBuf> {
-    let name = format!("{EXECUTABLE}{}", std::env::consts::EXE_SUFFIX);
-    let executable = std::env::current_exe().ok()?;
-    let mut candidates = vec![executable.with_file_name(&name)];
-    if let Some(contents) = executable
-        .ancestors()
-        .find(|path| path.file_name().is_some_and(|name| name == "Contents"))
-    {
-        candidates.push(contents.join("Resources/bin").join(&name));
-    }
-    if let Some(path) = std::env::var_os("PATH") {
-        candidates.extend(std::env::split_paths(&path).map(|directory| directory.join(&name)));
-    }
-    candidates.into_iter().find(|path| executable_file(path))
-}
-
-fn executable_file(path: &Path) -> bool {
-    let Ok(metadata) = path.metadata() else {
-        return false;
-    };
-    if !metadata.is_file() {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        metadata.permissions().mode() & 0o111 != 0
-    }
-    #[cfg(not(unix))]
-    {
-        true
-    }
+pub(crate) enum ActiveConnection {
+    ApiKey { base_url: String, api_key: String },
+    Chatgpt { credentials: CodexCredentials },
 }
 
 #[derive(Clone, Debug)]
 pub struct BuiltinHarness {
-    inner: JsHarnessFactory,
+    info: HarnessInfo,
     home: PathBuf,
     context_window: u32,
     writes: Arc<Mutex<()>>,
+    refresh_gate: Arc<tokio::sync::Mutex<()>>,
+    auth_revision: Arc<AtomicU64>,
 }
 
 impl BuiltinHarness {
     /// `home` is the Machine-shared home, `<machine root>/.machine/builtin-agent`.
     pub fn new(home: impl Into<PathBuf>) -> Self {
         Self {
-            inner: JsHarnessFactory::new(HARNESS_ID, "Meerkat", include_str!("../plugin.js"))
-                .expect("valid embedded Harness plugin"),
+            info: HarnessInfo::new(HARNESS_ID, "Meerkat").expect("valid builtin harness info"),
             home: home.into(),
             context_window: DEFAULT_CONTEXT_WINDOW,
             writes: Arc::default(),
+            refresh_gate: Arc::default(),
+            auth_revision: Arc::new(AtomicU64::new(1)),
         }
+    }
+
+    pub(crate) fn auth_revision(&self) -> u64 {
+        self.auth_revision.load(Ordering::SeqCst)
     }
 
     /// The context window every model is budgeted for. Zero is ignored.
@@ -103,13 +86,17 @@ impl BuiltinHarness {
         self
     }
 
-    pub fn with_pid_journal(mut self, path: impl Into<PathBuf>) -> Self {
-        self.inner = self.inner.with_pid_journal(path);
+    /// Retained for builder compatibility; the built-in Agent runs in-process.
+    pub fn with_pid_journal(self, _path: impl Into<PathBuf>) -> Self {
         self
     }
 
     pub fn home(&self) -> &Path {
         &self.home
+    }
+
+    pub(crate) fn context_window(&self) -> u32 {
+        self.context_window
     }
 
     fn settings(&self) -> Map<String, Value> {
@@ -139,29 +126,123 @@ impl BuiltinHarness {
             .map(str::to_owned)
     }
 
-    /// Add the private environment every native process needs.
-    fn prepared(&self, mut config: HarnessConfig) -> Result<HarnessConfig, HarnessError> {
-        create_private_dir(&self.home).map_err(io_error)?;
-        let environment = &mut config.environment;
-        environment.insert("FX_HOME".into(), self.home.display().to_string());
-        environment.insert("FX_AUTO_UPGRADE".into(), "0".into());
-        environment.insert("FX_DISABLE_KEYCHAIN".into(), "1".into());
-        environment.insert("FX_NO_OPEN_BROWSER".into(), "1".into());
-        environment.insert("FX_HERDR".into(), "0".into());
-        environment.insert(
-            "FX_AUTO_COMPACT_TOKENS".into(),
-            self.compact_at_tokens().to_string(),
-        );
-        environment.remove(API_KEY_ENV);
-        if let Some(key) = self.api_key() {
-            environment.insert(API_KEY_ENV.into(), key);
+    pub(crate) fn active_connection(&self) -> Result<ActiveConnection, HarnessError> {
+        let settings = self.settings();
+        match settings.get("provider").and_then(Value::as_str) {
+            Some(API_KEY_PROVIDER) => {
+                let api_key = self.api_key().ok_or_else(signed_out)?;
+                let base_url = settings
+                    .get("providers")
+                    .and_then(|providers| providers.get(API_KEY_PROVIDER))
+                    .and_then(|provider| provider.get("base_url"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .ok_or_else(signed_out)?;
+                Ok(ActiveConnection::ApiKey { base_url, api_key })
+            }
+            Some(CHATGPT_PROVIDER) => {
+                let credentials = self.load_codex_credentials()?;
+                Ok(ActiveConnection::Chatgpt { credentials })
+            }
+            _ => Err(signed_out()),
         }
-        Ok(config)
     }
 
-    fn compact_at_tokens(&self) -> u32 {
-        let window = self.context_window;
-        window.saturating_sub(COMPACTION_RESERVE).max(window / 2)
+    pub(crate) fn load_codex_credentials(&self) -> Result<CodexCredentials, HarnessError> {
+        let text = fs::read_to_string(self.home.join(AUTH_FILE)).map_err(|_| signed_out())?;
+        let raw: Value = serde_json::from_str(&text).map_err(|_| signed_out())?;
+        let access_token = raw
+            .get("access_token")
+            .and_then(Value::as_str)
+            .filter(|t| !t.trim().is_empty())
+            .ok_or_else(signed_out)?
+            .to_owned();
+        let refresh_token = raw
+            .get("refresh_token")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let account_id = raw
+            .get("account_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let id_token = raw
+            .get("id_token")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let expires_at_ms = raw
+            .get("expires_at_ms")
+            .and_then(Value::as_u64)
+            .or_else(|| {
+                raw.get("expires_at")
+                    .and_then(Value::as_u64)
+                    .map(|secs| secs.saturating_mul(1000))
+            });
+        CodexCredentials {
+            access_token,
+            refresh_token,
+            account_id,
+            expires_at_ms,
+            id_token,
+        }
+        .normalized()
+        .map_err(|_| signed_out())
+    }
+
+    fn save_refreshed_codex_credentials(
+        &self,
+        expected_revision: u64,
+        expected_account_id: Option<&str>,
+        expected_refresh_token: Option<&str>,
+        credentials: &CodexCredentials,
+    ) -> Result<bool, HarnessError> {
+        let _guard = self
+            .writes
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if self.auth_revision() != expected_revision {
+            return Ok(false);
+        }
+        let Ok(current_disk) = self.load_codex_credentials() else {
+            return Ok(false);
+        };
+        if current_disk.account_id.as_deref() != expected_account_id
+            || current_disk.refresh_token.as_deref() != expected_refresh_token
+        {
+            return Ok(false);
+        }
+        create_private_dir(&self.home).map_err(io_error)?;
+        let bytes = serde_json::to_vec_pretty(credentials)
+            .map_err(|error| HarnessError::new(HarnessErrorCode::Io, error.to_string()))?;
+        write_private(&self.home.join(AUTH_FILE), &bytes)?;
+        Ok(true)
+    }
+
+    pub(crate) async fn fresh_codex_credentials(
+        &self,
+        transport: &ReqwestTransport,
+        force_refresh: bool,
+    ) -> Result<CodexCredentials, HarnessError> {
+        let _refresh_guard = self.refresh_gate.lock().await;
+        let revision_before = self.auth_revision();
+        let creds = self.load_codex_credentials()?;
+        let needs_refresh = force_refresh || creds.is_expiring_within(now_ms(), REFRESH_MARGIN_MS);
+        if needs_refresh && creds.refresh_token.is_some() {
+            let refreshed = refresh_codex_credentials(transport, &creds, CancelToken::new())
+                .await
+                .map_err(transport_error)?;
+            let saved = self.save_refreshed_codex_credentials(
+                revision_before,
+                creds.account_id.as_deref(),
+                creds.refresh_token.as_deref(),
+                &refreshed,
+            )?;
+            if saved {
+                return Ok(refreshed);
+            }
+            // Account changed or signed out concurrently while refresh was in flight; re-read active state.
+            return self.load_codex_credentials();
+        }
+        Ok(creds)
     }
 
     fn model_metadata(&self) -> Value {
@@ -172,22 +253,10 @@ impl BuiltinHarness {
         })
     }
 
-    fn signed_in_request(
-        &self,
-        mut request: SessionRequest,
-    ) -> Result<SessionRequest, HarnessError> {
-        if self.account().is_none() {
-            return Err(signed_out());
-        }
-        self.describe_model(&request.config.model.model_id)?;
-        request.config = self.prepared(request.config)?;
-        Ok(request)
-    }
-
     /// Keep `model_metadata` of an API-key connection current for the model a
     /// member starts with (members may pick other models than the sign-in's)
     /// and for the window in force. ChatGPT models carry their own metadata.
-    fn describe_model(&self, model: &str) -> Result<(), HarnessError> {
+    pub(crate) fn describe_model(&self, model: &str) -> Result<(), HarnessError> {
         let _guard = self
             .writes
             .lock()
@@ -221,7 +290,9 @@ impl BuiltinHarness {
         if settings == before {
             return Ok(());
         }
-        write_settings(&self.home, settings)
+        write_settings(&self.home, settings)?;
+        self.auth_revision.fetch_add(1, Ordering::SeqCst);
+        Ok(())
     }
 
     fn store(&self, credential: Option<HarnessCredential>) -> Result<(), HarnessError> {
@@ -291,8 +362,21 @@ impl BuiltinHarness {
                 }
             }
         }
-        write_settings(&self.home, settings)
+        write_settings(&self.home, settings)?;
+        self.auth_revision.fetch_add(1, Ordering::SeqCst);
+        Ok(())
     }
+}
+
+fn all_capabilities() -> BTreeSet<HarnessCapability> {
+    BTreeSet::from([
+        HarnessCapability::SystemPrompt,
+        HarnessCapability::Streaming,
+        HarnessCapability::Resume,
+        HarnessCapability::Steer,
+        HarnessCapability::Cancel,
+        HarnessCapability::Tools,
+    ])
 }
 
 fn write_settings(home: &Path, settings: Map<String, Value>) -> Result<(), HarnessError> {
@@ -303,14 +387,19 @@ fn write_settings(home: &Path, settings: Map<String, Value>) -> Result<(), Harne
 
 impl HarnessFactory for BuiltinHarness {
     fn info(&self) -> &HarnessInfo {
-        self.inner.info()
+        &self.info
     }
+
     fn defaults(&self) -> HarnessDefaults {
-        self.inner.defaults()
+        HarnessDefaults::default()
     }
-    fn test<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, HarnessTestPlan> {
+
+    fn test<'a>(&'a self, mut request: SessionRequest) -> HarnessFuture<'a, HarnessTestPlan> {
         Box::pin(async move {
-            let mut request = self.signed_in_request(request)?;
+            if self.account().is_none() {
+                return Err(signed_out());
+            }
+            self.describe_model(&request.config.model.model_id)?;
             // Test with the model the sign-in configured, not a member choice.
             if let Some(model) = self.configured_model() {
                 request.config.model.model_id = model;
@@ -321,46 +410,94 @@ impl HarnessFactory for BuiltinHarness {
             })
         })
     }
-    fn probe<'a>(&'a self, config: &'a HarnessConfig) -> HarnessFuture<'a, ProbeResult> {
+
+    fn probe<'a>(&'a self, _config: &'a HarnessConfig) -> HarnessFuture<'a, ProbeResult> {
         Box::pin(async move {
-            let config = self.prepared(config.clone())?;
-            self.inner.probe(&config).await
+            Ok(ProbeResult {
+                info: self.info.clone(),
+                availability: meerkat_harness::HarnessAvailability::Available,
+                version: Some(env!("CARGO_PKG_VERSION").to_owned()),
+                capabilities: all_capabilities(),
+                reason: None,
+            })
         })
     }
-    fn capabilities(&self, config: &HarnessConfig) -> BTreeSet<HarnessCapability> {
-        self.inner.capabilities(config)
+
+    fn capabilities(&self, _config: &HarnessConfig) -> BTreeSet<HarnessCapability> {
+        all_capabilities()
     }
-    fn models<'a>(&'a self, config: &'a HarnessConfig) -> HarnessFuture<'a, Vec<NativeModel>> {
+
+    fn models<'a>(&'a self, _config: &'a HarnessConfig) -> HarnessFuture<'a, Vec<NativeModel>> {
         Box::pin(async move {
-            let Some(account) = self.account() else {
-                return Err(signed_out());
-            };
-            if account.method == HarnessAccountMethod::ApiKey {
-                // The connection's own model list, read only when asked.
-                let base_url = self
-                    .settings()
-                    .get("providers")
-                    .and_then(|providers| providers.get(API_KEY_PROVIDER))
-                    .and_then(|provider| provider.get("base_url"))
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-                    .ok_or_else(signed_out)?;
-                let key = self.api_key().ok_or_else(signed_out)?;
-                return Ok(list_models(&base_url, &key)
-                    .await?
-                    .into_iter()
-                    .map(|(id, name)| NativeModel {
-                        id,
-                        name,
-                        description: String::new(),
-                        thinking_levels: API_KEY_LEVELS.iter().map(|l| (*l).to_owned()).collect(),
-                    })
-                    .collect());
+            match self.active_connection()? {
+                ActiveConnection::ApiKey { base_url, api_key } => {
+                    Ok(list_models(&base_url, &api_key)
+                        .await?
+                        .into_iter()
+                        .map(|(id, name)| NativeModel {
+                            id,
+                            name,
+                            description: String::new(),
+                            thinking_levels: API_KEY_LEVELS
+                                .iter()
+                                .map(|l| (*l).to_owned())
+                                .collect(),
+                        })
+                        .collect())
+                }
+                ActiveConnection::Chatgpt { .. } => {
+                    let transport = ReqwestTransport::new().map_err(|error| {
+                        HarnessError::new(HarnessErrorCode::Io, error.to_string())
+                    })?;
+                    let creds = self.fresh_codex_credentials(&transport, false).await?;
+                    let catalog = match fetch_codex_models(
+                        &transport,
+                        None,
+                        &creds,
+                        env!("CARGO_PKG_VERSION"),
+                        CancelToken::new(),
+                    )
+                    .await
+                    {
+                        Ok(models) => models,
+                        Err(TransportError::HttpStatus { status: 401, .. })
+                            if creds.refresh_token.is_some() =>
+                        {
+                            let refreshed = self.fresh_codex_credentials(&transport, true).await?;
+                            fetch_codex_models(
+                                &transport,
+                                None,
+                                &refreshed,
+                                env!("CARGO_PKG_VERSION"),
+                                CancelToken::new(),
+                            )
+                            .await
+                            .map_err(transport_error)?
+                        }
+                        Err(err) => return Err(transport_error(err)),
+                    };
+                    Ok(catalog
+                        .into_iter()
+                        .map(|model| {
+                            let name = model.display_name.unwrap_or_else(|| model.id.clone());
+                            let thinking_levels = model
+                                .reasoning_levels
+                                .into_iter()
+                                .filter(|level| level != "auto")
+                                .collect();
+                            NativeModel {
+                                id: model.id,
+                                name,
+                                description: String::new(),
+                                thinking_levels,
+                            }
+                        })
+                        .collect())
+                }
             }
-            let config = self.prepared(config.clone())?;
-            self.inner.models(&config).await
         })
     }
+
     fn account(&self) -> Option<HarnessAccount> {
         let settings = self.settings();
         match settings.get("provider").and_then(Value::as_str) {
@@ -395,9 +532,11 @@ impl HarnessFactory for BuiltinHarness {
             _ => None,
         }
     }
+
     fn has_account(&self) -> bool {
         true
     }
+
     fn set_credential<'a>(
         &'a self,
         credential: Option<HarnessCredential>,
@@ -423,31 +562,40 @@ impl HarnessFactory for BuiltinHarness {
             self.store(credential)
         })
     }
+
     fn start<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
-        Box::pin(async move {
-            let request = self.signed_in_request(request)?;
-            self.inner.start(request).await
-        })
+        Box::pin(async move { session::open_session(self.clone(), request, false).await })
     }
+
     fn start_before<'a>(
         &'a self,
         request: SessionRequest,
         deadline: std::time::Instant,
     ) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
         Box::pin(async move {
-            let request = self.signed_in_request(request)?;
-            self.inner.start_before(request, deadline).await
+            if std::time::Instant::now() >= deadline {
+                return Err(HarnessError::new(
+                    HarnessErrorCode::Timeout,
+                    "Harness startup timed out",
+                ));
+            }
+            tokio::time::timeout_at(
+                tokio::time::Instant::from_std(deadline),
+                session::open_session(self.clone(), request, false),
+            )
+            .await
+            .map_err(|_| {
+                HarnessError::new(HarnessErrorCode::Timeout, "Harness startup timed out")
+            })?
         })
     }
+
     fn resume<'a>(&'a self, request: SessionRequest) -> HarnessFuture<'a, Box<dyn HarnessSession>> {
-        Box::pin(async move {
-            let request = self.signed_in_request(request)?;
-            self.inner.resume(request).await
-        })
+        Box::pin(async move { session::open_session(self.clone(), request, true).await })
     }
 }
 
-fn signed_out() -> HarnessError {
+pub(crate) fn signed_out() -> HarnessError {
     let message = "Meerkat has no model connected";
     let mut error = HarnessError::new(HarnessErrorCode::Unavailable, message);
     error.failure = HarnessFailure {
@@ -457,6 +605,98 @@ fn signed_out() -> HarnessError {
         detail: message.into(),
     };
     error
+}
+
+pub(crate) fn classify_agent_failure(code: &str, message: &str) -> HarnessFailure {
+    let lower = message.to_ascii_lowercase();
+    let category = if (lower.contains("model")
+        && (lower.contains("not found")
+            || lower.contains("not available")
+            || lower.contains("not supported")))
+        || lower.contains("unknown model")
+        || lower.contains("invalid model")
+        || lower.contains("does not exist")
+        || lower.contains("no such file")
+        || lower.contains("permission denied")
+    {
+        FailureCategory::Configuration
+    } else if lower.contains("unauthor")
+        || lower.contains("authenticat")
+        || lower.contains("invalid api key")
+        || lower.contains("invalid key")
+        || lower.contains("invalid token")
+        || lower.contains("token expired")
+        || lower.contains("no api key")
+        || lower.contains("missing api key")
+        || lower.contains("not logged in")
+        || lower.contains("login required")
+        || lower.contains("401")
+        || lower.contains("forbidden")
+        || lower.contains("403")
+    {
+        FailureCategory::Authentication
+    } else if lower.contains("rate limit")
+        || lower.contains("rate_limit")
+        || lower.contains("usage limit")
+        || lower.contains("resource_exhausted")
+        || lower.contains("quota")
+        || lower.contains("too many requests")
+        || lower.contains("429")
+    {
+        FailureCategory::RateLimit
+    } else if lower.contains("cancelled") || lower.contains("canceled") || lower.contains("aborted")
+    {
+        FailureCategory::Cancelled
+    } else if lower.contains("timeout") || lower.contains("timed out") {
+        FailureCategory::Timeout
+    } else if lower.contains("stream")
+        || lower.contains("connection")
+        || lower.contains("network")
+        || lower.contains("503")
+        || lower.contains("502")
+        || lower.contains("temporarily unavailable")
+    {
+        FailureCategory::Transient
+    } else {
+        FailureCategory::Agent
+    };
+    HarnessFailure {
+        code: format!("harness_{code}"),
+        category,
+        retryable: matches!(
+            category,
+            FailureCategory::RateLimit | FailureCategory::Transient | FailureCategory::Timeout
+        ),
+        detail: message.to_owned(),
+    }
+}
+
+fn transport_error(error: TransportError) -> HarnessError {
+    match error {
+        TransportError::HttpStatus {
+            status: 401 | 403, ..
+        } => {
+            let message = "Authentication failed for Meerkat";
+            let mut err = HarnessError::new(HarnessErrorCode::Unavailable, message);
+            err.failure = HarnessFailure {
+                code: "harness_authentication".into(),
+                category: FailureCategory::Authentication,
+                retryable: false,
+                detail: message.into(),
+            };
+            err
+        }
+        TransportError::Timeout => {
+            HarnessError::new(HarnessErrorCode::Timeout, "Model service request timed out")
+        }
+        TransportError::Aborted => {
+            HarnessError::new(HarnessErrorCode::StreamInterrupted, "Request cancelled")
+        }
+        other => HarnessError::new(
+            HarnessErrorCode::StreamInterrupted,
+            format!("Could not reach the model service: {other}"),
+        ),
+    }
 }
 
 /// `GET {base_url}/models` with the key. Failures carry a stable reason code
@@ -521,6 +761,12 @@ fn connection_error(code: &str, message: &str) -> HarnessError {
 
 fn io_error(error: io::Error) -> HarnessError {
     HarnessError::new(HarnessErrorCode::Io, error.to_string())
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
 
 fn object_entry<'a>(map: &'a mut Map<String, Value>, key: &str) -> &'a mut Map<String, Value> {

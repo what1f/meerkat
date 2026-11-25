@@ -2,9 +2,9 @@ name: Build tools
 description: Install the pinned Meerkat build toolchain.
 inputs:
   with-zig:
-    description: Install the pinned Zig compiler.
+    description: Install the pinned Zig compiler (for Linux cargo-zigbuild).
     required: false
-    default: 'true'
+    default: 'false'
   with-uv:
     description: Install the pinned uv tool.
     required: false
@@ -19,10 +19,6 @@ inputs:
     default: 'true'
   cache-rust:
     description: Cache Cargo registry and third-party build artifacts.
-    required: false
-    default: 'true'
-  cache-builtin-agent:
-    description: Cache the pinned Built-in Agent binary by revision, patches and target.
     required: false
     default: 'true'
   rust-targets:
@@ -65,30 +61,6 @@ runs:
       uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
       with:
         version: 0.17.0
-    - if: inputs.with-zig == 'true' && inputs.cache-builtin-agent == 'true'
-      id: builtin-agent-cache-meta
-      env:
-        INPUT_TARGETS: ${{ inputs.rust-targets }}
-      shell: bash
-      run: |
-        target="${INPUT_TARGETS%%[, ]*}"
-        if [[ -z "$target" ]]; then
-          case "$(uname -s)-$(uname -m)" in
-            Darwin-arm64) target=aarch64-apple-darwin ;;
-            Darwin-x86_64) target=x86_64-apple-darwin ;;
-            Linux-x86_64) target=x86_64-unknown-linux-gnu ;;
-            Linux-aarch64|Linux-arm64) target=aarch64-unknown-linux-gnu ;;
-            MINGW*|MSYS*|CYGWIN*|Windows*) target=x86_64-pc-windows-msvc ;;
-            *) target="${RUNNER_OS}-${RUNNER_ARCH}" ;;
-          esac
-        fi
-        echo "target=$target" >> "$GITHUB_OUTPUT"
-        echo "MEERKAT_BUILTIN_AGENT_CACHE=$HOME/.cache/meerkat-builtin-agent" >> "$GITHUB_ENV"
-    - if: inputs.with-zig == 'true' && inputs.cache-builtin-agent == 'true'
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: ~/.cache/meerkat-builtin-agent/${{ steps.builtin-agent-cache-meta.outputs.target }}
-        key: builtin-agent-v1-${{ steps.builtin-agent-cache-meta.outputs.target }}-${{ hashFiles('tools/builtin-agent/REVISION', 'tools/builtin-agent/patches/**', 'tools/builtin-agent/build') }}
     - if: inputs.with-uv == 'true'
       uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       with:

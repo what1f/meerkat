@@ -135,7 +135,7 @@ impl MachineThread {
                             harness_id: meerkat_harness_builtin::HARNESS_ID.into(),
                             model: ModelRef::new("", ""),
                             thinking_level: String::new(),
-                            cli_path: PathBuf::from(meerkat_harness_builtin::EXECUTABLE),
+                            cli_path: PathBuf::from(meerkat_harness_builtin::HARNESS_ID),
                             environment: BTreeMap::new(),
                             config_fingerprint: "system-rig-builtin".into(),
                         },

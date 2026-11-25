@@ -10,21 +10,29 @@ publish.workspace = true
 
 [dependencies]
 base64 = "0.23.1"
+futures-util.workspace = true
+jimu-agent.workspace = true
+jimu-ai.workspace = true
+jimu-http.workspace = true
+jimu-kit.workspace = true
+jimu-schema.workspace = true
+jimu-session.workspace = true
+jimu-tools.workspace = true
 meerkat-harness = { path = "../../crates/harness" }
 reqwest.workspace = true
 serde_json.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
 meerkat-testkit = { path = "../../crates/testkit" }
 tempfile.workspace = true
-tokio.workspace = true
-tokio-stream.workspace = true
 
 [package.metadata.meerkat.e2e]
 command = "cargo test -p meerkat-harness-builtin --test e2e -- --nocapture"
-scenario = "Run the built-in Agent binary against a local OpenAI-compatible Chat Completions endpoint through an API-key connection: reject a wrong key (invalid_key) and a closed endpoint (unreachable) before saving, default to the first listed model, list the connection's models with display names, start with the Machine-shared home, stream assistant and reasoning text with usage, call one Meerkat MCP tool, steer a running turn, resume the session after a restart, cancel a running turn, and sign out. A signed-out home fails with an authentication category before the native process starts."
-prerequisites = "Built Built-in Agent binary (tools/builtin-agent/build); skips with a message when absent"
+scenario = "Run the in-process built-in Agent against a local OpenAI-compatible Chat Completions endpoint through an API-key connection: reject a wrong key (invalid_key) and a closed endpoint (unreachable) before saving, default to the first listed model, list the connection's models with display names, start with the Machine-shared home, load workspace AGENTS.md and auto-reload skills, expose built-in workspace tools alongside Meerkat host tools, stream assistant and reasoning text with usage, call one Meerkat host tool, steer a running turn, resume the session after a restart, cancel a running turn, and sign out. A signed-out home fails with an authentication category before a session starts."
+prerequisites = "None"
 classification = "hermetic"
 unattended = "yes"
 status = "implemented"

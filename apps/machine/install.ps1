@@ -306,9 +306,6 @@ if (-not (Test-Installed)) {
     $stoppedHomes = Stop-InstalledMachine
 
     $toInstall = @($Binaries)
-    if (Test-Path -LiteralPath (Join-Path $PackageRoot "meerkat-agent.exe") -PathType Leaf) {
-      $toInstall += "meerkat-agent.exe"
-    }
 
     try {
       foreach ($binary in $toInstall) {

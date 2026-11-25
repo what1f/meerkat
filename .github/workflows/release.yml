@@ -90,7 +90,7 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: |
           mkdir -p target/release target/build-output
-          for binary in meerkat-desktop meerkatd meerkat-machine meerkat meerkat-agent; do
+          for binary in meerkat-desktop meerkatd meerkat-machine meerkat; do
             lipo "target/$TARGET/release/$binary" -verify_arch "$ARCH"
             install -m 0755 "target/$TARGET/release/$binary" "target/release/$binary"
           done
@@ -98,9 +98,8 @@ jobs:
           ./scripts/release-provenance verify --binary-dir target/release --output target/release/build-provenance.json
           COPYFILE_DISABLE=1 tar -cf target/build-output/build.tar \
             target/release/meerkat-desktop target/release/meerkatd \
-            target/release/meerkat-machine target/release/meerkat target/release/meerkat-agent \
-            target/release/build-provenance.json \
-            target/builtin-agent/src/LICENSE target/builtin-agent/src/THIRD_PARTY_NOTICES.md
+            target/release/meerkat-machine target/release/meerkat \
+            target/release/build-provenance.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           overwrite: true
@@ -240,6 +239,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         with:
+          with-zig: 'true'
           with-uv: 'false'
           rust-targets: ${{ matrix.target }}
           rust-cache-key: release-${{ matrix.target }}

@@ -36,7 +36,7 @@ python3 "$ROOT_DIR/scripts/release-provenance" verify --binary-dir "$RELEASE_DIR
 
 VERSION="$(sed -nE 's/^version = "([^"]+)"/\1/p' "$ROOT_DIR/apps/desktop/Cargo.toml" | head -n 1)"
 NAME="Meerkat-$VERSION-linux-$ARCH"
-BINARIES=(meerkat-desktop meerkatd meerkat-machine meerkat meerkat-agent)
+BINARIES=(meerkat-desktop meerkatd meerkat-machine meerkat)
 
 for binary in "${BINARIES[@]}"; do
   [[ -x "$RELEASE_DIR/$binary" ]] || {
@@ -79,10 +79,6 @@ chmod 0755 "$BUNDLE/install-desktop.sh"
 
 cp "$ROOT_DIR/LICENSE" "$ROOT_DIR/THIRD_PARTY_LICENSES.md" "$BUNDLE/"
 cp -R "$ROOT_DIR/licenses" "$BUNDLE/licenses"
-AGENT_SOURCE="$TARGET_DIR/builtin-agent/src"
-mkdir -p "$BUNDLE/licenses/builtin-agent"
-cp "$AGENT_SOURCE/LICENSE" "$AGENT_SOURCE/THIRD_PARTY_NOTICES.md" \
-  "$BUNDLE/licenses/builtin-agent/"
 
 mkdir -p "$OUTPUT_DIR"
 ARCHIVE="$OUTPUT_DIR/$NAME.tar.gz"

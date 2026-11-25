@@ -9,18 +9,13 @@ Prerequisites:
 - Rust toolchain pinned in `rust-toolchain.toml` (`1.96.0`, selected automatically by `rustup`)
 - [just](https://github.com/casey/just)
 - [pnpm](https://pnpm.io/) (for `apps/web` and `site/`)
-- [Zig](https://ziglang.org/download/) (`0.17`, required by `./tools/builtin-agent/build` to compile `meerkat-agent`)
 - [uv](https://docs.astral.sh/uv/) (optional, for macOS DMG packaging)
 
 Verification commands:
 
-1. Build the built-in agent binary when running daemon/system E2E locally:
-   ```bash
-   ./tools/builtin-agent/build debug
-   ```
-2. Run `just check` to validate formatting, compilation, public-source hygiene,
+1. Run `just check` to validate formatting, compilation, public-source hygiene,
    production boundaries, web lint/types, and E2E contract metadata.
-3. Run `just test` for the hermetic module-level business scenarios.
+2. Run `just test` for the hermetic module-level business scenarios.
 
 The default gates must not access real Provider accounts, credentials, user
 workspaces, or model sessions.

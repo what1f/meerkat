@@ -44,11 +44,11 @@ Meerkat 是一款支持 macOS、Windows 与 Linux 的开源本地多 Agent 协�
 
 ## 从源码构建
 
-本地构建需要：`rust-toolchain.toml` 指定的 Rust（`1.96.0`）、[just](https://github.com/casey/just)、[pnpm](https://pnpm.io/)，以及 [Zig](https://ziglang.org/download/)（`0.17`，用于 macOS 与 Linux 编译内置的 `meerkat-agent`）。Linux 下还需安装 `libwebkit2gtk-4.1-dev`、`libayatana-appindicator3-dev` 与 `librsvg2-dev`。
+本地构建需要：`rust-toolchain.toml` 指定的 Rust（`1.96.0`）、[just](https://github.com/casey/just) 和 [pnpm](https://pnpm.io/)。Linux 下还需安装 `libwebkit2gtk-4.1-dev`、`libayatana-appindicator3-dev` 与 `librsvg2-dev`。
 
 ```bash
 # macOS / Linux（使用 just）
-just dev    # 编译本地后台服务与内置 Agent，并启动桌面应用
+just dev    # 编译本地后台服务并启动桌面应用
 just check  # 运行格式、编译、前端检查与开源/边界校验
 just test   # 运行 hermetic 模块级业务 E2E 测试
 just app    # 在 macOS 上构建 Release 版 Meerkat.app

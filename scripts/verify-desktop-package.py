@@ -93,7 +93,7 @@ def run_bootstrap_smoke(desktop_exe: Path, home: Path, artifacts: Path) -> None:
             raise ValueError(f"Desktop left lock file behind: {leftover}")
 
 
-def verify_windows_installer(installer: Path, artifacts: Path, has_builtin_agent: bool) -> None:
+def verify_windows_installer(installer: Path, artifacts: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="meerkat-win-inst-") as temporary:
         root = Path(temporary)
         install_dir = root / "install"
@@ -104,9 +104,6 @@ def verify_windows_installer(installer: Path, artifacts: Path, has_builtin_agent
         nested_dir.mkdir()
         nested_sentinel = nested_dir / "user-license.txt"
         nested_sentinel.write_text("keep-my-nested-file\n", encoding="utf-8")
-        optional_sentinel = install_dir / "meerkat-agent.exe"
-        if not has_builtin_agent:
-            optional_sentinel.write_text("keep-user-optional-binary\n", encoding="utf-8")
 
         subprocess.run([str(installer), "/S", f"/D={install_dir}"], check=True, timeout=120)
         desktop_exe = install_dir / "meerkat-desktop.exe"
@@ -125,11 +122,6 @@ def verify_windows_installer(installer: Path, artifacts: Path, has_builtin_agent
             raise ValueError("Windows uninstaller deleted pre-existing user file in install directory")
         if not nested_sentinel.is_file() or nested_sentinel.read_text(encoding="utf-8") != "keep-my-nested-file\n":
             raise ValueError("Windows uninstaller deleted pre-existing nested file in licenses directory")
-        if not has_builtin_agent and (
-            not optional_sentinel.is_file()
-            or optional_sentinel.read_text(encoding="utf-8") != "keep-user-optional-binary\n"
-        ):
-            raise ValueError("Windows uninstaller deleted unbundled meerkat-agent.exe")
         for removed in ("meerkat-desktop.exe", "meerkatd.exe", "meerkat-machine.exe", "meerkat.exe"):
             if (install_dir / removed).exists():
                 raise ValueError(f"Windows uninstaller left product file behind: {removed}")
@@ -191,8 +183,6 @@ def main() -> None:
                 "meerkat-machine": "meerkat-machine.exe",
                 "meerkat": "meerkat.exe",
             }
-            if "meerkat-agent" in build["binaries"]:
-                binary_map["meerkat-agent"] = "meerkat-agent.exe"
             desktop_exe = package_root / "meerkat-desktop.exe"
             required_files = ["LICENSE", "THIRD_PARTY_LICENSES.md"]
         else:
@@ -207,7 +197,6 @@ def main() -> None:
                 "meerkatd": "meerkatd",
                 "meerkat-machine": "meerkat-machine",
                 "meerkat": "meerkat",
-                "meerkat-agent": "meerkat-agent",
             }
             desktop_exe = package_root / "meerkat-desktop"
             required_files = [
@@ -215,8 +204,6 @@ def main() -> None:
                 "THIRD_PARTY_LICENSES.md",
                 "install-desktop.sh",
                 "meerkat.png",
-                "licenses/builtin-agent/LICENSE",
-                "licenses/builtin-agent/THIRD_PARTY_NOTICES.md",
             ]
 
         for relative in required_files:
@@ -234,7 +221,7 @@ def main() -> None:
 
     if is_windows and args.verify_installer and installer is not None:
         (artifacts / "installer-smoke").mkdir(parents=True, exist_ok=True)
-        verify_windows_installer(installer, artifacts, "meerkat-agent" in build["binaries"])
+        verify_windows_installer(installer, artifacts)
 
     if sha256(archive) != archive_hash:
         raise ValueError("archive changed during package verification")

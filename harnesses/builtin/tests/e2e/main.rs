@@ -1,5 +1,5 @@
-//! Built-in Agent business scenario against the real binary and a local
-//! OpenAI-compatible Chat Completions endpoint, connected by API key.
+//! Built-in Agent business scenario running in-process via `jimu-*` against a
+//! local OpenAI-compatible Chat Completions endpoint, connected by API key.
 
 mod fake_model;
 
@@ -10,29 +10,14 @@ use meerkat_harness::{
 };
 use meerkat_harness_builtin::BuiltinHarness;
 use serde_json::json;
-use std::{collections::BTreeMap, path::PathBuf, time::Duration};
+use std::{collections::BTreeMap, path::Path, path::PathBuf, time::Duration};
 use tokio_stream::StreamExt;
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 const API_KEY: &str = "sk-e2e-secret";
 
-fn binary() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("MEERKAT_BUILTIN_AGENT") {
-        return Some(PathBuf::from(path));
-    }
-    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
-    ["debug", "release"]
-        .into_iter()
-        .map(|profile| {
-            target
-                .join(profile)
-                .join(meerkat_harness_builtin::EXECUTABLE)
-        })
-        .find(|path| path.is_file())
-}
-
-fn request(cli: &PathBuf, agent: &PathBuf, native_session_id: Option<String>) -> SessionRequest {
+fn request(agent: &Path, native_session_id: Option<String>) -> SessionRequest {
     SessionRequest {
         cli_version: None,
         permission_policy: Default::default(),
@@ -41,11 +26,11 @@ fn request(cli: &PathBuf, agent: &PathBuf, native_session_id: Option<String>) ->
             harness_id: "builtin".into(),
             model: ModelRef::new("fake-model", "Fake model"),
             thinking_level: String::new(),
-            cli_path: cli.clone(),
+            cli_path: PathBuf::from(meerkat_harness_builtin::HARNESS_ID),
             environment: BTreeMap::new(),
             config_fingerprint: "builtin-e2e".into(),
         },
-        working_directory: agent.clone(),
+        working_directory: agent.to_path_buf(),
         system_prompt: "You are the Meerkat test member.".into(),
         tools: vec![ToolDefinition {
             name: "report".into(),
@@ -99,22 +84,20 @@ fn final_output(events: &[AgentEventKind]) -> Option<&str> {
 
 #[tokio::test]
 async fn builtin_agent_api_key_session_scenario() -> Result {
-    let Some(cli) = binary() else {
-        eprintln!(
-            "SKIP builtin E2E: Built-in Agent binary not built; run `tools/builtin-agent/build debug`"
-        );
-        return Ok(());
-    };
     let model = fake_model::FakeModel::start(API_KEY)?;
     let root = tempfile::tempdir()?;
     let home = root.path().join("machine/.machine/builtin-agent");
     let agent = root.path().join("agent");
     std::fs::create_dir_all(&agent)?;
+    std::fs::write(
+        agent.join("AGENTS.md"),
+        "Workspace persona: verify jimu instructions.",
+    )?;
     let factory = BuiltinHarness::new(&home);
 
     // Signed out: the member fails with an authentication category.
     assert_eq!(factory.account(), None);
-    let error = match factory.start(request(&cli, &agent, None)).await {
+    let error = match factory.start(request(&agent, None)).await {
         Ok(_) => return Err("signed-out start must fail".into()),
         Err(error) => error,
     };
@@ -180,14 +163,14 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
         }
     }
 
-    let probe = factory.probe(&request(&cli, &agent, None).config).await?;
+    let probe = factory.probe(&request(&agent, None).config).await?;
     assert_eq!(probe.availability, HarnessAvailability::Available);
     let version = probe.version.unwrap_or_default();
     assert!(
         version.chars().next().is_some_and(|c| c.is_ascii_digit()),
         "{version}"
     );
-    let models = factory.models(&request(&cli, &agent, None).config).await?;
+    let models = factory.models(&request(&agent, None).config).await?;
     let listed: Vec<_> = models
         .iter()
         .map(|m| (m.id.as_str(), m.name.as_str()))
@@ -204,7 +187,7 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
     );
 
     // Start and stream.
-    let session = factory.start(request(&cli, &agent, None)).await?;
+    let session = factory.start(request(&agent, None)).await?;
     let native_id = session.entry().native_session_id;
     let events = run(
         session.as_ref(),
@@ -242,14 +225,45 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
         first.authorization.as_deref(),
         Some(&*format!("Bearer {API_KEY}"))
     );
+    let first_body = first.body.to_string();
+    assert!(first_body.contains("You are the Meerkat test member."));
     assert!(
-        first
-            .body
-            .to_string()
-            .contains("You are the Meerkat test member.")
+        first_body.contains("Workspace persona: verify jimu instructions."),
+        "AGENTS.md should be discovered and injected: {first_body}"
     );
+    let tool_names: Vec<&str> = first.body["tools"]
+        .as_array()
+        .ok_or("tools array missing")?
+        .iter()
+        .filter_map(|tool| tool["function"]["name"].as_str())
+        .collect();
+    for expected in [
+        "report",
+        "read",
+        "write",
+        "edit",
+        "apply_patch",
+        "find",
+        "grep",
+        "exec_command",
+        "write_stdin",
+        "web_fetch",
+    ] {
+        assert!(
+            tool_names.contains(&expected),
+            "missing tool `{expected}` in {tool_names:?}"
+        );
+    }
 
-    // One Meerkat tool call through MCP.
+    // Add a skill dynamically after session start; auto_reload_skills picks it up before next turn.
+    let skill_dir = agent.join("skills/hot-skill");
+    std::fs::create_dir_all(&skill_dir)?;
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\nname: hot-skill\ndescription: Dynamically added skill\n---\nUse hot-skill.\n",
+    )?;
+
+    // One Meerkat host tool call.
     let events = run(
         session.as_ref(),
         session
@@ -276,6 +290,16 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
         final_output(&events).is_some_and(|text| text.contains("reported-ok")),
         "{events:?}"
     );
+    let tool_turn_body = model
+        .requests()
+        .pop()
+        .ok_or("tool turn request")?
+        .body
+        .to_string();
+    assert!(
+        tool_turn_body.contains("hot-skill"),
+        "auto_reload_skills should surface newly added skill: {tool_turn_body}"
+    );
 
     // Steer a running turn.
     let mut stream = session
@@ -285,7 +309,6 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
         .await?;
     let started = stream.next().await.ok_or("started")??;
     assert!(matches!(started.kind, AgentEventKind::Started));
-    tokio::time::sleep(Duration::from_millis(800)).await;
     session
         .steer("steer-1".into(), "STEERED: also mention pears".into())
         .await?;
@@ -295,9 +318,9 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
     session.close().await?;
 
     // A member with a thinking level, on another model, sends that effort.
-    let mut thinking = request(&cli, &agent, None);
+    let mut thinking = request(&agent, None);
     thinking.config.model = ModelRef::new("fake-mini", "fake-mini");
-    thinking.config.thinking_level = "high".into();
+    thinking.config.thinking_level = "xhigh".into();
     let session = factory.start(thinking).await?;
     let events = run(
         session.as_ref(),
@@ -311,7 +334,7 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
     assert_eq!(final_output(&events), Some("Hello world"), "{events:?}");
     let sent = model.requests().pop().ok_or("model was called")?;
     assert_eq!(sent.body["model"], "fake-mini");
-    assert_eq!(sent.body["reasoning_effort"], "high");
+    assert_eq!(sent.body["reasoning_effort"], "xhigh");
     let settings: serde_json::Value =
         serde_json::from_slice(&std::fs::read(home.join("settings.json"))?)?;
     assert_eq!(
@@ -321,7 +344,7 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
     session.close().await?;
 
     // A member with thinking turned off asks the model for no reasoning.
-    let mut off = request(&cli, &agent, None);
+    let mut off = request(&agent, None);
     off.config.thinking_level = "disable".into();
     let session = factory.start(off).await?;
     let events = run(
@@ -342,7 +365,7 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
     // Resume after a restart keeps the conversation.
     let restarted = BuiltinHarness::new(&home);
     let session = restarted
-        .resume(request(&cli, &agent, Some(native_id.clone())))
+        .resume(request(&agent, Some(native_id.clone())))
         .await?;
     assert_eq!(session.entry().native_session_id, native_id);
     let events = run(
@@ -363,7 +386,6 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
         })
         .await?;
     stream.next().await.ok_or("started")??;
-    tokio::time::sleep(Duration::from_millis(800)).await;
     session.cancel("user stopped".into()).await?;
     let events = run(session.as_ref(), stream).await?;
     assert!(

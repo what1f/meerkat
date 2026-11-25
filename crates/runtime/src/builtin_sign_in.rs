@@ -1,31 +1,58 @@
-//! Built-in Agent sign-in. The Runtime runs the browser step in a throwaway
-//! home, hands the resulting credentials to the Machine over the link and
-//! keeps no copy. API-key connections skip the browser step entirely.
+//! Built-in Agent sign-in. The Runtime runs the browser OAuth PKCE callback
+//! listener in-process, exchanges the authorization code, hands the resulting
+//! credentials to the Machine over the link, and keeps no copy. API-key
+//! connections skip the browser step entirely.
 
+use jimu_ai::CancelToken;
+use jimu_ai::oauth::{exchange_codex_code, parse_authorization_input, start_codex_authorization};
+use jimu_http::ReqwestTransport;
 use meerkat_protocol::{
     BuiltinAgentSignInMethod, BuiltinAgentSignInRequest, BuiltinAgentSignInResponse,
     BuiltinAgentSignInState, BuiltinAgentSignInStatus, HarnessCredential, Status,
 };
 use std::{
     collections::BTreeMap,
-    path::{Path, PathBuf},
-    process::Stdio,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, BufReader},
-    process::Command,
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    net::{TcpListener, TcpStream},
     sync::oneshot,
 };
 
 use crate::MachineBroker;
 
 const HARNESS_ID: &str = "builtin";
-const EXECUTABLE: &str = "meerkat-agent";
+const CALLBACK_ADDR: &str = "127.0.0.1:1455";
+const CALLBACK_PATH: &str = "/auth/callback";
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(600);
-const URL_TIMEOUT: Duration = Duration::from_secs(30);
+const CONNECTION_READ_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_REQUEST_LINE_BYTES: usize = 8192;
+const MAX_HEADER_LINES: usize = 32;
 const RETAIN_FINISHED: Duration = Duration::from_secs(900);
+
+const SUCCESS_PAGE: &str = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+<meta name=\"theme-color\" content=\"#000000\"><title>Meerkat</title><style>\
+:root{color-scheme:dark;font-family:\"Geist Mono\",ui-monospace,SFMono-Regular,Menlo,monospace;\
+font-size:15px;line-height:1.75}*{box-sizing:border-box}\
+body{margin:0;min-height:100vh;display:flex;flex-direction:column;background:#000;color:#ededed}\
+main{flex:1;display:flex;flex-direction:column;justify-content:center;padding:48px 32px;max-width:560px;margin:0 auto}\
+h1{margin:0 0 12px;font-size:20px;font-weight:500}p{margin:0;color:#a1a1a1}\
+</style></head><body><main><h1>Authorization complete</h1>\
+<p>You can close this tab and return to Meerkat.</p></main></body></html>";
+
+const FAILED_PAGE: &str = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+<meta name=\"theme-color\" content=\"#000000\"><title>Meerkat</title><style>\
+:root{color-scheme:dark;font-family:\"Geist Mono\",ui-monospace,SFMono-Regular,Menlo,monospace;\
+font-size:15px;line-height:1.75}*{box-sizing:border-box}\
+body{margin:0;min-height:100vh;display:flex;flex-direction:column;background:#000;color:#ededed}\
+main{flex:1;display:flex;flex-direction:column;justify-content:center;padding:48px 32px;max-width:560px;margin:0 auto}\
+h1{margin:0 0 12px;font-size:20px;font-weight:500}p{margin:0;color:#a1a1a1}\
+</style></head><body><main><h1>Authorization failed</h1>\
+<p>Return to Meerkat for details.</p></main></body></html>";
 
 #[derive(Default)]
 pub(crate) struct BuiltinSignIns {
@@ -69,53 +96,14 @@ impl BuiltinSignIns {
                 })
             }
             BuiltinAgentSignInMethod::Chatgpt => {
-                let executable = discover()
-                    .ok_or_else(|| Status::unavailable("The Meerkat agent is not installed"))?;
                 self.cancel_pending();
                 let guard = self.login.clone().lock_owned().await;
-                let home =
-                    TempHome::create().map_err(|_| Status::internal("Sign-in could not start"))?;
-                let mut command = Command::new(executable);
-                command
-                    .args(["login", "codex"])
-                    .env("FX_HOME", home.path())
-                    .env("FX_AUTO_UPGRADE", "0")
-                    .env("FX_DISABLE_KEYCHAIN", "1")
-                    .env("FX_NO_OPEN_BROWSER", "1")
-                    .env("FX_HERDR", "0")
-                    .current_dir(home.path())
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .kill_on_drop(true);
-                #[cfg(windows)]
-                {
-                    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-                    command.creation_flags(CREATE_NO_WINDOW);
-                }
-                let mut child = command
-                    .spawn()
+                let listener = TcpListener::bind(CALLBACK_ADDR)
+                    .await
                     .map_err(|_| Status::unavailable("Sign-in could not start"))?;
-                let stdout = child.stdout.take().expect("piped stdout");
-                if let Some(mut stderr) = child.stderr.take() {
-                    tokio::spawn(async move {
-                        let mut sink = Vec::new();
-                        let _ = stderr.read_to_end(&mut sink).await;
-                    });
-                }
-                let mut lines = BufReader::new(stdout).lines();
-                let authorize_url = tokio::time::timeout(URL_TIMEOUT, async {
-                    while let Ok(Some(line)) = lines.next_line().await {
-                        if let Some(url) = authorize_url(&line) {
-                            return Some(url);
-                        }
-                    }
-                    None
-                })
-                .await
-                .ok()
-                .flatten()
-                .ok_or_else(|| Status::unavailable("Sign-in could not start"))?;
+                let auth = start_codex_authorization(None)
+                    .map_err(|_| Status::internal("Sign-in could not start"))?;
+                let authorize_url = auth.url.clone();
 
                 let (cancel, cancelled) = oneshot::channel();
                 self.insert(
@@ -128,37 +116,63 @@ impl BuiltinSignIns {
                 let id = sign_in_id.clone();
                 let machine_id = request.machine_id;
                 tokio::spawn(async move {
-                    // Drain the rest of the output so the process never blocks on a full pipe.
-                    let drain = async move { while let Ok(Some(_)) = lines.next_line().await {} };
-                    tokio::spawn(drain);
-                    let outcome = tokio::select! {
-                        status = child.wait() => match status {
-                            Ok(status) if status.success() => Outcome::Exited,
-                            _ => Outcome::Failed,
-                        },
-                        _ = tokio::time::sleep(LOGIN_TIMEOUT) => Outcome::Expired,
-                        _ = cancelled => Outcome::Cancelled,
-                    };
-                    let _ = child.kill().await;
-                    let status = match outcome {
-                        Outcome::Exited => match read_auth(home.path()) {
-                            Some(auth_json) => match broker
-                                .set_harness_credential(
-                                    &machine_id,
-                                    HARNESS_ID,
-                                    Some(HarnessCredential::Chatgpt { auth_json }),
-                                )
+                    let cancel_token = CancelToken::new();
+                    let flow_cancel = cancel_token.clone();
+                    let flow = async move {
+                        let callback_target = match wait_for_callback(&listener, &auth.state).await
+                        {
+                            Some(path) => path,
+                            None => return Outcome::Failed,
+                        };
+                        drop(listener);
+                        let Ok(transport) = ReqwestTransport::new() else {
+                            return Outcome::Failed;
+                        };
+                        let Ok(creds) =
+                            exchange_codex_code(&transport, &auth, &callback_target, flow_cancel)
                                 .await
-                            {
-                                Ok(()) => finished(BuiltinAgentSignInState::Succeeded, None),
-                                Err(reason) => {
-                                    finished(BuiltinAgentSignInState::Failed, Some(reason))
+                        else {
+                            return Outcome::Failed;
+                        };
+                        let Ok(auth_json) = serde_json::to_string(&creds) else {
+                            return Outcome::Failed;
+                        };
+                        Outcome::Ready(auth_json)
+                    };
+
+                    let outcome = tokio::select! {
+                        res = flow => res,
+                        _ = tokio::time::sleep(LOGIN_TIMEOUT) => {
+                            cancel_token.cancel();
+                            Outcome::Expired
+                        }
+                        _ = cancelled => {
+                            cancel_token.cancel();
+                            Outcome::Cancelled
+                        }
+                    };
+
+                    let status = match outcome {
+                        Outcome::Ready(auth_json) => {
+                            // Confirm this sign-in is still Pending BEFORE committing credentials to Machine.
+                            if !this.is_pending(&id) {
+                                finished(BuiltinAgentSignInState::Failed, Some("cancelled"))
+                            } else {
+                                match broker
+                                    .set_harness_credential(
+                                        &machine_id,
+                                        HARNESS_ID,
+                                        Some(HarnessCredential::Chatgpt { auth_json }),
+                                    )
+                                    .await
+                                {
+                                    Ok(()) => finished(BuiltinAgentSignInState::Succeeded, None),
+                                    Err(reason) => {
+                                        finished(BuiltinAgentSignInState::Failed, Some(reason))
+                                    }
                                 }
-                            },
-                            None => {
-                                finished(BuiltinAgentSignInState::Failed, Some("sign_in_failed"))
                             }
-                        },
+                        }
                         Outcome::Failed => {
                             finished(BuiltinAgentSignInState::Failed, Some("sign_in_failed"))
                         }
@@ -167,7 +181,6 @@ impl BuiltinSignIns {
                             finished(BuiltinAgentSignInState::Failed, Some("cancelled"))
                         }
                     };
-                    drop(home);
                     this.finish(&id, status);
                     drop(guard);
                 });
@@ -236,6 +249,14 @@ impl BuiltinSignIns {
         }
     }
 
+    fn is_pending(&self, sign_in_id: &str) -> bool {
+        self.entries.lock().ok().is_some_and(|entries| {
+            entries
+                .get(sign_in_id)
+                .is_some_and(|e| e.status.state == BuiltinAgentSignInState::Pending)
+        })
+    }
+
     fn finish(&self, sign_in_id: &str, status: BuiltinAgentSignInStatus) {
         if let Ok(mut entries) = self.entries.lock()
             && let Some(entry) = entries.get_mut(sign_in_id)
@@ -259,7 +280,7 @@ impl BuiltinSignIns {
 }
 
 enum Outcome {
-    Exited,
+    Ready(String),
     Failed,
     Expired,
     Cancelled,
@@ -272,83 +293,141 @@ fn finished(state: BuiltinAgentSignInState, reason: Option<&str>) -> BuiltinAgen
     }
 }
 
-fn authorize_url(line: &str) -> Option<String> {
-    let start = line.find("https://")?;
-    let url = line[start..].split_whitespace().next()?;
-    url.contains("/oauth/authorize").then(|| url.to_owned())
-}
-
-fn read_auth(home: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(home.join("chatgpt-auth.json")).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
-    value
-        .get("access_token")
-        .and_then(serde_json::Value::as_str)
-        .filter(|token| !token.is_empty())?;
-    Some(text)
-}
-
-/// Same lookup order as the Machine: next to this executable, then the app
-/// bundle's `Resources/bin`, then PATH.
-pub(crate) fn discover() -> Option<PathBuf> {
-    let name = format!("{EXECUTABLE}{}", std::env::consts::EXE_SUFFIX);
-    let executable = std::env::current_exe().ok()?;
-    let mut candidates = vec![executable.with_file_name(&name)];
-    if let Some(contents) = executable
-        .ancestors()
-        .find(|path| path.file_name().is_some_and(|name| name == "Contents"))
-    {
-        candidates.push(contents.join("Resources/bin").join(&name));
-    }
-    if let Some(path) = std::env::var_os("PATH") {
-        candidates.extend(std::env::split_paths(&path).map(|directory| directory.join(&name)));
-    }
-    candidates.into_iter().find(|path| executable_file(path))
-}
-
-fn executable_file(path: &Path) -> bool {
-    let Ok(metadata) = path.metadata() else {
-        return false;
-    };
-    if !metadata.is_file() {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        metadata.permissions().mode() & 0o111 != 0
-    }
-    #[cfg(not(unix))]
-    {
-        true
-    }
-}
-
-/// Private temporary home for one login; removed (with any credentials in it)
-/// when dropped.
-struct TempHome(PathBuf);
-
-impl TempHome {
-    fn create() -> std::io::Result<Self> {
-        let path =
-            std::env::temp_dir().join(format!("meerkat-sign-in-{}", uuid::Uuid::new_v4().simple()));
-        #[cfg_attr(not(unix), allow(unused_mut))]
-        let mut builder = std::fs::DirBuilder::new();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            builder.mode(0o700);
+async fn wait_for_callback(listener: &TcpListener, expected_state: &str) -> Option<String> {
+    loop {
+        let (stream, _) = listener.accept().await.ok()?;
+        match handle_callback_connection(stream, expected_state).await {
+            CallbackAction::Complete(target) => return Some(target),
+            CallbackAction::Failed => return None,
+            CallbackAction::Ignore => continue,
         }
-        builder.create(&path)?;
-        Ok(Self(path))
-    }
-    fn path(&self) -> &Path {
-        &self.0
     }
 }
 
-impl Drop for TempHome {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+enum CallbackAction {
+    Complete(String),
+    Failed,
+    Ignore,
+}
+
+async fn read_bounded_http_request(stream: &mut TcpStream) -> Option<String> {
+    tokio::time::timeout(CONNECTION_READ_TIMEOUT, async {
+        let mut reader = BufReader::new(stream);
+        let mut request_line = Vec::new();
+        loop {
+            let available = reader.fill_buf().await.ok()?;
+            if available.is_empty() {
+                return None;
+            }
+            if let Some(pos) = available.iter().position(|&b| b == b'\n') {
+                let take = pos + 1;
+                if request_line.len().saturating_add(take) > MAX_REQUEST_LINE_BYTES {
+                    return None;
+                }
+                request_line.extend_from_slice(&available[..take]);
+                reader.consume(take);
+                break;
+            }
+            let len = available.len();
+            if request_line.len().saturating_add(len) > MAX_REQUEST_LINE_BYTES {
+                return None;
+            }
+            request_line.extend_from_slice(available);
+            reader.consume(len);
+        }
+
+        for _ in 0..MAX_HEADER_LINES {
+            let mut header = Vec::new();
+            loop {
+                let available = reader.fill_buf().await.ok()?;
+                if available.is_empty() {
+                    return String::from_utf8(request_line).ok();
+                }
+                if let Some(pos) = available.iter().position(|&b| b == b'\n') {
+                    let take = pos + 1;
+                    if header.len().saturating_add(take) <= MAX_REQUEST_LINE_BYTES {
+                        header.extend_from_slice(&available[..take]);
+                    }
+                    reader.consume(take);
+                    break;
+                }
+                let len = available.len();
+                if header.len().saturating_add(len) > MAX_REQUEST_LINE_BYTES {
+                    return None;
+                }
+                header.extend_from_slice(available);
+                reader.consume(len);
+            }
+            if header.iter().all(|b| b.is_ascii_whitespace()) {
+                break;
+            }
+        }
+        String::from_utf8(request_line).ok()
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+async fn handle_callback_connection(mut stream: TcpStream, expected_state: &str) -> CallbackAction {
+    let Some(request_line) = read_bounded_http_request(&mut stream).await else {
+        return CallbackAction::Ignore;
+    };
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or_default();
+    let target = parts.next().unwrap_or_default();
+    if method != "GET" {
+        let _ = write_http_response(&mut stream, "404 Not Found", "text/plain", "Not found").await;
+        return CallbackAction::Ignore;
     }
+    let path = target.split('?').next().unwrap_or(target);
+    if path != CALLBACK_PATH {
+        let _ = write_http_response(&mut stream, "404 Not Found", "text/plain", "Not found").await;
+        return CallbackAction::Ignore;
+    }
+    let parsed = parse_authorization_input(target);
+    if parsed.state.as_deref() != Some(expected_state) {
+        // Stale or unrelated browser tab: reply 400 and keep listening for the active sign-in's state.
+        let _ = write_http_response(
+            &mut stream,
+            "400 Bad Request",
+            "text/html; charset=utf-8",
+            FAILED_PAGE,
+        )
+        .await;
+        return CallbackAction::Ignore;
+    }
+    if parsed.code.as_deref().is_some_and(|c| !c.is_empty()) {
+        let _ = write_http_response(
+            &mut stream,
+            "200 OK",
+            "text/html; charset=utf-8",
+            SUCCESS_PAGE,
+        )
+        .await;
+        CallbackAction::Complete(target.to_owned())
+    } else {
+        let _ = write_http_response(
+            &mut stream,
+            "400 Bad Request",
+            "text/html; charset=utf-8",
+            FAILED_PAGE,
+        )
+        .await;
+        CallbackAction::Failed
+    }
+}
+
+async fn write_http_response(
+    stream: &mut TcpStream,
+    status: &str,
+    content_type: &str,
+    body: &str,
+) -> std::io::Result<()> {
+    let response = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nContent-Security-Policy: default-src 'none'; style-src 'unsafe-inline';\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(response.as_bytes()).await?;
+    stream.flush().await
 }

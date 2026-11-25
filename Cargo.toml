@@ -68,3 +68,10 @@ tokio-stream = { version = "0.1.19", features = ["net"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 tower = { version = "0.5.2", features = ["util"] }
 uuid = { version = "1.18.1", features = ["v4"] }
+jimu-schema = { path = "../jimu/crates/jimu-schema" }
+jimu-ai = { path = "../jimu/crates/jimu-ai" }
+jimu-http = { path = "../jimu/crates/jimu-http" }
+jimu-agent = { path = "../jimu/crates/jimu-agent" }
+jimu-session = { path = "../jimu/crates/jimu-session" }
+jimu-tools = { path = "../jimu/crates/jimu-tools", default-features = false, features = ["fs", "patch", "search", "shell", "web-fetch"] }
+jimu-kit = { path = "../jimu/crates/jimu-kit", default-features = false }

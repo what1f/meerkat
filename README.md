@@ -44,11 +44,11 @@ Wiring a CLI agent to a chat webhook is easy; working with a stateless, command-
 
 ## Build from Source
 
-Prerequisites: Rust (`1.96.0`, managed via `rust-toolchain.toml`), [just](https://github.com/casey/just), [pnpm](https://pnpm.io/), and [Zig](https://ziglang.org/download/) (`0.17`, for building the built-in `meerkat-agent` binary on macOS and Linux). On Linux, also install `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`, and `librsvg2-dev`.
+Prerequisites: Rust (`1.96.0`, managed via `rust-toolchain.toml`), [just](https://github.com/casey/just), and [pnpm](https://pnpm.io/). On Linux, also install `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`, and `librsvg2-dev`.
 
 ```bash
 # macOS / Linux (with just)
-just dev    # build local services + built-in agent and launch the desktop app
+just dev    # build local services and launch the desktop app
 just check  # format, build, web lint, open-source & boundary checks
 just test   # run hermetic module-level E2E scenarios
 just app    # build release Meerkat.app on macOS

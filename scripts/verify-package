@@ -72,7 +72,7 @@ def main():
                 subprocess.run([str(ROOT / "scripts/verify-macos-signature"), str(extracted),
                     *(str(extracted / relative) for relative in (
                         "Contents/Library/LaunchServices/meerkatd", "Contents/Library/LaunchServices/meerkat-machine",
-                        "Contents/Resources/bin/meerkat", "Contents/Resources/bin/meerkat-agent"))], check=True)
+                        "Contents/Resources/bin/meerkat"))], check=True)
                 for attempt in range(6):
                     if subprocess.run(["xcrun", "stapler", "validate", str(extracted)]).returncode == 0:
                         break

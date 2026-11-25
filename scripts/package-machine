@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Packages the Machine bundle that install.sh downloads on another computer:
-# meerkat-machine, the meerkat capability CLI and the Built-in Agent.
+# meerkat-machine and the meerkat capability CLI.
 # Usage: scripts/package-machine RUST_TARGET
 #
 # Linux targets are cross-built with cargo-zigbuild against glibc 2.28.
@@ -49,9 +49,6 @@ if [[ "$TARGET" == *-windows-* ]]; then
   for binary in "${BINARIES[@]}"; do
     cp "$BUILD_DIR/$binary" "$STAGE/$NAME/$binary"
   done
-  if [[ -f "$BUILD_DIR/meerkat-agent.exe" ]]; then
-    cp "$BUILD_DIR/meerkat-agent.exe" "$STAGE/$NAME/meerkat-agent.exe"
-  fi
   cp LICENSE THIRD_PARTY_LICENSES.md "$STAGE/$NAME/"
   cp -R licenses "$STAGE/$NAME/licenses"
   mkdir -p "$OUTPUT_DIR"
@@ -76,7 +73,7 @@ archive.with_name(f"{archive.name}.sha256").write_text(f"{checksum}  {archive.na
   exit 0
 fi
 
-BINARIES=(meerkat-machine meerkat meerkat-agent)
+BINARIES=(meerkat-machine meerkat)
 
 if [[ -z "${MEERKAT_MACHINE_BIN_DIR:-}" ]]; then
   if [[ "$TARGET" == *-linux-gnu ]]; then
@@ -84,7 +81,6 @@ if [[ -z "${MEERKAT_MACHINE_BIN_DIR:-}" ]]; then
   else
     cargo build --release --locked --target "$TARGET" --bin meerkat-machine --bin meerkat
   fi
-  ./tools/builtin-agent/build release "$TARGET"
 fi
 
 STAGE="$(mktemp -d)"
@@ -95,9 +91,6 @@ for binary in "${BINARIES[@]}"; do
 done
 cp LICENSE THIRD_PARTY_LICENSES.md "$STAGE/$NAME/"
 cp -R licenses "$STAGE/$NAME/licenses"
-mkdir "$STAGE/$NAME/licenses/builtin-agent"
-cp "$TARGET_DIR/builtin-agent/src/LICENSE" "$TARGET_DIR/builtin-agent/src/THIRD_PARTY_NOTICES.md" \
-  "$STAGE/$NAME/licenses/builtin-agent/"
 
 if [[ "$TARGET" == *-apple-darwin ]]; then
   IDENTITY="${MEERKAT_CODESIGN_IDENTITY:--}"

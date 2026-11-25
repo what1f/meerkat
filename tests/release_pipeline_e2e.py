@@ -166,41 +166,6 @@ if sys.argv[1:3] == ['release', 'view']: print(json.dumps({'isDraft': False, 'as
             path.write_text(path.read_text().replace('"0.1.0"', '"0.2.0"'))
             self.assertNotEqual(subprocess.run(command, env=env, capture_output=True).returncode, 0)
 
-    def test_builtin_agent_cache_restores_binary_and_notices_without_rebuilding(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            tools_dir = root / "tools/builtin-agent"
-            tools_dir.mkdir(parents=True)
-            shutil.copy2(ROOT / "tools/builtin-agent/build", tools_dir / "build")
-            revision = "1" * 40
-            (tools_dir / "REVISION").write_text(revision + "\n")
-            cache_root = root / "agent-cache"
-            target = "x86_64-apple-darwin"
-            entry = cache_root / target
-            entry.mkdir(parents=True)
-            executable(entry / "meerkat-agent", "#!/bin/sh\necho cached-agent\n")
-            (entry / "LICENSE").write_text("Apache-2.0\n")
-            (entry / "THIRD_PARTY_NOTICES.md").write_text("Notices\n")
-            (entry / "REVISION").write_text(f"{revision}:x86_64-macos\n")
-            bin_dir = root / "forbid-zig"
-            bin_dir.mkdir()
-            executable(bin_dir / "zig", "#!/bin/sh\nexit 99\n")
-            target_dir = root / "target"
-            env = {
-                **os.environ,
-                "PATH": f"{bin_dir}:{os.environ['PATH']}",
-                "CARGO_TARGET_DIR": str(target_dir),
-                "MEERKAT_BUILTIN_AGENT_CACHE": str(cache_root),
-            }
-            result = subprocess.run([str(tools_dir / "build"), "release", target], env=env, capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual((target_dir / target / "release/meerkat-agent").read_text(), "#!/bin/sh\necho cached-agent\n")
-            self.assertEqual((target_dir / "builtin-agent/src/LICENSE").read_text(), "Apache-2.0\n")
-            self.assertEqual((target_dir / "builtin-agent/src/THIRD_PARTY_NOTICES.md").read_text(), "Notices\n")
-            (entry / "REVISION").write_text("stale\n")
-            rebuild = subprocess.run([str(tools_dir / "build"), "release", target], env=env, capture_output=True, text=True)
-            self.assertNotEqual(rebuild.returncode, 0)
-
 
 if __name__ == "__main__":
     unittest.main()

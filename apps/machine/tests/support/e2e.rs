@@ -239,7 +239,6 @@ pub async fn run() -> Result<PathBuf, AppError> {
     production.pi_cli = executable.clone();
     production.codex_cli = executable.clone();
     production.claude_code_cli = executable.clone();
-    production.builtin_agent_cli = executable.clone();
     for registration in production_harnesses(&production) {
         let probe = registration
             .factory

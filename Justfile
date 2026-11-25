@@ -7,7 +7,6 @@ default:
 
 dev:
     ./scripts/verify-production-boundary
-    ./tools/builtin-agent/build debug
     ./scripts/with-dev-cache cargo build --locked --bin meerkatd --bin meerkat-machine --bin meerkat
     ./scripts/with-dev-cache cargo run --locked -p meerkat-desktop
 
