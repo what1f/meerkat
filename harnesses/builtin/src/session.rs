@@ -2,6 +2,7 @@ use crate::{
     ActiveConnection, BuiltinHarness, COMPACTION_RESERVE, HARNESS_ID, MAX_OUTPUT_TOKENS,
     classify_agent_failure,
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use futures_util::StreamExt;
 use jimu_agent::{
     AgentEvent as JimuAgentEvent, AgentTool, AgentToolResult, ApiKeyResolver, ToolProgressCallback,
@@ -9,7 +10,7 @@ use jimu_agent::{
 use jimu_ai::oauth::CODEX_DEFAULT_BASE_URL;
 use jimu_ai::{
     ApiKind, AssistantMessage, AssistantMessageEvent, BoxFuture, CancelToken, Client, ContentPart,
-    HttpTransport, Model, StopReason, TextContent, ThinkingLevel,
+    HttpTransport, ImageContent, Model, StopReason, TextContent, ThinkingLevel,
     ToolDefinition as JimuToolDefinition,
 };
 use jimu_http::ReqwestTransport;
@@ -26,10 +27,11 @@ use meerkat_harness::{
     AgentEvent, AgentEventKind, AgentEventStream, CancelReceipt, CloseReceipt, ExecuteRequest,
     HarnessError, HarnessErrorCode, HarnessFuture, HarnessSession, SessionEntry, SessionHealth,
     SessionRequest, SteerReceipt, ToolDefinition, ToolResultReceipt, ToolResultRequest,
-    prepare_native_skills,
+    ToolResultResource, prepare_native_skills,
 };
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot, watch};
@@ -232,6 +234,49 @@ impl AgentTool for HostToolBridge {
     }
 }
 
+const MAX_TOOL_RESULT_IMAGE_BYTES: u64 = 16 * 1024 * 1024;
+
+fn supported_image_mime_type(media_type: &str) -> Option<&'static str> {
+    let essence = media_type.split(';').next().unwrap_or("").trim();
+    if essence.eq_ignore_ascii_case("image/png") {
+        Some("image/png")
+    } else if essence.eq_ignore_ascii_case("image/jpeg")
+        || essence.eq_ignore_ascii_case("image/jpg")
+    {
+        Some("image/jpeg")
+    } else if essence.eq_ignore_ascii_case("image/webp") {
+        Some("image/webp")
+    } else if essence.eq_ignore_ascii_case("image/gif") {
+        Some("image/gif")
+    } else {
+        None
+    }
+}
+
+fn read_tool_result_image(resource: &ToolResultResource) -> Option<ImageContent> {
+    let mime_type = supported_image_mime_type(&resource.media_type)?;
+    if resource.size_bytes > MAX_TOOL_RESULT_IMAGE_BYTES {
+        return None;
+    }
+    let meta = std::fs::metadata(&resource.local_path).ok()?;
+    if !meta.is_file() || meta.len() == 0 || meta.len() > MAX_TOOL_RESULT_IMAGE_BYTES {
+        return None;
+    }
+    let file = std::fs::File::open(&resource.local_path).ok()?;
+    let capacity = usize::try_from(meta.len()).ok()?;
+    let mut bytes = Vec::with_capacity(capacity);
+    file.take(MAX_TOOL_RESULT_IMAGE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.is_empty() || bytes.len() as u64 > MAX_TOOL_RESULT_IMAGE_BYTES {
+        return None;
+    }
+    Some(ImageContent {
+        data: STANDARD.encode(&bytes),
+        mime_type: mime_type.into(),
+    })
+}
+
 fn tool_result_to_agent_result(mut req: ToolResultRequest) -> AgentToolResult {
     if let Some(error) = &req.error {
         if req.content_markdown.is_empty() {
@@ -256,9 +301,15 @@ fn tool_result_to_agent_result(mut req: ToolResultRequest) -> AgentToolResult {
     } else {
         String::new()
     };
+    let mut content = vec![ContentPart::Text(TextContent::plain(text))];
+    for resource in &req.resources {
+        if let Some(image) = read_tool_result_image(resource) {
+            content.push(ContentPart::Image(image));
+        }
+    }
     let structured = (!req.structured_content.is_null()).then_some(req.structured_content);
     AgentToolResult {
-        content: vec![ContentPart::Text(TextContent::plain(text))],
+        content,
         details: Value::Null,
         structured_content: structured,
         is_error: !req.success,

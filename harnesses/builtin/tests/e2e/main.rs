@@ -3,10 +3,11 @@
 
 mod fake_model;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use meerkat_harness::{
     AgentEventKind, AgentEventStream, ExecuteRequest, FailureCategory, HarnessAccountMethod,
     HarnessAvailability, HarnessConfig, HarnessCredential, HarnessFactory, HarnessSession,
-    ModelRef, SessionRequest, ToolDefinition, ToolResultRequest,
+    ModelRef, SessionRequest, ToolDefinition, ToolResultRequest, ToolResultResource,
 };
 use meerkat_harness_builtin::BuiltinHarness;
 use serde_json::json;
@@ -17,6 +18,13 @@ type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + 
 
 const API_KEY: &str = "sk-e2e-secret";
 const API_KEY_B: &str = "sk-e2e-secret-second";
+const TINY_PNG: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+    0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+    0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+    0x42, 0x60, 0x82,
+];
 
 fn request(agent: &Path, native_session_id: Option<String>) -> SessionRequest {
     SessionRequest {
@@ -46,7 +54,15 @@ fn request(agent: &Path, native_session_id: Option<String>) -> SessionRequest {
 /// Collect events until the terminal one, answering host tool calls on the way.
 async fn run(
     session: &dyn HarnessSession,
+    events: AgentEventStream,
+) -> Result<Vec<AgentEventKind>> {
+    run_with_resources(session, events, Vec::new()).await
+}
+
+async fn run_with_resources(
+    session: &dyn HarnessSession,
     mut events: AgentEventStream,
+    resources: Vec<ToolResultResource>,
 ) -> Result<Vec<AgentEventKind>> {
     let mut seen = Vec::new();
     tokio::time::timeout(Duration::from_secs(60), async {
@@ -68,7 +84,7 @@ async fn run(
                         success: true,
                         content_markdown,
                         structured_content: json!({}),
-                        resources: Vec::new(),
+                        resources: resources.clone(),
                         error: None,
                     })
                     .await?;
@@ -287,14 +303,24 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
         "---\nname: hot-skill\ndescription: Dynamically added skill\n---\nUse hot-skill.\n",
     )?;
 
-    // One Meerkat host tool call via deferred gateway (`tool_search` -> `call_tool`).
-    let events = run(
+    // One Meerkat host tool call via deferred gateway (`tool_search` -> `call_tool`),
+    // returning a PNG resource that must be forwarded to the model as an image block.
+    let report_png = agent.join("report.png");
+    std::fs::write(&report_png, TINY_PNG)?;
+    let events = run_with_resources(
         session.as_ref(),
         session
             .execute(ExecuteRequest {
                 input: "TOOL: report something".into(),
             })
             .await?,
+        vec![ToolResultResource {
+            local_path: report_png,
+            file_name: "report.png".into(),
+            media_type: "image/png".into(),
+            size_bytes: TINY_PNG.len() as u64,
+            sha256: "tiny-png-e2e".into(),
+        }],
     )
     .await?;
     assert!(
@@ -314,15 +340,28 @@ async fn builtin_agent_api_key_session_scenario() -> Result {
         final_output(&events).is_some_and(|text| text.contains("reported-ok")),
         "{events:?}"
     );
-    let tool_turn_body = model
-        .requests()
-        .pop()
-        .ok_or("tool turn request")?
-        .body
-        .to_string();
+    let tool_turn_req = model.requests().pop().ok_or("tool turn request")?;
+    let tool_turn_body = tool_turn_req.body.to_string();
     assert!(
         tool_turn_body.contains("hot-skill"),
         "auto_reload_skills should surface newly added skill: {tool_turn_body}"
+    );
+    let expected_image_url = format!("data:image/png;base64,{}", STANDARD.encode(TINY_PNG));
+    let has_tool_image = tool_turn_req.body["messages"]
+        .as_array()
+        .is_some_and(|messages| {
+            messages.iter().any(|message| {
+                message["content"].as_array().is_some_and(|parts| {
+                    parts.iter().any(|part| {
+                        part["type"] == "image_url"
+                            && part["image_url"]["url"] == expected_image_url
+                    })
+                })
+            })
+        });
+    assert!(
+        has_tool_image,
+        "outbound model request must include the PNG ToolResultResource image block: {tool_turn_body}"
     );
 
     // Steer a running turn.

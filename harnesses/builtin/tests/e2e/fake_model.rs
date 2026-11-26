@@ -98,8 +98,18 @@ fn handle(stream: TcpStream, key: &str, recorded: &Mutex<Vec<Recorded>>) -> std:
     let model = body["model"].as_str().unwrap_or("fake-model").to_owned();
     let messages = body["messages"].as_array().cloned().unwrap_or_default();
     let text = |message: &Value| message["content"].to_string();
-    let last = messages.last().cloned().unwrap_or(Value::Null);
-    let user = messages
+    let raw_last = messages.last().cloned().unwrap_or(Value::Null);
+    let has_tool_image_attachment = raw_last["role"] == "user"
+        && text(&raw_last).contains("image_url")
+        && messages.len() >= 2
+        && messages[messages.len() - 2]["role"] == "tool";
+    let effective_messages = if has_tool_image_attachment {
+        &messages[..messages.len() - 1]
+    } else {
+        &messages[..]
+    };
+    let last = effective_messages.last().cloned().unwrap_or(Value::Null);
+    let user = effective_messages
         .iter()
         .rev()
         .find(|message| message["role"] == "user")
@@ -110,7 +120,7 @@ fn handle(stream: TcpStream, key: &str, recorded: &Mutex<Vec<Recorded>>) -> std:
             .iter()
             .any(|message| message["role"] == "user" && text(message).contains(needle))
     };
-    let trailing_tool_text = messages
+    let trailing_tool_text = effective_messages
         .iter()
         .rev()
         .take_while(|message| message["role"] == "tool")
