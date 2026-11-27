@@ -12,19 +12,20 @@ export interface ReleaseInfo {
 }
 
 const REPO = 'https://github.com/what1f/meerkat';
-export const FALLBACK_VERSION = '0.1.1';
+export const FALLBACK_VERSION = '0.2.0';
 
 export function buildFallbackRelease(version = FALLBACK_VERSION): ReleaseInfo {
   const tag = version.startsWith('v') ? version : `v${version}`;
   const clean = tag.slice(1);
-  // Only include assets verified to exist in FALLBACK_VERSION; newer releases populate
-  // Windows and Linux downloads directly from GitHub release metadata.
   return {
     tag,
     htmlUrl: `${REPO}/releases/tag/${tag}`,
     assets: {
       'macos-arm64': `${REPO}/releases/download/${tag}/Meerkat-${clean}-macos-arm64.dmg`,
       'macos-x86_64': `${REPO}/releases/download/${tag}/Meerkat-${clean}-macos-x86_64.dmg`,
+      'windows-x86_64': `${REPO}/releases/download/${tag}/Meerkat-${clean}-windows-x86_64-setup.exe`,
+      'linux-x86_64': `${REPO}/releases/download/${tag}/Meerkat-${clean}-linux-x86_64.tar.gz`,
+      'linux-arm64': `${REPO}/releases/download/${tag}/Meerkat-${clean}-linux-arm64.tar.gz`,
     },
   };
 }

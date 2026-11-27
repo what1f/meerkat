@@ -1,7 +1,7 @@
 [package]
 autotests = false
 name = "meerkat-client"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 description = "Typed production Runtime client for the Meerkat desktop"
 license.workspace = true

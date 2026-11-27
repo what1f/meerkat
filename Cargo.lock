@@ -2762,7 +2762,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-cli"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "meerkat-protocol",
  "serde",
@@ -2776,7 +2776,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-client"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -2793,7 +2793,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-core"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2801,7 +2801,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-daemon-runtime"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "log",
  "tempfile",
@@ -2809,7 +2809,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-desktop"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "meerkat-client",
  "objc2",
@@ -2832,7 +2832,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-harness"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "junction",
  "meerkat-core",
@@ -2850,7 +2850,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-harness-builtin"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -2873,7 +2873,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-harness-claude-code"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "meerkat-core",
  "meerkat-harness",
@@ -2886,7 +2886,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-harness-codex"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "meerkat-harness",
  "meerkat-testkit",
@@ -2898,7 +2898,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-harness-pi"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "meerkat-harness",
  "meerkat-testkit",
@@ -2911,7 +2911,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-machine"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "log",
@@ -2938,7 +2938,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-machine-core"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "log",
@@ -2961,7 +2961,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-protocol"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -2991,7 +2991,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-provider"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "meerkat-core",
  "serde",
@@ -3001,7 +3001,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-provider-feishu"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "base64 0.23.1",
  "flate2",
@@ -3026,7 +3026,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-provider-telegram"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "meerkat-core",
  "meerkat-provider",
@@ -3043,7 +3043,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-runtime"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -3073,7 +3073,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-storage"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "meerkat-core",
  "rusqlite",
@@ -3085,7 +3085,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-system-e2e"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -3120,7 +3120,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-testkit"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "meerkat-core",
  "meerkat-harness",
@@ -3137,7 +3137,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-web-assets"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "bytes",
  "http-body-util",
@@ -3148,7 +3148,7 @@ dependencies = [
 
 [[package]]
 name = "meerkat-web-types"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "meerkat-protocol",
  "ts-rs",
@@ -3156,7 +3156,7 @@ dependencies = [
 
 [[package]]
 name = "meerkatd"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "if-addrs",
