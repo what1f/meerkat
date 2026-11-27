@@ -255,7 +255,7 @@ jobs:
       - name: Native portable business scenarios
         run: |
           cargo build --locked -p meerkat-machine --example machine_daemon_e2e
-          cargo test --locked -p meerkat-protocol -p meerkat-daemon-runtime -p meerkat-machine --tests
+          cargo test --locked -p meerkat-protocol -p meerkat-daemon-runtime -p meerkat-machine -p meerkat-harness-builtin -p meerkat-runtime --tests
       - name: Build and package Linux Desktop
         run: |
           ./scripts/build-release "$RUST_TARGET"
@@ -327,7 +327,7 @@ jobs:
       - name: Audit the exact Windows target before building
         run: ./scripts/verify-dependency-advisories "$RUST_TARGET" desktop
       - name: Native Windows portable scenarios
-        run: cargo test --locked --target "$RUST_TARGET" -p meerkat-daemon-runtime --tests
+        run: cargo test --locked --target "$RUST_TARGET" -p meerkat-daemon-runtime -p meerkat-harness-builtin -p meerkat-runtime --tests
       - name: Build and package Windows Desktop
         run: |
           ./scripts/build-release "$RUST_TARGET"

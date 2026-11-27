@@ -2392,6 +2392,7 @@ dependencies = [
 [[package]]
 name = "jimu-agent"
 version = "0.1.0"
+source = "git+https://github.com/what1f/jimu.git?rev=7d3b8eb84a6e0129d810691cb1f69c594a70e9ef#7d3b8eb84a6e0129d810691cb1f69c594a70e9ef"
 dependencies = [
  "futures-channel",
  "futures-core",
@@ -2407,6 +2408,7 @@ dependencies = [
 [[package]]
 name = "jimu-ai"
 version = "0.1.0"
+source = "git+https://github.com/what1f/jimu.git?rev=7d3b8eb84a6e0129d810691cb1f69c594a70e9ef#7d3b8eb84a6e0129d810691cb1f69c594a70e9ef"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -2425,6 +2427,7 @@ dependencies = [
 [[package]]
 name = "jimu-codemode"
 version = "0.1.0"
+source = "git+https://github.com/what1f/jimu.git?rev=7d3b8eb84a6e0129d810691cb1f69c594a70e9ef#7d3b8eb84a6e0129d810691cb1f69c594a70e9ef"
 dependencies = [
  "futures-channel",
  "futures-core",
@@ -2439,6 +2442,7 @@ dependencies = [
 [[package]]
 name = "jimu-http"
 version = "0.1.0"
+source = "git+https://github.com/what1f/jimu.git?rev=7d3b8eb84a6e0129d810691cb1f69c594a70e9ef#7d3b8eb84a6e0129d810691cb1f69c594a70e9ef"
 dependencies = [
  "bytes",
  "futures-core",
@@ -2452,6 +2456,7 @@ dependencies = [
 [[package]]
 name = "jimu-kit"
 version = "0.1.0"
+source = "git+https://github.com/what1f/jimu.git?rev=7d3b8eb84a6e0129d810691cb1f69c594a70e9ef#7d3b8eb84a6e0129d810691cb1f69c594a70e9ef"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -2471,6 +2476,7 @@ dependencies = [
 [[package]]
 name = "jimu-schema"
 version = "0.1.0"
+source = "git+https://github.com/what1f/jimu.git?rev=7d3b8eb84a6e0129d810691cb1f69c594a70e9ef#7d3b8eb84a6e0129d810691cb1f69c594a70e9ef"
 dependencies = [
  "serde",
  "serde_json",
@@ -2479,6 +2485,7 @@ dependencies = [
 [[package]]
 name = "jimu-session"
 version = "0.1.0"
+source = "git+https://github.com/what1f/jimu.git?rev=7d3b8eb84a6e0129d810691cb1f69c594a70e9ef#7d3b8eb84a6e0129d810691cb1f69c594a70e9ef"
 dependencies = [
  "futures-core",
  "futures-util",
@@ -2495,6 +2502,7 @@ dependencies = [
 [[package]]
 name = "jimu-tools"
 version = "0.1.0"
+source = "git+https://github.com/what1f/jimu.git?rev=7d3b8eb84a6e0129d810691cb1f69c594a70e9ef#7d3b8eb84a6e0129d810691cb1f69c594a70e9ef"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2506,6 +2514,7 @@ dependencies = [
  "grep-regex",
  "grep-searcher",
  "ignore",
+ "image",
  "jimu-agent",
  "jimu-ai",
  "jimu-schema",

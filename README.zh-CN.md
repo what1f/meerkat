@@ -65,7 +65,7 @@ cargo run --locked -p meerkat-desktop
 
 | 聊天软件 | 本地 Agent | 桌面端与节点平台 |
 | :--- | :--- | :--- |
-| 飞书 (Feishu)、Telegram | Claude Code、Codex、Pi | macOS (Apple Silicon / Intel)、Windows (x64)、Linux (x64 / ARM64) |
+| 飞书 (Feishu)、Telegram | 内置 Agent、Claude Code、Codex、Pi | macOS (Apple Silicon / Intel)、Windows (x64)、Linux (x64 / ARM64) |
 
 ## 参与贡献
 

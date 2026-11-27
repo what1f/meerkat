@@ -850,6 +850,7 @@ fn claude_code_check(path: Option<&Path>) -> CheckResult {
 }
 
 fn read_owner_only_json(path: &Path) -> Result<Value, String> {
+    #[cfg_attr(not(unix), allow(unused_variables))]
     let metadata = fs::metadata(path)
         .map_err(|_| format!("required fixture file is missing: {}", path.display()))?;
     #[cfg(unix)]

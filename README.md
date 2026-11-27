@@ -65,7 +65,7 @@ cargo run --locked -p meerkat-desktop
 
 | Messaging Apps | Local Agents | Desktop & Machine Platforms |
 | :--- | :--- | :--- |
-| Feishu (飞书), Telegram | Claude Code, Codex, Pi | macOS (Apple Silicon / Intel), Windows (x64), Linux (x64 / ARM64) |
+| Feishu (飞书), Telegram | Built-in Agent, Claude Code, Codex, Pi | macOS (Apple Silicon / Intel), Windows (x64), Linux (x64 / ARM64) |
 
 ## Contributing
 

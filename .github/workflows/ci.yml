@@ -111,7 +111,7 @@ jobs:
       - name: Native Linux portable business scenarios
         run: |
           cargo build --locked -p meerkat-machine --example machine_daemon_e2e
-          cargo test --locked -p meerkat-protocol -p meerkat-daemon-runtime -p meerkat-machine --tests
+          cargo test --locked -p meerkat-protocol -p meerkat-daemon-runtime -p meerkat-machine -p meerkat-harness-builtin -p meerkat-runtime --tests
 
   windows:
     runs-on: windows-latest
@@ -137,7 +137,7 @@ jobs:
           cargo check --locked --target x86_64-pc-windows-msvc --features meerkat-desktop/custom-protocol --bin meerkat-desktop --bin meerkatd --bin meerkat-machine --bin meerkat
       - name: Native Windows portable scenarios
         run: |
-          cargo test --locked --target x86_64-pc-windows-msvc -p meerkat-daemon-runtime --tests
+          cargo test --locked --target x86_64-pc-windows-msvc -p meerkat-daemon-runtime -p meerkat-harness-builtin -p meerkat-runtime --tests
 
   site:
     runs-on: ubuntu-24.04
