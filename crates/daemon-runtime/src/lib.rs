@@ -124,6 +124,17 @@ impl InstanceGuard {
                         return Err(DaemonRuntimeError::AlreadyRunning);
                     }
                 }
+                #[cfg(windows)]
+                Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+                    // On Windows, CreateFileW(CREATE_NEW) on an existing directory returns
+                    // ERROR_ACCESS_DENIED instead of ERROR_FILE_EXISTS.
+                    if fs::symlink_metadata(lock_path)
+                        .is_ok_and(|metadata| !metadata.file_type().is_file())
+                    {
+                        return Err(DaemonRuntimeError::UnsafeInstanceLock);
+                    }
+                    return Err(error.into());
+                }
                 Err(error) => return Err(error.into()),
             }
         };

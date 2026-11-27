@@ -19,7 +19,12 @@ audit() {
   esac
   for manifest in "${roots[@]}"; do
     echo "[dependency-advisories] $target $manifest"
+    local extra_args=()
+    if [[ "$target" == *-linux-* && "$manifest" == "apps/desktop/Cargo.toml" ]]; then
+      extra_args+=(--config "$ROOT_DIR/scripts/deny-linux-desktop.toml")
+    fi
     cargo deny --manifest-path "$manifest" --target "$target" --locked \
+      ${extra_args[@]+"${extra_args[@]}"} \
       check advisories --deny warnings
   done
 }

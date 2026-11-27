@@ -68,10 +68,10 @@ tokio-stream = { version = "0.1.19", features = ["net"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 tower = { version = "0.5.2", features = ["util"] }
 uuid = { version = "1.18.1", features = ["v4"] }
-jimu-schema = { git = "https://github.com/what1f/jimu.git", rev = "7d3b8eb84a6e0129d810691cb1f69c594a70e9ef" }
-jimu-ai = { git = "https://github.com/what1f/jimu.git", rev = "7d3b8eb84a6e0129d810691cb1f69c594a70e9ef" }
-jimu-http = { git = "https://github.com/what1f/jimu.git", rev = "7d3b8eb84a6e0129d810691cb1f69c594a70e9ef" }
-jimu-agent = { git = "https://github.com/what1f/jimu.git", rev = "7d3b8eb84a6e0129d810691cb1f69c594a70e9ef" }
-jimu-session = { git = "https://github.com/what1f/jimu.git", rev = "7d3b8eb84a6e0129d810691cb1f69c594a70e9ef" }
-jimu-tools = { git = "https://github.com/what1f/jimu.git", rev = "7d3b8eb84a6e0129d810691cb1f69c594a70e9ef", default-features = false, features = ["fs", "patch", "search", "shell", "web-fetch"] }
-jimu-kit = { git = "https://github.com/what1f/jimu.git", rev = "7d3b8eb84a6e0129d810691cb1f69c594a70e9ef", default-features = false }
+jimu-schema = { git = "https://github.com/what1f/jimu.git", rev = "e10051cc47d435a2c948782dd23495316fe50fb4" }
+jimu-ai = { git = "https://github.com/what1f/jimu.git", rev = "e10051cc47d435a2c948782dd23495316fe50fb4" }
+jimu-http = { git = "https://github.com/what1f/jimu.git", rev = "e10051cc47d435a2c948782dd23495316fe50fb4" }
+jimu-agent = { git = "https://github.com/what1f/jimu.git", rev = "e10051cc47d435a2c948782dd23495316fe50fb4" }
+jimu-session = { git = "https://github.com/what1f/jimu.git", rev = "e10051cc47d435a2c948782dd23495316fe50fb4" }
+jimu-tools = { git = "https://github.com/what1f/jimu.git", rev = "e10051cc47d435a2c948782dd23495316fe50fb4", default-features = false, features = ["fs", "patch", "search", "shell", "web-fetch"] }
+jimu-kit = { git = "https://github.com/what1f/jimu.git", rev = "e10051cc47d435a2c948782dd23495316fe50fb4", default-features = false }

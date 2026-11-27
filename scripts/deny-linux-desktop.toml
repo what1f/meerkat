@@ -1,0 +1,7 @@
+[advisories]
+ignore = [
+  { id = "RUSTSEC-2024-0370", reason = "Transitive proc-macro dependency of Tauri v2 Linux GTK3 bindings (glib-macros 0.18 / gtk3-macros 0.18); no upstream GTK3 replacement" },
+  { id = "RUSTSEC-2026-0370", reason = "Transitive zbus 5 dependency of tauri-plugin-opener v2 on Linux; waiting for upstream migration to zbus 6" },
+  { id = "RUSTSEC-2026-0371", reason = "Transitive zbus 5 dependency of tauri-plugin-opener v2 on Linux; waiting for upstream migration to zbus 6" },
+  { id = "RUSTSEC-2026-0372", reason = "Transitive zbus 5 dependency of tauri-plugin-opener v2 on Linux; waiting for upstream migration to zbus 6" },
+]

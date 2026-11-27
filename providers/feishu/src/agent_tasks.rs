@@ -1661,12 +1661,9 @@ fn normalized_due(input: &Value) -> Result<Option<Value>, ProviderError> {
         field: "due: 请使用 YYYY-MM-DD，或 {timestamp: 毫秒字符串, is_all_day: 布尔值}",
     };
     if let Some(date) = value.as_str() {
-        let parsed = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|_| invalid())?;
-        if parsed.format("%Y-%m-%d").to_string() != date {
-            return Err(invalid());
-        }
+        let millis = parse_utc_date_millis(date).ok_or_else(invalid)?;
         return Ok(Some(
-            json!({"timestamp":parsed.and_hms_opt(0,0,0).ok_or_else(invalid)?.and_utc().timestamp_millis().to_string(),"is_all_day":true}),
+            json!({"timestamp": millis.to_string(), "is_all_day": true}),
         ));
     }
     let object = value.as_object().ok_or_else(invalid)?;
@@ -1680,4 +1677,45 @@ fn normalized_due(input: &Value) -> Result<Option<Value>, ProviderError> {
         return Err(invalid());
     }
     Ok(Some(value.clone()))
+}
+
+fn parse_utc_date_millis(date: &str) -> Option<i64> {
+    let bytes = date.as_bytes();
+    if bytes.len() != 10
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || !bytes[0..4].iter().all(u8::is_ascii_digit)
+        || !bytes[5..7].iter().all(u8::is_ascii_digit)
+        || !bytes[8..10].iter().all(u8::is_ascii_digit)
+    {
+        return None;
+    }
+    let year: i64 = date[0..4].parse().ok()?;
+    let month: u32 = date[5..7].parse().ok()?;
+    let day: u32 = date[8..10].parse().ok()?;
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    let max_day = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if leap {
+                29
+            } else {
+                28
+            }
+        }
+        _ => return None,
+    };
+    if day == 0 || day > max_day {
+        return None;
+    }
+    let y = year - i64::from(month <= 2);
+    let era = y.div_euclid(400);
+    let yoe = y.rem_euclid(400) as u64;
+    let m = u64::from(month);
+    let d = u64::from(day);
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe as i64 - 719_468;
+    days.checked_mul(86_400_000)
 }
