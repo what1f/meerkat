@@ -216,7 +216,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
             name: workspace_id.to_string(),
             provider_id: fixture.clone(),
             provider_config: if active {
-                serde_json::json!({"log_path": provider_log, "startup_delay_ms": 1000})
+                serde_json::json!({"log_path": provider_log, "startup_delay_ms": 2000})
             } else {
                 serde_json::json!({"log_path": provider_log})
             },
@@ -307,7 +307,7 @@ async fn daemon_e2e_scenario(paths: &RuntimePaths) -> Result<(), AppError> {
 
     let mut child = DaemonChild::spawn(paths)?;
     let ready_elapsed = child.wait_ready()?;
-    if ready_elapsed >= Duration::from_millis(600) {
+    if ready_elapsed >= Duration::from_millis(1500) {
         return Err(AppError::Invariant(
             "management readiness waited for Provider startup",
         ));

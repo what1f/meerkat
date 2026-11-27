@@ -104,7 +104,10 @@ async fn runtime_e2e() {
         Ok(result) => result,
         Err(_) => Err("hard_timeout".to_owned()),
     };
-    let cleanup = temp.close().map(|_| "removed").unwrap_or("failed");
+    let (cleanup, cleanup_error) = match temp.close() {
+        Ok(()) => ("removed", None),
+        Err(error) => ("failed", Some(error.to_string())),
+    };
     let artifact_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/e2e-artifacts/runtime")
         .join(&run_id);
@@ -117,20 +120,22 @@ async fn runtime_e2e() {
             "success": scenario_result.is_ok(),
             "error": scenario_result.as_ref().err(),
             "cleanup": cleanup,
+            "cleanup_error": cleanup_error,
         }))
         .expect("result json"),
     )
     .expect("write result");
-    assert_eq!(
-        cleanup,
-        "removed",
-        "cleanup failed; artifact={}",
-        artifact.display()
-    );
     assert!(
         scenario_result.is_ok(),
         "{}; artifact={}",
         scenario_result.unwrap_err(),
+        artifact.display()
+    );
+    assert_eq!(
+        cleanup,
+        "removed",
+        "cleanup failed ({:?}); artifact={}",
+        cleanup_error,
         artifact.display()
     );
 }
@@ -2080,16 +2085,19 @@ async fn application_scenario(db: &Path, socket: &Path) -> Result<(), String> {
         )
         .await
     });
+    let mut ready = false;
     for _ in 0..100 {
-        if socket.join("agent.sock").exists() {
+        if socket.join("management.url").exists()
+            && meerkat_protocol::connect_local(socket.join("agent.sock"), DEFAULT_MAX_MESSAGE_BYTES)
+                .await
+                .is_ok()
+        {
+            ready = true;
             break;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    ensure(
-        socket.join("agent.sock").exists(),
-        "scenario Agent socket started",
-    )?;
+    ensure(ready, "scenario Agent socket started")?;
     let client =
         meerkat_client::http::HttpManagementTransport::local(socket, DEFAULT_MAX_MESSAGE_BYTES);
     let listed = client

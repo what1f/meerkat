@@ -160,23 +160,30 @@ test('the task list name saves on Enter or blur and restores on failure or Escap
   expect((await rig({ op: 'feishu_tasklist', workspace, fail: false })).renames).toEqual([]);
   await title.fill('Release checklist');
   await title.press('Enter');
+  await expect
+    .poll(async () => (await rig({ op: 'feishu_tasklist', workspace, fail: false })).renames)
+    .toEqual([
+      [
+        'Bearer tenant-cli_registered_1',
+        {
+          tasklist: { name: 'Release checklist' },
+          update_fields: ['name'],
+        },
+      ],
+    ]);
   await expect(title).toHaveAttribute('aria-busy', 'false');
   await expect(title).toHaveValue('Release checklist');
-  const first = (await rig({ op: 'feishu_tasklist', workspace, fail: false })).renames!;
-  expect(first).toEqual([
-    [
-      'Bearer tenant-cli_registered_1',
-      {
-        tasklist: { name: 'Release checklist' },
-        update_fields: ['name'],
-      },
-    ],
-  ]);
   await page.reload();
   await openList(page);
   await expect(title).toHaveValue('Release checklist');
   await title.fill('Launch tasks');
   await title.blur();
+  await expect
+    .poll(
+      async () =>
+        (await rig({ op: 'feishu_tasklist', workspace, fail: false })).renames?.length ?? 0,
+    )
+    .toBe(2);
   await expect(title).toHaveAttribute('aria-busy', 'false');
   await page.reload();
   await openList(page);
