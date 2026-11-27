@@ -17,7 +17,7 @@ base64 = "0.23.1"
 async-trait.workspace = true
 subtle = "2.6.1"
 croner = { version = "4.0.3", default-features = false, features = ["jiff"] }
-jiff = "0.2.38"
+jiff = "1.0.3"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
 jimu-ai.workspace = true
 jimu-http.workspace = true
