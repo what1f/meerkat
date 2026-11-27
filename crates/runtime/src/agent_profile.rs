@@ -77,7 +77,11 @@ impl AgentProfileFiles {
             ));
         }
         let relative = avatar_relative_path(workspace_id, agent_id, extension);
-        let path = relative.to_string_lossy().into_owned();
+        let path = format!(
+            "resources/{}/{}_avatar.{extension}",
+            workspace_id.as_str(),
+            agent_id.as_str()
+        );
         let target = self.data_root.join(&relative);
         let previous_path = previous_path
             .map(|value| {

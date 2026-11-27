@@ -54,7 +54,9 @@ test('the team name is renamed in place and the dock follows', async ({ page, ba
   await page.getByTestId('team-name').getByRole('textbox').fill('Night Desk');
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('team-switcher')).toBeVisible();
-  expect((await workspaceOf(baseURL!, 'rename_team')).name).toBe('Night Desk');
+  await expect
+    .poll(async () => (await workspaceOf(baseURL!, 'rename_team')).name)
+    .toBe('Night Desk');
 });
 
 test('off shift members stop replying and answer again once back on', async ({ page, baseURL }) => {
